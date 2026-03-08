@@ -35,7 +35,7 @@ def _make_node(
     axes_names: tuple[str, ...],
 ) -> tk.Node:
     # Use small dummy dimensions so the example focuses on topology, not tensor values.
-    shape = tuple(2 if axis in {"phys", "in", "out"} else 3 for axis in axes_names)
+    shape = tuple(2 if axis in {"phys", "down", "up"} else 3 for axis in axes_names)
     return tk.Node(shape=shape, axes_names=axes_names, name=name, network=network)
 
 
@@ -69,7 +69,7 @@ def build_mpo_example(length: int = 4) -> tk.TensorNetwork:
         axes_names = []
         if index > 0:
             axes_names.append("left")
-        axes_names.extend(["in", "out"])
+        axes_names.extend(["down", "up"])
         if index < length - 1:
             axes_names.append("right")
         nodes.append(_make_node(network, f"W{index}", tuple(axes_names)))
@@ -177,7 +177,7 @@ def main() -> None:
 
     # Centralized plotting options shared by the generic plotting dispatcher.
     config = PlotConfig(
-        figsize=(8, 5),
+        figsize=(10, 6),
         show_tensor_labels=args.view == "2d",
         show_index_labels=args.view == "2d",
     )

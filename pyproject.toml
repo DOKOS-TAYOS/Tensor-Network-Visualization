@@ -13,6 +13,7 @@ requires-python = ">=3.10"
 project-urls = { Repository = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization" }
 dependencies = [
     "matplotlib",
+    "networkx",
     "tensorkrowch",
 ]
 classifiers = [

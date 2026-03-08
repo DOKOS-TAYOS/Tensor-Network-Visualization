@@ -7,6 +7,7 @@ Runtime dependencies relevant to `tensor-network-visualization`.
 | Package | Version | License | Home page |
 | --- | --- | --- | --- |
 | matplotlib | 3.10.8 | License agreement for matplotlib versions 1.3.0 and later | https://matplotlib.org |
+| networkx | 3.6.1 | BSD-3-Clause | https://networkx.org/ |
 | tensorkrowch | 1.1.6 | MIT License | https://github.com/joserapa98/tensorkrowch |
 
 ## Runtime transitive dependencies
