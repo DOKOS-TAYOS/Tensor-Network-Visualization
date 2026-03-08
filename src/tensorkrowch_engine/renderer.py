@@ -10,15 +10,14 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
+from plotting.config import PlotConfig
+
 Vector: TypeAlias = np.ndarray
 EdgeKind = Literal["contraction", "dangling", "self"]
 NodePositions: TypeAlias = dict[int, Vector]
 AxisDirections: TypeAlias = dict[tuple[int, int], Vector]
 
 
-_NODE_COLOR = "#2D6A9F"
-_EDGE_COLOR = "#202B33"
-_LABEL_COLOR = "#0C1319"
 _NODE_RADIUS = 0.08
 _STUB_LENGTH = 0.34
 _SELF_LOOP_RADIUS = 0.2
@@ -33,7 +32,6 @@ class _EdgeEndpoint:
 
 @dataclass(frozen=True)
 class _NodeData:
-    ref: Any
     name: str
     axes_names: tuple[str, ...]
     degree: int
@@ -41,7 +39,6 @@ class _NodeData:
 
 @dataclass(frozen=True)
 class _EdgeData:
-    ref: Any
     name: str | None
     kind: EdgeKind
     node_ids: tuple[int, ...]
@@ -55,16 +52,18 @@ class _GraphData:
     edges: tuple[_EdgeData, ...]
 
 
-def plot_tensor_network_2d(
+def plot_tensorkrowch_network_2d(
     network: Any,
     *,
     ax: Axes | None = None,
-    show_tensor_labels: bool = True,
-    show_index_labels: bool = True,
+    config: PlotConfig | None = None,
+    show_tensor_labels: bool | None = None,
+    show_index_labels: bool | None = None,
     seed: int = 0,
 ) -> tuple[Figure, Axes]:
+    style = config or PlotConfig()
     graph = _build_graph(network)
-    fig, ax = _prepare_axes_2d(ax=ax)
+    fig, ax = _prepare_axes_2d(ax=ax, figsize=style.figsize)
     positions = _compute_layout(graph, dimensions=2, seed=seed)
     directions = _compute_axis_directions(graph, positions, dimensions=2)
     _draw_2d(
@@ -72,22 +71,25 @@ def plot_tensor_network_2d(
         graph=graph,
         positions=positions,
         directions=directions,
-        show_tensor_labels=show_tensor_labels,
-        show_index_labels=show_index_labels,
+        show_tensor_labels=_resolve_flag(show_tensor_labels, style.show_tensor_labels),
+        show_index_labels=_resolve_flag(show_index_labels, style.show_index_labels),
+        config=style,
     )
     return fig, ax
 
 
-def plot_tensor_network_3d(
+def plot_tensorkrowch_network_3d(
     network: Any,
     *,
     ax: Axes | Axes3D | None = None,
-    show_tensor_labels: bool = True,
-    show_index_labels: bool = True,
+    config: PlotConfig | None = None,
+    show_tensor_labels: bool | None = None,
+    show_index_labels: bool | None = None,
     seed: int = 0,
 ) -> tuple[Figure, Axes3D]:
+    style = config or PlotConfig()
     graph = _build_graph(network)
-    fig, ax = _prepare_axes_3d(ax=ax)
+    fig, ax = _prepare_axes_3d(ax=ax, figsize=style.figsize)
     positions = _compute_layout(graph, dimensions=3, seed=seed)
     directions = _compute_axis_directions(graph, positions, dimensions=3)
     _draw_3d(
@@ -95,8 +97,9 @@ def plot_tensor_network_3d(
         graph=graph,
         positions=positions,
         directions=directions,
-        show_tensor_labels=show_tensor_labels,
-        show_index_labels=show_index_labels,
+        show_tensor_labels=_resolve_flag(show_tensor_labels, style.show_tensor_labels),
+        show_index_labels=_resolve_flag(show_index_labels, style.show_index_labels),
+        config=style,
     )
     return fig, ax
 
@@ -121,7 +124,6 @@ def _build_graph(network: Any) -> _GraphData:
 
         node_id = id(node)
         nodes[node_id] = _NodeData(
-            ref=node,
             name=name,
             axes_names=axes_names,
             degree=len(edges),
@@ -173,7 +175,6 @@ def _build_graph(network: Any) -> _GraphData:
 
         edges.append(
             _EdgeData(
-                ref=edge,
                 name=name,
                 kind=kind,
                 node_ids=node_ids,
@@ -185,24 +186,38 @@ def _build_graph(network: Any) -> _GraphData:
     return _GraphData(nodes=nodes, edges=tuple(edges))
 
 
-def _prepare_axes_2d(ax: Axes | None) -> tuple[Figure, Axes]:
+def _resolve_flag(value: bool | None, default: bool) -> bool:
+    if value is None:
+        return default
+    return value
+
+
+def _prepare_axes_2d(
+    ax: Axes | None,
+    *,
+    figsize: tuple[float, float] | None,
+) -> tuple[Figure, Axes]:
     if ax is None:
-        fig, ax = plt.subplots(figsize=(8, 6))
+        fig, ax = plt.subplots(figsize=figsize or (8, 6))
         return fig, ax
 
     if getattr(ax, "name", "") == "3d":
-        raise ValueError("plot_tensor_network_2d requires a 2D Matplotlib axis.")
+        raise ValueError("plot_tensorkrowch_network_2d requires a 2D Matplotlib axis.")
     return ax.figure, ax
 
 
-def _prepare_axes_3d(ax: Axes | Axes3D | None) -> tuple[Figure, Axes3D]:
+def _prepare_axes_3d(
+    ax: Axes | Axes3D | None,
+    *,
+    figsize: tuple[float, float] | None,
+) -> tuple[Figure, Axes3D]:
     if ax is None:
-        fig = plt.figure(figsize=(8, 6))
+        fig = plt.figure(figsize=figsize or (8, 6))
         created_ax = fig.add_subplot(111, projection="3d")
         return fig, cast(Axes3D, created_ax)
 
     if getattr(ax, "name", "") != "3d":
-        raise ValueError("plot_tensor_network_3d requires a 3D Matplotlib axis.")
+        raise ValueError("plot_tensorkrowch_network_3d requires a 3D Matplotlib axis.")
     return ax.figure, cast(Axes3D, ax)
 
 
@@ -405,6 +420,7 @@ def _draw_2d(
     directions: AxisDirections,
     show_tensor_labels: bool,
     show_index_labels: bool,
+    config: PlotConfig,
 ) -> None:
     ax.cla()
     pair_groups = _group_contractions(graph)
@@ -418,13 +434,19 @@ def _draw_2d(
             ax.plot(
                 [start[0], end[0]],
                 [start[1], end[1]],
-                color=_EDGE_COLOR,
+                color=config.edge_color,
                 linewidth=1.8,
                 zorder=2,
             )
             if show_index_labels and edge.label:
                 label_pos = end + direction * 0.08
-                ax.text(label_pos[0], label_pos[1], edge.label, color=_LABEL_COLOR, fontsize=9)
+                ax.text(
+                    label_pos[0],
+                    label_pos[1],
+                    edge.label,
+                    color=config.label_color,
+                    fontsize=9,
+                )
         elif edge.kind == "self":
             endpoint_a, endpoint_b = _require_self_endpoints(edge)
             direction_a = directions[(endpoint_a.node_id, endpoint_a.axis_index)]
@@ -439,10 +461,16 @@ def _draw_2d(
                 + orientation * (_NODE_RADIUS + _SELF_LOOP_RADIUS)
             )
             curve = _ellipse_points(center, orientation, normal, width=0.16, height=0.12)
-            ax.plot(curve[:, 0], curve[:, 1], color=_EDGE_COLOR, linewidth=1.8, zorder=2)
+            ax.plot(curve[:, 0], curve[:, 1], color=config.edge_color, linewidth=1.8, zorder=2)
             if show_index_labels and edge.label:
                 label_pos = center + normal * 0.16
-                ax.text(label_pos[0], label_pos[1], edge.label, color=_LABEL_COLOR, fontsize=9)
+                ax.text(
+                    label_pos[0],
+                    label_pos[1],
+                    edge.label,
+                    color=config.label_color,
+                    fontsize=9,
+                )
         else:
             key = tuple(sorted(edge.node_ids))
             group = pair_groups[key]
@@ -453,17 +481,23 @@ def _draw_2d(
                 offset_index=offset_index,
                 edge_count=len(group),
             )
-            ax.plot(curve[:, 0], curve[:, 1], color=_EDGE_COLOR, linewidth=1.8, zorder=1)
+            ax.plot(curve[:, 0], curve[:, 1], color=config.edge_color, linewidth=1.8, zorder=1)
             if show_index_labels and edge.label:
                 midpoint = curve[len(curve) // 2]
-                ax.text(midpoint[0], midpoint[1], edge.label, color=_LABEL_COLOR, fontsize=9)
+                ax.text(
+                    midpoint[0],
+                    midpoint[1],
+                    edge.label,
+                    color=config.label_color,
+                    fontsize=9,
+                )
 
     coords = np.stack(list(positions.values()))
     ax.scatter(
         coords[:, 0],
         coords[:, 1],
         s=900,
-        c=_NODE_COLOR,
+        c=config.node_color,
         edgecolors="white",
         linewidths=1.8,
         zorder=3,
@@ -485,6 +519,7 @@ def _draw_3d(
     directions: AxisDirections,
     show_tensor_labels: bool,
     show_index_labels: bool,
+    config: PlotConfig,
 ) -> None:
     ax.cla()
     pair_groups = _group_contractions(graph)
@@ -499,7 +534,7 @@ def _draw_3d(
                 [start[0], end[0]],
                 [start[1], end[1]],
                 [start[2], end[2]],
-                color=_EDGE_COLOR,
+                color=config.edge_color,
                 linewidth=1.6,
                 zorder=2,
             )
@@ -510,7 +545,7 @@ def _draw_3d(
                     label_pos[1],
                     label_pos[2],
                     edge.label,
-                    color=_LABEL_COLOR,
+                    color=config.label_color,
                     fontsize=9,
                 )
         elif edge.kind == "self":
@@ -533,7 +568,7 @@ def _draw_3d(
                 curve[:, 0],
                 curve[:, 1],
                 curve[:, 2],
-                color=_EDGE_COLOR,
+                color=config.edge_color,
                 linewidth=1.6,
                 zorder=2,
             )
@@ -544,7 +579,7 @@ def _draw_3d(
                     label_pos[1],
                     label_pos[2],
                     edge.label,
-                    color=_LABEL_COLOR,
+                    color=config.label_color,
                     fontsize=9,
                 )
         else:
@@ -561,7 +596,7 @@ def _draw_3d(
                 curve[:, 0],
                 curve[:, 1],
                 curve[:, 2],
-                color=_EDGE_COLOR,
+                color=config.edge_color,
                 linewidth=1.6,
                 zorder=1,
             )
@@ -572,12 +607,19 @@ def _draw_3d(
                     midpoint[1],
                     midpoint[2],
                     edge.label,
-                    color=_LABEL_COLOR,
+                    color=config.label_color,
                     fontsize=9,
                 )
 
     coords = np.stack(list(positions.values()))
-    ax.scatter(coords[:, 0], coords[:, 1], coords[:, 2], s=120, c=_NODE_COLOR, depthshade=False)
+    ax.scatter(
+        coords[:, 0],
+        coords[:, 1],
+        coords[:, 2],
+        s=120,
+        c=config.node_color,
+        depthshade=False,
+    )
 
     if show_tensor_labels:
         for node_id, node in graph.nodes.items():

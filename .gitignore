@@ -1,5 +1,6 @@
 .venv/
 .tmp/
+.pip_tmp/
 .ruff_cache/
 .pytest_cache/
 pytest-cache-files-*/

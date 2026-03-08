@@ -1,6 +1,8 @@
-# tensor-visualization
+# Tensor-Network-Visualization
 
 Minimal Matplotlib visualizations for TensorKrowch tensor networks.
+
+**Repository:** [https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization](https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization)
 
 ## Features
 
@@ -28,13 +30,22 @@ For runtime-only usage:
 ## Usage
 
 ```python
-from tensor_visualization import plot_tensor_network_2d, plot_tensor_network_3d
+from plotting import PlotConfig, show_tensor_network
 
-fig2d, ax2d = plot_tensor_network_2d(network)
-fig3d, ax3d = plot_tensor_network_3d(network)
+config = PlotConfig(figsize=(8, 6))
+fig, ax = show_tensor_network(
+    network,
+    engine="tensorkrowch",
+    view="2d",
+    config=config,
+)
 ```
 
-Both functions accept an existing Matplotlib axis through `ax=` and return `(fig, ax)`.
+You can also use the TensorKrowch-specific helpers directly:
+
+```python
+from tensorkrowch_engine import plot_tensorkrowch_network_2d, plot_tensorkrowch_network_3d
+```
 
 ## Development
 

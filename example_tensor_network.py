@@ -4,14 +4,29 @@ import argparse
 import sys
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import tensorkrowch as tk
 
 try:
-    from tensor_visualization import plot_tensor_network_2d, plot_tensor_network_3d
+    from plotting import PlotConfig, show_tensor_network
 except ImportError:
+    # Allow running the example directly from the repo root without installing the package.
     sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
-    from tensor_visualization import plot_tensor_network_2d, plot_tensor_network_3d
+    from plotting import PlotConfig, show_tensor_network
+
+DESCRIPTION = """\
+Small demo for the plotting dispatcher.
+
+It builds one example TensorKrowch network and shows it with the selected view.
+Available network examples:
+  - mps
+  - mpo
+  - peps
+  - weird
+
+Examples:
+  python example_tensor_network.py mps 2d
+  python example_tensor_network.py weird 3d
+"""
 
 
 def _make_node(
@@ -19,11 +34,13 @@ def _make_node(
     name: str,
     axes_names: tuple[str, ...],
 ) -> tk.Node:
+    # Use small dummy dimensions so the example focuses on topology, not tensor values.
     shape = tuple(2 if axis in {"phys", "in", "out"} else 3 for axis in axes_names)
     return tk.Node(shape=shape, axes_names=axes_names, name=name, network=network)
 
 
 def build_mps_example(length: int = 5) -> tk.TensorNetwork:
+    # Build a simple 1D chain where each tensor has one physical leg and bond legs to neighbors.
     network = tk.TensorNetwork(name="mps")
     nodes: list[tk.Node] = []
 
@@ -37,12 +54,14 @@ def build_mps_example(length: int = 5) -> tk.TensorNetwork:
         nodes.append(_make_node(network, f"A{index}", tuple(axes_names)))
 
     for index in range(length - 1):
+        # Connect the right bond of each tensor with the left bond of the next one.
         nodes[index]["right"] ^ nodes[index + 1]["left"]
 
     return network
 
 
 def build_mpo_example(length: int = 4) -> tk.TensorNetwork:
+    # Build a 1D operator network: each tensor has input/output physical legs plus bond legs.
     network = tk.TensorNetwork(name="mpo")
     nodes: list[tk.Node] = []
 
@@ -56,12 +75,14 @@ def build_mpo_example(length: int = 4) -> tk.TensorNetwork:
         nodes.append(_make_node(network, f"W{index}", tuple(axes_names)))
 
     for index in range(length - 1):
+        # Neighboring tensors are linked through the virtual MPO bonds.
         nodes[index]["right"] ^ nodes[index + 1]["left"]
 
     return network
 
 
 def build_peps_example(rows: int = 2, cols: int = 3) -> tk.TensorNetwork:
+    # Build a small 2D grid with horizontal and vertical bonds plus one physical leg per tensor.
     network = tk.TensorNetwork(name="peps")
     grid: list[list[tk.Node]] = []
 
@@ -84,14 +105,17 @@ def build_peps_example(rows: int = 2, cols: int = 3) -> tk.TensorNetwork:
     for row in range(rows):
         for col in range(cols):
             if col < cols - 1:
+                # Horizontal PEPS bond.
                 grid[row][col]["right"] ^ grid[row][col + 1]["left"]
             if row < rows - 1:
+                # Vertical PEPS bond.
                 grid[row][col]["down"] ^ grid[row + 1][col]["up"]
 
     return network
 
 
 def build_weird_example() -> tk.TensorNetwork:
+    # Build a less regular graph to show that the visualizer is not limited to chain/grid layouts.
     network = tk.TensorNetwork(name="weird")
 
     center = _make_node(
@@ -104,6 +128,7 @@ def build_weird_example() -> tk.TensorNetwork:
     south = _make_node(network, "south", ("center", "east", "west_a", "west_b", "phys"))
     west = _make_node(network, "west", ("center", "south_a", "south_b", "phys"))
 
+    # Mix star-like and lateral connections, including a double edge on the south-west side.
     center["north"] ^ north["center"]
     center["east"] ^ east["center"]
     center["south"] ^ south["center"]
@@ -126,7 +151,8 @@ BUILDERS = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Render a TensorKrowch example network with tensor_visualization."
+        description=DESCRIPTION,
+        formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
         "network",
@@ -143,26 +169,27 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    # Pick one example builder from the CLI and create the TensorKrowch network.
     network = BUILDERS[args.network]()
+    print(f"Building example tensor network: {args.network}")
+    print(f"Selected visualization: {args.view}")
+    print("Rendering window...")
 
-    fig = plt.figure(figsize=(8, 5), constrained_layout=True)
+    # Centralized plotting options shared by the generic plotting dispatcher.
+    config = PlotConfig(
+        figsize=(8, 5),
+        show_tensor_labels=args.view == "2d",
+        show_index_labels=args.view == "2d",
+    )
+
+    # The dispatcher chooses the proper rendering function from the selected engine and view.
+    fig, ax = show_tensor_network(
+        network,
+        engine="tensorkrowch",
+        view=args.view,
+        config=config,
+    )
     fig.suptitle(f"{args.network.upper()} ({args.view.upper()})", fontsize=16)
-
-    if args.view == "3d":
-        ax = fig.add_subplot(111, projection="3d")
-        plot_tensor_network_3d(
-            network,
-            ax=ax,
-            show_tensor_labels=False,
-            show_index_labels=False,
-        )
-    else:
-        ax = fig.add_subplot(111)
-        plot_tensor_network_2d(network, ax=ax)
-
-    ax.set_title(args.network.upper())
-
-    plt.show()
 
 
 if __name__ == "__main__":

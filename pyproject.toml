@@ -3,16 +3,20 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tensor-visualization"
+name = "tensor-network-visualization"
 version = "0.1.0"
 description = "Minimal Matplotlib visualizations for TensorKrowch tensor networks."
+authors = [{ name = "Alejandro Mata Ali" }]
 readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
+project-urls = { Repository = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization" }
 dependencies = [
     "matplotlib",
     "tensorkrowch",
 ]
 classifiers = [
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Scientific/Engineering :: Visualization",
@@ -24,12 +28,13 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-p no:cacheprovider"
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
 src = ["src", "tests"]
-exclude = [".venv", ".tmp", ".pytest_cache", ".ruff_cache", "pytest-cache-files-*"]
+exclude = [".venv", ".tmp", ".pip_tmp", ".pytest_cache", ".ruff_cache", "pytest-cache-files-*"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
