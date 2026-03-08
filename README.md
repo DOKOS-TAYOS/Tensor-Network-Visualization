@@ -11,7 +11,7 @@ Minimal Matplotlib visualizations for TensorKrowch tensor networks.
 - Contractions rendered as edges between tensors
 - Dangling indices rendered as labeled stubs
 - Self-contractions rendered as loops
-- No UI and no `networkx`
+- No UI; uses Matplotlib for rendering and NetworkX for graph layouts
 
 ## Installation
 
@@ -30,7 +30,7 @@ For runtime-only usage:
 ## Usage
 
 ```python
-from plotting import PlotConfig, show_tensor_network
+from tensor_network_viz import PlotConfig, show_tensor_network
 
 config = PlotConfig(figsize=(8, 6))
 fig, ax = show_tensor_network(
@@ -44,7 +44,7 @@ fig, ax = show_tensor_network(
 You can also use the TensorKrowch-specific helpers directly:
 
 ```python
-from tensorkrowch_engine import plot_tensorkrowch_network_2d, plot_tensorkrowch_network_3d
+from tensor_network_viz.tensorkrowch import plot_tensorkrowch_network_2d, plot_tensorkrowch_network_3d
 ```
 
 ## Development

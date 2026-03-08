@@ -4,7 +4,10 @@ matplotlib.use("Agg")
 
 import pytest
 
-from tensorkrowch_engine import plot_tensorkrowch_network_2d, plot_tensorkrowch_network_3d
+from tensor_network_viz.tensorkrowch import (
+    plot_tensorkrowch_network_2d,
+    plot_tensorkrowch_network_3d,
+)
 
 tk = pytest.importorskip("tensorkrowch")
 

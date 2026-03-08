@@ -6,10 +6,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-import plotting.viewer as viewer_module
-from plotting import PlotConfig, show_tensor_network
-from tensorkrowch_engine import plot_tensorkrowch_network_2d, plot_tensorkrowch_network_3d
-from tensorkrowch_engine.renderer import _build_graph
+import tensor_network_viz.viewer as viewer_module
+from tensor_network_viz import PlotConfig, show_tensor_network
+from tensor_network_viz.tensorkrowch import (
+    plot_tensorkrowch_network_2d,
+    plot_tensorkrowch_network_3d,
+)
+from tensor_network_viz.tensorkrowch.graph import _build_graph
 
 
 class DummyEdge:

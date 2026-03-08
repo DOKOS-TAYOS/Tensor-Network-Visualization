@@ -4,14 +4,15 @@ import argparse
 import sys
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import tensorkrowch as tk
 
 try:
-    from plotting import PlotConfig, show_tensor_network
+    from tensor_network_viz import PlotConfig, show_tensor_network
 except ImportError:
     # Allow running the example directly from the repo root without installing the package.
     sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
-    from plotting import PlotConfig, show_tensor_network
+    from tensor_network_viz import PlotConfig, show_tensor_network
 
 DESCRIPTION = """\
 Small demo for the plotting dispatcher.
@@ -188,8 +189,10 @@ def main() -> None:
         engine="tensorkrowch",
         view=args.view,
         config=config,
+        show=False,
     )
     fig.suptitle(f"{args.network.upper()} ({args.view.upper()})", fontsize=16)
+    plt.show()
 
 
 if __name__ == "__main__":

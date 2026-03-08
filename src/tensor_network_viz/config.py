@@ -1,0 +1,49 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal, TypeAlias
+
+EngineName: TypeAlias = Literal["tensorkrowch"]
+ViewName: TypeAlias = Literal["2d", "3d"]
+
+
+_DEFAULT_NODE_RADIUS = 0.08
+_DEFAULT_STUB_LENGTH = 0.34
+_DEFAULT_SELF_LOOP_RADIUS = 0.2
+_DEFAULT_LINE_WIDTH_2D = 1.8
+_DEFAULT_LINE_WIDTH_3D = 1.6
+
+
+@dataclass(frozen=True)
+class PlotConfig:
+    """Configuration for tensor network plot styling.
+
+    Attributes:
+        node_color: Fill color for tensor nodes (hex or named color).
+        edge_color: Color for generic edges (currently unused; bond/dangling take precedence).
+        label_color: Color for axis and edge labels.
+        bond_edge_color: Color for contraction edges between tensors.
+        dangling_edge_color: Color for dangling index stubs.
+        figsize: Figure size as (width, height) in inches; None uses Matplotlib default.
+        show_tensor_labels: Whether to display tensor names on nodes.
+        show_index_labels: Whether to display axis names on edges.
+        node_radius: Radius of tensor nodes; None uses default (0.08).
+        stub_length: Length of dangling index stubs; None uses default (0.34).
+        self_loop_radius: Radius for self-contraction loops; None uses default (0.2).
+        line_width_2d: Line width for 2D plots; None uses default (1.8).
+        line_width_3d: Line width for 3D plots; None uses default (1.6).
+    """
+
+    node_color: str = "#2D6A9F"
+    edge_color: str = "#202B33"
+    label_color: str = "#0C1319"
+    bond_edge_color: str = "#00008B"
+    dangling_edge_color: str = "#8B0000"
+    figsize: tuple[float, float] | None = (8, 6)
+    show_tensor_labels: bool = True
+    show_index_labels: bool = True
+    node_radius: float | None = None
+    stub_length: float | None = None
+    self_loop_radius: float | None = None
+    line_width_2d: float | None = None
+    line_width_3d: float | None = None
