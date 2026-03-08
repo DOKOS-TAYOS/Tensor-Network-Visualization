@@ -1,9 +1,9 @@
 @echo off
 setlocal
 
-set "ROOT=%~dp0"
+set "ROOT=%~dp0.."
 cd /d "%ROOT%"
 
-python clean.py
+python scripts/clean.py
 
 endlocal

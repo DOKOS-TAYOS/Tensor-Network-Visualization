@@ -1,6 +1,6 @@
 """Cross-platform script to remove project caches and build artifacts.
 
-Excludes the .venv directory. Run with: python clean.py
+Excludes the .venv directory. Run with: python scripts/clean.py
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ def _should_skip(path: Path, venv: Path) -> bool:
 
 
 def main() -> int:
-    root = Path(__file__).resolve().parent
+    root = Path(__file__).resolve().parent.parent
     venv = root / ".venv"
 
     dir_names = frozenset({
@@ -47,9 +47,9 @@ def main() -> int:
             continue
         if _should_skip(path, venv):
             continue
-        if path.name in dir_names:
-            dirs_to_remove.append(path)
-        elif path.name.endswith(".egg-info") or path.name.startswith("pytest-cache-files-"):
+        if path.name in dir_names or path.name.endswith(".egg-info") or path.name.startswith(
+            "pytest-cache-files-"
+        ):
             dirs_to_remove.append(path)
 
     # Remove deepest directories first

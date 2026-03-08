@@ -1,0 +1,25 @@
+# Examples
+
+Run from the project root (with venv activated or `python` from `.venv`).
+
+## tensor_network_demo.py
+
+```bash
+python examples/tensor_network_demo.py mps 2d
+python examples/tensor_network_demo.py weird 3d
+```
+
+Available networks: `mps`, `mpo`, `peps`, `weird`. Views: `2d`, `3d`.
+
+## tn_tsp.py
+
+TSP tensor network visualization (step 0, before contraction).
+
+```bash
+python examples/tn_tsp.py -n 4 --view 2d
+python examples/tn_tsp.py -n 5 --view 3d
+python examples/tn_tsp.py --cities 6 --view 2d
+```
+
+- `-n`, `--cities`: Number of cities (default: 4). Use 4–6 for readable plots.
+- `--view`: `2d` or `3d` (default: 2d).

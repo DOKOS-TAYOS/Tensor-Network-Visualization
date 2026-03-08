@@ -18,6 +18,10 @@ _DEFAULT_LINE_WIDTH_3D = 1.6
 class PlotConfig:
     """Configuration for tensor network plot styling.
 
+    Compatible networks must expose `nodes` or `leaf_nodes` (iterable or dict).
+    Each node must have `edges`, `axes_names`, and `name`. Each edge must have
+    `node1`, `node2`, and `name`.
+
     Attributes:
         node_color: Fill color for tensor nodes (hex or named color).
         edge_color: Color for generic edges (currently unused; bond/dangling take precedence).
@@ -32,9 +36,15 @@ class PlotConfig:
         self_loop_radius: Radius for self-contraction loops; None uses default (0.2).
         line_width_2d: Line width for 2D plots; None uses default (1.8).
         line_width_3d: Line width for 3D plots; None uses default (1.6).
+        positions: Custom node positions for grid/PEPS layout; dict mapping node id to
+            (x, y) for 2D or (x, y, z) for 3D. None uses automatic layout.
+        node_edge_color: Border color for tensor nodes; use dark for contrast on light nodes.
+        tensor_label_color: Color for tensor names on nodes; use dark for readability.
     """
 
-    node_color: str = "#2D6A9F"
+    node_color: str = "#E8E8E8"
+    node_edge_color: str = "#2D3748"
+    tensor_label_color: str = "#1A202C"
     edge_color: str = "#202B33"
     label_color: str = "#0C1319"
     bond_edge_color: str = "#00008B"
@@ -47,3 +57,4 @@ class PlotConfig:
     self_loop_radius: float | None = None
     line_width_2d: float | None = None
     line_width_3d: float | None = None
+    positions: dict[int, tuple[float, ...]] | None = None

@@ -5,13 +5,8 @@ from __future__ import annotations
 import numpy as np
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
-from ..config import (
-    _DEFAULT_LINE_WIDTH_3D,
-    _DEFAULT_NODE_RADIUS,
-    _DEFAULT_SELF_LOOP_RADIUS,
-    _DEFAULT_STUB_LENGTH,
-    PlotConfig,
-)
+from ..config import PlotConfig
+from ._draw_common import _draw_scale_params
 from .curves import (
     _ellipse_points_3d,
     _group_contractions,
@@ -57,48 +52,31 @@ def _draw_3d(
 ) -> None:
     ax.cla()
     pair_groups = _group_contractions(graph)
-    r = (config.node_radius if config.node_radius is not None else _DEFAULT_NODE_RADIUS) * scale
-    stub = (
-        config.stub_length if config.stub_length is not None else _DEFAULT_STUB_LENGTH
-    ) * scale
-    loop_r = (
-        config.self_loop_radius
-        if config.self_loop_radius is not None
-        else _DEFAULT_SELF_LOOP_RADIUS
-    ) * scale
-    lw = (
-        config.line_width_3d if config.line_width_3d is not None else _DEFAULT_LINE_WIDTH_3D
-    ) * scale
-    font_dangling = max(7, round(9 * scale))
-    font_bond = max(5, round(5 * scale))
-    font_node = max(8, round(10 * scale))
-    label_offset = 0.08 * scale
-    ellipse_w, ellipse_h = 0.16 * scale, 0.12 * scale
-    scatter_s = 120 * (scale**2)
+    p = _draw_scale_params(config, scale, is_3d=True)
 
     for edge in graph.edges:
         if edge.kind == "dangling":
             endpoint = edge.endpoints[0]
             direction = directions[(endpoint.node_id, endpoint.axis_index)]
-            start = positions[endpoint.node_id] + direction * r
-            end = start + direction * stub
+            start = positions[endpoint.node_id] + direction * p.r
+            end = start + direction * p.stub
             ax.plot(
                 [start[0], end[0]],
                 [start[1], end[1]],
                 [start[2], end[2]],
                 color=config.dangling_edge_color,
-                linewidth=lw,
+                linewidth=p.lw,
                 zorder=2,
             )
             if show_index_labels and edge.label:
-                label_pos = end + direction * label_offset
+                label_pos = end + direction * p.label_offset
                 ax.text(
                     label_pos[0],
                     label_pos[1],
                     label_pos[2],
                     edge.label,
                     color=config.label_color,
-                    fontsize=font_dangling,
+                    fontsize=p.font_dangling,
                     zorder=5,
                     ha="center",
                     va="bottom",
@@ -116,28 +94,28 @@ def _draw_3d(
             binormal = binormal / np.linalg.norm(binormal)
             center_pt = (
                 positions[endpoint_a.node_id]
-                + orientation * (r + loop_r)
+                + orientation * (p.r + p.loop_r)
             )
             curve = _ellipse_points_3d(
-                center_pt, normal, binormal, width=ellipse_w, height=ellipse_h
+                center_pt, normal, binormal, width=p.ellipse_w, height=p.ellipse_h
             )
             ax.plot(
                 curve[:, 0],
                 curve[:, 1],
                 curve[:, 2],
                 color=config.bond_edge_color,
-                linewidth=lw,
+                linewidth=p.lw,
                 zorder=2,
             )
             if show_index_labels and edge.label:
-                label_pos = center_pt + binormal * ellipse_w
+                label_pos = center_pt + binormal * p.ellipse_w
                 ax.text(
                     label_pos[0],
                     label_pos[1],
                     label_pos[2],
                     edge.label,
                     color=config.label_color,
-                    fontsize=font_dangling,
+                    fontsize=p.font_dangling,
                     zorder=5,
                     ha="center",
                     va="bottom",
@@ -158,7 +136,7 @@ def _draw_3d(
                 curve[:, 1],
                 curve[:, 2],
                 color=config.bond_edge_color,
-                linewidth=lw,
+                linewidth=p.lw,
                 zorder=1,
             )
             if show_index_labels and edge.label:
@@ -172,14 +150,14 @@ def _draw_3d(
                 perpendicular = perpendicular / np.linalg.norm(perpendicular)
                 if perpendicular[2] < 0:
                     perpendicular = -perpendicular
-                label_pos = midpoint + perpendicular * label_offset
+                label_pos = midpoint + perpendicular * p.label_offset
                 ax.text(
                     label_pos[0],
                     label_pos[1],
                     label_pos[2],
                     edge.label,
                     color=config.label_color,
-                    fontsize=font_bond,
+                    fontsize=p.font_bond,
                     zorder=5,
                     ha="center",
                     va="bottom",
@@ -190,8 +168,10 @@ def _draw_3d(
         coords[:, 0],
         coords[:, 1],
         coords[:, 2],
-        s=scatter_s,
+        s=p.scatter_s,
         c=config.node_color,
+        edgecolors=config.node_edge_color,
+        linewidths=p.lw,
         depthshade=False,
     )
 
@@ -201,8 +181,8 @@ def _draw_3d(
             ax.text(
                 x, y, z,
                 node.name,
-                color="white",
-                fontsize=font_node,
+                color=config.tensor_label_color,
+                fontsize=p.font_node,
                 ha="center",
                 va="center",
                 zorder=5,

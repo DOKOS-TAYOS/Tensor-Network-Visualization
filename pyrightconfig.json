@@ -1,0 +1,11 @@
+{
+  "include": ["src", "tests"],
+  "exclude": ["**/__pycache__", ".venv"],
+  "reportMissingImports": "warning",
+  "reportUnusedExpression": "none",
+  "reportArgumentType": "warning",
+  "reportAssignmentType": "warning",
+  "reportReturnType": "warning",
+  "reportAttributeAccessIssue": "warning",
+  "reportCallIssue": "warning"
+}

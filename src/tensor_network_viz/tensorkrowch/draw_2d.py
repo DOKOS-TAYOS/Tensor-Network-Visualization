@@ -5,13 +5,8 @@ from __future__ import annotations
 import numpy as np
 from matplotlib.axes import Axes
 
-from ..config import (
-    _DEFAULT_LINE_WIDTH_2D,
-    _DEFAULT_NODE_RADIUS,
-    _DEFAULT_SELF_LOOP_RADIUS,
-    _DEFAULT_STUB_LENGTH,
-    PlotConfig,
-)
+from ..config import PlotConfig
+from ._draw_common import _draw_scale_params
 from .curves import (
     _ellipse_points,
     _group_contractions,
@@ -53,46 +48,29 @@ def _draw_2d(
 ) -> None:
     ax.cla()
     pair_groups = _group_contractions(graph)
-    r = (config.node_radius if config.node_radius is not None else _DEFAULT_NODE_RADIUS) * scale
-    stub = (
-        config.stub_length if config.stub_length is not None else _DEFAULT_STUB_LENGTH
-    ) * scale
-    loop_r = (
-        config.self_loop_radius
-        if config.self_loop_radius is not None
-        else _DEFAULT_SELF_LOOP_RADIUS
-    ) * scale
-    lw = (
-        config.line_width_2d if config.line_width_2d is not None else _DEFAULT_LINE_WIDTH_2D
-    ) * scale
-    font_dangling = max(7, round(9 * scale))
-    font_bond = max(5, round(5 * scale))
-    font_node = max(8, round(10 * scale))
-    label_offset = 0.08 * scale
-    ellipse_w, ellipse_h = 0.16 * scale, 0.12 * scale
-    scatter_s = 900 * (scale**2)
+    p = _draw_scale_params(config, scale, is_3d=False)
 
     for edge in graph.edges:
         if edge.kind == "dangling":
             endpoint = edge.endpoints[0]
             direction = directions[(endpoint.node_id, endpoint.axis_index)]
-            start = positions[endpoint.node_id] + direction * r
-            end = start + direction * stub
+            start = positions[endpoint.node_id] + direction * p.r
+            end = start + direction * p.stub
             ax.plot(
                 [start[0], end[0]],
                 [start[1], end[1]],
                 color=config.dangling_edge_color,
-                linewidth=lw,
+                linewidth=p.lw,
                 zorder=2,
             )
             if show_index_labels and edge.label:
-                label_pos = end + direction * label_offset
+                label_pos = end + direction * p.label_offset
                 ax.text(
                     label_pos[0],
                     label_pos[1],
                     edge.label,
                     color=config.label_color,
-                    fontsize=font_dangling,
+                    fontsize=p.font_dangling,
                     zorder=5,
                     ha="center",
                     va="bottom",
@@ -108,20 +86,23 @@ def _draw_2d(
             normal = np.array([-orientation[1], orientation[0]], dtype=float)
             center_pt = (
                 positions[endpoint_a.node_id]
-                + orientation * (r + loop_r)
+                + orientation * (p.r + p.loop_r)
             )
             curve = _ellipse_points(
-                center_pt, orientation, normal, width=ellipse_w, height=ellipse_h
+                center_pt, orientation, normal, width=p.ellipse_w, height=p.ellipse_h
             )
-            ax.plot(curve[:, 0], curve[:, 1], color=config.bond_edge_color, linewidth=lw, zorder=2)
+            ax.plot(
+                curve[:, 0], curve[:, 1],
+                color=config.bond_edge_color, linewidth=p.lw, zorder=2,
+            )
             if show_index_labels and edge.label:
-                label_pos = center_pt + normal * ellipse_w
+                label_pos = center_pt + normal * p.ellipse_w
                 ax.text(
                     label_pos[0],
                     label_pos[1],
                     edge.label,
                     color=config.label_color,
-                    fontsize=font_dangling,
+                    fontsize=p.font_dangling,
                     zorder=5,
                     ha="center",
                     va="bottom",
@@ -137,7 +118,10 @@ def _draw_2d(
                 edge_count=len(group),
                 scale=scale,
             )
-            ax.plot(curve[:, 0], curve[:, 1], color=config.bond_edge_color, linewidth=lw, zorder=1)
+            ax.plot(
+                curve[:, 0], curve[:, 1],
+                color=config.bond_edge_color, linewidth=p.lw, zorder=1,
+            )
             if show_index_labels and edge.label:
                 midpoint = curve[len(curve) // 2]
                 delta = positions[edge.node_ids[1]] - positions[edge.node_ids[0]]
@@ -146,13 +130,13 @@ def _draw_2d(
                 perpendicular = np.array([-direction[1], direction[0]], dtype=float)
                 if perpendicular[1] < 0:
                     perpendicular = -perpendicular
-                label_pos = midpoint + perpendicular * label_offset
+                label_pos = midpoint + perpendicular * p.label_offset
                 ax.text(
                     label_pos[0],
                     label_pos[1],
                     edge.label,
                     color=config.label_color,
-                    fontsize=font_bond,
+                    fontsize=p.font_bond,
                     zorder=5,
                     ha="center",
                     va="bottom",
@@ -162,10 +146,10 @@ def _draw_2d(
     ax.scatter(
         coords[:, 0],
         coords[:, 1],
-        s=scatter_s,
+        s=p.scatter_s,
         c=config.node_color,
-        edgecolors="white",
-        linewidths=lw,
+        edgecolors=config.node_edge_color,
+        linewidths=p.lw,
         zorder=3,
     )
 
@@ -174,8 +158,11 @@ def _draw_2d(
             x, y = positions[node_id]
             ax.text(
                 x, y, node.name,
-                color="white", ha="center", va="center",
-                fontsize=font_node, zorder=4,
+                color=config.tensor_label_color,
+                ha="center",
+                va="center",
+                fontsize=p.font_node,
+                zorder=4,
             )
 
     _style_2d_axes(ax, coords)

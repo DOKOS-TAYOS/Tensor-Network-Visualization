@@ -47,10 +47,7 @@ def _get_network_nodes(network: Any) -> list[Any]:
             "Tensor network must expose either a 'nodes' attribute or a 'leaf_nodes' attribute."
         )
 
-    if isinstance(raw_nodes, dict):
-        iterable = raw_nodes.values()
-    else:
-        iterable = raw_nodes
+    iterable = raw_nodes.values() if isinstance(raw_nodes, dict) else raw_nodes
 
     try:
         items = list(iterable)

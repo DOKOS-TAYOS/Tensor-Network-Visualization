@@ -15,19 +15,38 @@ Minimal Matplotlib visualizations for TensorKrowch tensor networks.
 
 ## Installation
 
+### As a dependency
+
+Add to your project's `pyproject.toml`:
+
+```toml
+[project]
+dependencies = ["tensor-network-visualization>=0.1.0"]
+```
+
+Or install with pip:
+
+```bash
+pip install tensor-network-visualization
+```
+
+### Local development
+
 Inside the project virtual environment:
 
 ```powershell
-.\.venv\Scripts\python -m pip install -r requirements.dev.txt
+.\.venv\Scripts\python -m pip install -e ".[dev]"
 ```
 
-For runtime-only usage:
+For runtime-only (editable install without dev tools):
 
 ```powershell
-.\.venv\Scripts\python -m pip install -r requirements.txt
+.\.venv\Scripts\python -m pip install -e .
 ```
 
 ## Usage
+
+Networks must expose `nodes` or `leaf_nodes` (iterable or dict). Each node must have `edges`, `axes_names`, and `name`. Each edge must have `node1`, `node2`, and `name`.
 
 ```python
 from tensor_network_viz import PlotConfig, show_tensor_network
@@ -47,9 +66,15 @@ You can also use the TensorKrowch-specific helpers directly:
 from tensor_network_viz.tensorkrowch import plot_tensorkrowch_network_2d, plot_tensorkrowch_network_3d
 ```
 
+## Project layout
+
+- `examples/` — Demo scripts. Run `python examples/tensor_network_demo.py mps 2d` from the project root.
+- `scripts/` — Utility scripts (e.g. `clean.py` to remove caches and build artifacts).
+
 ## Development
 
 ```powershell
 .\.venv\Scripts\python -m ruff check .
+.\.venv\Scripts\python -m pyright
 .\.venv\Scripts\python -m pytest
 ```

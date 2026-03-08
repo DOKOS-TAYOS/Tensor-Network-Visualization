@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
@@ -12,8 +13,40 @@ from mpl_toolkits.mplot3d.axes3d import Axes3D
 from ..config import PlotConfig
 from .draw_2d import _draw_2d
 from .draw_3d import _draw_3d
-from .graph import _build_graph
+from .graph import _build_graph, _GraphData
 from .layout import _compute_axis_directions, _compute_layout
+
+NodePositions = dict[int, np.ndarray]
+
+
+def _apply_custom_positions(
+    graph: _GraphData,
+    custom_positions: dict[int, tuple[float, ...]],
+    dimensions: int,
+) -> NodePositions:
+    """Apply custom positions, using layout for missing nodes, then center and scale."""
+    from .layout import _compute_layout
+
+    node_ids = list(graph.nodes)
+    positions_arr = np.zeros((len(node_ids), dimensions), dtype=float)
+    missing: list[int] = []
+    for i, nid in enumerate(node_ids):
+        if nid in custom_positions:
+            pos = np.array(custom_positions[nid], dtype=float)
+            n = min(len(pos), dimensions)
+            positions_arr[i, :n] = pos[:n]
+        else:
+            missing.append(nid)
+    if missing:
+        fallback = _compute_layout(graph, dimensions=dimensions, seed=0)
+        for i, nid in enumerate(node_ids):
+            if nid in missing:
+                positions_arr[i] = fallback[nid]
+    positions_arr -= positions_arr.mean(axis=0, keepdims=True)
+    max_norm = np.linalg.norm(positions_arr, axis=1).max()
+    if max_norm > 1e-6:
+        positions_arr /= max_norm / 1.6
+    return {nid: positions_arr[i].copy() for i, nid in enumerate(node_ids)}
 
 
 def _resolve_flag(value: bool | None, default: bool) -> bool:
@@ -83,7 +116,10 @@ def plot_tensorkrowch_network_2d(
     style = config or PlotConfig()
     graph = _build_graph(network)
     fig, ax = _prepare_axes_2d(ax=ax, figsize=style.figsize)
-    positions = _compute_layout(graph, dimensions=2, seed=seed)
+    if style.positions is not None:
+        positions = _apply_custom_positions(graph, style.positions, dimensions=2)
+    else:
+        positions = _compute_layout(graph, dimensions=2, seed=seed)
     directions = _compute_axis_directions(graph, positions, dimensions=2)
     scale = _compute_scale(len(graph.nodes))
     _draw_2d(
@@ -96,6 +132,7 @@ def plot_tensorkrowch_network_2d(
         config=style,
         scale=scale,
     )
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
     return fig, ax
 
 
@@ -124,7 +161,10 @@ def plot_tensorkrowch_network_3d(
     style = config or PlotConfig()
     graph = _build_graph(network)
     fig, ax = _prepare_axes_3d(ax=ax, figsize=style.figsize)
-    positions = _compute_layout(graph, dimensions=3, seed=seed)
+    if style.positions is not None:
+        positions = _apply_custom_positions(graph, style.positions, dimensions=3)
+    else:
+        positions = _compute_layout(graph, dimensions=3, seed=seed)
     directions = _compute_axis_directions(graph, positions, dimensions=3)
     scale = _compute_scale(len(graph.nodes))
     _draw_3d(
@@ -137,4 +177,5 @@ def plot_tensorkrowch_network_3d(
         config=style,
         scale=scale,
     )
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
     return fig, ax

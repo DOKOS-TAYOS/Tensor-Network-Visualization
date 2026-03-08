@@ -1,4 +1,4 @@
-from .config import PlotConfig
+from .config import EngineName, PlotConfig, ViewName
 
 
 def show_tensor_network(*args, **kwargs):
@@ -7,4 +7,4 @@ def show_tensor_network(*args, **kwargs):
     return _show_tensor_network(*args, **kwargs)
 
 
-__all__ = ["PlotConfig", "show_tensor_network"]
+__all__ = ["EngineName", "PlotConfig", "ViewName", "show_tensor_network"]

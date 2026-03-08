@@ -10,8 +10,9 @@ import tensorkrowch as tk
 try:
     from tensor_network_viz import PlotConfig, show_tensor_network
 except ImportError:
-    # Allow running the example directly from the repo root without installing the package.
-    sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+    # Allow running the example directly from the repo without installing the package.
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "src"))
     from tensor_network_viz import PlotConfig, show_tensor_network
 
 DESCRIPTION = """\
@@ -25,8 +26,8 @@ Available network examples:
   - weird
 
 Examples:
-  python example_tensor_network.py mps 2d
-  python example_tensor_network.py weird 3d
+  python examples/tensor_network_demo.py mps 2d
+  python examples/tensor_network_demo.py weird 3d
 """
 
 
