@@ -47,7 +47,8 @@ def _get_network_nodes(network: Any) -> list[Any]:
         raw_nodes = network.leaf_nodes
     else:
         raise TypeError(
-            "Input must be a list/tuple of nodes, or an object with 'nodes' or 'leaf_nodes' attribute."
+            "Input must be a list/tuple of nodes, or an object with "
+            "'nodes' or 'leaf_nodes' attribute."
         )
 
     iterable = raw_nodes.values() if isinstance(raw_nodes, dict) else raw_nodes
