@@ -38,13 +38,16 @@ class _GraphData:
 
 
 def _get_network_nodes(network: Any) -> list[Any]:
-    if hasattr(network, "nodes"):
+    """Extract node list from a TensorNetwork or from a list/tuple of nodes."""
+    if isinstance(network, (list, tuple)):
+        raw_nodes = network
+    elif hasattr(network, "nodes"):
         raw_nodes = network.nodes
     elif hasattr(network, "leaf_nodes"):
         raw_nodes = network.leaf_nodes
     else:
         raise TypeError(
-            "Tensor network must expose either a 'nodes' attribute or a 'leaf_nodes' attribute."
+            "Input must be a list/tuple of nodes, or an object with 'nodes' or 'leaf_nodes' attribute."
         )
 
     iterable = raw_nodes.values() if isinstance(raw_nodes, dict) else raw_nodes

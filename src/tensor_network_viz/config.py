@@ -18,9 +18,9 @@ _DEFAULT_LINE_WIDTH_3D = 1.6
 class PlotConfig:
     """Configuration for tensor network plot styling.
 
-    Compatible networks must expose `nodes` or `leaf_nodes` (iterable or dict).
-    Each node must have `edges`, `axes_names`, and `name`. Each edge must have
-    `node1`, `node2`, and `name`.
+    Input may be a TensorNetwork (with `nodes` or `leaf_nodes`), or a list/tuple
+    of nodes. Each node must have `edges`, `axes_names`, and `name`. Each edge
+    must have `node1`, `node2`, and `name`.
 
     Attributes:
         node_color: Fill color for tensor nodes (hex or named color).

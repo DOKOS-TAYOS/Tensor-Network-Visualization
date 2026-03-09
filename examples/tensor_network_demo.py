@@ -24,10 +24,13 @@ Available network examples:
   - mpo
   - peps
   - weird
+  - disconnected
 
 Examples:
   python examples/tensor_network_demo.py mps 2d
   python examples/tensor_network_demo.py weird 3d
+  python examples/tensor_network_demo.py mps 2d --from-list
+  python examples/tensor_network_demo.py disconnected 2d
 """
 
 
@@ -143,7 +146,29 @@ def build_weird_example() -> tk.TensorNetwork:
     return network
 
 
+def build_disconnected_example() -> tk.TensorNetwork:
+    # Two separate components in the same network: a dimer A-B and a triangle C-D-E.
+    # Demonstrates visualization of disconnected subgraphs (e.g. from --from-list with a subset).
+    network = tk.TensorNetwork(name="disconnected")
+
+    # Component 1: simple dimer
+    a = _make_node(network, "A", ("bond", "phys"))
+    b = _make_node(network, "B", ("bond", "phys"))
+    a["bond"] ^ b["bond"]
+
+    # Component 2: triangle
+    c = _make_node(network, "C", ("left", "right", "phys"))
+    d = _make_node(network, "D", ("left", "right", "phys"))
+    e = _make_node(network, "E", ("left", "right", "phys"))
+    c["left"] ^ d["right"]
+    d["left"] ^ e["right"]
+    e["left"] ^ c["right"]
+
+    return network
+
+
 BUILDERS = {
+    "disconnected": build_disconnected_example,
     "mps": build_mps_example,
     "mpo": build_mpo_example,
     "peps": build_peps_example,
@@ -166,6 +191,11 @@ def parse_args() -> argparse.Namespace:
         choices=("2d", "3d"),
         help="Visualization mode.",
     )
+    parser.add_argument(
+        "--from-list",
+        action="store_true",
+        help="Pass the network as a list of nodes instead of a TensorNetwork object.",
+    )
     return parser.parse_args()
 
 
@@ -175,6 +205,7 @@ def main() -> None:
     network = BUILDERS[args.network]()
     print(f"Building example tensor network: {args.network}")
     print(f"Selected visualization: {args.view}")
+    print(f"Passing as: {'list of nodes' if args.from_list else 'TensorNetwork'}")
     print("Rendering window...")
 
     # Centralized plotting options shared by the generic plotting dispatcher.
@@ -184,9 +215,18 @@ def main() -> None:
         show_index_labels=args.view == "2d",
     )
 
+    # With --from-list, pass the list of nodes instead of the TensorNetwork.
+    if args.from_list:
+        raw = network.nodes
+        show_input: tk.TensorNetwork | list[tk.Node] = (
+            list(raw.values()) if isinstance(raw, dict) else list(raw)
+        )
+    else:
+        show_input = network
+
     # The dispatcher chooses the proper rendering function from the selected engine and view.
     fig, ax = show_tensor_network(
-        network,
+        show_input,
         engine="tensorkrowch",
         view=args.view,
         config=config,

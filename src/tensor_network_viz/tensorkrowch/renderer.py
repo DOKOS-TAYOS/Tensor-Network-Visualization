@@ -103,7 +103,7 @@ def plot_tensorkrowch_network_2d(
     """Plot a TensorKrowch tensor network in 2D.
 
     Args:
-        network: TensorKrowch TensorNetwork with nodes and edges.
+        network: Either a TensorKrowch TensorNetwork, or a list/tuple of tk.Node.
         ax: Matplotlib 2D axes; if None, creates a new figure.
         config: Styling options; uses defaults if None.
         show_tensor_labels: Override config; None uses config value.
@@ -148,7 +148,7 @@ def plot_tensorkrowch_network_3d(
     """Plot a TensorKrowch tensor network in 3D.
 
     Args:
-        network: TensorKrowch TensorNetwork with nodes and edges.
+        network: Either a TensorKrowch TensorNetwork, or a list/tuple of tk.Node.
         ax: Matplotlib 3D axes; if None, creates a new figure with 3D projection.
         config: Styling options; uses defaults if None.
         show_tensor_labels: Override config; None uses config value.

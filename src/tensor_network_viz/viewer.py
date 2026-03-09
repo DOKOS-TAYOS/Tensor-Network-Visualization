@@ -27,8 +27,8 @@ def show_tensor_network(
     """Render a tensor network and optionally display the figure.
 
     Args:
-        network: Tensor network object (must expose 'nodes' or 'leaf_nodes' with
-            nodes having 'edges', 'axes_names', and 'name' attributes).
+        network: Tensor network object (TensorNetwork with 'nodes'/'leaf_nodes',
+            or a list/tuple of nodes with 'edges', 'axes_names', and 'name').
         engine: Rendering engine; currently only "tensorkrowch" is supported.
         view: "2d" or "3d" visualization mode.
         config: Optional styling; uses defaults if None.

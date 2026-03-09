@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tensor-network-visualization"
-version = "1.0.0"
+version = "1.1.0"
 description = "Minimal Matplotlib visualizations for TensorKrowch tensor networks."
 authors = [{ name = "Alejandro Mata Ali" }]
 readme = "README.md"

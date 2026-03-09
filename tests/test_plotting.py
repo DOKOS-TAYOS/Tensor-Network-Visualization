@@ -60,6 +60,34 @@ def close_figures():
     plt.close("all")
 
 
+def test_build_graph_disconnected_components() -> None:
+    """Disconnected graph: two components (A-B and C-D) in one list."""
+    a = DummyNode("A", ["bond"])
+    b = DummyNode("B", ["bond"])
+    connect(a, 0, b, 0)
+    c = DummyNode("C", ["bond"])
+    d = DummyNode("D", ["bond"])
+    connect(c, 0, d, 0)
+
+    graph = _build_graph([a, b, c, d])
+    assert len(graph.nodes) == 4
+    assert len(graph.edges) == 2  # A-B and C-D, no cross-edges
+    kinds = {e.kind for e in graph.edges}
+    assert kinds == {"contraction"}
+
+
+def test_build_graph_accepts_list_of_nodes() -> None:
+    """List of nodes works the same as TensorNetwork with nodes."""
+    left = DummyNode("A", ["left"])
+    right = DummyNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    graph = _build_graph([left, right])
+    assert len(graph.nodes) == 2
+    assert len(graph.edges) == 1
+    assert graph.edges[0].kind == "contraction"
+
+
 def test_build_graph_uses_leaf_nodes_for_dangling_edge() -> None:
     node = DummyNode("A", ["left"])
     connect(node, 0, name="edge")
@@ -77,6 +105,20 @@ def test_plot_tensorkrowch_network_2d_draws_simple_contraction() -> None:
     connect(left, 0, right, 0, name="bond")
 
     fig, ax = plot_tensorkrowch_network_2d(DummyNetwork(nodes=[left, right]))
+
+    labels = {text.get_text() for text in ax.texts}
+    assert fig is ax.figure
+    assert labels >= {"A", "B", "left<->right"}
+    assert len(ax.lines) == 1
+
+
+def test_plot_tensorkrowch_network_2d_accepts_list_of_nodes() -> None:
+    """plot_tensorkrowch_network_2d accepts list of nodes directly."""
+    left = DummyNode("A", ["left"])
+    right = DummyNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = plot_tensorkrowch_network_2d([left, right])
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure

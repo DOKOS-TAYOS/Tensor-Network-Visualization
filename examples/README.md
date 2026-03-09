@@ -7,9 +7,13 @@ Run from the project root (with venv activated or `python` from `.venv`).
 ```bash
 python examples/tensor_network_demo.py mps 2d
 python examples/tensor_network_demo.py weird 3d
+python examples/tensor_network_demo.py disconnected 2d
+python examples/tensor_network_demo.py mps 2d --from-list
 ```
 
-Available networks: `mps`, `mpo`, `peps`, `weird`. Views: `2d`, `3d`.
+- **Networks:** `disconnected`, `mps`, `mpo`, `peps`, `weird`
+- **Views:** `2d`, `3d`
+- **`--from-list`:** Pass the network as a list of nodes instead of the TensorNetwork object
 
 ## tn_tsp.py
 

@@ -46,29 +46,41 @@ For runtime-only (editable install without dev tools):
 
 ## Usage
 
-Networks must expose `nodes` or `leaf_nodes` (iterable or dict). Each node must have `edges`, `axes_names`, and `name`. Each edge must have `node1`, `node2`, and `name`.
+### Input formats
+
+You can pass either:
+
+- **TensorNetwork** — object with `nodes` or `leaf_nodes` (iterable or dict)
+- **List or tuple of nodes** — e.g. `[node1, node2, ...]` for a subset or nodes from different networks
+
+Each node must have `edges`, `axes_names`, and `name`. Each edge must have `node1`, `node2`, and `name`.
+
+When passing a subset of nodes, edges to nodes outside the list are drawn as dangling legs. Disconnected components (e.g. nodes from different networks) are supported.
 
 ```python
 from tensor_network_viz import PlotConfig, show_tensor_network
 
 config = PlotConfig(figsize=(8, 6))
-fig, ax = show_tensor_network(
-    network,
-    engine="tensorkrowch",
-    view="2d",
-    config=config,
-)
+
+# From a TensorNetwork
+fig, ax = show_tensor_network(network, engine="tensorkrowch", view="2d", config=config)
+
+# From a list of nodes (subset, or nodes without a TensorNetwork)
+fig, ax = show_tensor_network([node1, node2, node3], engine="tensorkrowch", view="2d", config=config)
 ```
 
 You can also use the TensorKrowch-specific helpers directly:
 
 ```python
 from tensor_network_viz.tensorkrowch import plot_tensorkrowch_network_2d, plot_tensorkrowch_network_3d
+
+plot_tensorkrowch_network_2d(network)   # or plot_tensorkrowch_network_2d([node1, node2, ...])
+plot_tensorkrowch_network_3d(network)
 ```
 
 ## Project layout
 
-- `examples/` — Demo scripts. Run `python examples/tensor_network_demo.py mps 2d` from the project root.
+- `examples/` — Demo scripts. Run `python examples/tensor_network_demo.py mps 2d` from the project root. Use `--from-list` to pass nodes as a list instead of the TensorNetwork.
 - `scripts/` — Utility scripts (e.g. `clean.py` to remove caches and build artifacts).
 
 ## Development
