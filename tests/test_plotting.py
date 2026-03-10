@@ -12,21 +12,25 @@ from tensor_network_viz.tensorkrowch import (
     plot_tensorkrowch_network_2d,
     plot_tensorkrowch_network_3d,
 )
-from tensor_network_viz.tensorkrowch.graph import _build_graph
+from tensor_network_viz.tensorkrowch.graph import _build_graph, _get_network_nodes
+from tensor_network_viz.tensornetwork import (
+    plot_tensornetwork_network_2d,
+    plot_tensornetwork_network_3d,
+)
 
 
 class DummyEdge:
     def __init__(self, name: str | None = None) -> None:
         self.name = name
-        self.node1 = None
-        self.node2 = None
+        self.node1: DummyNode | None = None
+        self.node2: DummyNode | None = None
 
 
 class DummyNode:
     def __init__(self, name: str, axes_names: list[str]) -> None:
         self.name = name
         self.axes_names = list(axes_names)
-        self.edges = [None] * len(axes_names)
+        self.edges: list[DummyEdge | None] = [None] * len(axes_names)
 
 
 class DummyNetwork:
@@ -88,6 +92,27 @@ def test_build_graph_accepts_list_of_nodes() -> None:
     assert graph.edges[0].kind == "contraction"
 
 
+def test_get_network_nodes_sorts_unordered_iterables_stably() -> None:
+    left = DummyNode("B", ["left"])
+    right = DummyNode("A", ["right"])
+
+    nodes = _get_network_nodes({left, right})
+
+    assert [node.name for node in nodes] == ["A", "B"]
+
+
+def test_build_graph_accepts_generic_iterables_and_deduplicates_nodes() -> None:
+    left = DummyNode("A", ["left"])
+    right = DummyNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    graph = _build_graph(node for node in [left, right, left])
+
+    assert len(graph.nodes) == 2
+    assert len(graph.edges) == 1
+    assert graph.edges[0].kind == "contraction"
+
+
 def test_build_graph_uses_leaf_nodes_for_dangling_edge() -> None:
     node = DummyNode("A", ["left"])
     connect(node, 0, name="edge")
@@ -119,6 +144,19 @@ def test_plot_tensorkrowch_network_2d_accepts_list_of_nodes() -> None:
     connect(left, 0, right, 0, name="bond")
 
     fig, ax = plot_tensorkrowch_network_2d([left, right])
+
+    labels = {text.get_text() for text in ax.texts}
+    assert fig is ax.figure
+    assert labels >= {"A", "B", "left<->right"}
+    assert len(ax.lines) == 1
+
+
+def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
+    left = DummyNode("A", ["left"])
+    right = DummyNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = plot_tensornetwork_network_2d({left, right})
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
@@ -167,6 +205,18 @@ def test_plot_tensorkrowch_network_3d_returns_3d_axes() -> None:
     assert len(ax.lines) == 1
 
 
+def test_plot_tensornetwork_network_3d_returns_3d_axes() -> None:
+    left = DummyNode("A", ["left"])
+    right = DummyNode("B", ["right"])
+    connect(left, 0, right, 0)
+
+    fig, ax = plot_tensornetwork_network_3d([left, right])
+
+    assert fig is ax.figure
+    assert ax.name == "3d"
+    assert len(ax.lines) == 1
+
+
 def test_plot_tensorkrowch_network_3d_rejects_2d_axis() -> None:
     node = DummyNode("A", ["left"])
     connect(node, 0, name="edge")
@@ -174,6 +224,17 @@ def test_plot_tensorkrowch_network_3d_rejects_2d_axis() -> None:
 
     with pytest.raises(ValueError, match="3D"):
         plot_tensorkrowch_network_3d(DummyNetwork(nodes=[node]), ax=ax)
+
+    plt.close(fig)
+
+
+def test_plot_tensornetwork_network_3d_rejects_2d_axis() -> None:
+    node = DummyNode("A", ["left"])
+    connect(node, 0, name="edge")
+    fig, ax = plt.subplots()
+
+    with pytest.raises(ValueError, match="plot_tensornetwork_network_3d"):
+        plot_tensornetwork_network_3d([node], ax=ax)
 
     plt.close(fig)
 
@@ -195,4 +256,30 @@ def test_show_tensor_network_displays_selected_renderer(monkeypatch: pytest.Monk
     )
 
     assert shown["value"] is True
+    assert fig is ax.figure
+
+
+def test_show_tensor_network_supports_tensornetwork_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    node = DummyNode("A", ["left"])
+    connect(node, 0, name="edge")
+    called = {"value": False}
+
+    def fake_plot(network, *, config):
+        called["value"] = True
+        assert network == [node]
+        fig, ax = plt.subplots()
+        return fig, ax
+
+    monkeypatch.setattr(viewer_module, "plot_tensornetwork_network_2d", fake_plot)
+    fig, ax = show_tensor_network(
+        [node],
+        engine="tensornetwork",
+        view="2d",
+        config=PlotConfig(figsize=(4, 3)),
+        show=False,
+    )
+
+    assert called["value"] is True
     assert fig is ax.figure

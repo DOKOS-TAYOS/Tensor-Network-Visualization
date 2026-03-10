@@ -1,4 +1,4 @@
-"""Main entry points for TensorKrowch tensor network plotting."""
+"""Main entry points and shared helpers for tensor network plotting."""
 
 from __future__ import annotations
 
@@ -66,13 +66,14 @@ def _prepare_axes_2d(
     ax: Axes | None,
     *,
     figsize: tuple[float, float] | None,
+    renderer_name: str,
 ) -> tuple[Figure, Axes]:
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize or (14, 10))
         return fig, ax
 
     if getattr(ax, "name", "") == "3d":
-        raise ValueError("plot_tensorkrowch_network_2d requires a 2D Matplotlib axis.")
+        raise ValueError(f"{renderer_name} requires a 2D Matplotlib axis.")
     return ax.figure, ax
 
 
@@ -80,6 +81,7 @@ def _prepare_axes_3d(
     ax: Axes | Axes3D | None,
     *,
     figsize: tuple[float, float] | None,
+    renderer_name: str,
 ) -> tuple[Figure, Axes3D]:
     if ax is None:
         fig = plt.figure(figsize=figsize or (14, 10))
@@ -87,8 +89,74 @@ def _prepare_axes_3d(
         return fig, cast(Axes3D, created_ax)
 
     if getattr(ax, "name", "") != "3d":
-        raise ValueError("plot_tensorkrowch_network_3d requires a 3D Matplotlib axis.")
+        raise ValueError(f"{renderer_name} requires a 3D Matplotlib axis.")
     return ax.figure, cast(Axes3D, ax)
+
+
+def _plot_network_2d(
+    network: Any,
+    *,
+    ax: Axes | None = None,
+    config: PlotConfig | None = None,
+    show_tensor_labels: bool | None = None,
+    show_index_labels: bool | None = None,
+    seed: int = 0,
+    renderer_name: str,
+) -> tuple[Figure, Axes]:
+    style = config or PlotConfig()
+    graph = _build_graph(network)
+    fig, ax = _prepare_axes_2d(ax=ax, figsize=style.figsize, renderer_name=renderer_name)
+    if style.positions is not None:
+        positions = _apply_custom_positions(graph, style.positions, dimensions=2)
+    else:
+        positions = _compute_layout(graph, dimensions=2, seed=seed)
+    directions = _compute_axis_directions(graph, positions, dimensions=2)
+    scale = _compute_scale(len(graph.nodes))
+    _draw_2d(
+        ax=ax,
+        graph=graph,
+        positions=positions,
+        directions=directions,
+        show_tensor_labels=_resolve_flag(show_tensor_labels, style.show_tensor_labels),
+        show_index_labels=_resolve_flag(show_index_labels, style.show_index_labels),
+        config=style,
+        scale=scale,
+    )
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
+    return fig, ax
+
+
+def _plot_network_3d(
+    network: Any,
+    *,
+    ax: Axes | Axes3D | None = None,
+    config: PlotConfig | None = None,
+    show_tensor_labels: bool | None = None,
+    show_index_labels: bool | None = None,
+    seed: int = 0,
+    renderer_name: str,
+) -> tuple[Figure, Axes3D]:
+    style = config or PlotConfig()
+    graph = _build_graph(network)
+    fig, ax = _prepare_axes_3d(ax=ax, figsize=style.figsize, renderer_name=renderer_name)
+    if style.positions is not None:
+        positions = _apply_custom_positions(graph, style.positions, dimensions=3)
+    else:
+        positions = _compute_layout(graph, dimensions=3, seed=seed)
+    directions = _compute_axis_directions(graph, positions, dimensions=3)
+    scale = _compute_scale(len(graph.nodes))
+    _draw_3d(
+        ax=ax,
+        graph=graph,
+        positions=positions,
+        directions=directions,
+        show_tensor_labels=_resolve_flag(show_tensor_labels, style.show_tensor_labels),
+        show_index_labels=_resolve_flag(show_index_labels, style.show_index_labels),
+        config=style,
+        scale=scale,
+    )
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
+    return fig, ax
 
 
 def plot_tensorkrowch_network_2d(
@@ -113,27 +181,15 @@ def plot_tensorkrowch_network_2d(
     Returns:
         Tuple of (Figure, Axes) for further customization.
     """
-    style = config or PlotConfig()
-    graph = _build_graph(network)
-    fig, ax = _prepare_axes_2d(ax=ax, figsize=style.figsize)
-    if style.positions is not None:
-        positions = _apply_custom_positions(graph, style.positions, dimensions=2)
-    else:
-        positions = _compute_layout(graph, dimensions=2, seed=seed)
-    directions = _compute_axis_directions(graph, positions, dimensions=2)
-    scale = _compute_scale(len(graph.nodes))
-    _draw_2d(
+    return _plot_network_2d(
+        network,
         ax=ax,
-        graph=graph,
-        positions=positions,
-        directions=directions,
-        show_tensor_labels=_resolve_flag(show_tensor_labels, style.show_tensor_labels),
-        show_index_labels=_resolve_flag(show_index_labels, style.show_index_labels),
-        config=style,
-        scale=scale,
+        config=config,
+        show_tensor_labels=show_tensor_labels,
+        show_index_labels=show_index_labels,
+        seed=seed,
+        renderer_name="plot_tensorkrowch_network_2d",
     )
-    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
-    return fig, ax
 
 
 def plot_tensorkrowch_network_3d(
@@ -158,24 +214,12 @@ def plot_tensorkrowch_network_3d(
     Returns:
         Tuple of (Figure, Axes3D) for further customization.
     """
-    style = config or PlotConfig()
-    graph = _build_graph(network)
-    fig, ax = _prepare_axes_3d(ax=ax, figsize=style.figsize)
-    if style.positions is not None:
-        positions = _apply_custom_positions(graph, style.positions, dimensions=3)
-    else:
-        positions = _compute_layout(graph, dimensions=3, seed=seed)
-    directions = _compute_axis_directions(graph, positions, dimensions=3)
-    scale = _compute_scale(len(graph.nodes))
-    _draw_3d(
+    return _plot_network_3d(
+        network,
         ax=ax,
-        graph=graph,
-        positions=positions,
-        directions=directions,
-        show_tensor_labels=_resolve_flag(show_tensor_labels, style.show_tensor_labels),
-        show_index_labels=_resolve_flag(show_index_labels, style.show_index_labels),
-        config=style,
-        scale=scale,
+        config=config,
+        show_tensor_labels=show_tensor_labels,
+        show_index_labels=show_index_labels,
+        seed=seed,
+        renderer_name="plot_tensorkrowch_network_3d",
     )
-    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
-    return fig, ax

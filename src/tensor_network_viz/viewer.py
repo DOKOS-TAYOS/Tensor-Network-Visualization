@@ -12,6 +12,10 @@ from .tensorkrowch import (
     plot_tensorkrowch_network_2d,
     plot_tensorkrowch_network_3d,
 )
+from .tensornetwork import (
+    plot_tensornetwork_network_2d,
+    plot_tensornetwork_network_3d,
+)
 
 RenderedAxes: TypeAlias = Axes | Axes3D
 
@@ -27,9 +31,11 @@ def show_tensor_network(
     """Render a tensor network and optionally display the figure.
 
     Args:
-        network: Tensor network object (TensorNetwork with 'nodes'/'leaf_nodes',
-            or a list/tuple of nodes with 'edges', 'axes_names', and 'name').
-        engine: Rendering engine; currently only "tensorkrowch" is supported.
+        network: Tensor network object (with 'nodes'/'leaf_nodes'), or an
+            iterable of nodes with 'edges', 'axes_names' or 'axis_names',
+            and 'name'.
+        engine: Rendering engine; supported values are "tensorkrowch" and
+            "tensornetwork".
         view: "2d" or "3d" visualization mode.
         config: Optional styling; uses defaults if None.
         show: If True, call plt.show() to display the figure. Set False when
@@ -49,6 +55,11 @@ def show_tensor_network(
             fig, ax = plot_tensorkrowch_network_2d(network, config=style)
         else:
             fig, ax = plot_tensorkrowch_network_3d(network, config=style)
+    elif engine == "tensornetwork":
+        if view == "2d":
+            fig, ax = plot_tensornetwork_network_2d(network, config=style)
+        else:
+            fig, ax = plot_tensornetwork_network_3d(network, config=style)
     else:
         raise ValueError(f"Unsupported tensor network engine: {engine}")
 

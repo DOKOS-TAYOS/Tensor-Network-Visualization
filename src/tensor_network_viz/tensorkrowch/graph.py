@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -37,17 +39,56 @@ class _GraphData:
     edges: tuple[_EdgeData, ...]
 
 
+def _is_unordered_collection(value: Any) -> bool:
+    return isinstance(value, AbstractSet) and not isinstance(value, (str, bytes, bytearray))
+
+
+def _sortable_node_key(node: Any) -> tuple[Any, ...]:
+    axes_names = getattr(node, "axes_names", getattr(node, "axis_names", ()))
+    if isinstance(axes_names, dict):
+        axes_names = axes_names.values()
+    try:
+        normalized_axes = tuple(_stringify(item) for item in axes_names)
+    except TypeError:
+        normalized_axes = ()
+
+    edges = getattr(node, "edges", ())
+    try:
+        degree = len(edges)
+    except TypeError:
+        degree = 0
+
+    return (
+        type(node).__module__,
+        type(node).__qualname__,
+        _stringify(getattr(node, "name", None)),
+        normalized_axes,
+        degree,
+    )
+
+
 def _get_network_nodes(network: Any) -> list[Any]:
-    """Extract node list from a TensorNetwork or from a list/tuple of nodes."""
-    if isinstance(network, (list, tuple)):
-        raw_nodes = network
+    """Extract node list from a network object or an iterable of nodes."""
+    if isinstance(network, dict):
+        raw_nodes = network.values()
+        should_sort = False
     elif hasattr(network, "nodes"):
         raw_nodes = network.nodes
+        should_sort = _is_unordered_collection(raw_nodes)
     elif hasattr(network, "leaf_nodes"):
         raw_nodes = network.leaf_nodes
+        should_sort = _is_unordered_collection(raw_nodes)
+    elif isinstance(network, (str, bytes, bytearray)):
+        raise TypeError(
+            "Input must be an iterable of nodes, or an object with "
+            "'nodes' or 'leaf_nodes' attribute."
+        )
+    elif isinstance(network, Iterable):
+        raw_nodes = network
+        should_sort = _is_unordered_collection(raw_nodes)
     else:
         raise TypeError(
-            "Input must be a list/tuple of nodes, or an object with "
+            "Input must be an iterable of nodes, or an object with "
             "'nodes' or 'leaf_nodes' attribute."
         )
 
@@ -68,6 +109,9 @@ def _get_network_nodes(network: Any) -> list[Any]:
             continue
         seen.add(node_id)
         unique_nodes.append(node)
+
+    if should_sort:
+        unique_nodes.sort(key=_sortable_node_key)
     return unique_nodes
 
 
@@ -80,6 +124,15 @@ def _iterable_attr(obj: Any, attr_name: str, object_name: str) -> list[Any]:
     except TypeError as exc:
         msg = f"{object_name.capitalize()} attribute '{attr_name}' must be iterable."
         raise TypeError(msg) from exc
+
+
+def _iterable_attr_alias(obj: Any, attr_names: tuple[str, ...], object_name: str) -> list[Any]:
+    for attr_name in attr_names:
+        if hasattr(obj, attr_name):
+            return _iterable_attr(obj, attr_name, object_name)
+
+    names = "', '".join(attr_names)
+    raise TypeError(f"{object_name.capitalize()} is missing required attribute one of '{names}'.")
 
 
 def _require_attr(obj: Any, attr_name: str, object_name: str) -> Any:
@@ -123,21 +176,24 @@ def _build_graph(network: Any) -> _GraphData:
 
     for node in node_refs:
         name = _stringify(_require_attr(node, "name", "node"))
-        edges = tuple(_iterable_attr(node, "edges", "node"))
-        axes_names = tuple(_stringify(item) for item in _iterable_attr(node, "axes_names", "node"))
-        if len(edges) != len(axes_names):
+        node_edges = tuple(_iterable_attr(node, "edges", "node"))
+        axes_names = tuple(
+            _stringify(item)
+            for item in _iterable_attr_alias(node, ("axes_names", "axis_names"), "node")
+        )
+        if len(node_edges) != len(axes_names):
             raise TypeError(
-                f"Node {name!r} has {len(edges)} edges but {len(axes_names)} axes_names."
+                f"Node {name!r} has {len(node_edges)} edges but {len(axes_names)} axes_names."
             )
 
         node_id = id(node)
         nodes[node_id] = _NodeData(
             name=name,
             axes_names=axes_names,
-            degree=len(edges),
+            degree=len(node_edges),
         )
 
-        for axis_index, edge in enumerate(edges):
+        for axis_index, edge in enumerate(node_edges):
             if edge is None:
                 continue
             edge_id = id(edge)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
-EngineName: TypeAlias = Literal["tensorkrowch"]
+EngineName: TypeAlias = Literal["tensorkrowch", "tensornetwork"]
 ViewName: TypeAlias = Literal["2d", "3d"]
 
 
@@ -18,9 +18,9 @@ _DEFAULT_LINE_WIDTH_3D = 1.6
 class PlotConfig:
     """Configuration for tensor network plot styling.
 
-    Input may be a TensorNetwork (with `nodes` or `leaf_nodes`), or a list/tuple
-    of nodes. Each node must have `edges`, `axes_names`, and `name`. Each edge
-    must have `node1`, `node2`, and `name`.
+    Input may be a network-like object exposing `nodes` or `leaf_nodes`, or any
+    iterable of nodes. Each node must have `edges`, `axes_names` or
+    `axis_names`, and `name`. Each edge must have `node1`, `node2`, and `name`.
 
     Attributes:
         node_color: Fill color for tensor nodes (hex or named color).
