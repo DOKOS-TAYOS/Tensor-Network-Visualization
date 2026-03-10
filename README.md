@@ -94,9 +94,19 @@ plot_tensornetwork_network_2d([node1, node2, node3])
 plot_tensornetwork_network_3d([node1, node2, node3])
 ```
 
+## Internal architecture
+
+The public API is split by backend, but the render pipeline is now shared:
+
+- `tensor_network_viz._core` contains the normalized graph model, layout, curve geometry, drawing, and shared renderer.
+- `tensor_network_viz.tensorkrowch` contains the TensorKrowch adapter that converts TensorKrowch inputs into the shared graph model.
+- `tensor_network_viz.tensornetwork` contains the TensorNetwork adapter that converts TensorNetwork node collections into the shared graph model.
+
+This means TensorKrowch and TensorNetwork are not converted into each other. Each backend normalizes its own input to the common `_GraphData` structure and the shared core handles the rest.
+
 ## Project layout
 
-- `examples/` - Demo scripts. Run `python examples/tensor_network_demo.py mps 2d` for TensorKrowch or `python examples/tensornetwork_demo.py mps 2d` for TensorNetwork.
+- `examples/` - Demo scripts. Run `python examples/tensorkrowch_demo.py mps 2d` for TensorKrowch or `python examples/tensornetwork_demo.py mps 2d` for TensorNetwork.
 - `scripts/` - Utility scripts (for example `clean.py` to remove caches and build artifacts).
 
 ## Development

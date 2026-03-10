@@ -27,10 +27,10 @@ Available network examples:
   - disconnected
 
 Examples:
-  python examples/tensor_network_demo.py mps 2d
-  python examples/tensor_network_demo.py weird 3d
-  python examples/tensor_network_demo.py mps 2d --from-list
-  python examples/tensor_network_demo.py disconnected 2d
+  python examples/tensorkrowch_demo.py mps 2d
+  python examples/tensorkrowch_demo.py weird 3d
+  python examples/tensorkrowch_demo.py mps 2d --from-list
+  python examples/tensorkrowch_demo.py disconnected 2d
 """
 
 

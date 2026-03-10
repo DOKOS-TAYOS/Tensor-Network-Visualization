@@ -2,13 +2,13 @@
 
 Run from the project root (with venv activated or `python` from `.venv`).
 
-## tensor_network_demo.py
+## tensorkrowch_demo.py
 
 ```bash
-python examples/tensor_network_demo.py mps 2d
-python examples/tensor_network_demo.py weird 3d
-python examples/tensor_network_demo.py disconnected 2d
-python examples/tensor_network_demo.py mps 2d --from-list
+python examples/tensorkrowch_demo.py mps 2d
+python examples/tensorkrowch_demo.py weird 3d
+python examples/tensorkrowch_demo.py disconnected 2d
+python examples/tensorkrowch_demo.py mps 2d --from-list
 ```
 
 - **Networks:** `disconnected`, `mps`, `mpo`, `peps`, `weird`
@@ -29,6 +29,12 @@ python examples/tensornetwork_demo.py mps 2d --save mps.png --no-show
 - **Input:** Always passes a list of `tensornetwork.Node`
 - **`--save PATH`:** Save the rendered figure
 - **`--no-show`:** Do not open the interactive Matplotlib window
+
+## Architecture note
+
+- `tensor_network_viz._core`: Common graph, layout, drawing, and rendering pipeline
+- `tensor_network_viz.tensorkrowch`: TensorKrowch-specific input adapter plus public helpers
+- `tensor_network_viz.tensornetwork`: TensorNetwork-specific input adapter plus public helpers
 
 ## tn_tsp.py
 
