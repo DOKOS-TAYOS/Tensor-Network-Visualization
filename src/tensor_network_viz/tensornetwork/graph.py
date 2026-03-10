@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from collections.abc import Set as AbstractSet
 from typing import Any
 
 from .._core.graph import (
@@ -13,21 +12,13 @@ from .._core.graph import (
     _GraphData,
     _NodeData,
 )
-
-
-def _is_unordered_collection(value: Any) -> bool:
-    return isinstance(value, AbstractSet) and not isinstance(value, (str, bytes, bytearray))
-
-
-def _stringify(value: Any) -> str:
-    return "" if value is None else str(value)
-
-
-def _optional_string(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = str(value)
-    return text or None
+from .._core.graph_utils import (
+    _is_unordered_collection,
+    _iterable_attr,
+    _optional_string,
+    _require_attr,
+    _stringify,
+)
 
 
 def _sortable_node_key(node: Any) -> tuple[Any, ...]:
@@ -52,23 +43,6 @@ def _sortable_node_key(node: Any) -> tuple[Any, ...]:
         normalized_axes,
         degree,
     )
-
-
-def _require_attr(obj: Any, attr_name: str, object_name: str) -> Any:
-    if not hasattr(obj, attr_name):
-        raise TypeError(f"{object_name.capitalize()} is missing required attribute '{attr_name}'.")
-    return getattr(obj, attr_name)
-
-
-def _iterable_attr(obj: Any, attr_name: str, object_name: str) -> list[Any]:
-    value = _require_attr(obj, attr_name, object_name)
-    if isinstance(value, dict):
-        return list(value.values())
-    try:
-        return list(value)
-    except TypeError as exc:
-        msg = f"{object_name.capitalize()} attribute '{attr_name}' must be iterable."
-        raise TypeError(msg) from exc
 
 
 def _get_network_nodes(nodes: Any) -> list[Any]:

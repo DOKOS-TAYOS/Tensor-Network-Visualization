@@ -14,9 +14,7 @@ from ..config import PlotConfig
 from .draw_2d import _draw_2d
 from .draw_3d import _draw_3d
 from .graph import _GraphData
-from .layout import _compute_axis_directions, _compute_layout
-
-NodePositions = dict[int, np.ndarray]
+from .layout import NodePositions, _compute_axis_directions, _compute_layout
 
 
 def _apply_custom_positions(

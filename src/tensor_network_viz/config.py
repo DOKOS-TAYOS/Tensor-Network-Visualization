@@ -24,7 +24,6 @@ class PlotConfig:
 
     Attributes:
         node_color: Fill color for tensor nodes (hex or named color).
-        edge_color: Color for generic edges (currently unused; bond/dangling take precedence).
         label_color: Color for axis and edge labels.
         bond_edge_color: Color for contraction edges between tensors.
         dangling_edge_color: Color for dangling index stubs.
@@ -45,7 +44,6 @@ class PlotConfig:
     node_color: str = "#E8E8E8"
     node_edge_color: str = "#2D3748"
     tensor_label_color: str = "#1A202C"
-    edge_color: str = "#202B33"
     label_color: str = "#0C1319"
     bond_edge_color: str = "#00008B"
     dangling_edge_color: str = "#8B0000"

@@ -35,4 +35,15 @@ Runtime dependencies relevant to `tensor-network-visualization`.
 | torch | 2.10.0 | BSD-3-Clause | https://pytorch.org |
 | typing_extensions | 4.15.0 | PSF-2.0 | https://github.com/python/typing_extensions/issues |
 
-Development-only tooling such as `pytest`, `ruff`, `pip`, and `setuptools` is intentionally excluded.
+## Optional dependencies (dev)
+
+When installing with `[dev]`, the following additional packages are used:
+
+| Package | Version | License | Home page |
+| --- | --- | --- | --- |
+| tensornetwork | 0.4.6 | Apache-2.0 | https://github.com/google/TensorNetwork |
+| graphviz | 0.21 | MIT | https://github.com/xflr6/graphviz |
+| h5py | 3.16.0 | BSD-3-Clause | https://www.h5py.org/ |
+| scipy | 1.17.1 | BSD-3-Clause | https://scipy.org/ |
+
+Development-only tooling such as `pytest`, `ruff`, `pyright`, `pip`, and `setuptools` is intentionally excluded.
