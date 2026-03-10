@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -6,31 +11,53 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
+import tensor_network_viz.tensorkrowch.graph as tk_graph_module
+import tensor_network_viz.tensorkrowch.renderer as tk_renderer_module
+import tensor_network_viz.tensornetwork.graph as tn_graph_module
+import tensor_network_viz.tensornetwork.renderer as tn_renderer_module
 import tensor_network_viz.viewer as viewer_module
 from tensor_network_viz import PlotConfig, show_tensor_network
 from tensor_network_viz.tensorkrowch import (
     plot_tensorkrowch_network_2d,
     plot_tensorkrowch_network_3d,
 )
-from tensor_network_viz.tensorkrowch.graph import _build_graph, _get_network_nodes
+from tensor_network_viz.tensorkrowch.graph import (
+    _build_graph as _build_tensorkrowch_graph,
+)
+from tensor_network_viz.tensorkrowch.graph import (
+    _get_network_nodes as _get_tensorkrowch_nodes,
+)
 from tensor_network_viz.tensornetwork import (
     plot_tensornetwork_network_2d,
     plot_tensornetwork_network_3d,
+)
+from tensor_network_viz.tensornetwork.graph import (
+    _build_graph as _build_tensornetwork_graph,
+)
+from tensor_network_viz.tensornetwork.graph import (
+    _get_network_nodes as _get_tensornetwork_nodes,
 )
 
 
 class DummyEdge:
     def __init__(self, name: str | None = None) -> None:
         self.name = name
-        self.node1: DummyNode | None = None
-        self.node2: DummyNode | None = None
+        self.node1: Any = None
+        self.node2: Any = None
 
 
-class DummyNode:
+class DummyTensorKrowchNode:
     def __init__(self, name: str, axes_names: list[str]) -> None:
         self.name = name
         self.axes_names = list(axes_names)
         self.edges: list[DummyEdge | None] = [None] * len(axes_names)
+
+
+class DummyTensorNetworkNode:
+    def __init__(self, name: str, axis_names: list[str]) -> None:
+        self.name = name
+        self.axis_names = list(axis_names)
+        self.edges: list[DummyEdge | None] = [None] * len(axis_names)
 
 
 class DummyNetwork:
@@ -42,9 +69,9 @@ class DummyNetwork:
 
 
 def connect(
-    node1: DummyNode,
+    node1: Any,
     axis1: int,
-    node2: DummyNode | None = None,
+    node2: Any | None = None,
     axis2: int | None = None,
     *,
     name: str | None = None,
@@ -64,59 +91,59 @@ def close_figures():
     plt.close("all")
 
 
-def test_build_graph_disconnected_components() -> None:
-    """Disconnected graph: two components (A-B and C-D) in one list."""
-    a = DummyNode("A", ["bond"])
-    b = DummyNode("B", ["bond"])
+def test_build_tensorkrowch_graph_disconnected_components() -> None:
+    a = DummyTensorKrowchNode("A", ["bond"])
+    b = DummyTensorKrowchNode("B", ["bond"])
     connect(a, 0, b, 0)
-    c = DummyNode("C", ["bond"])
-    d = DummyNode("D", ["bond"])
+    c = DummyTensorKrowchNode("C", ["bond"])
+    d = DummyTensorKrowchNode("D", ["bond"])
     connect(c, 0, d, 0)
 
-    graph = _build_graph([a, b, c, d])
+    graph = _build_tensorkrowch_graph([a, b, c, d])
+
     assert len(graph.nodes) == 4
-    assert len(graph.edges) == 2  # A-B and C-D, no cross-edges
-    kinds = {e.kind for e in graph.edges}
-    assert kinds == {"contraction"}
+    assert len(graph.edges) == 2
+    assert {edge.kind for edge in graph.edges} == {"contraction"}
 
 
-def test_build_graph_accepts_list_of_nodes() -> None:
-    """List of nodes works the same as TensorNetwork with nodes."""
-    left = DummyNode("A", ["left"])
-    right = DummyNode("B", ["right"])
+def test_build_tensorkrowch_graph_accepts_list_of_nodes() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
 
-    graph = _build_graph([left, right])
+    graph = _build_tensorkrowch_graph([left, right])
+
     assert len(graph.nodes) == 2
     assert len(graph.edges) == 1
     assert graph.edges[0].kind == "contraction"
 
 
-def test_get_network_nodes_sorts_unordered_iterables_stably() -> None:
-    left = DummyNode("B", ["left"])
-    right = DummyNode("A", ["right"])
+def test_get_tensorkrowch_nodes_sorts_unordered_iterables_stably() -> None:
+    left = DummyTensorKrowchNode("B", ["left"])
+    right = DummyTensorKrowchNode("A", ["right"])
 
-    nodes = _get_network_nodes({left, right})
+    nodes = _get_tensorkrowch_nodes({left, right})
 
     assert [node.name for node in nodes] == ["A", "B"]
 
 
-def test_build_graph_accepts_generic_iterables_and_deduplicates_nodes() -> None:
-    left = DummyNode("A", ["left"])
-    right = DummyNode("B", ["right"])
+def test_build_tensorkrowch_graph_accepts_generic_iterables_and_deduplicates_nodes() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
 
-    graph = _build_graph(node for node in [left, right, left])
+    graph = _build_tensorkrowch_graph(node for node in [left, right, left])
 
     assert len(graph.nodes) == 2
     assert len(graph.edges) == 1
     assert graph.edges[0].kind == "contraction"
 
 
-def test_build_graph_uses_leaf_nodes_for_dangling_edge() -> None:
-    node = DummyNode("A", ["left"])
+def test_build_tensorkrowch_graph_uses_leaf_nodes_for_dangling_edge() -> None:
+    node = DummyTensorKrowchNode("A", ["left"])
     connect(node, 0, name="edge")
-    graph = _build_graph(DummyNetwork(leaf_nodes=[node]))
+
+    graph = _build_tensorkrowch_graph(DummyNetwork(leaf_nodes=[node]))
 
     assert list(graph.nodes.values())[0].name == "A"
     assert len(graph.edges) == 1
@@ -124,9 +151,58 @@ def test_build_graph_uses_leaf_nodes_for_dangling_edge() -> None:
     assert graph.edges[0].label == "left"
 
 
+def test_tensorkrowch_backend_requires_axes_names() -> None:
+    node = DummyTensorNetworkNode("A", ["left"])
+    connect(node, 0, name="edge")
+
+    with pytest.raises(TypeError, match="axes_names"):
+        _build_tensorkrowch_graph([node])
+
+
+def test_build_tensornetwork_graph_accepts_iterable_of_nodes() -> None:
+    left = DummyTensorNetworkNode("A", ["left"])
+    right = DummyTensorNetworkNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    graph = _build_tensornetwork_graph([left, right])
+
+    assert len(graph.nodes) == 2
+    assert len(graph.edges) == 1
+    assert graph.edges[0].kind == "contraction"
+
+
+def test_get_tensornetwork_nodes_sorts_unordered_iterables_stably() -> None:
+    left = DummyTensorNetworkNode("B", ["left"])
+    right = DummyTensorNetworkNode("A", ["right"])
+
+    nodes = _get_tensornetwork_nodes({left, right})
+
+    assert [node.name for node in nodes] == ["A", "B"]
+
+
+def test_build_tensornetwork_graph_accepts_generic_iterables_and_deduplicates_nodes() -> None:
+    left = DummyTensorNetworkNode("A", ["left"])
+    right = DummyTensorNetworkNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    graph = _build_tensornetwork_graph(node for node in [left, right, left])
+
+    assert len(graph.nodes) == 2
+    assert len(graph.edges) == 1
+    assert graph.edges[0].kind == "contraction"
+
+
+def test_tensornetwork_backend_requires_axis_names() -> None:
+    node = DummyTensorKrowchNode("A", ["left"])
+    connect(node, 0, name="edge")
+
+    with pytest.raises(TypeError, match="axis_names"):
+        _build_tensornetwork_graph([node])
+
+
 def test_plot_tensorkrowch_network_2d_draws_simple_contraction() -> None:
-    left = DummyNode("A", ["left"])
-    right = DummyNode("B", ["right"])
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
 
     fig, ax = plot_tensorkrowch_network_2d(DummyNetwork(nodes=[left, right]))
@@ -138,9 +214,8 @@ def test_plot_tensorkrowch_network_2d_draws_simple_contraction() -> None:
 
 
 def test_plot_tensorkrowch_network_2d_accepts_list_of_nodes() -> None:
-    """plot_tensorkrowch_network_2d accepts list of nodes directly."""
-    left = DummyNode("A", ["left"])
-    right = DummyNode("B", ["right"])
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
 
     fig, ax = plot_tensorkrowch_network_2d([left, right])
@@ -152,8 +227,8 @@ def test_plot_tensorkrowch_network_2d_accepts_list_of_nodes() -> None:
 
 
 def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
-    left = DummyNode("A", ["left"])
-    right = DummyNode("B", ["right"])
+    left = DummyTensorNetworkNode("A", ["left"])
+    right = DummyTensorNetworkNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
 
     fig, ax = plot_tensornetwork_network_2d({left, right})
@@ -165,8 +240,8 @@ def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
 
 
 def test_plot_tensorkrowch_network_2d_offsets_multiple_edges() -> None:
-    left = DummyNode("A", ["l0", "l1"])
-    right = DummyNode("B", ["r0", "r1"])
+    left = DummyTensorKrowchNode("A", ["l0", "l1"])
+    right = DummyTensorKrowchNode("B", ["r0", "r1"])
     connect(left, 0, right, 0)
     connect(left, 1, right, 1)
 
@@ -178,15 +253,15 @@ def test_plot_tensorkrowch_network_2d_offsets_multiple_edges() -> None:
     assert not np.allclose(y0, y1)
 
 
-def test_build_graph_detects_self_edge() -> None:
-    node = DummyNode("A", ["left", "right"])
+def test_build_tensorkrowch_graph_detects_self_edge() -> None:
+    node = DummyTensorKrowchNode("A", ["left", "right"])
     edge = DummyEdge(name="trace")
     edge.node1 = node
     edge.node2 = node
     node.edges[0] = edge
     node.edges[1] = edge
 
-    graph = _build_graph(DummyNetwork(nodes=[node]))
+    graph = _build_tensorkrowch_graph(DummyNetwork(nodes=[node]))
 
     assert len(graph.edges) == 1
     assert graph.edges[0].kind == "self"
@@ -194,8 +269,8 @@ def test_build_graph_detects_self_edge() -> None:
 
 
 def test_plot_tensorkrowch_network_3d_returns_3d_axes() -> None:
-    left = DummyNode("A", ["left"])
-    right = DummyNode("B", ["right"])
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0)
 
     fig, ax = plot_tensorkrowch_network_3d(DummyNetwork(nodes=[left, right]))
@@ -206,8 +281,8 @@ def test_plot_tensorkrowch_network_3d_returns_3d_axes() -> None:
 
 
 def test_plot_tensornetwork_network_3d_returns_3d_axes() -> None:
-    left = DummyNode("A", ["left"])
-    right = DummyNode("B", ["right"])
+    left = DummyTensorNetworkNode("A", ["left"])
+    right = DummyTensorNetworkNode("B", ["right"])
     connect(left, 0, right, 0)
 
     fig, ax = plot_tensornetwork_network_3d([left, right])
@@ -218,7 +293,7 @@ def test_plot_tensornetwork_network_3d_returns_3d_axes() -> None:
 
 
 def test_plot_tensorkrowch_network_3d_rejects_2d_axis() -> None:
-    node = DummyNode("A", ["left"])
+    node = DummyTensorKrowchNode("A", ["left"])
     connect(node, 0, name="edge")
     fig, ax = plt.subplots()
 
@@ -229,7 +304,7 @@ def test_plot_tensorkrowch_network_3d_rejects_2d_axis() -> None:
 
 
 def test_plot_tensornetwork_network_3d_rejects_2d_axis() -> None:
-    node = DummyNode("A", ["left"])
+    node = DummyTensorNetworkNode("A", ["left"])
     connect(node, 0, name="edge")
     fig, ax = plt.subplots()
 
@@ -240,7 +315,7 @@ def test_plot_tensornetwork_network_3d_rejects_2d_axis() -> None:
 
 
 def test_show_tensor_network_displays_selected_renderer(monkeypatch: pytest.MonkeyPatch) -> None:
-    node = DummyNode("A", ["left"])
+    node = DummyTensorKrowchNode("A", ["left"])
     connect(node, 0, name="edge")
     shown = {"value": False}
 
@@ -262,7 +337,7 @@ def test_show_tensor_network_displays_selected_renderer(monkeypatch: pytest.Monk
 def test_show_tensor_network_supports_tensornetwork_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    node = DummyNode("A", ["left"])
+    node = DummyTensorNetworkNode("A", ["left"])
     connect(node, 0, name="edge")
     called = {"value": False}
 
@@ -283,3 +358,27 @@ def test_show_tensor_network_supports_tensornetwork_engine(
 
     assert called["value"] is True
     assert fig is ax.figure
+
+
+def test_tensornetwork_renderer_does_not_import_tensorkrowch_private_modules() -> None:
+    source = Path(tn_renderer_module.__file__).read_text(encoding="utf-8")
+
+    assert "tensorkrowch" not in source
+
+
+def test_tensorkrowch_renderer_does_not_import_tensornetwork_private_modules() -> None:
+    source = Path(tk_renderer_module.__file__).read_text(encoding="utf-8")
+
+    assert "tensornetwork" not in source
+
+
+def test_tensornetwork_graph_does_not_import_tensorkrowch_private_modules() -> None:
+    source = Path(tn_graph_module.__file__).read_text(encoding="utf-8")
+
+    assert "tensorkrowch" not in source
+
+
+def test_tensorkrowch_graph_does_not_import_tensornetwork_private_modules() -> None:
+    source = Path(tk_graph_module.__file__).read_text(encoding="utf-8")
+
+    assert "tensornetwork" not in source

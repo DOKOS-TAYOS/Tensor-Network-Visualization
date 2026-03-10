@@ -1,4 +1,4 @@
-"""TensorKrowch-specific normalization into the shared graph model."""
+"""TensorNetwork-specific normalization into the shared graph model."""
 
 from __future__ import annotations
 
@@ -31,11 +31,11 @@ def _optional_string(value: Any) -> str | None:
 
 
 def _sortable_node_key(node: Any) -> tuple[Any, ...]:
-    axes_names = getattr(node, "axes_names", ())
-    if isinstance(axes_names, dict):
-        axes_names = axes_names.values()
+    axis_names = getattr(node, "axis_names", ())
+    if isinstance(axis_names, dict):
+        axis_names = axis_names.values()
     try:
-        normalized_axes = tuple(_stringify(item) for item in axes_names)
+        normalized_axes = tuple(_stringify(item) for item in axis_names)
     except TypeError:
         normalized_axes = ()
 
@@ -71,37 +71,23 @@ def _iterable_attr(obj: Any, attr_name: str, object_name: str) -> list[Any]:
         raise TypeError(msg) from exc
 
 
-def _get_network_nodes(network: Any) -> list[Any]:
-    """Extract TensorKrowch nodes from a network object or iterable."""
-    if isinstance(network, dict):
-        raw_nodes = network.values()
+def _get_network_nodes(nodes: Any) -> list[Any]:
+    """Extract TensorNetwork nodes from an iterable node collection."""
+    if isinstance(nodes, dict):
+        raw_nodes = nodes.values()
         should_sort = False
-    elif hasattr(network, "nodes"):
-        raw_nodes = network.nodes
-        should_sort = _is_unordered_collection(raw_nodes)
-    elif hasattr(network, "leaf_nodes"):
-        raw_nodes = network.leaf_nodes
-        should_sort = _is_unordered_collection(raw_nodes)
-    elif isinstance(network, (str, bytes, bytearray)):
-        raise TypeError(
-            "Input must be an iterable of TensorKrowch nodes, or an object with "
-            "'nodes' or 'leaf_nodes' attribute."
-        )
-    elif isinstance(network, Iterable):
-        raw_nodes = network
+    elif isinstance(nodes, (str, bytes, bytearray)):
+        raise TypeError("Input must be an iterable of TensorNetwork nodes.")
+    elif isinstance(nodes, Iterable):
+        raw_nodes = nodes
         should_sort = _is_unordered_collection(raw_nodes)
     else:
-        raise TypeError(
-            "Input must be an iterable of TensorKrowch nodes, or an object with "
-            "'nodes' or 'leaf_nodes' attribute."
-        )
-
-    iterable = raw_nodes.values() if isinstance(raw_nodes, dict) else raw_nodes
+        raise TypeError("Input must be an iterable of TensorNetwork nodes.")
 
     try:
-        items = list(iterable)
+        items = list(raw_nodes)
     except TypeError as exc:
-        raise TypeError("TensorKrowch nodes must be iterable.") from exc
+        raise TypeError("TensorNetwork nodes must be iterable.") from exc
 
     unique_nodes: list[Any] = []
     seen: set[int] = set()
@@ -119,8 +105,8 @@ def _get_network_nodes(network: Any) -> list[Any]:
     return unique_nodes
 
 
-def _build_graph(network: Any) -> _GraphData:
-    node_refs = _get_network_nodes(network)
+def _build_graph(nodes_input: Any) -> _GraphData:
+    node_refs = _get_network_nodes(nodes_input)
     if not node_refs:
         raise ValueError("The tensor network does not expose any nodes to visualize.")
 
@@ -131,16 +117,16 @@ def _build_graph(network: Any) -> _GraphData:
     for node in node_refs:
         name = _stringify(_require_attr(node, "name", "node"))
         node_edges = tuple(_iterable_attr(node, "edges", "node"))
-        axes_names = tuple(_stringify(item) for item in _iterable_attr(node, "axes_names", "node"))
-        if len(node_edges) != len(axes_names):
+        axis_names = tuple(_stringify(item) for item in _iterable_attr(node, "axis_names", "node"))
+        if len(node_edges) != len(axis_names):
             raise TypeError(
-                f"Node {name!r} has {len(node_edges)} edges but {len(axes_names)} axes_names."
+                f"Node {name!r} has {len(node_edges)} edges but {len(axis_names)} axis_names."
             )
 
         node_id = id(node)
         nodes[node_id] = _NodeData(
             name=name,
-            axes_names=axes_names,
+            axes_names=axis_names,
             degree=len(node_edges),
         )
 
@@ -153,7 +139,7 @@ def _build_graph(network: Any) -> _GraphData:
                 _EdgeEndpoint(
                     node_id=node_id,
                     axis_index=axis_index,
-                    axis_name=axes_names[axis_index],
+                    axis_name=axis_names[axis_index],
                 )
             )
 
