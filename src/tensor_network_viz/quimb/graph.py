@@ -85,6 +85,22 @@ def _tensor_display_name(tensor: Any, fallback_index: int) -> str:
     return f"T{fallback_index}"
 
 
+def _build_hyperedge_hub(
+    *,
+    hub_id: int,
+    ind_name: str,
+    endpoints: list[_EdgeEndpoint],
+) -> _NodeData:
+    axis_names = tuple(f"{ind_name}__branch_{index}" for index in range(len(endpoints)))
+    return _NodeData(
+        name="",
+        axes_names=axis_names,
+        degree=len(endpoints),
+        label=ind_name or None,
+        is_virtual=True,
+    )
+
+
 def _build_graph(network: Any) -> _GraphData:
     tensor_refs = _get_network_tensors(network)
     if not tensor_refs:
@@ -112,9 +128,33 @@ def _build_graph(network: Any) -> _GraphData:
             )
 
     edges: list[_EdgeData] = []
+    next_virtual_node_id = -1
     for ind_name, endpoints in index_endpoints.items():
         if len(endpoints) > 2:
-            raise TypeError("Quimb indices shared by more than two tensors are not supported.")
+            hub_id = next_virtual_node_id
+            next_virtual_node_id -= 1
+            nodes[hub_id] = _build_hyperedge_hub(
+                hub_id=hub_id,
+                ind_name=ind_name,
+                endpoints=endpoints,
+            )
+
+            for branch_index, endpoint in enumerate(endpoints):
+                hub_endpoint = _EdgeEndpoint(
+                    node_id=hub_id,
+                    axis_index=branch_index,
+                    axis_name=nodes[hub_id].axes_names[branch_index],
+                )
+                edges.append(
+                    _EdgeData(
+                        name=ind_name,
+                        kind="contraction",
+                        node_ids=(endpoint.node_id, hub_id),
+                        endpoints=(endpoint, hub_endpoint),
+                        label=None,
+                    )
+                )
+            continue
 
         if len(endpoints) == 1:
             kind = "dangling"

@@ -51,6 +51,11 @@ def _resolve_flag(value: bool | None, default: bool) -> bool:
     return value
 
 
+def _count_visible_nodes(graph: _GraphData) -> int:
+    visible_nodes = sum(1 for node in graph.nodes.values() if not node.is_virtual)
+    return visible_nodes or len(graph.nodes)
+
+
 def _compute_scale(n_nodes: int) -> float:
     """Scale factor for visual elements: larger for few nodes, smaller for many."""
     if n_nodes <= 1:
@@ -106,7 +111,7 @@ def _plot_graph_2d(
     else:
         positions = _compute_layout(graph, dimensions=2, seed=seed)
     directions = _compute_axis_directions(graph, positions, dimensions=2)
-    scale = _compute_scale(len(graph.nodes))
+    scale = _compute_scale(_count_visible_nodes(graph))
     _draw_2d(
         ax=ax,
         graph=graph,
@@ -138,7 +143,7 @@ def _plot_graph_3d(
     else:
         positions = _compute_layout(graph, dimensions=3, seed=seed)
     directions = _compute_axis_directions(graph, positions, dimensions=3)
-    scale = _compute_scale(len(graph.nodes))
+    scale = _compute_scale(_count_visible_nodes(graph))
     _draw_3d(
         ax=ax,
         graph=graph,

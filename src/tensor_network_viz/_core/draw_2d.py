@@ -149,19 +149,25 @@ def _draw_2d(
                     va="bottom",
                 )
 
-    coords = np.stack(list(positions.values()))
-    ax.scatter(
-        coords[:, 0],
-        coords[:, 1],
-        s=p.scatter_s,
-        c=config.node_color,
-        edgecolors=config.node_edge_color,
-        linewidths=p.lw,
-        zorder=3,
-    )
+    visible_node_ids = [node_id for node_id, node in graph.nodes.items() if not node.is_virtual]
+    if visible_node_ids:
+        coords = np.stack([positions[node_id] for node_id in visible_node_ids])
+        ax.scatter(
+            coords[:, 0],
+            coords[:, 1],
+            s=p.scatter_s,
+            c=config.node_color,
+            edgecolors=config.node_edge_color,
+            linewidths=p.lw,
+            zorder=3,
+        )
+    else:
+        coords = np.stack(list(positions.values()))
 
     if show_tensor_labels:
         for node_id, node in graph.nodes.items():
+            if node.is_virtual:
+                continue
             x, y = positions[node_id]
             ax.text(
                 x,
@@ -172,6 +178,22 @@ def _draw_2d(
                 va="center",
                 fontsize=p.font_node,
                 zorder=4,
+            )
+
+    if show_index_labels:
+        for node_id, node in graph.nodes.items():
+            if not node.is_virtual or not node.label:
+                continue
+            x, y = positions[node_id]
+            ax.text(
+                x,
+                y,
+                node.label,
+                color=config.label_color,
+                fontsize=p.font_bond,
+                zorder=5,
+                ha="center",
+                va="bottom",
             )
 
     _style_2d_axes(ax, coords)

@@ -20,6 +20,8 @@ class _NodeData:
     name: str
     axes_names: tuple[str, ...]
     degree: int
+    label: str | None = None
+    is_virtual: bool = False
 
 
 @dataclass(frozen=True)

@@ -74,7 +74,7 @@ Supported inputs depend on the selected engine:
 
 Each backend consumes its native tensor-network objects directly and normalizes them to the shared graph model internally.
 
-Quimb support in v1 is limited to pairwise indices: indices shared by more than two tensors raise a clear error. TeNPy support in v1 is limited to finite or segment `MPS`/`MPO`; infinite networks are rejected.
+Quimb support includes hyper-indices shared by three or more tensors, rendered through invisible internal hub nodes so the original topology is preserved without exposing extra tensor markers. TeNPy support in v1 is limited to finite or segment `MPS`/`MPO`; infinite networks are rejected.
 
 When passing a subset of nodes, edges to nodes outside the input collection are drawn as dangling legs. Disconnected components (for example nodes from different networks) are supported.
 

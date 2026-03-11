@@ -47,13 +47,30 @@ def test_build_quimb_graph_assigns_fallback_tensor_names() -> None:
     assert [node.name for node in graph.nodes.values()] == ["T0", "T1"]
 
 
-def test_build_quimb_graph_rejects_hyperedges() -> None:
+def test_build_quimb_graph_rewrites_hyperedges_through_virtual_hub() -> None:
     a = _make_tensor(inds=("bond",), tag="A")
     b = _make_tensor(inds=("bond",), tag="B")
     c = _make_tensor(inds=("bond",), tag="C")
 
-    with pytest.raises(TypeError, match="more than two tensors"):
-        _build_quimb_graph(qtn.TensorNetwork([a, b, c]))
+    graph = _build_quimb_graph(qtn.TensorNetwork([a, b, c]))
+
+    virtual_nodes = [
+        (node_id, node)
+        for node_id, node in graph.nodes.items()
+        if node.is_virtual
+    ]
+    assert len(virtual_nodes) == 1
+
+    hub_id, hub = virtual_nodes[0]
+    assert hub.name == ""
+    assert hub.label == "bond"
+    assert hub.degree == 3
+    assert {node.name for node in graph.nodes.values() if not node.is_virtual} == {"A", "B", "C"}
+
+    contraction_edges = [edge for edge in graph.edges if edge.kind == "contraction"]
+    assert len(contraction_edges) == 3
+    assert all(hub_id in edge.node_ids for edge in contraction_edges)
+    assert {edge.label for edge in contraction_edges} == {None}
 
 
 def test_plot_quimb_network_2d_draws_simple_contraction() -> None:
@@ -77,3 +94,30 @@ def test_plot_quimb_network_3d_returns_3d_axes() -> None:
     assert fig is ax.figure
     assert ax.name == "3d"
     assert len(ax.lines) == 1
+
+
+def test_plot_quimb_network_2d_draws_hypergraph_without_showing_virtual_hub() -> None:
+    a = _make_tensor(inds=("bond",), tag="A")
+    b = _make_tensor(inds=("bond",), tag="B")
+    c = _make_tensor(inds=("bond",), tag="C")
+
+    fig, ax = plot_quimb_network_2d(qtn.TensorNetwork([a, b, c]))
+
+    labels = {text.get_text() for text in ax.texts}
+    assert fig is ax.figure
+    assert labels == {"A", "B", "C", "bond"}
+    assert len(ax.lines) == 3
+
+
+def test_plot_quimb_network_3d_draws_hypergraph() -> None:
+    a = _make_tensor(inds=("bond",), tag="A")
+    b = _make_tensor(inds=("bond",), tag="B")
+    c = _make_tensor(inds=("bond",), tag="C")
+
+    fig, ax = plot_quimb_network_3d(qtn.TensorNetwork([a, b, c]))
+
+    labels = {text.get_text() for text in ax.texts}
+    assert fig is ax.figure
+    assert ax.name == "3d"
+    assert labels == {"A", "B", "C", "bond"}
+    assert len(ax.lines) == 3

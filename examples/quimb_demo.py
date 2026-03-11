@@ -21,6 +21,7 @@ Small demo for the Quimb backend.
 
 It builds one example Quimb tensor network and shows it with the selected view.
 Available network examples:
+  - hyper
   - mps
   - mpo
   - peps
@@ -29,6 +30,7 @@ Available network examples:
 
 Examples:
   python examples/quimb_demo.py mps 2d
+  python examples/quimb_demo.py hyper 2d
   python examples/quimb_demo.py weird 3d
   python examples/quimb_demo.py disconnected 2d
   python examples/quimb_demo.py mps 2d --from-list --save quimb.png --no-show
@@ -50,6 +52,15 @@ def build_mps_example(length: int = 5) -> qtn.TensorNetwork:
         if index < length - 1:
             inds.append(f"bond_{index}_{index + 1}")
         tensors.append(_make_tensor(f"A{index}", tuple(inds)))
+    return qtn.TensorNetwork(tensors)
+
+
+def build_hyper_example() -> qtn.TensorNetwork:
+    tensors = [
+        _make_tensor("A", ("hub", "phys_a")),
+        _make_tensor("B", ("hub", "phys_b")),
+        _make_tensor("C", ("hub", "phys_c")),
+    ]
     return qtn.TensorNetwork(tensors)
 
 
@@ -111,6 +122,7 @@ def build_disconnected_example() -> qtn.TensorNetwork:
 
 BUILDERS = {
     "disconnected": build_disconnected_example,
+    "hyper": build_hyper_example,
     "mps": build_mps_example,
     "mpo": build_mpo_example,
     "peps": build_peps_example,

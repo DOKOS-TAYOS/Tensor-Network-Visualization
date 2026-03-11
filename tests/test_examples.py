@@ -48,6 +48,34 @@ def test_quimb_demo_saves_figure_without_showing(
     assert output_path.exists()
 
 
+def test_quimb_demo_hyper_saves_figure_without_showing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_dir = Path(".tmp") / "example-tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "quimb-hyper-demo.png"
+    module = _load_example_module(
+        Path("examples/quimb_demo.py"),
+        "quimb_demo_hyper_test",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "quimb_demo.py",
+            "hyper",
+            "2d",
+            "--save",
+            str(output_path),
+            "--no-show",
+        ],
+    )
+
+    module.main()
+
+    assert output_path.exists()
+
+
 def test_tenpy_demo_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

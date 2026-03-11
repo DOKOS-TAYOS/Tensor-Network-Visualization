@@ -21,3 +21,19 @@ def test_real_quimb_tensor_network_renders() -> None:
     assert fig2d is ax2d.figure
     assert fig3d is ax3d.figure
     assert ax3d.name == "3d"
+
+
+def test_real_quimb_hypergraph_renders() -> None:
+    a = qtn.Tensor(data=np.ones((2,)), inds=("bond",), tags={"A"})
+    b = qtn.Tensor(data=np.ones((2,)), inds=("bond",), tags={"B"})
+    c = qtn.Tensor(data=np.ones((2,)), inds=("bond",), tags={"C"})
+    network = qtn.TensorNetwork([a, b, c])
+
+    fig2d, ax2d = plot_quimb_network_2d(network)
+    fig3d, ax3d = plot_quimb_network_3d(network)
+
+    assert fig2d is ax2d.figure
+    assert fig3d is ax3d.figure
+    assert len(ax2d.lines) == 3
+    assert len(ax3d.lines) == 3
+    assert ax3d.name == "3d"

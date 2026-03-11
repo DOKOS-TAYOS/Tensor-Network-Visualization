@@ -33,13 +33,14 @@ python examples/tensornetwork_demo.py mps 2d --save mps.png --no-show
 ## quimb_demo.py
 
 ```bash
+python examples/quimb_demo.py hyper 2d
 python examples/quimb_demo.py mps 2d
 python examples/quimb_demo.py weird 3d
 python examples/quimb_demo.py disconnected 2d
 python examples/quimb_demo.py mps 2d --from-list --save quimb.png --no-show
 ```
 
-- **Networks:** `disconnected`, `mps`, `mpo`, `peps`, `weird`
+- **Networks:** `disconnected`, `hyper`, `mps`, `mpo`, `peps`, `weird`
 - **Views:** `2d`, `3d`
 - **Input:** Quimb `TensorNetwork` by default, or list of tensors with `--from-list`
 - **`--save PATH`:** Save the rendered figure
