@@ -1,4 +1,5 @@
 .venv/
+.worktrees/
 .tmp/
 .pip_tmp/
 .ruff_cache/
