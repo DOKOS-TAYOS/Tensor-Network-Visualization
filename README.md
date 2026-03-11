@@ -69,12 +69,12 @@ Supported inputs depend on the selected engine:
   - a Quimb `TensorNetwork`
   - any iterable of Quimb `Tensor`
 - `engine="tenpy"`:
-  - a finite or segment `tenpy.networks.mps.MPS`
-  - a finite `tenpy.networks.mpo.MPO`
+  - a finite, segment, or infinite `tenpy.networks.mps.MPS`
+  - a finite or infinite `tenpy.networks.mpo.MPO`
 
 Each backend consumes its native tensor-network objects directly and normalizes them to the shared graph model internally.
 
-Quimb support includes hyper-indices shared by three or more tensors, rendered through invisible internal hub nodes so the original topology is preserved without exposing extra tensor markers. TeNPy support in v1 is limited to finite or segment `MPS`/`MPO`; infinite networks are rejected.
+Quimb support includes hyper-indices shared by three or more tensors, rendered through invisible internal hub nodes so the original topology is preserved without exposing extra tensor markers. Infinite TeNPy `MPS`/`MPO` networks are rendered as a single unit cell closed periodically, so the repeating structure stays visible without introducing a separate infinite-edge primitive.
 
 When passing a subset of nodes, edges to nodes outside the input collection are drawn as dangling legs. Disconnected components (for example nodes from different networks) are supported.
 
@@ -125,13 +125,13 @@ The public API is split by backend, but the render pipeline is now shared:
 - `tensor_network_viz.tensorkrowch` contains the TensorKrowch adapter that converts TensorKrowch inputs into the shared graph model.
 - `tensor_network_viz.tensornetwork` contains the TensorNetwork adapter that converts TensorNetwork node collections into the shared graph model.
 - `tensor_network_viz.quimb` contains the Quimb adapter that converts `TensorNetwork` objects or tensor collections into the shared graph model.
-- `tensor_network_viz.tenpy` contains the TeNPy adapter that converts finite/segment `MPS` and finite `MPO` objects into the shared graph model.
+- `tensor_network_viz.tenpy` contains the TeNPy adapter that converts finite, segment, and infinite `MPS` plus finite and infinite `MPO` objects into the shared graph model.
 
 This means backends are not converted into each other. Each backend normalizes its own input to the common `_GraphData` structure and the shared core handles the rest.
 
 ## Project layout
 
-- `examples/` - Demo scripts. Run `python examples/tensorkrowch_demo.py mps 2d`, `python examples/tensornetwork_demo.py mps 2d`, `python examples/quimb_demo.py mps 2d`, or `python examples/tenpy_demo.py mps 2d`.
+- `examples/` - Demo scripts. Run `python examples/tensorkrowch_demo.py mps 2d`, `python examples/tensornetwork_demo.py mps 2d`, `python examples/quimb_demo.py mps 2d`, `python examples/tenpy_demo.py mps 2d`, or `python examples/tenpy_demo.py imps 2d`.
 - `scripts/` - Utility scripts (for example `clean.py` to remove caches and build artifacts).
 
 ## Development

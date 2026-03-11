@@ -49,13 +49,15 @@ python examples/quimb_demo.py mps 2d --from-list --save quimb.png --no-show
 ## tenpy_demo.py
 
 ```bash
+python examples/tenpy_demo.py imps 2d
+python examples/tenpy_demo.py impo 3d --save tenpy-infinite.png --no-show
 python examples/tenpy_demo.py mps 2d
 python examples/tenpy_demo.py mpo 3d --save tenpy.png --no-show
 ```
 
-- **Networks:** `mps`, `mpo`
+- **Networks:** `impo`, `imps`, `mps`, `mpo`
 - **Views:** `2d`, `3d`
-- **Input:** Finite TeNPy `MPS` or `MPO`
+- **Input:** Finite, segment, or infinite TeNPy `MPS`, and finite or infinite `MPO`
 - **`--save PATH`:** Save the rendered figure
 - **`--no-show`:** Do not open the interactive Matplotlib window
 

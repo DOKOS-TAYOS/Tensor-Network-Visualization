@@ -102,3 +102,59 @@ def test_tenpy_demo_saves_figure_without_showing(
     module.main()
 
     assert output_path.exists()
+
+
+def test_tenpy_infinite_mps_demo_saves_figure_without_showing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_dir = Path(".tmp") / "example-tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "tenpy-imps-demo.png"
+    module = _load_example_module(
+        Path("examples/tenpy_demo.py"),
+        "tenpy_demo_imps_test",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "tenpy_demo.py",
+            "imps",
+            "2d",
+            "--save",
+            str(output_path),
+            "--no-show",
+        ],
+    )
+
+    module.main()
+
+    assert output_path.exists()
+
+
+def test_tenpy_infinite_mpo_demo_saves_figure_without_showing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_dir = Path(".tmp") / "example-tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "tenpy-impo-demo.png"
+    module = _load_example_module(
+        Path("examples/tenpy_demo.py"),
+        "tenpy_demo_impo_test",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "tenpy_demo.py",
+            "impo",
+            "3d",
+            "--save",
+            str(output_path),
+            "--no-show",
+        ],
+    )
+
+    module.main()
+
+    assert output_path.exists()

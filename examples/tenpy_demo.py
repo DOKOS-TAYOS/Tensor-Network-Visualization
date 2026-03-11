@@ -20,11 +20,14 @@ Small demo for the TeNPy backend.
 
 It builds one example TeNPy network and shows it with the selected view.
 Available network examples:
+  - impo
+  - imps
   - mps
   - mpo
 
 Examples:
   python examples/tenpy_demo.py mps 2d
+  python examples/tenpy_demo.py imps 2d --save tenpy-imps.png --no-show
   python examples/tenpy_demo.py mpo 3d --save tenpy.png --no-show
 """
 
@@ -47,7 +50,27 @@ def build_mpo_example(length: int = 4):
     return model.calc_H_MPO()
 
 
+def build_imps_example(length: int = 3):
+    from tenpy.networks.mps import MPS
+    from tenpy.networks.site import SpinHalfSite
+
+    sites = [SpinHalfSite() for _ in range(length)]
+    states = ["up" if index % 2 == 0 else "down" for index in range(length)]
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="unit_cell_width.*", category=UserWarning)
+        return MPS.from_product_state(sites, states, bc="infinite")
+
+
+def build_impo_example(length: int = 3):
+    from tenpy.models.tf_ising import TFIChain
+
+    model = TFIChain({"L": length, "J": 1.0, "g": 1.0, "bc_MPS": "infinite"})
+    return model.calc_H_MPO()
+
+
 BUILDERS = {
+    "impo": build_impo_example,
+    "imps": build_imps_example,
     "mps": build_mps_example,
     "mpo": build_mpo_example,
 }

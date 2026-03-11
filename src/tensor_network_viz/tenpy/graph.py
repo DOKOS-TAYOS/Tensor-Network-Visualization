@@ -19,12 +19,16 @@ def _is_supported_tenpy_network(network: Any) -> bool:
     return hasattr(network, "L") and hasattr(network, "finite") and hasattr(network, "bc")
 
 
-def _validate_supported_boundary_conditions(network: Any) -> None:
+def _boundary_mode(network: Any) -> str:
     if not _is_supported_tenpy_network(network):
         raise TypeError("Input must be a TeNPy MPS or MPO network.")
 
-    if not bool(network.finite) or network.bc not in {"finite", "segment"}:
-        raise ValueError("TeNPy visualization supports only finite or segment networks.")
+    boundary_condition = _stringify(getattr(network, "bc", None)).lower()
+    if boundary_condition in {"finite", "segment"}:
+        return "open"
+    if boundary_condition == "infinite" and not bool(network.finite):
+        return "periodic"
+    raise ValueError("TeNPy visualization supports finite, segment, and infinite networks.")
 
 
 def _leg_labels(tensor: Any) -> tuple[str, ...]:
@@ -67,38 +71,49 @@ def _build_chain_edges(
     labels_by_node: dict[int, tuple[str, ...]],
     left_leg: str,
     right_leg: str,
+    boundary_mode: str,
 ) -> list[_EdgeData]:
     edges: list[_EdgeData] = []
 
-    for index in range(length - 1):
-        left_labels = labels_by_node[index]
-        right_labels = labels_by_node[index + 1]
+    neighbor_pairs = [(index, index + 1) for index in range(length - 1)]
+    if boundary_mode == "periodic" and length > 0:
+        neighbor_pairs.append((length - 1, 0))
+
+    for left_index, right_index in neighbor_pairs:
+        left_labels = labels_by_node[left_index]
+        right_labels = labels_by_node[right_index]
         left_endpoint = _EdgeEndpoint(
-            node_id=index,
-            axis_index=_find_leg_index(left_labels, right_leg, node_name=f"{index}"),
+            node_id=left_index,
+            axis_index=_find_leg_index(left_labels, right_leg, node_name=f"{left_index}"),
             axis_name=right_leg,
         )
         right_endpoint = _EdgeEndpoint(
-            node_id=index + 1,
-            axis_index=_find_leg_index(right_labels, left_leg, node_name=f"{index + 1}"),
+            node_id=right_index,
+            axis_index=_find_leg_index(right_labels, left_leg, node_name=f"{right_index}"),
             axis_name=left_leg,
         )
         endpoints = (left_endpoint, right_endpoint)
+        kind = "self" if left_index == right_index else "contraction"
+        node_ids = (left_index,) if kind == "self" else (left_index, right_index)
         edges.append(
             _EdgeData(
                 name=None,
-                kind="contraction",
-                node_ids=(index, index + 1),
+                kind=kind,
+                node_ids=node_ids,
                 endpoints=endpoints,
-                label=_build_edge_label(kind="contraction", endpoints=endpoints, edge_name=None),
+                label=_build_edge_label(kind=kind, endpoints=endpoints, edge_name=None),
             )
         )
 
     for index in range(length):
         labels = labels_by_node[index]
         for axis_index, label in enumerate(labels):
-            is_internal_left = label == left_leg and index > 0
-            is_internal_right = label == right_leg and index < length - 1
+            if boundary_mode == "periodic":
+                is_internal_left = label == left_leg
+                is_internal_right = label == right_leg
+            else:
+                is_internal_left = label == left_leg and index > 0
+                is_internal_right = label == right_leg and index < length - 1
             if is_internal_left or is_internal_right:
                 continue
             endpoint = _EdgeEndpoint(
@@ -120,7 +135,7 @@ def _build_chain_edges(
 
 
 def _build_mps_graph(network: Any) -> _GraphData:
-    _validate_supported_boundary_conditions(network)
+    boundary_mode = _boundary_mode(network)
     nodes, labels_by_node = _build_nodes(
         int(network.L),
         tensor_at=lambda index: network.get_B(index, form=None),
@@ -131,12 +146,13 @@ def _build_mps_graph(network: Any) -> _GraphData:
         labels_by_node=labels_by_node,
         left_leg="vL",
         right_leg="vR",
+        boundary_mode=boundary_mode,
     )
     return _GraphData(nodes=nodes, edges=tuple(edges))
 
 
 def _build_mpo_graph(network: Any) -> _GraphData:
-    _validate_supported_boundary_conditions(network)
+    boundary_mode = _boundary_mode(network)
     nodes, labels_by_node = _build_nodes(
         int(network.L),
         tensor_at=network.get_W,
@@ -147,6 +163,7 @@ def _build_mpo_graph(network: Any) -> _GraphData:
         labels_by_node=labels_by_node,
         left_leg="wL",
         right_leg="wR",
+        boundary_mode=boundary_mode,
     )
     return _GraphData(nodes=nodes, edges=tuple(edges))
 

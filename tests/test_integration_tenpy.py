@@ -24,3 +24,32 @@ def test_real_tenpy_mps_renders() -> None:
     assert fig2d is ax2d.figure
     assert fig3d is ax3d.figure
     assert ax3d.name == "3d"
+
+
+def test_real_tenpy_infinite_mps_renders() -> None:
+    from tenpy.networks.mps import MPS
+    from tenpy.networks.site import SpinHalfSite
+
+    sites = [SpinHalfSite() for _ in range(3)]
+    network = MPS.from_product_state(sites, ["up"] * 3, bc="infinite")
+
+    fig2d, ax2d = plot_tenpy_network_2d(network)
+    fig3d, ax3d = plot_tenpy_network_3d(network)
+
+    assert fig2d is ax2d.figure
+    assert fig3d is ax3d.figure
+    assert ax3d.name == "3d"
+
+
+def test_real_tenpy_infinite_mpo_renders() -> None:
+    from tenpy.models.tf_ising import TFIChain
+
+    model = TFIChain({"L": 3, "J": 1.0, "g": 1.0, "bc_MPS": "infinite"})
+    network = model.calc_H_MPO()
+
+    fig2d, ax2d = plot_tenpy_network_2d(network)
+    fig3d, ax3d = plot_tenpy_network_3d(network)
+
+    assert fig2d is ax2d.figure
+    assert fig3d is ax3d.figure
+    assert ax3d.name == "3d"
