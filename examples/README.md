@@ -1,8 +1,14 @@
 # Examples
 
-Run from the project root (with venv activated or `python` from `.venv`).
+This folder contains runnable scripts for every supported backend plus one larger TensorKrowch
+example. For the full package guide, see [`../docs/guide.md`](../docs/guide.md).
 
-## tensorkrowch_demo.py
+Run examples from the project root, using the project virtual environment or an equivalent Python
+environment with the needed optional dependencies installed.
+
+## `tensorkrowch_demo.py`
+
+Demonstrates the TensorKrowch backend with regular toy topologies.
 
 ```bash
 python examples/tensorkrowch_demo.py mps 2d
@@ -11,11 +17,15 @@ python examples/tensorkrowch_demo.py disconnected 2d
 python examples/tensorkrowch_demo.py mps 2d --from-list
 ```
 
-- **Networks:** `disconnected`, `mps`, `mpo`, `peps`, `weird`
-- **Views:** `2d`, `3d`
-- **`--from-list`:** Pass the network as a list of nodes instead of the TensorNetwork object
+Shows:
 
-## tensornetwork_demo.py
+- `mps`, `mpo`, `peps`, `weird`, and `disconnected` examples
+- object-level dispatch with a full TensorKrowch network
+- subset-style dispatch by passing a list of nodes with `--from-list`
+
+## `tensornetwork_demo.py`
+
+Demonstrates the TensorNetwork backend using `tensornetwork.Node` collections.
 
 ```bash
 python examples/tensornetwork_demo.py mps 2d
@@ -24,44 +34,49 @@ python examples/tensornetwork_demo.py disconnected 2d
 python examples/tensornetwork_demo.py mps 2d --save mps.png --no-show
 ```
 
-- **Networks:** `disconnected`, `mps`, `mpo`, `peps`, `weird`
-- **Views:** `2d`, `3d`
-- **Input:** Always passes a list of `tensornetwork.Node`
-- **`--save PATH`:** Save the rendered figure
-- **`--no-show`:** Do not open the interactive Matplotlib window
+Shows:
 
-## quimb_demo.py
+- `mps`, `mpo`, `peps`, `weird`, and `disconnected` examples
+- non-interactive rendering with `--save` and `--no-show`
+- the iterable-of-nodes input style used by the TensorNetwork adapter
+
+## `quimb_demo.py`
+
+Demonstrates the Quimb backend, including a hypergraph-style example.
 
 ```bash
 python examples/quimb_demo.py hyper 2d
 python examples/quimb_demo.py mps 2d
 python examples/quimb_demo.py weird 3d
-python examples/quimb_demo.py disconnected 2d
 python examples/quimb_demo.py mps 2d --from-list --save quimb.png --no-show
 ```
 
-- **Networks:** `disconnected`, `hyper`, `mps`, `mpo`, `peps`, `weird`
-- **Views:** `2d`, `3d`
-- **Input:** Quimb `TensorNetwork` by default, or list of tensors with `--from-list`
-- **`--save PATH`:** Save the rendered figure
-- **`--no-show`:** Do not open the interactive Matplotlib window
+Shows:
 
-## tenpy_demo.py
+- `hyper`, `mps`, `mpo`, `peps`, `weird`, and `disconnected` examples
+- dispatch with a full `TensorNetwork`
+- dispatch with a list of tensors via `--from-list`
+
+## `tenpy_demo.py`
+
+Demonstrates the TeNPy backend for both finite and infinite structures.
 
 ```bash
-python examples/tenpy_demo.py imps 2d
-python examples/tenpy_demo.py impo 3d --save tenpy-infinite.png --no-show
 python examples/tenpy_demo.py mps 2d
 python examples/tenpy_demo.py mpo 3d --save tenpy.png --no-show
+python examples/tenpy_demo.py imps 2d
+python examples/tenpy_demo.py impo 3d --save tenpy-infinite.png --no-show
 ```
 
-- **Networks:** `impo`, `imps`, `mps`, `mpo`
-- **Views:** `2d`, `3d`
-- **Input:** Finite, segment, or infinite TeNPy `MPS`, and finite or infinite `MPO`
-- **`--save PATH`:** Save the rendered figure
-- **`--no-show`:** Do not open the interactive Matplotlib window
+Shows:
 
-## einsum_demo.py
+- finite `mps` and `mpo`
+- infinite `imps` and `impo`
+- headless rendering and saving from the command line
+
+## `einsum_demo.py`
+
+Demonstrates the `einsum` backend in both auto-traced and manual-trace modes.
 
 ```bash
 python examples/einsum_demo.py mps 2d
@@ -71,29 +86,20 @@ python examples/einsum_demo.py disconnected 3d
 python examples/einsum_demo.py mps 2d --save einsum.png --no-show
 ```
 
-- **Networks:** `disconnected`, `mps`, `peps`
-- **Views:** `2d`, `3d`
-- **Mode `auto`:** `EinsumTrace` populated automatically through `tensor_network_viz.einsum(...)`
-- **Mode `manual`:** Ordered `pair_tensor` list executed with `torch.einsum(...)`
-- **Note:** Install `tensor-network-visualization[einsum]` for PyTorch. PyTorch is only required to execute the demo contractions, not to render a previously built trace
-- **`--mode {auto,manual}`:** Choose between the wrapper-based trace and the explicit `pair_tensor` trace
-- **`--save PATH`:** Save the rendered figure
-- **`--no-show`:** Do not open the interactive Matplotlib window
+Shows:
 
-## Architecture note
+- `mps`, `peps`, and `disconnected` traces
+- `--mode auto` using `EinsumTrace` + `tensor_network_viz.einsum(...)`
+- `--mode manual` using ordered `pair_tensor` entries + `torch.einsum(...)`
 
-- `tensor_network_viz._core`: Common graph model, layout, axis directions, drawing, and shared renderer
-- `tensor_network_viz._core._nodes_edges_common`: Shared graph-building for TensorKrowch and TensorNetwork
-- `tensor_network_viz._registry`: Engine registry for lazy-loaded plotters
-- `tensor_network_viz.tensorkrowch`: TensorKrowch adapter plus public helpers
-- `tensor_network_viz.tensornetwork`: TensorNetwork adapter plus public helpers
-- `tensor_network_viz.quimb`: Quimb-specific input adapter plus public helpers
-- `tensor_network_viz.tenpy`: TeNPy-specific input adapter plus public helpers
-- `tensor_network_viz.einsum_module`: Ordered `pair_tensor` trace adapter plus public helpers
+Note:
 
-## tn_tsp.py
+- install `tensor-network-visualization[einsum]` if you want to execute the examples with PyTorch
 
-TSP tensor network visualization (step 0, before contraction).
+## `tn_tsp.py`
+
+Builds and visualizes the TensorKrowch tensor network used for a TSP formulation before
+contraction.
 
 ```bash
 python examples/tn_tsp.py -n 4 --view 2d
@@ -101,5 +107,8 @@ python examples/tn_tsp.py -n 5 --view 3d
 python examples/tn_tsp.py --cities 6 --view 2d
 ```
 
-- `-n`, `--cities`: Number of cities (default: 4). Use 4–6 for readable plots.
-- `--view`: `2d` or `3d` (default: 2d).
+Useful when you want:
+
+- a larger TensorKrowch example than the toy demos
+- a concrete grid-like layout use case
+- an example tied to a real tensor-network modeling workflow
