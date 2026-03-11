@@ -33,6 +33,8 @@ class PlotConfig:
         node_edge_color: Border color for tensor nodes; use dark for contrast on light nodes.
         tensor_label_color: Color for tensor names on nodes; use dark for readability.
         layout_iterations: Force-directed layout iterations; None uses default (220).
+        validate_positions: If True, warn when custom positions have unknown keys or
+            wrong dimension count for the view.
     """
 
     DEFAULT_NODE_RADIUS: ClassVar[float] = 0.08
@@ -58,3 +60,4 @@ class PlotConfig:
     line_width_3d: float | None = None
     layout_iterations: int | None = None
     positions: dict[int, tuple[float, ...]] | None = None
+    validate_positions: bool = False

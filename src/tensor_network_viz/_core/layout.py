@@ -15,21 +15,39 @@ Vector: TypeAlias = np.ndarray
 NodePositions: TypeAlias = dict[int, Vector]
 AxisDirections: TypeAlias = dict[tuple[int, int], Vector]
 
+_LAYOUT_TARGET_NORM: float = 1.6
+_GRID_LAYOUT_MAX_NODES: int = 50
+_FORCE_LAYOUT_K: float = 1.6
+_FORCE_LAYOUT_COOLING_FACTOR: float = 0.985
+_FREE_DIR_OVERLAP_THRESHOLD: float = 0.7
+_FREE_DIR_SAMPLES_2D: int = 72
 
-def _direction_from_axis_name_2d(axis_name: str | None) -> np.ndarray | None:
+
+def _normalize_positions(
+    positions: NodePositions,
+    node_ids: list[int],
+    target_norm: float = _LAYOUT_TARGET_NORM,
+) -> NodePositions:
+    """Center and scale positions to target norm. Returns new dict."""
+    arr = np.array([positions[nid] for nid in node_ids], dtype=float)
+    arr -= arr.mean(axis=0, keepdims=True)
+    max_norm = np.linalg.norm(arr, axis=1).max()
+    if max_norm > 1e-6:
+        arr /= max_norm / target_norm
+    return {nid: arr[i].copy() for i, nid in enumerate(node_ids)}
+
+
+def _direction_from_axis_name(
+    axis_name: str | None,
+    dimensions: int,
+) -> np.ndarray | None:
+    """Return direction vector for axis name in 2D or 3D, or None if unknown."""
     if not axis_name:
         return None
     key = axis_name.lower().strip()
-    if key in _AXIS_DIR_2D:
+    if dimensions == 2 and key in _AXIS_DIR_2D:
         return np.array(_AXIS_DIR_2D[key], dtype=float)
-    return None
-
-
-def _direction_from_axis_name_3d(axis_name: str | None) -> np.ndarray | None:
-    if not axis_name:
-        return None
-    key = axis_name.lower().strip()
-    if key in _AXIS_DIR_3D:
+    if dimensions == 3 and key in _AXIS_DIR_3D:
         return np.array(_AXIS_DIR_3D[key], dtype=float)
     return None
 
@@ -65,7 +83,7 @@ def _compute_layout(
         key = tuple(sorted((left, right)))
         pair_weights[key] = pair_weights.get(key, 0) + 1
 
-    k = 1.6
+    k = _FORCE_LAYOUT_K
     temperature = 0.12
     for _ in range(iterations):
         deltas = positions[:, None, :] - positions[None, :, :]
@@ -89,28 +107,33 @@ def _compute_layout(
         positions += displacement / np.maximum(norms, 1e-6) * temperature
         positions -= positions.mean(axis=0, keepdims=True)
         max_norm = np.linalg.norm(positions, axis=1).max()
-        if max_norm > 1.6:
-            positions /= max_norm / 1.6
-        temperature *= 0.985
+        if max_norm > _LAYOUT_TARGET_NORM:
+            positions /= max_norm / _LAYOUT_TARGET_NORM
+        temperature *= _FORCE_LAYOUT_COOLING_FACTOR
 
     return {node_id: positions[index] for index, node_id in enumerate(node_ids)}
 
 
-def _try_grid_layout_2d(graph: _GraphData) -> NodePositions | None:
-    """Attempt regular grid layout when the graph is a 2D grid. Returns None otherwise."""
-    node_ids = list(graph.nodes)
-    if len(node_ids) <= 1:
-        return None
-
+def _build_nx_graph_from_graph_data(graph: _GraphData) -> nx.Graph:
+    """Build a NetworkX graph from _GraphData (contraction edges only)."""
     g = nx.Graph()
-    g.add_nodes_from(node_ids)
+    g.add_nodes_from(graph.nodes)
     for edge in graph.edges:
         if edge.kind != "contraction":
             continue
         left, right = edge.node_ids
         if left != right:
             g.add_edge(left, right)
+    return g
 
+
+def _try_grid_layout_2d(graph: _GraphData) -> NodePositions | None:
+    """Attempt regular grid layout when the graph is a 2D grid. Returns None otherwise."""
+    node_ids = list(graph.nodes)
+    if len(node_ids) <= 1 or len(node_ids) > _GRID_LAYOUT_MAX_NODES:
+        return None
+
+    g = _build_nx_graph_from_graph_data(graph)
     n_nodes = g.number_of_nodes()
     n_edges = g.number_of_edges()
 
@@ -124,15 +147,11 @@ def _try_grid_layout_2d(graph: _GraphData) -> NodePositions | None:
         grid_g = nx.grid_2d_graph(rows, cols)
         mapping = nx.vf2pp_isomorphism(g, grid_g)
         if mapping is not None:
-            arr = np.array(
-                [[mapping[nid][1], mapping[nid][0]] for nid in node_ids],
-                dtype=float,
-            )
-            arr -= arr.mean(axis=0, keepdims=True)
-            max_norm = np.linalg.norm(arr, axis=1).max()
-            if max_norm > 1e-6:
-                arr /= max_norm / 1.6
-            return {nid: arr[i].copy() for i, nid in enumerate(node_ids)}
+            positions = {
+                nid: np.array([mapping[nid][1], mapping[nid][0]], dtype=float)
+                for nid in node_ids
+            }
+            return _normalize_positions(positions, node_ids)
     return None
 
 
@@ -142,26 +161,14 @@ def _try_planar_layout_2d(graph: _GraphData) -> NodePositions | None:
     if len(node_ids) <= 1:
         return None
 
-    g = nx.Graph()
-    g.add_nodes_from(node_ids)
-    for edge in graph.edges:
-        if edge.kind != "contraction":
-            continue
-        left, right = edge.node_ids
-        if left != right:
-            g.add_edge(left, right)
-
+    g = _build_nx_graph_from_graph_data(graph)
     try:
         pos = nx.planar_layout(g)
     except nx.NetworkXException:
         return None
 
-    arr = np.array([pos[nid] for nid in node_ids], dtype=float)
-    arr -= arr.mean(axis=0, keepdims=True)
-    max_norm = np.linalg.norm(arr, axis=1).max()
-    if max_norm > 1e-6:
-        arr /= max_norm / 1.6
-    return {nid: arr[i].copy() for i, nid in enumerate(node_ids)}
+    positions = {nid: np.array(pos[nid], dtype=float) for nid in node_ids}
+    return _normalize_positions(positions, node_ids)
 
 
 def _initial_positions(node_ids: list[int], dimensions: int, seed: int) -> Vector:
@@ -226,7 +233,7 @@ def _compute_free_directions_2d(
     pos_arr = np.stack(list(positions.values()))
     node_ids = list(positions.keys())
     index_by_node = {nid: i for i, nid in enumerate(node_ids)}
-    samples = 72
+    samples = _FREE_DIR_SAMPLES_2D
     angles = np.linspace(0.0, 2.0 * math.pi, samples, endpoint=False)
     unit_circle = np.column_stack((np.cos(angles), np.sin(angles)))
 
@@ -254,7 +261,7 @@ def _compute_free_directions_2d(
             if (node_id, axis_index) in directions:
                 continue
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
-            named_d = _direction_from_axis_name_2d(axis_name)
+            named_d = _direction_from_axis_name(axis_name, dimensions=2)
             if named_d is not None:
                 used_dirs = [
                     directions[(node_id, j)]
@@ -262,7 +269,7 @@ def _compute_free_directions_2d(
                     if (node_id, j) in directions
                 ]
                 overlap = sum(max(0.0, float(np.dot(named_d, u[:2]))) for u in used_dirs)
-                if overlap < 0.7:
+                if overlap < _FREE_DIR_OVERLAP_THRESHOLD:
                     directions[(node_id, axis_index)] = named_d
                     continue
             used_dirs = [
@@ -308,7 +315,7 @@ def _compute_free_directions_3d(
         ]
         for idx, axis_index in enumerate(free_indices):
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
-            named_d = _direction_from_axis_name_3d(axis_name)
+            named_d = _direction_from_axis_name(axis_name, dimensions=3)
             if named_d is not None:
                 used_dirs = [
                     directions[(node_id, j)]
@@ -316,7 +323,7 @@ def _compute_free_directions_3d(
                     if (node_id, j) in directions
                 ]
                 overlap = sum(max(0.0, float(np.dot(named_d, u))) for u in used_dirs)
-                if overlap < 0.7:
+                if overlap < _FREE_DIR_OVERLAP_THRESHOLD:
                     directions[(node_id, axis_index)] = named_d
                     continue
             angle = 2.0 * math.pi * idx / max(len(free_indices), 1)

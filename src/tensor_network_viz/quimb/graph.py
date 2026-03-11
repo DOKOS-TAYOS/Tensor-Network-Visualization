@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import Any
 
 from .._core.graph import (
@@ -12,7 +11,7 @@ from .._core.graph import (
     _NodeData,
 )
 from .._core.graph_utils import (
-    _is_unordered_collection,
+    _extract_unique_items,
     _stringify,
 )
 
@@ -39,39 +38,13 @@ def _sortable_tensor_key(tensor: Any) -> tuple[Any, ...]:
 
 def _get_network_tensors(network: Any) -> list[Any]:
     """Extract Quimb tensors from a TensorNetwork or iterable tensor collection."""
-    if isinstance(network, dict):
-        raw_tensors = network.values()
-        should_sort = False
-    elif hasattr(network, "tensors"):
-        raw_tensors = network.tensors
-        should_sort = _is_unordered_collection(raw_tensors)
-    elif isinstance(network, (str, bytes, bytearray)):
-        raise TypeError("Input must be a Quimb TensorNetwork or an iterable of tensors.")
-    elif isinstance(network, Iterable):
-        raw_tensors = network
-        should_sort = _is_unordered_collection(raw_tensors)
-    else:
-        raise TypeError("Input must be a Quimb TensorNetwork or an iterable of tensors.")
-
-    try:
-        items = list(raw_tensors)
-    except TypeError as exc:
-        raise TypeError("Quimb tensors must be iterable.") from exc
-
-    unique_tensors: list[Any] = []
-    seen: set[int] = set()
-    for tensor in items:
-        if tensor is None:
-            continue
-        tensor_id = id(tensor)
-        if tensor_id in seen:
-            continue
-        seen.add(tensor_id)
-        unique_tensors.append(tensor)
-
-    if should_sort:
-        unique_tensors.sort(key=_sortable_tensor_key)
-    return unique_tensors
+    return _extract_unique_items(
+        network,
+        attr_sources=("tensors",),
+        sort_key=_sortable_tensor_key,
+        backend_name="Quimb",
+        type_name="tensors",
+    )
 
 
 def _tensor_display_name(tensor: Any, fallback_index: int) -> str:

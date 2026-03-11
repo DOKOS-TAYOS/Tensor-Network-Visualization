@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -15,16 +16,40 @@ from ..config import PlotConfig
 from .draw_2d import _draw_2d
 from .draw_3d import _draw_3d
 from .graph import _GraphData
-from .layout import NodePositions, _compute_axis_directions, _compute_layout
+from .layout import (
+    NodePositions,
+    _compute_axis_directions,
+    _compute_layout,
+    _normalize_positions,
+)
 
 
 def _apply_custom_positions(
     graph: _GraphData,
     custom_positions: dict[int, tuple[float, ...]],
     dimensions: int,
+    *,
+    validate: bool = False,
 ) -> NodePositions:
     """Apply custom positions, using layout for missing nodes, then center and scale."""
     node_ids = list(graph.nodes)
+    node_id_set = set(graph.nodes)
+
+    if validate:
+        for key, pos in custom_positions.items():
+            if key not in node_id_set:
+                warnings.warn(
+                    f"Custom positions key {key} does not match any node id; ignored.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            elif len(pos) < dimensions:
+                warnings.warn(
+                    f"Custom position for node {key} has {len(pos)} coords but view "
+                    f"requires {dimensions}; missing coords will be zero-filled.",
+                    UserWarning,
+                    stacklevel=2,
+                )
     positions_arr = np.zeros((len(node_ids), dimensions), dtype=float)
     missing: list[int] = []
     for i, nid in enumerate(node_ids):
@@ -39,11 +64,8 @@ def _apply_custom_positions(
         for i, nid in enumerate(node_ids):
             if nid in missing:
                 positions_arr[i] = fallback[nid]
-    positions_arr -= positions_arr.mean(axis=0, keepdims=True)
-    max_norm = np.linalg.norm(positions_arr, axis=1).max()
-    if max_norm > 1e-6:
-        positions_arr /= max_norm / 1.6
-    return {nid: positions_arr[i].copy() for i, nid in enumerate(node_ids)}
+    positions = {nid: positions_arr[i].copy() for i, nid in enumerate(node_ids)}
+    return _normalize_positions(positions, node_ids)
 
 
 def _resolve_flag(value: bool | None, default: bool) -> bool:
@@ -57,11 +79,18 @@ def _count_visible_nodes(graph: _GraphData) -> int:
     return visible_nodes or len(graph.nodes)
 
 
+_SCALE_SINGLE_NODE: float = 1.2
+_SCALE_MIN: float = 0.5
+_SCALE_MAX: float = 1.6
+_SCALE_BASE: float = 2.2
+_SCALE_PER_NODE: float = 0.07
+
+
 def _compute_scale(n_nodes: int) -> float:
     """Scale factor for visual elements: larger for few nodes, smaller for many."""
     if n_nodes <= 1:
-        return 1.2
-    return max(0.5, min(1.6, 2.2 - 0.07 * n_nodes))
+        return _SCALE_SINGLE_NODE
+    return max(_SCALE_MIN, min(_SCALE_MAX, _SCALE_BASE - _SCALE_PER_NODE * n_nodes))
 
 
 def _prepare_axes_2d(
@@ -113,7 +142,9 @@ def _plot_graph_2d(
         else PlotConfig.DEFAULT_LAYOUT_ITERATIONS
     )
     if style.positions is not None:
-        positions = _apply_custom_positions(graph, style.positions, dimensions=2)
+        positions = _apply_custom_positions(
+            graph, style.positions, dimensions=2, validate=style.validate_positions
+        )
     else:
         positions = _compute_layout(graph, dimensions=2, seed=seed, iterations=iterations)
     directions = _compute_axis_directions(graph, positions, dimensions=2)
@@ -150,7 +181,9 @@ def _plot_graph_3d(
         else PlotConfig.DEFAULT_LAYOUT_ITERATIONS
     )
     if style.positions is not None:
-        positions = _apply_custom_positions(graph, style.positions, dimensions=3)
+        positions = _apply_custom_positions(
+            graph, style.positions, dimensions=3, validate=style.validate_positions
+        )
     else:
         positions = _compute_layout(graph, dimensions=3, seed=seed, iterations=iterations)
     directions = _compute_axis_directions(graph, positions, dimensions=3)

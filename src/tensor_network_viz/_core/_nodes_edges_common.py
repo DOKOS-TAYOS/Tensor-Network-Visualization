@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import Any
 
 from .graph import (
@@ -13,7 +12,7 @@ from .graph import (
     _NodeData,
 )
 from .graph_utils import (
-    _is_unordered_collection,
+    _extract_unique_items,
     _iterable_attr,
     _optional_string,
     _require_attr,
@@ -53,54 +52,13 @@ def _get_network_nodes(
     backend_name: str,
 ) -> list[Any]:
     """Extract nodes from a network object or iterable."""
-    if isinstance(network, dict):
-        raw_nodes = network.values()
-        should_sort = False
-    elif node_sources and any(hasattr(network, s) for s in node_sources):
-        raw_nodes = None
-        for src in node_sources:
-            if hasattr(network, src):
-                raw_nodes = getattr(network, src)
-                break
-        if raw_nodes is None:
-            raise TypeError(
-                f"Input must be an iterable of {backend_name} nodes, or an object with "
-                f"'{node_sources[0]}' or '{node_sources[1]}' attribute."
-            )
-        should_sort = _is_unordered_collection(raw_nodes)
-    elif isinstance(network, (str, bytes, bytearray)):
-        raise TypeError(f"Input must be an iterable of {backend_name} nodes.")
-    elif isinstance(network, Iterable):
-        raw_nodes = network
-        should_sort = _is_unordered_collection(raw_nodes)
-    else:
-        if node_sources:
-            extra = f", or an object with '{node_sources[0]}' or '{node_sources[1]}' attribute."
-        else:
-            extra = "."
-        raise TypeError(f"Input must be an iterable of {backend_name} nodes{extra}")
-
-    iterable = raw_nodes.values() if isinstance(raw_nodes, dict) else raw_nodes
-
-    try:
-        items = list(iterable)
-    except TypeError as exc:
-        raise TypeError(f"{backend_name} nodes must be iterable.") from exc
-
-    unique_nodes: list[Any] = []
-    seen: set[int] = set()
-    for node in items:
-        if node is None:
-            continue
-        node_id = id(node)
-        if node_id in seen:
-            continue
-        seen.add(node_id)
-        unique_nodes.append(node)
-
-    if should_sort:
-        unique_nodes.sort(key=lambda n: _sortable_node_key(n, axis_attr=axis_attr))
-    return unique_nodes
+    return _extract_unique_items(
+        network,
+        attr_sources=node_sources,
+        sort_key=lambda n: _sortable_node_key(n, axis_attr=axis_attr),
+        backend_name=backend_name,
+        type_name="nodes",
+    )
 
 
 def _build_graph_from_nodes_edges(

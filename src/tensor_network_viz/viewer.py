@@ -19,6 +19,8 @@ def show_tensor_network(
     engine: EngineName,
     view: ViewName,
     config: PlotConfig | None = None,
+    show_tensor_labels: bool | None = None,
+    show_index_labels: bool | None = None,
     show: bool = True,
 ) -> tuple[Figure, RenderedAxes]:
     """Render a tensor network and optionally display the figure.
@@ -31,6 +33,10 @@ def show_tensor_network(
             "tensornetwork", "quimb", "tenpy", and "einsum".
         view: "2d" or "3d" visualization mode.
         config: Optional styling; uses defaults if None.
+        show_tensor_labels: Whether to display tensor names on nodes. None uses
+            config default.
+        show_index_labels: Whether to display axis names on edges. None uses
+            config default.
         show: If True, call plt.show() to display the figure. Set False when
             integrating into other applications (e.g. adding a title before showing).
 
@@ -44,9 +50,19 @@ def show_tensor_network(
     style = config or PlotConfig()
     plot_2d, plot_3d = _get_plotters(engine)
     if view == "2d":
-        fig, ax = plot_2d(network, config=style)
+        fig, ax = plot_2d(
+            network,
+            config=style,
+            show_tensor_labels=show_tensor_labels,
+            show_index_labels=show_index_labels,
+        )
     else:
-        fig, ax = plot_3d(network, config=style)
+        fig, ax = plot_3d(
+            network,
+            config=style,
+            show_tensor_labels=show_tensor_labels,
+            show_index_labels=show_index_labels,
+        )
     if show:
         plt.show()
     return fig, ax

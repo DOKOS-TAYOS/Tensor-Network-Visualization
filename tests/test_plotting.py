@@ -342,7 +342,7 @@ def test_show_tensor_network_supports_tensornetwork_engine(
     connect(node, 0, name="edge")
     called = {"value": False}
 
-    def fake_plot(network, *, config):
+    def fake_plot(network, *, config, **kwargs):
         called["value"] = True
         assert network == [node]
         fig, ax = plt.subplots()
@@ -368,7 +368,7 @@ def test_show_tensor_network_supports_quimb_engine(
 ) -> None:
     called = {"value": False}
 
-    def fake_plot(network, *, config):
+    def fake_plot(network, *, config, **kwargs):
         called["value"] = True
         assert network == "quimb-network"
         fig, ax = plt.subplots()
@@ -394,7 +394,7 @@ def test_show_tensor_network_supports_tenpy_engine(
 ) -> None:
     called = {"value": False}
 
-    def fake_plot(network, *, config):
+    def fake_plot(network, *, config, **kwargs):
         called["value"] = True
         assert network == "tenpy-network"
         fig, ax = plt.subplots()
@@ -421,7 +421,7 @@ def test_show_tensor_network_supports_einsum_engine(
     trace = ["pair"]
     called = {"value": False}
 
-    def fake_plot(network, *, config):
+    def fake_plot(network, *, config, **kwargs):
         called["value"] = True
         assert network == trace
         fig, ax = plt.subplots()
