@@ -347,7 +347,9 @@ def test_show_tensor_network_supports_tensornetwork_engine(
         fig, ax = plt.subplots()
         return fig, ax
 
-    monkeypatch.setattr(viewer_module, "plot_tensornetwork_network_2d", fake_plot)
+    import tensor_network_viz.tensornetwork as tensornetwork_module
+
+    monkeypatch.setattr(tensornetwork_module, "plot_tensornetwork_network_2d", fake_plot)
     fig, ax = show_tensor_network(
         [node],
         engine="tensornetwork",
@@ -371,7 +373,9 @@ def test_show_tensor_network_supports_quimb_engine(
         fig, ax = plt.subplots()
         return fig, ax
 
-    monkeypatch.setattr(viewer_module, "plot_quimb_network_2d", fake_plot)
+    import tensor_network_viz.quimb as quimb_module
+
+    monkeypatch.setattr(quimb_module, "plot_quimb_network_2d", fake_plot)
     fig, ax = show_tensor_network(
         "quimb-network",
         engine="quimb",
@@ -395,7 +399,9 @@ def test_show_tensor_network_supports_tenpy_engine(
         fig, ax = plt.subplots()
         return fig, ax
 
-    monkeypatch.setattr(viewer_module, "plot_tenpy_network_2d", fake_plot)
+    import tensor_network_viz.tenpy as tenpy_module
+
+    monkeypatch.setattr(tenpy_module, "plot_tenpy_network_2d", fake_plot)
     fig, ax = show_tensor_network(
         "tenpy-network",
         engine="tenpy",
