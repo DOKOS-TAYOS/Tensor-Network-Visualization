@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tensor-network-visualization"
 version = "1.2.0"
-description = "Minimal Matplotlib visualizations for TensorKrowch and TensorNetwork tensor networks."
+description = "Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb, and TeNPy tensor networks."
 authors = [{ name = "Alejandro Mata Ali" }]
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-keywords = ["tensor-network", "visualization", "tensorkrowch", "tensornetwork", "matplotlib"]
+keywords = ["tensor-network", "visualization", "tensorkrowch", "tensornetwork", "quimb", "tenpy", "matplotlib"]
 dependencies = [
     "matplotlib>=3.7",
     "networkx>=3.0",
@@ -27,7 +27,9 @@ classifiers = [
 Repository = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization"
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "pyright", "tensornetwork"]
+dev = ["pytest", "ruff", "pyright", "tensornetwork", "quimb", "physics-tenpy"]
+quimb = ["quimb"]
+tenpy = ["physics-tenpy"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

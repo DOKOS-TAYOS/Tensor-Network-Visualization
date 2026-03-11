@@ -20,6 +20,30 @@ from .tensornetwork import (
 RenderedAxes: TypeAlias = Axes | Axes3D
 
 
+def plot_quimb_network_2d(*args, **kwargs):
+    from .quimb import plot_quimb_network_2d as _plot_quimb_network_2d
+
+    return _plot_quimb_network_2d(*args, **kwargs)
+
+
+def plot_quimb_network_3d(*args, **kwargs):
+    from .quimb import plot_quimb_network_3d as _plot_quimb_network_3d
+
+    return _plot_quimb_network_3d(*args, **kwargs)
+
+
+def plot_tenpy_network_2d(*args, **kwargs):
+    from .tenpy import plot_tenpy_network_2d as _plot_tenpy_network_2d
+
+    return _plot_tenpy_network_2d(*args, **kwargs)
+
+
+def plot_tenpy_network_3d(*args, **kwargs):
+    from .tenpy import plot_tenpy_network_3d as _plot_tenpy_network_3d
+
+    return _plot_tenpy_network_3d(*args, **kwargs)
+
+
 def show_tensor_network(
     network: Any,
     *,
@@ -60,6 +84,16 @@ def show_tensor_network(
             fig, ax = plot_tensornetwork_network_2d(network, config=style)
         else:
             fig, ax = plot_tensornetwork_network_3d(network, config=style)
+    elif engine == "quimb":
+        if view == "2d":
+            fig, ax = plot_quimb_network_2d(network, config=style)
+        else:
+            fig, ax = plot_quimb_network_3d(network, config=style)
+    elif engine == "tenpy":
+        if view == "2d":
+            fig, ax = plot_tenpy_network_2d(network, config=style)
+        else:
+            fig, ax = plot_tenpy_network_3d(network, config=style)
     else:
         raise ValueError(f"Unsupported tensor network engine: {engine}")
 

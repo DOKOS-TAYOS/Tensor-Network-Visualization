@@ -360,6 +360,54 @@ def test_show_tensor_network_supports_tensornetwork_engine(
     assert fig is ax.figure
 
 
+def test_show_tensor_network_supports_quimb_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = {"value": False}
+
+    def fake_plot(network, *, config):
+        called["value"] = True
+        assert network == "quimb-network"
+        fig, ax = plt.subplots()
+        return fig, ax
+
+    monkeypatch.setattr(viewer_module, "plot_quimb_network_2d", fake_plot)
+    fig, ax = show_tensor_network(
+        "quimb-network",
+        engine="quimb",
+        view="2d",
+        config=PlotConfig(figsize=(4, 3)),
+        show=False,
+    )
+
+    assert called["value"] is True
+    assert fig is ax.figure
+
+
+def test_show_tensor_network_supports_tenpy_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = {"value": False}
+
+    def fake_plot(network, *, config):
+        called["value"] = True
+        assert network == "tenpy-network"
+        fig, ax = plt.subplots()
+        return fig, ax
+
+    monkeypatch.setattr(viewer_module, "plot_tenpy_network_2d", fake_plot)
+    fig, ax = show_tensor_network(
+        "tenpy-network",
+        engine="tenpy",
+        view="2d",
+        config=PlotConfig(figsize=(4, 3)),
+        show=False,
+    )
+
+    assert called["value"] is True
+    assert fig is ax.figure
+
+
 def test_tensornetwork_renderer_does_not_import_tensorkrowch_private_modules() -> None:
     source = Path(tn_renderer_module.__file__).read_text(encoding="utf-8")
 

@@ -30,11 +30,41 @@ python examples/tensornetwork_demo.py mps 2d --save mps.png --no-show
 - **`--save PATH`:** Save the rendered figure
 - **`--no-show`:** Do not open the interactive Matplotlib window
 
+## quimb_demo.py
+
+```bash
+python examples/quimb_demo.py mps 2d
+python examples/quimb_demo.py weird 3d
+python examples/quimb_demo.py disconnected 2d
+python examples/quimb_demo.py mps 2d --from-list --save quimb.png --no-show
+```
+
+- **Networks:** `disconnected`, `mps`, `mpo`, `peps`, `weird`
+- **Views:** `2d`, `3d`
+- **Input:** Quimb `TensorNetwork` by default, or list of tensors with `--from-list`
+- **`--save PATH`:** Save the rendered figure
+- **`--no-show`:** Do not open the interactive Matplotlib window
+
+## tenpy_demo.py
+
+```bash
+python examples/tenpy_demo.py mps 2d
+python examples/tenpy_demo.py mpo 3d --save tenpy.png --no-show
+```
+
+- **Networks:** `mps`, `mpo`
+- **Views:** `2d`, `3d`
+- **Input:** Finite TeNPy `MPS` or `MPO`
+- **`--save PATH`:** Save the rendered figure
+- **`--no-show`:** Do not open the interactive Matplotlib window
+
 ## Architecture note
 
 - `tensor_network_viz._core`: Common graph, layout, drawing, and rendering pipeline
 - `tensor_network_viz.tensorkrowch`: TensorKrowch-specific input adapter plus public helpers
 - `tensor_network_viz.tensornetwork`: TensorNetwork-specific input adapter plus public helpers
+- `tensor_network_viz.quimb`: Quimb-specific input adapter plus public helpers
+- `tensor_network_viz.tenpy`: TeNPy-specific input adapter plus public helpers
 
 ## tn_tsp.py
 
