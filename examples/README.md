@@ -61,6 +61,22 @@ python examples/tenpy_demo.py mpo 3d --save tenpy.png --no-show
 - **`--save PATH`:** Save the rendered figure
 - **`--no-show`:** Do not open the interactive Matplotlib window
 
+## einsum_demo.py
+
+```bash
+python examples/einsum_demo.py mps 2d
+python examples/einsum_demo.py peps 3d
+python examples/einsum_demo.py disconnected 3d
+python examples/einsum_demo.py mps 2d --save einsum.png --no-show
+```
+
+- **Networks:** `disconnected`, `mps`, `peps`
+- **Views:** `2d`, `3d`
+- **Input:** Ordered list of `pair_tensor` entries traced from binary explicit `torch.einsum`
+- **Note:** PyTorch is only required to execute the demo contractions, not to render a previously built trace
+- **`--save PATH`:** Save the rendered figure
+- **`--no-show`:** Do not open the interactive Matplotlib window
+
 ## Architecture note
 
 - `tensor_network_viz._core`: Common graph, layout, drawing, and rendering pipeline
@@ -68,6 +84,7 @@ python examples/tenpy_demo.py mpo 3d --save tenpy.png --no-show
 - `tensor_network_viz.tensornetwork`: TensorNetwork-specific input adapter plus public helpers
 - `tensor_network_viz.quimb`: Quimb-specific input adapter plus public helpers
 - `tensor_network_viz.tenpy`: TeNPy-specific input adapter plus public helpers
+- `tensor_network_viz.einsum`: Ordered `pair_tensor` trace adapter plus public helpers
 
 ## tn_tsp.py
 

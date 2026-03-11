@@ -414,6 +414,33 @@ def test_show_tensor_network_supports_tenpy_engine(
     assert fig is ax.figure
 
 
+def test_show_tensor_network_supports_einsum_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = ["pair"]
+    called = {"value": False}
+
+    def fake_plot(network, *, config):
+        called["value"] = True
+        assert network == trace
+        fig, ax = plt.subplots()
+        return fig, ax
+
+    import tensor_network_viz.einsum as einsum_module
+
+    monkeypatch.setattr(einsum_module, "plot_einsum_network_2d", fake_plot)
+    fig, ax = show_tensor_network(
+        trace,
+        engine="einsum",
+        view="2d",
+        config=PlotConfig(figsize=(4, 3)),
+        show=False,
+    )
+
+    assert called["value"] is True
+    assert fig is ax.figure
+
+
 def test_tensornetwork_renderer_does_not_import_tensorkrowch_private_modules() -> None:
     source = Path(tn_renderer_module.__file__).read_text(encoding="utf-8")
 

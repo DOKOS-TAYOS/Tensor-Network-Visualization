@@ -8,6 +8,7 @@ import pytest
 
 pytest.importorskip("quimb")
 pytest.importorskip("tenpy")
+torch = pytest.importorskip("torch")
 
 
 def _load_example_module(path: Path, module_name: str):
@@ -148,6 +149,62 @@ def test_tenpy_infinite_mpo_demo_saves_figure_without_showing(
         [
             "tenpy_demo.py",
             "impo",
+            "3d",
+            "--save",
+            str(output_path),
+            "--no-show",
+        ],
+    )
+
+    module.main()
+
+    assert output_path.exists()
+
+
+def test_einsum_demo_saves_figure_without_showing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_dir = Path(".tmp") / "example-tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "einsum-demo.png"
+    module = _load_example_module(
+        Path("examples/einsum_demo.py"),
+        "einsum_demo_test",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "einsum_demo.py",
+            "mps",
+            "2d",
+            "--save",
+            str(output_path),
+            "--no-show",
+        ],
+    )
+
+    module.main()
+
+    assert output_path.exists()
+
+
+def test_einsum_peps_demo_saves_figure_without_showing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_dir = Path(".tmp") / "example-tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "einsum-peps-demo.png"
+    module = _load_example_module(
+        Path("examples/einsum_demo.py"),
+        "einsum_demo_peps_test",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "einsum_demo.py",
+            "peps",
             "3d",
             "--save",
             str(output_path),

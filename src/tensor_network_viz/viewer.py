@@ -26,8 +26,8 @@ def show_tensor_network(
         network: Tensor network object (with 'nodes'/'leaf_nodes'), or an
             iterable of nodes with 'edges', 'axes_names' or 'axis_names',
             and 'name'.
-        engine: Rendering engine; supported values are "tensorkrowch" and
-            "tensornetwork".
+        engine: Rendering engine; supported values are "tensorkrowch",
+            "tensornetwork", "quimb", "tenpy", and "einsum".
         view: "2d" or "3d" visualization mode.
         config: Optional styling; uses defaults if None.
         show: If True, call plt.show() to display the figure. Set False when
@@ -76,6 +76,13 @@ def show_tensor_network(
             fig, ax = plot_tenpy_network_2d(network, config=style)
         else:
             fig, ax = plot_tenpy_network_3d(network, config=style)
+    elif engine == "einsum":
+        from .einsum import plot_einsum_network_2d, plot_einsum_network_3d
+
+        if view == "2d":
+            fig, ax = plot_einsum_network_2d(network, config=style)
+        else:
+            fig, ax = plot_einsum_network_3d(network, config=style)
     else:
         raise ValueError(f"Unsupported tensor network engine: {engine}")
 

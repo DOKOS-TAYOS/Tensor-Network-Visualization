@@ -1,12 +1,12 @@
 # Tensor-Network-Visualization
 
-Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb, and TeNPy tensor networks.
+Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced PyTorch `einsum` tensor networks.
 
 **Repository:** [https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization](https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization)
 
 ## Features
 
-- 2D and 3D plotting for TensorKrowch, TensorNetwork, Quimb, and TeNPy tensor networks
+- 2D and 3D plotting for TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced binary `torch.einsum` tensor networks
 - Tensors rendered as nodes
 - Contractions rendered as edges between tensors
 - Dangling indices rendered as labeled stubs
@@ -40,6 +40,8 @@ pip install "tensor-network-visualization[quimb]"
 pip install "tensor-network-visualization[tenpy]"
 ```
 
+The `einsum` backend ships with the base package. You only need PyTorch installed if you want to execute the traced `torch.einsum(...)` calls themselves.
+
 ### Local development
 
 Inside the project virtual environment:
@@ -71,15 +73,18 @@ Supported inputs depend on the selected engine:
 - `engine="tenpy"`:
   - a finite, segment, or infinite `tenpy.networks.mps.MPS`
   - a finite or infinite `tenpy.networks.mpo.MPO`
+- `engine="einsum"`:
+  - an ordered iterable of `pair_tensor` entries representing binary explicit `left,right->out` einsums
 
 Each backend consumes its native tensor-network objects directly and normalizes them to the shared graph model internally.
 
 Quimb support includes hyper-indices shared by three or more tensors, rendered through invisible internal hub nodes so the original topology is preserved without exposing extra tensor markers. Infinite TeNPy `MPS`/`MPO` networks are rendered as a single unit cell closed periodically, so the repeating structure stays visible without introducing a separate infinite-edge primitive.
+The `einsum` backend reconstructs the underlying tensor network from the traced contractions and only shows the fundamental tensors, not the intermediate einsum results.
 
 When passing a subset of nodes, edges to nodes outside the input collection are drawn as dangling legs. Disconnected components (for example nodes from different networks) are supported.
 
 ```python
-from tensor_network_viz import PlotConfig, show_tensor_network
+from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network
 
 config = PlotConfig(figsize=(8, 6))
 
@@ -97,15 +102,24 @@ fig, ax = show_tensor_network(quimb_network, engine="quimb", view="2d", config=c
 
 # TeNPy MPS or MPO
 fig, ax = show_tensor_network(tenpy_network, engine="tenpy", view="2d", config=config)
+
+# Traced torch.einsum contractions
+trace = [
+    pair_tensor("A0", "x0", "r0", "pa,p->a"),
+    pair_tensor("r0", "A1", "r1", "a,apb->pb"),
+]
+fig, ax = show_tensor_network(trace, engine="einsum", view="2d", config=config)
 ```
 
 You can also use engine-specific helpers directly:
 
 ```python
+from tensor_network_viz import pair_tensor
 from tensor_network_viz.tensorkrowch import plot_tensorkrowch_network_2d, plot_tensorkrowch_network_3d
 from tensor_network_viz.tensornetwork import plot_tensornetwork_network_2d, plot_tensornetwork_network_3d
 from tensor_network_viz.quimb import plot_quimb_network_2d, plot_quimb_network_3d
 from tensor_network_viz.tenpy import plot_tenpy_network_2d, plot_tenpy_network_3d
+from tensor_network_viz.einsum import plot_einsum_network_2d, plot_einsum_network_3d
 
 plot_tensorkrowch_network_2d(network)   # or plot_tensorkrowch_network_2d([node1, node2, ...])
 plot_tensorkrowch_network_3d(network)
@@ -115,6 +129,8 @@ plot_quimb_network_2d(quimb_network)
 plot_quimb_network_3d(quimb_network)
 plot_tenpy_network_2d(tenpy_network)
 plot_tenpy_network_3d(tenpy_network)
+plot_einsum_network_2d(trace)
+plot_einsum_network_3d(trace)
 ```
 
 ## Internal architecture
@@ -126,12 +142,13 @@ The public API is split by backend, but the render pipeline is now shared:
 - `tensor_network_viz.tensornetwork` contains the TensorNetwork adapter that converts TensorNetwork node collections into the shared graph model.
 - `tensor_network_viz.quimb` contains the Quimb adapter that converts `TensorNetwork` objects or tensor collections into the shared graph model.
 - `tensor_network_viz.tenpy` contains the TeNPy adapter that converts finite, segment, and infinite `MPS` plus finite and infinite `MPO` objects into the shared graph model.
+- `tensor_network_viz.einsum` contains the trace adapter that converts ordered `pair_tensor` contractions into the shared graph model.
 
 This means backends are not converted into each other. Each backend normalizes its own input to the common `_GraphData` structure and the shared core handles the rest.
 
 ## Project layout
 
-- `examples/` - Demo scripts. Run `python examples/tensorkrowch_demo.py mps 2d`, `python examples/tensornetwork_demo.py mps 2d`, `python examples/quimb_demo.py mps 2d`, `python examples/tenpy_demo.py mps 2d`, or `python examples/tenpy_demo.py imps 2d`.
+- `examples/` - Demo scripts. Run `python examples/tensorkrowch_demo.py mps 2d`, `python examples/tensornetwork_demo.py mps 2d`, `python examples/quimb_demo.py mps 2d`, `python examples/tenpy_demo.py mps 2d`, or `python examples/einsum_demo.py mps 2d`.
 - `scripts/` - Utility scripts (for example `clean.py` to remove caches and build artifacts).
 
 ## Development

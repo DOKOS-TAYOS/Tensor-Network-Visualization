@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
-EngineName: TypeAlias = Literal["tensorkrowch", "tensornetwork", "quimb", "tenpy"]
+EngineName: TypeAlias = Literal["tensorkrowch", "tensornetwork", "quimb", "tenpy", "einsum"]
 ViewName: TypeAlias = Literal["2d", "3d"]
 
 
