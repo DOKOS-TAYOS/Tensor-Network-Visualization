@@ -31,6 +31,7 @@ tensorkrowch = ["tensorkrowch"]
 tensornetwork = ["tensornetwork"]
 quimb = ["quimb"]
 tenpy = ["physics-tenpy"]
+einsum = ["torch"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

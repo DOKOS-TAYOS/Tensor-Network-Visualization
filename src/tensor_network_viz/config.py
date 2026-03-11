@@ -1,17 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, TypeAlias
+from typing import ClassVar, Literal, TypeAlias
 
 EngineName: TypeAlias = Literal["tensorkrowch", "tensornetwork", "quimb", "tenpy", "einsum"]
 ViewName: TypeAlias = Literal["2d", "3d"]
-
-
-_DEFAULT_NODE_RADIUS = 0.08
-_DEFAULT_STUB_LENGTH = 0.34
-_DEFAULT_SELF_LOOP_RADIUS = 0.2
-_DEFAULT_LINE_WIDTH_2D = 1.8
-_DEFAULT_LINE_WIDTH_3D = 1.6
 
 
 @dataclass(frozen=True)
@@ -39,7 +32,15 @@ class PlotConfig:
             (x, y) for 2D or (x, y, z) for 3D. None uses automatic layout.
         node_edge_color: Border color for tensor nodes; use dark for contrast on light nodes.
         tensor_label_color: Color for tensor names on nodes; use dark for readability.
+        layout_iterations: Force-directed layout iterations; None uses default (220).
     """
+
+    DEFAULT_NODE_RADIUS: ClassVar[float] = 0.08
+    DEFAULT_STUB_LENGTH: ClassVar[float] = 0.34
+    DEFAULT_SELF_LOOP_RADIUS: ClassVar[float] = 0.2
+    DEFAULT_LINE_WIDTH_2D: ClassVar[float] = 1.8
+    DEFAULT_LINE_WIDTH_3D: ClassVar[float] = 1.6
+    DEFAULT_LAYOUT_ITERATIONS: ClassVar[int] = 220
 
     node_color: str = "#E8E8E8"
     node_edge_color: str = "#2D3748"
@@ -55,4 +56,5 @@ class PlotConfig:
     self_loop_radius: float | None = None
     line_width_2d: float | None = None
     line_width_3d: float | None = None
+    layout_iterations: int | None = None
     positions: dict[int, tuple[float, ...]] | None = None

@@ -8,37 +8,12 @@ from typing import TypeAlias
 import networkx as nx
 import numpy as np
 
+from .axis_directions import _AXIS_DIR_2D, _AXIS_DIR_3D
 from .graph import _GraphData
 
 Vector: TypeAlias = np.ndarray
 NodePositions: TypeAlias = dict[int, Vector]
 AxisDirections: TypeAlias = dict[tuple[int, int], Vector]
-
-_AXIS_DIR_2D: dict[str, tuple[float, float]] = {
-    "up": (0.0, 1.0),
-    "down": (0.0, -1.0),
-    "left": (-1.0, 0.0),
-    "right": (1.0, 0.0),
-    "north": (0.0, 1.0),
-    "south": (0.0, -1.0),
-    "east": (1.0, 0.0),
-    "west": (-1.0, 0.0),
-}
-
-_AXIS_DIR_3D: dict[str, tuple[float, float, float]] = {
-    "up": (0.0, 0.0, 1.0),
-    "down": (0.0, 0.0, -1.0),
-    "left": (-1.0, 0.0, 0.0),
-    "right": (1.0, 0.0, 0.0),
-    "north": (0.0, 0.0, 1.0),
-    "south": (0.0, 0.0, -1.0),
-    "east": (1.0, 0.0, 0.0),
-    "west": (-1.0, 0.0, 0.0),
-    "front": (0.0, 1.0, 0.0),
-    "back": (0.0, -1.0, 0.0),
-    "in": (0.0, 1.0, 0.0),
-    "out": (0.0, -1.0, 0.0),
-}
 
 
 def _direction_from_axis_name_2d(axis_name: str | None) -> np.ndarray | None:
@@ -59,7 +34,13 @@ def _direction_from_axis_name_3d(axis_name: str | None) -> np.ndarray | None:
     return None
 
 
-def _compute_layout(graph: _GraphData, dimensions: int, seed: int) -> NodePositions:
+def _compute_layout(
+    graph: _GraphData,
+    dimensions: int,
+    seed: int,
+    *,
+    iterations: int = 220,
+) -> NodePositions:
     node_ids = list(graph.nodes)
     if len(node_ids) == 1:
         origin = np.zeros(dimensions, dtype=float)
@@ -86,7 +67,7 @@ def _compute_layout(graph: _GraphData, dimensions: int, seed: int) -> NodePositi
 
     k = 1.6
     temperature = 0.12
-    for _ in range(220):
+    for _ in range(iterations):
         deltas = positions[:, None, :] - positions[None, :, :]
         distances = np.linalg.norm(deltas, axis=2)
         np.fill_diagonal(distances, 1.0)

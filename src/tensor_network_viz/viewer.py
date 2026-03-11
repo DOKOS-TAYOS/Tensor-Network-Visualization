@@ -7,6 +7,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
+from ._registry import _get_plotters
 from .config import EngineName, PlotConfig, ViewName
 
 RenderedAxes: TypeAlias = Axes | Axes3D
@@ -41,51 +42,11 @@ def show_tensor_network(
         >>> fig, ax = show_tensor_network(network, engine="tensorkrowch", view="2d", config=config)
     """
     style = config or PlotConfig()
-
-    if engine == "tensorkrowch":
-        from .tensorkrowch import (
-            plot_tensorkrowch_network_2d,
-            plot_tensorkrowch_network_3d,
-        )
-
-        if view == "2d":
-            fig, ax = plot_tensorkrowch_network_2d(network, config=style)
-        else:
-            fig, ax = plot_tensorkrowch_network_3d(network, config=style)
-    elif engine == "tensornetwork":
-        from .tensornetwork import (
-            plot_tensornetwork_network_2d,
-            plot_tensornetwork_network_3d,
-        )
-
-        if view == "2d":
-            fig, ax = plot_tensornetwork_network_2d(network, config=style)
-        else:
-            fig, ax = plot_tensornetwork_network_3d(network, config=style)
-    elif engine == "quimb":
-        from .quimb import plot_quimb_network_2d, plot_quimb_network_3d
-
-        if view == "2d":
-            fig, ax = plot_quimb_network_2d(network, config=style)
-        else:
-            fig, ax = plot_quimb_network_3d(network, config=style)
-    elif engine == "tenpy":
-        from .tenpy import plot_tenpy_network_2d, plot_tenpy_network_3d
-
-        if view == "2d":
-            fig, ax = plot_tenpy_network_2d(network, config=style)
-        else:
-            fig, ax = plot_tenpy_network_3d(network, config=style)
-    elif engine == "einsum":
-        from .einsum_module import plot_einsum_network_2d, plot_einsum_network_3d
-
-        if view == "2d":
-            fig, ax = plot_einsum_network_2d(network, config=style)
-        else:
-            fig, ax = plot_einsum_network_3d(network, config=style)
+    plot_2d, plot_3d = _get_plotters(engine)
+    if view == "2d":
+        fig, ax = plot_2d(network, config=style)
     else:
-        raise ValueError(f"Unsupported tensor network engine: {engine}")
-
+        fig, ax = plot_3d(network, config=style)
     if show:
         plt.show()
     return fig, ax

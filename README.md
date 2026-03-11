@@ -38,9 +38,10 @@ Other backends:
 pip install "tensor-network-visualization[tensornetwork]"
 pip install "tensor-network-visualization[quimb]"
 pip install "tensor-network-visualization[tenpy]"
+pip install "tensor-network-visualization[einsum]"
 ```
 
-The `einsum` backend ships with the base package. You only need PyTorch or NumPy installed if you want to execute traced `einsum(...)` calls through the convenience wrapper.
+The `einsum` backend ships with the base package. Install the `[einsum]` extra for PyTorch, or use NumPy if already installed, to execute traced `einsum(...)` calls through the convenience wrapper.
 
 ### Local development
 
@@ -83,6 +84,17 @@ Quimb support includes hyper-indices shared by three or more tensors, rendered t
 The `einsum` backend reconstructs the underlying tensor network from the traced contractions and only shows the fundamental tensors, not the intermediate einsum results.
 
 When passing a subset of nodes, edges to nodes outside the input collection are drawn as dangling legs. Disconnected components (for example nodes from different networks) are supported.
+
+### PlotConfig options
+
+`PlotConfig` controls styling and layout. Notable options:
+
+- `figsize`, `node_color`, `bond_edge_color`, `dangling_edge_color` – figure and color styling
+- `node_radius`, `stub_length`, `self_loop_radius` – scale of nodes and stubs
+- `line_width_2d`, `line_width_3d` – line thickness
+- `positions` – custom node positions (dict mapping node id to `(x, y)` or `(x, y, z)`)
+- `layout_iterations` – force-directed layout iterations (default 220; reduce for small networks, increase for large ones)
+- `show_tensor_labels`, `show_index_labels` – toggle labels on nodes and edges
 
 ```python
 import torch
@@ -151,11 +163,13 @@ plot_einsum_network_3d(trace)
 
 ## Internal architecture
 
-The public API is split by backend, but the render pipeline is now shared:
+The public API is split by backend, but the render pipeline is shared:
 
-- `tensor_network_viz._core` contains the normalized graph model, layout, curve geometry, drawing, and shared renderer.
-- `tensor_network_viz.tensorkrowch` contains the TensorKrowch adapter that converts TensorKrowch inputs into the shared graph model.
-- `tensor_network_viz.tensornetwork` contains the TensorNetwork adapter that converts TensorNetwork node collections into the shared graph model.
+- `tensor_network_viz._core` – normalized graph model (`_GraphData`), layout, axis directions, curve geometry, drawing, and shared renderer factory.
+- `tensor_network_viz._core._nodes_edges_common` – shared graph-building logic for TensorKrowch and TensorNetwork (both use nodes with `edges` and axis names).
+- `tensor_network_viz._registry` – engine registry for lazy-loaded plotters.
+- `tensor_network_viz.tensorkrowch` – TensorKrowch adapter (uses `axes_names`, `nodes`/`leaf_nodes`).
+- `tensor_network_viz.tensornetwork` – TensorNetwork adapter (uses `axis_names`, iterable nodes).
 - `tensor_network_viz.quimb` contains the Quimb adapter that converts `TensorNetwork` objects or tensor collections into the shared graph model.
 - `tensor_network_viz.tenpy` contains the TeNPy adapter that converts finite, segment, and infinite `MPS` plus finite and infinite `MPO` objects into the shared graph model.
 - `tensor_network_viz.einsum_module` contains the trace adapter that converts ordered `pair_tensor` contractions or `EinsumTrace` objects into the shared graph model.

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import cast
+from collections.abc import Callable
+from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -34,7 +35,7 @@ def _apply_custom_positions(
         else:
             missing.append(nid)
     if missing:
-        fallback = _compute_layout(graph, dimensions=dimensions, seed=0)
+        fallback = _compute_layout(graph, dimensions=dimensions, seed=0, iterations=220)
         for i, nid in enumerate(node_ids):
             if nid in missing:
                 positions_arr[i] = fallback[nid]
@@ -106,10 +107,15 @@ def _plot_graph_2d(
 ) -> tuple[Figure, Axes]:
     style = config or PlotConfig()
     fig, ax = _prepare_axes_2d(ax=ax, figsize=style.figsize, renderer_name=renderer_name)
+    iterations = (
+        style.layout_iterations
+        if style.layout_iterations is not None
+        else PlotConfig.DEFAULT_LAYOUT_ITERATIONS
+    )
     if style.positions is not None:
         positions = _apply_custom_positions(graph, style.positions, dimensions=2)
     else:
-        positions = _compute_layout(graph, dimensions=2, seed=seed)
+        positions = _compute_layout(graph, dimensions=2, seed=seed, iterations=iterations)
     directions = _compute_axis_directions(graph, positions, dimensions=2)
     scale = _compute_scale(_count_visible_nodes(graph))
     _draw_2d(
@@ -138,10 +144,15 @@ def _plot_graph_3d(
 ) -> tuple[Figure, Axes3D]:
     style = config or PlotConfig()
     fig, ax = _prepare_axes_3d(ax=ax, figsize=style.figsize, renderer_name=renderer_name)
+    iterations = (
+        style.layout_iterations
+        if style.layout_iterations is not None
+        else PlotConfig.DEFAULT_LAYOUT_ITERATIONS
+    )
     if style.positions is not None:
         positions = _apply_custom_positions(graph, style.positions, dimensions=3)
     else:
-        positions = _compute_layout(graph, dimensions=3, seed=seed)
+        positions = _compute_layout(graph, dimensions=3, seed=seed, iterations=iterations)
     directions = _compute_axis_directions(graph, positions, dimensions=3)
     scale = _compute_scale(_count_visible_nodes(graph))
     _draw_3d(
@@ -156,3 +167,60 @@ def _plot_graph_3d(
     )
     fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
     return fig, ax
+
+
+def _make_plot_functions(
+    build_graph_fn: Callable[[Any], _GraphData],
+    renderer_2d_name: str,
+    renderer_3d_name: str,
+    doc_2d: str,
+    doc_3d: str,
+) -> tuple[
+    Callable[..., tuple[Figure, Axes]],
+    Callable[..., tuple[Figure, Axes3D]],
+]:
+    """Create plot_2d and plot_3d functions for a backend."""
+
+    def plot_2d(
+        network: Any,
+        *,
+        ax: Axes | None = None,
+        config: PlotConfig | None = None,
+        show_tensor_labels: bool | None = None,
+        show_index_labels: bool | None = None,
+        seed: int = 0,
+    ) -> tuple[Figure, Axes]:
+        graph = build_graph_fn(network)
+        return _plot_graph_2d(
+            graph,
+            ax=ax,
+            config=config,
+            show_tensor_labels=show_tensor_labels,
+            show_index_labels=show_index_labels,
+            seed=seed,
+            renderer_name=renderer_2d_name,
+        )
+
+    def plot_3d(
+        network: Any,
+        *,
+        ax: Axes | Axes3D | None = None,
+        config: PlotConfig | None = None,
+        show_tensor_labels: bool | None = None,
+        show_index_labels: bool | None = None,
+        seed: int = 0,
+    ) -> tuple[Figure, Axes3D]:
+        graph = build_graph_fn(network)
+        return _plot_graph_3d(
+            graph,
+            ax=ax,
+            config=config,
+            show_tensor_labels=show_tensor_labels,
+            show_index_labels=show_index_labels,
+            seed=seed,
+            renderer_name=renderer_3d_name,
+        )
+
+    plot_2d.__doc__ = doc_2d
+    plot_3d.__doc__ = doc_3d
+    return plot_2d, plot_3d

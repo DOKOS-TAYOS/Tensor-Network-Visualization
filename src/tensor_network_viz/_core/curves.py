@@ -7,20 +7,10 @@ from typing import TypeAlias
 
 import numpy as np
 
+from .axis_directions import _AXIS_OFFSET_SIGN
 from .graph import _EdgeData, _EdgeEndpoint, _GraphData
 
 Vector: TypeAlias = np.ndarray
-
-_AXIS_OFFSET_SIGN: dict[str, int] = {
-    "up": 1,
-    "right": 1,
-    "north": 1,
-    "east": 1,
-    "down": -1,
-    "left": -1,
-    "south": -1,
-    "west": -1,
-}
 
 
 def _offset_sign_from_axis_name(axis_name: str | None) -> int:

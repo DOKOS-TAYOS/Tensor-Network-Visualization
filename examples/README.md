@@ -75,16 +75,18 @@ python examples/einsum_demo.py mps 2d --save einsum.png --no-show
 - **Views:** `2d`, `3d`
 - **Mode `auto`:** `EinsumTrace` populated automatically through `tensor_network_viz.einsum(...)`
 - **Mode `manual`:** Ordered `pair_tensor` list executed with `torch.einsum(...)`
-- **Note:** PyTorch is only required to execute the demo contractions, not to render a previously built trace
+- **Note:** Install `tensor-network-visualization[einsum]` for PyTorch. PyTorch is only required to execute the demo contractions, not to render a previously built trace
 - **`--mode {auto,manual}`:** Choose between the wrapper-based trace and the explicit `pair_tensor` trace
 - **`--save PATH`:** Save the rendered figure
 - **`--no-show`:** Do not open the interactive Matplotlib window
 
 ## Architecture note
 
-- `tensor_network_viz._core`: Common graph, layout, drawing, and rendering pipeline
-- `tensor_network_viz.tensorkrowch`: TensorKrowch-specific input adapter plus public helpers
-- `tensor_network_viz.tensornetwork`: TensorNetwork-specific input adapter plus public helpers
+- `tensor_network_viz._core`: Common graph model, layout, axis directions, drawing, and shared renderer
+- `tensor_network_viz._core._nodes_edges_common`: Shared graph-building for TensorKrowch and TensorNetwork
+- `tensor_network_viz._registry`: Engine registry for lazy-loaded plotters
+- `tensor_network_viz.tensorkrowch`: TensorKrowch adapter plus public helpers
+- `tensor_network_viz.tensornetwork`: TensorNetwork adapter plus public helpers
 - `tensor_network_viz.quimb`: Quimb-specific input adapter plus public helpers
 - `tensor_network_viz.tenpy`: TeNPy-specific input adapter plus public helpers
 - `tensor_network_viz.einsum_module`: Ordered `pair_tensor` trace adapter plus public helpers
