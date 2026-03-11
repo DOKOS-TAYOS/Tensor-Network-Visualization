@@ -17,23 +17,25 @@ Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb, and Te
 
 ### As a dependency
 
+The base package provides the rendering core (Matplotlib, NetworkX). Install at least one backend extra for the engine you use:
+
 Add to your project's `pyproject.toml`:
 
 ```toml
 [project]
-dependencies = ["tensor-network-visualization>=0.1.0"]
+dependencies = ["tensor-network-visualization[tensorkrowch]"]  # or [tensornetwork], [quimb], [tenpy]
 ```
 
 Or install with pip:
 
 ```bash
-pip install tensor-network-visualization
+pip install "tensor-network-visualization[tensorkrowch]"
 ```
 
-Optional backends can be installed as extras or directly:
+Other backends:
 
 ```bash
-pip install tensornetwork
+pip install "tensor-network-visualization[tensornetwork]"
 pip install "tensor-network-visualization[quimb]"
 pip install "tensor-network-visualization[tenpy]"
 ```

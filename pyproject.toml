@@ -14,7 +14,6 @@ keywords = ["tensor-network", "visualization", "tensorkrowch", "tensornetwork", 
 dependencies = [
     "matplotlib>=3.7",
     "networkx>=3.0",
-    "tensorkrowch",
 ]
 classifiers = [
     "License :: OSI Approved :: MIT License",
@@ -27,7 +26,9 @@ classifiers = [
 Repository = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization"
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "pyright", "tensornetwork", "quimb", "physics-tenpy"]
+dev = ["pytest", "ruff", "pyright", "tensorkrowch", "tensornetwork", "quimb", "physics-tenpy"]
+tensorkrowch = ["tensorkrowch"]
+tensornetwork = ["tensornetwork"]
 quimb = ["quimb"]
 tenpy = ["physics-tenpy"]
 
