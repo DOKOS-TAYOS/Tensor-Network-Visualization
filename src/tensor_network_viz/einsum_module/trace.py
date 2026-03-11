@@ -78,6 +78,8 @@ class EinsumTrace:
     def __init__(self) -> None:
         self._pairs: list[pair_tensor] = []
         self._records: dict[int, _TrackedTensor] = {}
+        self._pair_names: set[str] = set()
+        self._reserved_names: set[str] = set()
         self._next_tensor_index = 0
         self._next_result_index = 0
 
@@ -92,21 +94,28 @@ class EinsumTrace:
         if not bound_name:
             raise ValueError("Tensor binding names must be non-empty.")
 
+        self._sweep_dead_records()
         tensor_id, record = self._find_record(tensor)
         self._ensure_name_is_available(bound_name, exclude_tensor_id=tensor_id)
         if record is None:
-            self._records[tensor_id] = _TrackedTensor(
-                ref=_make_weakref(tensor),
-                name=bound_name,
-                state="bound",
+            self._set_record(
+                tensor_id,
+                _TrackedTensor(
+                    ref=_make_weakref(tensor),
+                    name=bound_name,
+                    state="bound",
+                ),
             )
             return
         if record.state != "bound":
             raise ValueError("Tensor has already been traced and cannot be rebound.")
-        self._records[tensor_id] = _TrackedTensor(
-            ref=record.ref,
-            name=bound_name,
-            state="bound",
+        self._set_record(
+            tensor_id,
+            _TrackedTensor(
+                ref=record.ref,
+                name=bound_name,
+                state="bound",
+            ),
         )
 
     def _prepare_call(
@@ -120,11 +129,21 @@ class EinsumTrace:
         if left is right:
             raise ValueError("Traced einsum requires distinct operand objects.")
 
-        left_operand, next_tensor_index = self._resolve_operand(left, self._next_tensor_index)
-        right_operand, next_tensor_index = self._resolve_operand(right, next_tensor_index)
+        self._sweep_dead_records()
+        reserved_names = set(self._reserved_names)
+        left_operand, next_tensor_index = self._resolve_operand(
+            left,
+            self._next_tensor_index,
+            reserved_names=reserved_names,
+        )
+        right_operand, next_tensor_index = self._resolve_operand(
+            right,
+            next_tensor_index,
+            reserved_names=reserved_names,
+        )
         if left_operand.name == right_operand.name:
             raise ValueError("Traced einsum requires distinct operand names.")
-        result_name = self._peek_name("r", self._next_result_index)
+        result_name = self._peek_name("r", self._next_result_index, reserved_names=reserved_names)
         return _PreparedCall(
             expression=expression,
             left=left_operand,
@@ -137,25 +156,34 @@ class EinsumTrace:
         for operand in (prepared.left, prepared.right):
             current = self._records.get(operand.tensor_id)
             if current is None:
-                self._records[operand.tensor_id] = _TrackedTensor(
-                    ref=_make_weakref(operand.tensor),
-                    name=operand.name,
-                    state="consumed",
+                self._set_record(
+                    operand.tensor_id,
+                    _TrackedTensor(
+                        ref=_make_weakref(operand.tensor),
+                        name=operand.name,
+                        state="consumed",
+                    ),
                 )
             else:
-                self._records[operand.tensor_id] = _TrackedTensor(
-                    ref=current.ref,
-                    name=current.name,
-                    state="consumed",
+                self._set_record(
+                    operand.tensor_id,
+                    _TrackedTensor(
+                        ref=current.ref,
+                        name=current.name,
+                        state="consumed",
+                    ),
                 )
 
         result_id, existing_result = self._find_record(result)
         if existing_result is not None:
             raise ValueError("Backend returned a tensor that is already tracked by this trace.")
-        self._records[result_id] = _TrackedTensor(
-            ref=_make_weakref(result),
-            name=prepared.result_name,
-            state="available",
+        self._set_record(
+            result_id,
+            _TrackedTensor(
+                ref=_make_weakref(result),
+                name=prepared.result_name,
+                state="available",
+            ),
         )
         metadata = {
             "backend": prepared.backend,
@@ -175,6 +203,11 @@ class EinsumTrace:
                 metadata=metadata,
             )
         )
+        self._reserve_pair_names(
+            prepared.left.name,
+            prepared.right.name,
+            prepared.result_name,
+        )
 
         new_tensor_count = sum(
             not operand.record_exists for operand in (prepared.left, prepared.right)
@@ -186,10 +219,14 @@ class EinsumTrace:
         self,
         tensor: Any,
         next_tensor_index: int,
+        *,
+        reserved_names: set[str] | None = None,
     ) -> tuple[_PreparedOperand, int]:
         tensor_id, record = self._find_record(tensor)
         if record is None:
-            name = self._peek_name("t", next_tensor_index)
+            name = self._peek_name("t", next_tensor_index, reserved_names=reserved_names)
+            if reserved_names is not None:
+                reserved_names.add(name)
             return (
                 _PreparedOperand(
                     tensor=tensor,
@@ -218,12 +255,18 @@ class EinsumTrace:
             return tensor_id, None
         current = record.ref()
         if current is not tensor:
-            self._records.pop(tensor_id, None)
+            self._discard_record(tensor_id, record)
             return tensor_id, None
         return tensor_id, record
 
-    def _peek_name(self, prefix: str, start_index: int) -> str:
-        in_use = self._names_in_use()
+    def _peek_name(
+        self,
+        prefix: str,
+        start_index: int,
+        *,
+        reserved_names: set[str] | None = None,
+    ) -> str:
+        in_use = self._reserved_names if reserved_names is None else reserved_names
         index = start_index
         while True:
             candidate = f"{prefix}{index}"
@@ -231,25 +274,42 @@ class EinsumTrace:
                 return candidate
             index += 1
 
-    def _names_in_use(self) -> set[str]:
-        names = {record.name for record in self._records.values() if record.ref() is not None}
-        for item in self._pairs:
-            names.update((item.left_name, item.right_name, item.result_name))
-        return names
-
     def _ensure_name_is_available(self, name: str, *, exclude_tensor_id: int) -> None:
+        self._sweep_dead_records()
+        excluded_name: str | None = None
+        if exclude_tensor_id in self._records:
+            excluded_name = self._records[exclude_tensor_id].name
+        if name in self._reserved_names and name != excluded_name:
+            raise ValueError(f"Tensor name {name!r} is already in use by this trace.")
+
+    def _set_record(self, tensor_id: int, record: _TrackedTensor) -> None:
+        previous = self._records.get(tensor_id)
+        if (
+            previous is not None
+            and previous.name != record.name
+            and previous.name not in self._pair_names
+        ):
+            self._reserved_names.discard(previous.name)
+        self._records[tensor_id] = record
+        self._reserved_names.add(record.name)
+
+    def _reserve_pair_names(self, *names: str) -> None:
+        for name in names:
+            self._pair_names.add(name)
+            self._reserved_names.add(name)
+
+    def _discard_record(self, tensor_id: int, record: _TrackedTensor | None = None) -> None:
+        tracked = record if record is not None else self._records.get(tensor_id)
+        if tracked is None:
+            return
+        self._records.pop(tensor_id, None)
+        if tracked.name not in self._pair_names:
+            self._reserved_names.discard(tracked.name)
+
+    def _sweep_dead_records(self) -> None:
         for tensor_id, record in list(self._records.items()):
-            current = record.ref()
-            if current is None:
-                self._records.pop(tensor_id, None)
-                continue
-            if tensor_id == exclude_tensor_id:
-                continue
-            if record.name == name:
-                raise ValueError(f"Tensor name {name!r} is already in use by this trace.")
-        for item in self._pairs:
-            if name in {item.left_name, item.right_name, item.result_name}:
-                raise ValueError(f"Tensor name {name!r} is already in use by this trace.")
+            if record.ref() is None:
+                self._discard_record(tensor_id, record)
 
 
 def _normalize_trace(trace: Any) -> list[pair_tensor]:

@@ -57,6 +57,9 @@ For runtime-only (editable install without dev tools):
 .\.venv\Scripts\python -m pip install -e .
 ```
 
+The repository also keeps `requirements.txt` and `requirements.dev.txt` as thin wrappers for
+those same editable installs: `-e .` for runtime-only and `-e ".[dev]"` for development.
+
 ## Usage
 
 ### Input formats

@@ -68,6 +68,29 @@ def test_einsum_trace_bind_uses_human_names_before_first_use() -> None:
     assert pair.result_name == "r0"
 
 
+def test_einsum_trace_keeps_generated_names_unique_across_multiple_calls() -> None:
+    trace = tv.EinsumTrace()
+    a0 = torch.ones((3, 2))
+    x0 = torch.ones((3,))
+    a1 = torch.ones((2, 3))
+    a2 = torch.ones((3, 2))
+    x1 = torch.ones((3,))
+
+    trace.bind("r0", a0)
+    trace.bind("t0", x0)
+    first = tv.einsum("pa,p->a", a0, x0, trace=trace)
+    second = tv.einsum("ap,a->p", a1, first, trace=trace)
+    tv.einsum("pa,p->a", a2, x1, trace=trace)
+
+    pairs = list(trace)
+
+    assert [pair.result_name for pair in pairs] == ["r1", "r2", "r3"]
+    assert pairs[0].left_name == "r0"
+    assert pairs[0].right_name == "t0"
+    assert pairs[1].right_name == "r1"
+    assert tuple(second.shape) == (3,)
+
+
 def test_einsum_trace_rejects_binding_after_tensor_was_traced() -> None:
     trace = tv.EinsumTrace()
     a0 = torch.ones((3, 2))

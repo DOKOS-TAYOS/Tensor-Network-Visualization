@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections import Counter
 from typing import TypeAlias
 
 import networkx as nx
@@ -80,7 +81,7 @@ def _compute_layout(
         if edge.kind != "contraction":
             continue
         left, right = edge.node_ids
-        key = tuple(sorted((left, right)))
+        key = (left, right) if left < right else (right, left)
         pair_weights[key] = pair_weights.get(key, 0) + 1
 
     k = _FORCE_LAYOUT_K
@@ -136,6 +137,12 @@ def _try_grid_layout_2d(graph: _GraphData) -> NodePositions | None:
     g = _build_nx_graph_from_graph_data(graph)
     n_nodes = g.number_of_nodes()
     n_edges = g.number_of_edges()
+    if not nx.is_connected(g):
+        return None
+
+    degree_histogram = Counter(degree for _, degree in g.degree())
+    if any(degree > 4 for degree in degree_histogram):
+        return None
 
     for rows in range(1, n_nodes + 1):
         if n_nodes % rows != 0:
@@ -143,6 +150,8 @@ def _try_grid_layout_2d(graph: _GraphData) -> NodePositions | None:
         cols = n_nodes // rows
         expected_edges = 2 * rows * cols - rows - cols
         if n_edges != expected_edges:
+            continue
+        if degree_histogram != _grid_degree_histogram(rows, cols):
             continue
         grid_g = nx.grid_2d_graph(rows, cols)
         mapping = nx.vf2pp_isomorphism(g, grid_g)
@@ -169,6 +178,26 @@ def _try_planar_layout_2d(graph: _GraphData) -> NodePositions | None:
 
     positions = {nid: np.array(pos[nid], dtype=float) for nid in node_ids}
     return _normalize_positions(positions, node_ids)
+
+
+def _grid_degree_histogram(rows: int, cols: int) -> Counter[int]:
+    if rows == 1:
+        if cols == 2:
+            return Counter({1: 2})
+        return Counter({1: 2, 2: cols - 2})
+    if cols == 1:
+        if rows == 2:
+            return Counter({1: 2})
+        return Counter({1: 2, 2: rows - 2})
+
+    histogram = Counter({2: 4})
+    if rows > 2:
+        histogram[3] += 2 * (rows - 2)
+    if cols > 2:
+        histogram[3] += 2 * (cols - 2)
+    if rows > 2 and cols > 2:
+        histogram[4] = (rows - 2) * (cols - 2)
+    return histogram
 
 
 def _initial_positions(node_ids: list[int], dimensions: int, seed: int) -> Vector:
@@ -230,25 +259,36 @@ def _compute_free_directions_2d(
     positions: NodePositions,
     directions: AxisDirections,
 ) -> None:
-    pos_arr = np.stack(list(positions.values()))
-    node_ids = list(positions.keys())
-    index_by_node = {nid: i for i, nid in enumerate(node_ids)}
+    node_ids = list(positions)
     samples = _FREE_DIR_SAMPLES_2D
     angles = np.linspace(0.0, 2.0 * math.pi, samples, endpoint=False)
     unit_circle = np.column_stack((np.cos(angles), np.sin(angles)))
+    other_node_positions = {
+        node_id: np.array(
+            [positions[other_id] for other_id in node_ids if other_id != node_id],
+            dtype=float,
+        )
+        for node_id in node_ids
+    }
+    neighbor_midpoints: dict[int, list[np.ndarray]] = {node_id: [] for node_id in node_ids}
+    for edge in graph.edges:
+        if edge.kind != "contraction":
+            continue
+        left_id, right_id = edge.node_ids
+        midpoint = (positions[left_id] + positions[right_id]) / 2.0
+        neighbor_midpoints[left_id].append(midpoint)
+        neighbor_midpoints[right_id].append(midpoint)
 
     for node_id, node in graph.nodes.items():
         origin = positions[node_id]
-        i_origin = index_by_node[node_id]
-        obstacles = list(np.delete(pos_arr, i_origin, axis=0))
-        for edge in graph.edges:
-            if edge.kind == "contraction" and node_id in edge.node_ids:
-                other_id = edge.node_ids[1] if edge.node_ids[0] == node_id else edge.node_ids[0]
-                mid = (positions[node_id] + positions[other_id]) / 2.0
-                obstacles.append(mid)
+        obstacle_parts: list[np.ndarray] = []
+        if other_node_positions[node_id].size:
+            obstacle_parts.append(other_node_positions[node_id])
+        if neighbor_midpoints[node_id]:
+            obstacle_parts.append(np.array(neighbor_midpoints[node_id], dtype=float))
         obstacles_arr = (
-            np.array(obstacles, dtype=float)
-            if obstacles
+            np.concatenate(obstacle_parts, axis=0)
+            if obstacle_parts
             else np.array([[origin[0] + 1.0, origin[1]]], dtype=float)
         )
 
@@ -257,26 +297,22 @@ def _compute_free_directions_2d(
         dists = np.maximum(dists, 1e-6)
         dirs_to_obstacles = vecs_to_obstacles / dists
 
-        for axis_index in range(max(node.degree, 1)):
+        axis_count = max(node.degree, 1)
+        for axis_index in range(axis_count):
             if (node_id, axis_index) in directions:
                 continue
+            used_dirs = [
+                directions[(node_id, j)]
+                for j in range(axis_count)
+                if (node_id, j) in directions
+            ]
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
             named_d = _direction_from_axis_name(axis_name, dimensions=2)
             if named_d is not None:
-                used_dirs = [
-                    directions[(node_id, j)]
-                    for j in range(max(node.degree, 1))
-                    if (node_id, j) in directions
-                ]
                 overlap = sum(max(0.0, float(np.dot(named_d, u[:2]))) for u in used_dirs)
                 if overlap < _FREE_DIR_OVERLAP_THRESHOLD:
                     directions[(node_id, axis_index)] = named_d
                     continue
-            used_dirs = [
-                directions[(node_id, j)]
-                for j in range(max(node.degree, 1))
-                if (node_id, j) in directions
-            ]
             best_score = -np.inf
             best_d = np.array([1.0, 0.0], dtype=float)
             for d in unit_circle:

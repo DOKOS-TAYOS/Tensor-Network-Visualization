@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
+import tensor_network_viz._core.renderer as core_renderer_module
 import tensor_network_viz.tensorkrowch.graph as tk_graph_module
 import tensor_network_viz.tensorkrowch.renderer as tk_renderer_module
 import tensor_network_viz.tensornetwork.graph as tn_graph_module
@@ -25,18 +26,12 @@ from tensor_network_viz.tensorkrowch import (
 from tensor_network_viz.tensorkrowch.graph import (
     _build_graph as _build_tensorkrowch_graph,
 )
-from tensor_network_viz.tensorkrowch.graph import (
-    _get_network_nodes as _get_tensorkrowch_nodes,
-)
 from tensor_network_viz.tensornetwork import (
     plot_tensornetwork_network_2d,
     plot_tensornetwork_network_3d,
 )
 from tensor_network_viz.tensornetwork.graph import (
     _build_graph as _build_tensornetwork_graph,
-)
-from tensor_network_viz.tensornetwork.graph import (
-    _get_network_nodes as _get_tensornetwork_nodes,
 )
 
 
@@ -119,13 +114,13 @@ def test_build_tensorkrowch_graph_accepts_list_of_nodes() -> None:
     assert graph.edges[0].kind == "contraction"
 
 
-def test_get_tensorkrowch_nodes_sorts_unordered_iterables_stably() -> None:
+def test_build_tensorkrowch_graph_sorts_unordered_iterables_stably() -> None:
     left = DummyTensorKrowchNode("B", ["left"])
     right = DummyTensorKrowchNode("A", ["right"])
 
-    nodes = _get_tensorkrowch_nodes({left, right})
+    graph = _build_tensorkrowch_graph({left, right})
 
-    assert [node.name for node in nodes] == ["A", "B"]
+    assert [node.name for node in graph.nodes.values()] == ["A", "B"]
 
 
 def test_build_tensorkrowch_graph_accepts_generic_iterables_and_deduplicates_nodes() -> None:
@@ -172,13 +167,13 @@ def test_build_tensornetwork_graph_accepts_iterable_of_nodes() -> None:
     assert graph.edges[0].kind == "contraction"
 
 
-def test_get_tensornetwork_nodes_sorts_unordered_iterables_stably() -> None:
+def test_build_tensornetwork_graph_sorts_unordered_iterables_stably() -> None:
     left = DummyTensorNetworkNode("B", ["left"])
     right = DummyTensorNetworkNode("A", ["right"])
 
-    nodes = _get_tensornetwork_nodes({left, right})
+    graph = _build_tensornetwork_graph({left, right})
 
-    assert [node.name for node in nodes] == ["A", "B"]
+    assert [node.name for node in graph.nodes.values()] == ["A", "B"]
 
 
 def test_build_tensornetwork_graph_accepts_generic_iterables_and_deduplicates_nodes() -> None:
@@ -238,6 +233,34 @@ def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
     assert fig is ax.figure
     assert labels >= {"A", "B", "left<->right"}
     assert len(ax.lines) == 1
+
+
+def test_plot_tensorkrowch_network_2d_uses_layout_iterations_for_missing_custom_positions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+    captured: dict[str, int] = {}
+
+    def fake_compute_layout(graph, dimensions: int, seed: int, *, iterations: int = 220):
+        captured["iterations"] = iterations
+        assert dimensions == 2
+        assert seed == 0
+        return {
+            node_id: np.array([float(index), float(index)], dtype=float)
+            for index, node_id in enumerate(graph.nodes)
+        }
+
+    monkeypatch.setattr(core_renderer_module, "_compute_layout", fake_compute_layout)
+    config = PlotConfig(
+        positions={id(left): (0.0, 0.0)},
+        layout_iterations=17,
+    )
+
+    plot_tensorkrowch_network_2d(DummyNetwork(nodes=[left, right]), config=config)
+
+    assert captured["iterations"] == 17
 
 
 def test_plot_tensorkrowch_network_2d_offsets_multiple_edges() -> None:

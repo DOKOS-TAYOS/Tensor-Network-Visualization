@@ -29,6 +29,7 @@ def _apply_custom_positions(
     custom_positions: dict[int, tuple[float, ...]],
     dimensions: int,
     *,
+    iterations: int,
     validate: bool = False,
 ) -> NodePositions:
     """Apply custom positions, using layout for missing nodes, then center and scale."""
@@ -51,16 +52,16 @@ def _apply_custom_positions(
                     stacklevel=2,
                 )
     positions_arr = np.zeros((len(node_ids), dimensions), dtype=float)
-    missing: list[int] = []
+    missing: set[int] = set()
     for i, nid in enumerate(node_ids):
         if nid in custom_positions:
             pos = np.array(custom_positions[nid], dtype=float)
             n = min(len(pos), dimensions)
             positions_arr[i, :n] = pos[:n]
         else:
-            missing.append(nid)
+            missing.add(nid)
     if missing:
-        fallback = _compute_layout(graph, dimensions=dimensions, seed=0, iterations=220)
+        fallback = _compute_layout(graph, dimensions=dimensions, seed=0, iterations=iterations)
         for i, nid in enumerate(node_ids):
             if nid in missing:
                 positions_arr[i] = fallback[nid]
@@ -143,7 +144,11 @@ def _plot_graph_2d(
     )
     if style.positions is not None:
         positions = _apply_custom_positions(
-            graph, style.positions, dimensions=2, validate=style.validate_positions
+            graph,
+            style.positions,
+            dimensions=2,
+            iterations=iterations,
+            validate=style.validate_positions,
         )
     else:
         positions = _compute_layout(graph, dimensions=2, seed=seed, iterations=iterations)
@@ -182,7 +187,11 @@ def _plot_graph_3d(
     )
     if style.positions is not None:
         positions = _apply_custom_positions(
-            graph, style.positions, dimensions=3, validate=style.validate_positions
+            graph,
+            style.positions,
+            dimensions=3,
+            iterations=iterations,
+            validate=style.validate_positions,
         )
     else:
         positions = _compute_layout(graph, dimensions=3, seed=seed, iterations=iterations)
