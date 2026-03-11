@@ -10,11 +10,11 @@ import matplotlib.pyplot as plt
 import pytest
 
 from tensor_network_viz import pair_tensor
-from tensor_network_viz.einsum import (
+from tensor_network_viz.einsum_module import (
     plot_einsum_network_2d,
     plot_einsum_network_3d,
 )
-from tensor_network_viz.einsum.graph import _build_graph
+from tensor_network_viz.einsum_module.graph import _build_graph
 
 
 @pytest.fixture(autouse=True)

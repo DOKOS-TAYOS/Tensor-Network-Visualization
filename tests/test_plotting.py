@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from typing import Any
 
@@ -426,7 +427,7 @@ def test_show_tensor_network_supports_einsum_engine(
         fig, ax = plt.subplots()
         return fig, ax
 
-    import tensor_network_viz.einsum as einsum_module
+    einsum_module = importlib.import_module("tensor_network_viz.einsum_module")
 
     monkeypatch.setattr(einsum_module, "plot_einsum_network_2d", fake_plot)
     fig, ax = show_tensor_network(

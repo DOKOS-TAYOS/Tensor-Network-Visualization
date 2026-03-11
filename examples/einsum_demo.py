@@ -3,22 +3,29 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Literal
 
 import matplotlib
 import torch
 
 try:
-    from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network
+    from tensor_network_viz import EinsumTrace, PlotConfig, einsum, pair_tensor, show_tensor_network
 except ImportError:
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root / "src"))
-    from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network
+    from tensor_network_viz import EinsumTrace, PlotConfig, einsum, pair_tensor, show_tensor_network
+
+TraceMode = Literal["auto", "manual"]
+TraceInput = EinsumTrace | list[pair_tensor]
 
 DESCRIPTION = """\
 Small demo for traced binary torch.einsum contractions.
 
-It records sequential einsums with pair_tensor and renders the reconstructed
-underlying tensor network.
+It can build the same tensor network through either:
+  - EinsumTrace plus tensor_network_viz.einsum(...)
+  - explicit pair_tensor entries plus torch.einsum(...)
+
+Both modes render the reconstructed underlying tensor network.
 Available examples:
   - disconnected
   - mps
@@ -26,13 +33,14 @@ Available examples:
 
 Examples:
   python examples/einsum_demo.py mps 2d
+  python examples/einsum_demo.py mps 2d --mode manual
   python examples/einsum_demo.py peps 3d
   python examples/einsum_demo.py disconnected 3d
   python examples/einsum_demo.py mps 2d --save einsum.png --no-show
 """
 
 
-def build_mps_trace() -> tuple[list[pair_tensor], tuple[int, ...]]:
+def build_mps_trace(*, mode: TraceMode = "auto") -> tuple[TraceInput, tuple[int, ...]]:
     p_dim = 3
     a_dim = 2
     b_dim = 4
@@ -41,19 +49,33 @@ def build_mps_trace() -> tuple[list[pair_tensor], tuple[int, ...]]:
     x0 = torch.ones((p_dim,))
     a1 = torch.ones((a_dim, p_dim, b_dim))
     x1 = torch.ones((p_dim,))
+    if mode == "auto":
+        trace = EinsumTrace()
+        trace.bind("A0", a0)
+        trace.bind("x0", x0)
+        trace.bind("A1", a1)
+        trace.bind("x1", x1)
+
+        r0 = einsum("pa,p->a", a0, x0, trace=trace, backend="torch")
+        r1 = einsum("a,apb->pb", r0, a1, trace=trace, backend="torch")
+        result = einsum("pb,p->b", r1, x1, trace=trace, backend="torch")
+        return trace, tuple(result.shape)
+
     trace = [
         pair_tensor("A0", "x0", "r0", "pa,p->a"),
         pair_tensor("r0", "A1", "r1", "a,apb->pb"),
         pair_tensor("r1", "x1", "r2", "pb,p->b"),
     ]
-
     r0 = torch.einsum(trace[0], a0, x0)
     r1 = torch.einsum(trace[1], r0, a1)
     result = torch.einsum(trace[2], r1, x1)
     return trace, tuple(result.shape)
 
 
-def build_disconnected_trace() -> tuple[list[pair_tensor], tuple[tuple[int, ...], tuple[int, ...]]]:
+def build_disconnected_trace(
+    *,
+    mode: TraceMode = "auto",
+) -> tuple[TraceInput, tuple[tuple[int, ...], tuple[int, ...]]]:
     b_dim = 3
     d_dim = 2
 
@@ -61,17 +83,27 @@ def build_disconnected_trace() -> tuple[list[pair_tensor], tuple[tuple[int, ...]
     x = torch.ones((b_dim,))
     b = torch.ones((7, d_dim))
     y = torch.ones((d_dim,))
+    if mode == "auto":
+        trace = EinsumTrace()
+        trace.bind("A", a)
+        trace.bind("x", x)
+        trace.bind("B", b)
+        trace.bind("y", y)
+
+        r0 = einsum("ab,b->a", a, x, trace=trace, backend="torch")
+        r1 = einsum("cd,d->c", b, y, trace=trace, backend="torch")
+        return trace, (tuple(r0.shape), tuple(r1.shape))
+
     trace = [
         pair_tensor("A", "x", "r0", "ab,b->a"),
         pair_tensor("B", "y", "r1", "cd,d->c"),
     ]
-
     r0 = torch.einsum(trace[0], a, x)
     r1 = torch.einsum(trace[1], b, y)
     return trace, (tuple(r0.shape), tuple(r1.shape))
 
 
-def build_peps_trace() -> tuple[list[pair_tensor], tuple[int, ...]]:
+def build_peps_trace(*, mode: TraceMode = "auto") -> tuple[TraceInput, tuple[int, ...]]:
     bond_dim = 2
     phys_dim = 3
 
@@ -87,6 +119,37 @@ def build_peps_trace() -> tuple[list[pair_tensor], tuple[int, ...]]:
     x11 = torch.ones((phys_dim,))
     p12 = torch.ones((bond_dim, bond_dim, phys_dim))
     x12 = torch.ones((phys_dim,))
+    if mode == "auto":
+        trace = EinsumTrace()
+        for name, tensor in (
+            ("P00", p00),
+            ("x00", x00),
+            ("P01", p01),
+            ("x01", x01),
+            ("P02", p02),
+            ("x02", x02),
+            ("P10", p10),
+            ("x10", x10),
+            ("P11", p11),
+            ("x11", x11),
+            ("P12", p12),
+            ("x12", x12),
+        ):
+            trace.bind(name, tensor)
+
+        r0 = einsum("sad,s->ad", p00, x00, trace=trace, backend="torch")
+        r1 = einsum("ad,atbe->dtbe", r0, p01, trace=trace, backend="torch")
+        r2 = einsum("dtbe,t->dbe", r1, x01, trace=trace, backend="torch")
+        r3 = einsum("dbe,buf->defu", r2, p02, trace=trace, backend="torch")
+        r4 = einsum("defu,u->def", r3, x02, trace=trace, backend="torch")
+        r5 = einsum("def,dvg->efvg", r4, p10, trace=trace, backend="torch")
+        r6 = einsum("efvg,v->efg", r5, x10, trace=trace, backend="torch")
+        r7 = einsum("efg,egwh->fwh", r6, p11, trace=trace, backend="torch")
+        r8 = einsum("fwh,w->fh", r7, x11, trace=trace, backend="torch")
+        r9 = einsum("fh,fhz->z", r8, p12, trace=trace, backend="torch")
+        result = einsum("z,z->", r9, x12, trace=trace, backend="torch")
+        return trace, tuple(result.shape)
+
     trace = [
         pair_tensor("P00", "x00", "r0", "sad,s->ad"),
         pair_tensor("r0", "P01", "r1", "ad,atbe->dtbe"),
@@ -100,7 +163,6 @@ def build_peps_trace() -> tuple[list[pair_tensor], tuple[int, ...]]:
         pair_tensor("r8", "P12", "r9", "fh,fhz->z"),
         pair_tensor("r9", "x12", "r10", "z,z->"),
     ]
-
     r0 = torch.einsum(trace[0], p00, x00)
     r1 = torch.einsum(trace[1], r0, p01)
     r2 = torch.einsum(trace[2], r1, x01)
@@ -138,6 +200,15 @@ def parse_args() -> argparse.Namespace:
         help="Visualization mode.",
     )
     parser.add_argument(
+        "--mode",
+        choices=("auto", "manual"),
+        default="auto",
+        help=(
+            "Trace construction mode: auto uses tv.einsum, "
+            "manual uses pair_tensor + torch.einsum."
+        ),
+    )
+    parser.add_argument(
         "--save",
         type=Path,
         help="Save the rendered figure to this path.",
@@ -156,11 +227,15 @@ def main() -> None:
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    trace, result_shape = BUILDERS[args.network]()
+    trace, result_shape = BUILDERS[args.network](mode=args.mode)
     print(f"Building traced einsum example: {args.network}")
+    print(f"Trace mode: {args.mode}")
     print(f"Selected visualization: {args.view}")
     print(f"Final result shape: {result_shape}")
-    print("Passing as: ordered list of pair_tensor entries")
+    if args.mode == "auto":
+        print("Passing as: EinsumTrace with auto-recorded pair_tensor entries")
+    else:
+        print("Passing as: ordered list of pair_tensor entries")
     print("Rendering figure...")
 
     config = PlotConfig(
@@ -175,7 +250,7 @@ def main() -> None:
         config=config,
         show=False,
     )
-    fig.suptitle(f"{args.network.upper()} ({args.view.upper()})", fontsize=16)
+    fig.suptitle(f"{args.network.upper()} ({args.view.upper()}, {args.mode.upper()})", fontsize=16)
     if args.save is not None:
         args.save.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(args.save, bbox_inches="tight")

@@ -1,5 +1,5 @@
 from .config import EngineName, PlotConfig, ViewName
-from .einsum.trace import pair_tensor
+from .einsum_module.trace import EinsumTrace, einsum, pair_tensor
 
 
 def show_tensor_network(*args, **kwargs):
@@ -8,4 +8,12 @@ def show_tensor_network(*args, **kwargs):
     return _show_tensor_network(*args, **kwargs)
 
 
-__all__ = ["EngineName", "PlotConfig", "ViewName", "pair_tensor", "show_tensor_network"]
+__all__ = [
+    "EngineName",
+    "EinsumTrace",
+    "PlotConfig",
+    "ViewName",
+    "einsum",
+    "pair_tensor",
+    "show_tensor_network",
+]

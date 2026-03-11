@@ -77,7 +77,7 @@ def show_tensor_network(
         else:
             fig, ax = plot_tenpy_network_3d(network, config=style)
     elif engine == "einsum":
-        from .einsum import plot_einsum_network_2d, plot_einsum_network_3d
+        from .einsum_module import plot_einsum_network_2d, plot_einsum_network_3d
 
         if view == "2d":
             fig, ax = plot_einsum_network_2d(network, config=style)

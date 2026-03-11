@@ -1,12 +1,12 @@
 # Tensor-Network-Visualization
 
-Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced PyTorch `einsum` tensor networks.
+Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced PyTorch/NumPy `einsum` tensor networks.
 
 **Repository:** [https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization](https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization)
 
 ## Features
 
-- 2D and 3D plotting for TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced binary `torch.einsum` tensor networks
+- 2D and 3D plotting for TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced binary `einsum` tensor networks
 - Tensors rendered as nodes
 - Contractions rendered as edges between tensors
 - Dangling indices rendered as labeled stubs
@@ -40,7 +40,7 @@ pip install "tensor-network-visualization[quimb]"
 pip install "tensor-network-visualization[tenpy]"
 ```
 
-The `einsum` backend ships with the base package. You only need PyTorch installed if you want to execute the traced `torch.einsum(...)` calls themselves.
+The `einsum` backend ships with the base package. You only need PyTorch or NumPy installed if you want to execute traced `einsum(...)` calls through the convenience wrapper.
 
 ### Local development
 
@@ -75,6 +75,7 @@ Supported inputs depend on the selected engine:
   - a finite or infinite `tenpy.networks.mpo.MPO`
 - `engine="einsum"`:
   - an ordered iterable of `pair_tensor` entries representing binary explicit `left,right->out` einsums
+  - an `EinsumTrace` containing auto-recorded binary explicit `left,right->out` einsums
 
 Each backend consumes its native tensor-network objects directly and normalizes them to the shared graph model internally.
 
@@ -84,7 +85,9 @@ The `einsum` backend reconstructs the underlying tensor network from the traced 
 When passing a subset of nodes, edges to nodes outside the input collection are drawn as dangling legs. Disconnected components (for example nodes from different networks) are supported.
 
 ```python
-from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network
+import torch
+
+from tensor_network_viz import EinsumTrace, PlotConfig, einsum, pair_tensor, show_tensor_network
 
 config = PlotConfig(figsize=(8, 6))
 
@@ -103,23 +106,34 @@ fig, ax = show_tensor_network(quimb_network, engine="quimb", view="2d", config=c
 # TeNPy MPS or MPO
 fig, ax = show_tensor_network(tenpy_network, engine="tenpy", view="2d", config=config)
 
-# Traced torch.einsum contractions
+# Auto-traced torch or numpy einsum contractions
+trace = EinsumTrace()
+trace.bind("A0", A0)
+trace.bind("x0", x0)
+trace.bind("A1", A1)
+r0 = einsum("pa,p->a", A0, x0, trace=trace, backend="torch")
+_ = einsum("a,apb->pb", r0, A1, trace=trace, backend="torch")
+fig, ax = show_tensor_network(trace, engine="einsum", view="2d", config=config)
+
+# Manual pair_tensor + torch.einsum tracing
 trace = [
     pair_tensor("A0", "x0", "r0", "pa,p->a"),
     pair_tensor("r0", "A1", "r1", "a,apb->pb"),
 ]
+r0 = torch.einsum(trace[0], A0, x0)
+_ = torch.einsum(trace[1], r0, A1)
 fig, ax = show_tensor_network(trace, engine="einsum", view="2d", config=config)
 ```
 
 You can also use engine-specific helpers directly:
 
 ```python
-from tensor_network_viz import pair_tensor
+from tensor_network_viz import EinsumTrace, einsum
 from tensor_network_viz.tensorkrowch import plot_tensorkrowch_network_2d, plot_tensorkrowch_network_3d
 from tensor_network_viz.tensornetwork import plot_tensornetwork_network_2d, plot_tensornetwork_network_3d
 from tensor_network_viz.quimb import plot_quimb_network_2d, plot_quimb_network_3d
 from tensor_network_viz.tenpy import plot_tenpy_network_2d, plot_tenpy_network_3d
-from tensor_network_viz.einsum import plot_einsum_network_2d, plot_einsum_network_3d
+from tensor_network_viz.einsum_module import plot_einsum_network_2d, plot_einsum_network_3d
 
 plot_tensorkrowch_network_2d(network)   # or plot_tensorkrowch_network_2d([node1, node2, ...])
 plot_tensorkrowch_network_3d(network)
@@ -129,6 +143,8 @@ plot_quimb_network_2d(quimb_network)
 plot_quimb_network_3d(quimb_network)
 plot_tenpy_network_2d(tenpy_network)
 plot_tenpy_network_3d(tenpy_network)
+trace = EinsumTrace()
+_ = einsum("ab,b->a", A, x, trace=trace, backend="numpy", optimize=True)
 plot_einsum_network_2d(trace)
 plot_einsum_network_3d(trace)
 ```
@@ -142,7 +158,7 @@ The public API is split by backend, but the render pipeline is now shared:
 - `tensor_network_viz.tensornetwork` contains the TensorNetwork adapter that converts TensorNetwork node collections into the shared graph model.
 - `tensor_network_viz.quimb` contains the Quimb adapter that converts `TensorNetwork` objects or tensor collections into the shared graph model.
 - `tensor_network_viz.tenpy` contains the TeNPy adapter that converts finite, segment, and infinite `MPS` plus finite and infinite `MPO` objects into the shared graph model.
-- `tensor_network_viz.einsum` contains the trace adapter that converts ordered `pair_tensor` contractions into the shared graph model.
+- `tensor_network_viz.einsum_module` contains the trace adapter that converts ordered `pair_tensor` contractions or `EinsumTrace` objects into the shared graph model.
 
 This means backends are not converted into each other. Each backend normalizes its own input to the common `_GraphData` structure and the shared core handles the rest.
 
