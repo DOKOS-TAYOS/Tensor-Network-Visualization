@@ -27,15 +27,17 @@ def main() -> int:
     root = Path(__file__).resolve().parent.parent
     venv = root / ".venv"
 
-    dir_names = frozenset({
-        "__pycache__",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".tmp",
-        ".pip_tmp",
-        "build",
-        "dist",
-    })
+    dir_names = frozenset(
+        {
+            "__pycache__",
+            ".pytest_cache",
+            ".ruff_cache",
+            ".tmp",
+            ".pip_tmp",
+            "build",
+            "dist",
+        }
+    )
     file_suffixes = (".pyc", ".pyo", ".pyd")
 
     print("Cleaning project caches and temporary files...")
@@ -47,8 +49,10 @@ def main() -> int:
             continue
         if _should_skip(path, venv):
             continue
-        if path.name in dir_names or path.name.endswith(".egg-info") or path.name.startswith(
-            "pytest-cache-files-"
+        if (
+            path.name in dir_names
+            or path.name.endswith(".egg-info")
+            or path.name.startswith("pytest-cache-files-")
         ):
             dirs_to_remove.append(path)
 

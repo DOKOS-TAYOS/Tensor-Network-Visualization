@@ -290,10 +290,7 @@ def _detect_grid(nx_graph: nx.Graph) -> dict[int, tuple[int, int]] | None:
         mapping = nx.vf2pp_isomorphism(nx_graph, grid_graph)
         if mapping is None:
             continue
-        return {
-            node_id: (grid_col, grid_row)
-            for node_id, (grid_row, grid_col) in mapping.items()
-        }
+        return {node_id: (grid_col, grid_row) for node_id, (grid_row, grid_col) in mapping.items()}
     return None
 
 

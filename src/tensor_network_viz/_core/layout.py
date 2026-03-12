@@ -424,9 +424,7 @@ def _best_attachment_position_2d(
 ) -> np.ndarray:
     leaf_node_ids = {node_id for node_id, _ in component.trimmed_leaf_parents}
     direction_options = (
-        candidates
-        if component.structure_kind == "chain"
-        else (*candidates, axis, -axis)
+        candidates if component.structure_kind == "chain" else (*candidates, axis, -axis)
     )
     used_dirs = []
     for neighbor_id in component.contraction_graph.neighbors(parent_id):
@@ -458,13 +456,10 @@ def _best_attachment_position_2d(
         candidate = origin + direction * distance
         score = 0.8 * float(np.dot(direction[:2], outward_dir))
         score -= 2.5 * sum(
-            max(0.0, float(np.dot(direction[:2], used_dir)))
-            for used_dir in used_dirs
+            max(0.0, float(np.dot(direction[:2], used_dir))) for used_dir in used_dirs
         )
         score -= 2.0 * sum(
-            1.0
-            for target in assigned_targets
-            if np.linalg.norm(candidate[:2] - target[:2]) < 0.3
+            1.0 for target in assigned_targets if np.linalg.norm(candidate[:2] - target[:2]) < 0.3
         )
         score -= 4.0 * sum(
             1.0
@@ -722,9 +717,7 @@ def _compute_free_directions_3d(
     components = _analyze_layout_components(graph)
     assigned_segments: list[tuple[np.ndarray, np.ndarray]] = []
     component_by_node = {
-        node_id: component
-        for component in components
-        for node_id in component.node_ids
+        node_id: component for component in components for node_id in component.node_ids
     }
 
     for node_id, node in graph.nodes.items():
@@ -772,9 +765,7 @@ def _compute_free_directions_3d(
                 break
             else:
                 fallback = (
-                    named_direction
-                    if named_direction is not None
-                    else _orthogonal_unit(axis)
+                    named_direction if named_direction is not None else _orthogonal_unit(axis)
                 )
                 if not _direction_has_space(fallback, used_dirs):
                     fallback = -fallback
@@ -825,8 +816,7 @@ def _used_axis_directions(
 
 def _direction_has_space(direction: np.ndarray, used_dirs: list[np.ndarray]) -> bool:
     overlap = sum(
-        max(0.0, float(np.dot(direction, used_direction)))
-        for used_direction in used_dirs
+        max(0.0, float(np.dot(direction, used_direction))) for used_direction in used_dirs
     )
     return overlap < _FREE_DIR_OVERLAP_THRESHOLD
 

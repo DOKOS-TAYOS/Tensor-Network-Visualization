@@ -85,9 +85,7 @@ def _build_graph_from_nodes_edges(
     for node in node_refs:
         name = _stringify(_require_attr(node, "name", "node"))
         node_edges = tuple(_iterable_attr(node, "edges", "node"))
-        axes_names = tuple(
-            _stringify(item) for item in _iterable_attr(node, axis_attr, "node")
-        )
+        axes_names = tuple(_stringify(item) for item in _iterable_attr(node, axis_attr, "node"))
         if len(node_edges) != len(axes_names):
             raise TypeError(
                 f"Node {name!r} has {len(node_edges)} edges but {len(axes_names)} {axis_attr}."

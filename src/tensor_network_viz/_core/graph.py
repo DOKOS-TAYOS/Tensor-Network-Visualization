@@ -64,9 +64,7 @@ def _make_dangling_edge(
     label: str | None | object = _DEFAULT_LABEL,
 ) -> _EdgeData:
     resolved_label = endpoint.axis_name or name
-    edge_label = (
-        resolved_label if label is _DEFAULT_LABEL else cast(str | None, label)
-    )
+    edge_label = resolved_label if label is _DEFAULT_LABEL else cast(str | None, label)
     return _EdgeData(
         name=name,
         kind="dangling",
@@ -91,9 +89,7 @@ def _make_contraction_edge(
     )
     endpoints = (left_endpoint, right_endpoint)
     resolved_label = _build_edge_label(kind=kind, endpoints=endpoints, edge_name=name)
-    edge_label = (
-        resolved_label if label is _DEFAULT_LABEL else cast(str | None, label)
-    )
+    edge_label = resolved_label if label is _DEFAULT_LABEL else cast(str | None, label)
     return _EdgeData(
         name=name,
         kind=kind,

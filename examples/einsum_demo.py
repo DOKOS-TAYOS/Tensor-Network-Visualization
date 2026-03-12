@@ -204,8 +204,7 @@ def parse_args() -> argparse.Namespace:
         choices=("auto", "manual"),
         default="auto",
         help=(
-            "Trace construction mode: auto uses tv.einsum, "
-            "manual uses pair_tensor + torch.einsum."
+            "Trace construction mode: auto uses tv.einsum, manual uses pair_tensor + torch.einsum."
         ),
     )
     parser.add_argument(

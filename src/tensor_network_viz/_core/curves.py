@@ -54,9 +54,7 @@ def _ellipse_points_3d(
 ) -> Vector:
     theta = np.linspace(0.0, 2.0 * math.pi, samples)
     return (
-        center
-        + np.outer(np.cos(theta), axis_a) * width
-        + np.outer(np.sin(theta), axis_b) * height
+        center + np.outer(np.cos(theta), axis_a) * width + np.outer(np.sin(theta), axis_b) * height
     )
 
 

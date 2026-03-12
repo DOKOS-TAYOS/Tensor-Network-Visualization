@@ -225,9 +225,7 @@ def _draw_edges(
             _perpendicular_3d(direction) if dimensions == 3 else _perpendicular_2d(direction)
         )
         perpendicular = perpendicular / np.linalg.norm(perpendicular)
-        if (dimensions == 2 and perpendicular[1] < 0) or (
-            dimensions == 3 and perpendicular[2] < 0
-        ):
+        if (dimensions == 2 and perpendicular[1] < 0) or (dimensions == 3 and perpendicular[2] < 0):
             perpendicular = -perpendicular
         plotter.plot_text(
             midpoint + perpendicular * p.label_offset,
@@ -321,9 +319,7 @@ class _DrawScaleParams:
 def _draw_scale_params(config: PlotConfig, scale: float, *, is_3d: bool) -> _DrawScaleParams:
     """Compute scale-dependent drawing parameters from config."""
     r = (
-        config.node_radius
-        if config.node_radius is not None
-        else PlotConfig.DEFAULT_NODE_RADIUS
+        config.node_radius if config.node_radius is not None else PlotConfig.DEFAULT_NODE_RADIUS
     ) * scale
     stub = (
         config.stub_length if config.stub_length is not None else PlotConfig.DEFAULT_STUB_LENGTH

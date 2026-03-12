@@ -37,11 +37,7 @@ def _extract_unique_items(
         raw_items = source
         should_sort = _is_unordered_collection(raw_items)
     else:
-        extra = (
-            f", or an object with '{attr_sources[0]}' attribute."
-            if attr_sources
-            else "."
-        )
+        extra = f", or an object with '{attr_sources[0]}' attribute." if attr_sources else "."
         raise TypeError(f"Input must be an iterable of {backend_name} {type_name}{extra}.")
 
     iterable = raw_items.values() if isinstance(raw_items, dict) else raw_items

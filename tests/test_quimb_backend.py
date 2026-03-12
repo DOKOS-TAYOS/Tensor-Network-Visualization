@@ -54,11 +54,7 @@ def test_build_quimb_graph_rewrites_hyperedges_through_virtual_hub() -> None:
 
     graph = _build_quimb_graph(qtn.TensorNetwork([a, b, c]))
 
-    virtual_nodes = [
-        (node_id, node)
-        for node_id, node in graph.nodes.items()
-        if node.is_virtual
-    ]
+    virtual_nodes = [(node_id, node) for node_id, node in graph.nodes.items() if node.is_virtual]
     assert len(virtual_nodes) == 1
 
     hub_id, hub = virtual_nodes[0]
