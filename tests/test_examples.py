@@ -22,6 +22,78 @@ def _load_example_module(path: Path, module_name: str):
     return module
 
 
+def test_total_tests_bat_uses_root_venv_and_covers_example_matrix() -> None:
+    script_path = Path("examples/total_tests.bat")
+    expected_commands = [
+        r"call :run examples\tensorkrowch_demo.py mps 2d",
+        r"call :run examples\tensorkrowch_demo.py mps 3d",
+        r"call :run examples\tensorkrowch_demo.py mpo 2d",
+        r"call :run examples\tensorkrowch_demo.py mpo 3d",
+        r"call :run examples\tensorkrowch_demo.py peps 2d",
+        r"call :run examples\tensorkrowch_demo.py peps 3d",
+        r"call :run examples\tensorkrowch_demo.py weird 2d",
+        r"call :run examples\tensorkrowch_demo.py weird 3d",
+        r"call :run examples\tensorkrowch_demo.py disconnected 2d",
+        r"call :run examples\tensorkrowch_demo.py disconnected 3d",
+        r"call :run examples\tensorkrowch_demo.py mps 2d --from-list",
+        r"call :run examples\tensornetwork_demo.py mps 2d",
+        r"call :run examples\tensornetwork_demo.py mps 3d",
+        r"call :run examples\tensornetwork_demo.py mpo 2d",
+        r"call :run examples\tensornetwork_demo.py mpo 3d",
+        r"call :run examples\tensornetwork_demo.py peps 2d",
+        r"call :run examples\tensornetwork_demo.py peps 3d",
+        r"call :run examples\tensornetwork_demo.py weird 2d",
+        r"call :run examples\tensornetwork_demo.py weird 3d",
+        r"call :run examples\tensornetwork_demo.py disconnected 2d",
+        r"call :run examples\tensornetwork_demo.py disconnected 3d",
+        r"call :run examples\quimb_demo.py mps 2d",
+        r"call :run examples\quimb_demo.py mps 3d",
+        r"call :run examples\quimb_demo.py hyper 2d",
+        r"call :run examples\quimb_demo.py hyper 3d",
+        r"call :run examples\quimb_demo.py mpo 2d",
+        r"call :run examples\quimb_demo.py mpo 3d",
+        r"call :run examples\quimb_demo.py peps 2d",
+        r"call :run examples\quimb_demo.py peps 3d",
+        r"call :run examples\quimb_demo.py weird 2d",
+        r"call :run examples\quimb_demo.py weird 3d",
+        r"call :run examples\quimb_demo.py disconnected 2d",
+        r"call :run examples\quimb_demo.py disconnected 3d",
+        r"call :run examples\quimb_demo.py mps 2d --from-list",
+        r"call :run examples\tenpy_demo.py mps 2d",
+        r"call :run examples\tenpy_demo.py mps 3d",
+        r"call :run examples\tenpy_demo.py mpo 2d",
+        r"call :run examples\tenpy_demo.py mpo 3d",
+        r"call :run examples\tenpy_demo.py imps 2d",
+        r"call :run examples\tenpy_demo.py imps 3d",
+        r"call :run examples\tenpy_demo.py impo 2d",
+        r"call :run examples\tenpy_demo.py impo 3d",
+        r"call :run examples\einsum_demo.py mps 2d",
+        r"call :run examples\einsum_demo.py mps 3d",
+        r"call :run examples\einsum_demo.py mps 2d --mode manual",
+        r"call :run examples\einsum_demo.py mps 3d --mode manual",
+        r"call :run examples\einsum_demo.py peps 2d",
+        r"call :run examples\einsum_demo.py peps 3d",
+        r"call :run examples\einsum_demo.py disconnected 2d",
+        r"call :run examples\einsum_demo.py disconnected 3d",
+        r"call :run examples\tn_tsp.py -n 4 --view 2d",
+        r"call :run examples\tn_tsp.py -n 4 --view 3d",
+        r"call :run examples\tn_tsp.py -n 5 --view 2d",
+        r"call :run examples\tn_tsp.py -n 5 --view 3d",
+        r"call :run examples\tn_tsp.py -n 6 --view 2d",
+        r"call :run examples\tn_tsp.py -n 6 --view 3d",
+    ]
+
+    content = script_path.read_text(encoding="utf-8")
+
+    assert 'set "PYTHON=%ROOT%\\.venv\\Scripts\\python.exe"' in content
+    assert ":find_root" in content
+    assert 'if exist "%ROOT%\\.venv\\Scripts\\python.exe"' in content
+    assert "if not exist" in content
+    assert "goto :error" in content
+    for command in expected_commands:
+        assert command in content
+
+
 def test_quimb_demo_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
