@@ -94,6 +94,19 @@ def test_total_tests_bat_uses_root_venv_and_covers_example_matrix() -> None:
         assert command in content
 
 
+def test_total_tests_bat_wraps_examples_with_auto_close() -> None:
+    content = Path("examples/total_tests.bat").read_text(encoding="utf-8")
+
+    assert 'if not defined PLOT_DELAY_SECONDS set "PLOT_DELAY_SECONDS=2"' in content
+    assert 'set "WRAPPER=%ROOT%\\.tmp\\total-tests\\plot_wrapper.py"' in content
+    assert 'set "VIEWER=%ROOT%\\.tmp\\total-tests\\image_viewer.ps1"' in content
+    assert 'echo matplotlib.use^("Agg"^)' in content
+    assert "runpy.run_path" in content
+    assert 'savefig^(image_path, bbox_inches="tight"^)' in content
+    assert "System.Windows.Forms" in content
+    assert "plt.close^('all'^)" in content
+
+
 def test_quimb_demo_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

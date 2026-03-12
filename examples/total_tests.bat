@@ -13,8 +13,14 @@ goto :find_root
 :root_found
 set "PYTHON=%ROOT%\.venv\Scripts\python.exe"
 if not exist "%PYTHON%" goto :missing_venv
+if not defined PLOT_DELAY_SECONDS set "PLOT_DELAY_SECONDS=2"
+set "HELPER_DIR=%ROOT%\.tmp\total-tests"
+set "WRAPPER=%ROOT%\.tmp\total-tests\plot_wrapper.py"
+set "VIEWER=%ROOT%\.tmp\total-tests\image_viewer.ps1"
+set "IMAGE_PATH=%ROOT%\.tmp\total-tests\current_plot.png"
 
 cd /d "%ROOT%"
+call :prepare_helpers
 
 call :run examples\tensorkrowch_demo.py mps 2d
 call :run examples\tensorkrowch_demo.py mps 3d
@@ -82,12 +88,77 @@ echo.
 echo All example commands completed successfully.
 exit /b 0
 
+:prepare_helpers
+if not exist "%HELPER_DIR%" mkdir "%HELPER_DIR%"
+> "%WRAPPER%" (
+echo from __future__ import annotations
+echo.
+echo import runpy
+echo import sys
+echo.
+echo import matplotlib
+echo matplotlib.use^("Agg"^)
+echo import matplotlib.pyplot as plt
+echo.
+echo delay = float^(sys.argv[1]^)
+echo image_path = sys.argv[2]
+echo script_argv = sys.argv[3:]
+echo if not script_argv:
+echo     raise SystemExit^("Missing script path."^)
+echo plt.show = lambda *args, **kwargs: None
+echo sys.argv = script_argv
+echo runpy.run_path^(script_argv[0], run_name="__main__"^)
+echo figure_numbers = plt.get_fignums^(^)
+echo if not figure_numbers:
+echo     raise SystemExit^("No figures were generated."^)
+echo plt.figure^(figure_numbers[0]^).savefig^(image_path, bbox_inches="tight"^)
+echo plt.close^('all'^)
+)
+if errorlevel 1 goto :error
+> "%VIEWER%" (
+echo param^(
+echo     [string]$Path,
+echo     [double]$Seconds
+echo ^)
+echo Add-Type -AssemblyName System.Windows.Forms
+echo Add-Type -AssemblyName System.Drawing
+echo $image = [System.Drawing.Image]::FromFile^($Path^)
+echo $form = New-Object System.Windows.Forms.Form
+echo $form.StartPosition = 'CenterScreen'
+echo $form.Width = [Math]::Min^($image.Width + 40, 1400^)
+echo $form.Height = [Math]::Min^($image.Height + 60, 1000^)
+echo $picture = New-Object System.Windows.Forms.PictureBox
+echo $picture.Dock = 'Fill'
+echo $picture.SizeMode = 'Zoom'
+echo $picture.Image = $image
+echo $form.Controls.Add^($picture^)
+echo $timer = New-Object System.Windows.Forms.Timer
+echo $timer.Interval = [Math]::Max^([int]^($Seconds * 1000^), 1^)
+echo $timer.Add_Tick^({ $timer.Stop^(^); $form.Close^(^) }^)
+echo $form.Add_Shown^({ $timer.Start^(^) }^)
+echo [void]$form.ShowDialog^(^)
+echo $image.Dispose^(^)
+echo Remove-Item $Path -ErrorAction SilentlyContinue
+)
+if errorlevel 1 goto :error
+exit /b 0
+
 :run
 echo.
 echo Running: "%PYTHON%" %*
-"%PYTHON%" %*
+if exist "%IMAGE_PATH%" del /q "%IMAGE_PATH%"
+"%PYTHON%" "%WRAPPER%" "%PLOT_DELAY_SECONDS%" "%IMAGE_PATH%" %*
+if errorlevel 1 goto :error
+if /I "%TOTAL_TESTS_SKIP_VIEWER%"=="1" exit /b 0
+if not exist "%IMAGE_PATH%" goto :missing_image
+powershell -NoProfile -ExecutionPolicy Bypass -File "%VIEWER%" "%IMAGE_PATH%" "%PLOT_DELAY_SECONDS%"
 if errorlevel 1 goto :error
 exit /b 0
+
+:missing_image
+echo.
+echo Wrapper finished without generating "%IMAGE_PATH%".
+exit /b 1
 
 :error
 echo.

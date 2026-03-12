@@ -407,13 +407,18 @@ The shared layout engine lives in `tensor_network_viz._core.layout`.
 The current flow is:
 
 1. use custom positions if provided
-2. in `2d`, try a grid layout for grid-like graphs
-3. in `2d`, try a planar layout if possible
-4. otherwise fall back to a force-directed layout
-5. compute per-axis directions for stubs, contractions, and labels
+2. analyze contraction components to detect dominant structure
+3. prefer deterministic specialized layouts in this order:
+   - straight chains for line-like graphs
+   - regular lattices for exact 2D grids
+   - hierarchical layout for trees
+   - planar embeddings for other planar graphs
+4. use a force-directed fallback only when no structural layout applies
+5. in `3d`, start from the planar embedding and only move nodes to parallel layers when necessary
+6. compute per-axis directions for stubs, contractions, and labels
 
-The layout code also includes heuristics for free-leg directions so dangling indices and labels do
-not all point in the same direction.
+The layout code also includes deterministic heuristics for free-leg directions so dangling indices,
+open ends, and leaf-like exits in `3d` prefer orthogonal directions with stable ordering.
 
 ### Drawing pipeline
 

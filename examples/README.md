@@ -112,3 +112,63 @@ Useful when you want:
 - a larger TensorKrowch example than the toy demos
 - a concrete grid-like layout use case
 - an example tied to a real tensor-network modeling workflow
+
+To apply everything, use
+```bash
+python examples/tensorkrowch_demo.py mps 2d
+python examples/tensorkrowch_demo.py mps 3d
+python examples/tensorkrowch_demo.py mpo 2d
+python examples/tensorkrowch_demo.py mpo 3d
+python examples/tensorkrowch_demo.py peps 2d
+python examples/tensorkrowch_demo.py peps 3d
+python examples/tensorkrowch_demo.py weird 2d
+python examples/tensorkrowch_demo.py weird 3d
+python examples/tensorkrowch_demo.py disconnected 2d
+python examples/tensorkrowch_demo.py disconnected 3d
+python examples/tensorkrowch_demo.py mps 2d --from-list
+python examples/tensornetwork_demo.py mps 2d
+python examples/tensornetwork_demo.py mps 3d
+python examples/tensornetwork_demo.py mpo 2d
+python examples/tensornetwork_demo.py mpo 3d
+python examples/tensornetwork_demo.py peps 2d
+python examples/tensornetwork_demo.py peps 3d
+python examples/tensornetwork_demo.py weird 2d
+python examples/tensornetwork_demo.py weird 3d
+python examples/tensornetwork_demo.py disconnected 2d
+python examples/tensornetwork_demo.py disconnected 3d
+python examples/quimb_demo.py mps 2d
+python examples/quimb_demo.py mps 3d
+python examples/quimb_demo.py hyper 2d
+python examples/quimb_demo.py hyper 3d
+python examples/quimb_demo.py mpo 2d
+python examples/quimb_demo.py mpo 3d
+python examples/quimb_demo.py peps 2d
+python examples/quimb_demo.py peps 3d
+python examples/quimb_demo.py weird 2d
+python examples/quimb_demo.py weird 3d
+python examples/quimb_demo.py disconnected 2d
+python examples/quimb_demo.py disconnected 3d
+python examples/quimb_demo.py mps 2d --from-list
+python examples/tenpy_demo.py mps 2d
+python examples/tenpy_demo.py mps 3d
+python examples/tenpy_demo.py mpo 2d
+python examples/tenpy_demo.py mpo 3d
+python examples/tenpy_demo.py imps 2d
+python examples/tenpy_demo.py imps 3d
+python examples/tenpy_demo.py impo 2d
+python examples/tenpy_demo.py impo 3d
+python examples/einsum_demo.py mps 2d
+python examples/einsum_demo.py mps 3d
+python examples/einsum_demo.py mps 2d --mode manual
+python examples/einsum_demo.py mps 3d --mode manual
+python examples/einsum_demo.py peps 2d
+python examples/einsum_demo.py peps 3d
+python examples/einsum_demo.py disconnected 2d
+python examples/einsum_demo.py disconnected 3d
+python examples/tn_tsp.py -n 4 --view 2d
+python examples/tn_tsp.py -n 4 --view 3d
+python examples/tn_tsp.py -n 5 --view 2d
+python examples/tn_tsp.py -n 5 --view 3d
+python examples/tn_tsp.py -n 6 --view 2d
+python examples/tn_tsp.py -n 6 --view 3d
+```

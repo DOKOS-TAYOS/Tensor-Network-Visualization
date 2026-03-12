@@ -3,26 +3,33 @@
 from __future__ import annotations
 
 import math
-from collections import Counter
 from typing import TypeAlias
 
-import networkx as nx
 import numpy as np
 
 from .axis_directions import _AXIS_DIR_2D, _AXIS_DIR_3D
 from .contractions import _contraction_weights, _iter_contractions
 from .graph import _GraphData
+from .layout_structure import (
+    _analyze_layout_components,
+    _component_orthogonal_basis,
+    _LayoutComponent,
+    _leaf_nodes,
+    _specialized_anchor_positions,
+)
 
 Vector: TypeAlias = np.ndarray
 NodePositions: TypeAlias = dict[int, Vector]
 AxisDirections: TypeAlias = dict[tuple[int, int], Vector]
 
 _LAYOUT_TARGET_NORM: float = 1.6
-_GRID_LAYOUT_MAX_NODES: int = 50
 _FORCE_LAYOUT_K: float = 1.6
 _FORCE_LAYOUT_COOLING_FACTOR: float = 0.985
 _FREE_DIR_OVERLAP_THRESHOLD: float = 0.7
 _FREE_DIR_SAMPLES_2D: int = 72
+_COMPONENT_GAP: float = 1.4
+_LAYER_SPACING: float = 0.55
+_LAYER_SEQUENCE: tuple[int, ...] = (0, 1, -1, 2, -2, 3, -3)
 
 
 def _normalize_positions(
@@ -65,27 +72,103 @@ def _compute_layout(
     if len(node_ids) == 1:
         return {node_ids[0]: np.zeros(dimensions, dtype=float)}
 
-    automatic_positions = _select_automatic_layout(graph, dimensions=dimensions)
-    if automatic_positions is not None:
-        return automatic_positions
+    components = _analyze_layout_components(graph)
+    component_positions: list[NodePositions] = []
+    for index, component in enumerate(components):
+        positions_2d = _compute_component_layout_2d(
+            graph,
+            component,
+            seed=seed + index,
+            iterations=iterations,
+        )
+        if dimensions == 2:
+            component_positions.append(positions_2d)
+            continue
+        component_positions.append(_lift_component_layout_3d(graph, component, positions_2d))
 
-    return _compute_force_layout(
-        graph,
-        node_ids=node_ids,
-        dimensions=dimensions,
-        seed=seed,
-        iterations=iterations,
-    )
+    packed_positions = _pack_component_positions(component_positions, dimensions=dimensions)
+    return _normalize_positions(packed_positions, node_ids)
 
 
-def _select_automatic_layout(graph: _GraphData, *, dimensions: int) -> NodePositions | None:
-    if dimensions != 2:
-        return None
+def _compute_component_layout_2d(
+    graph: _GraphData,
+    component: _LayoutComponent,
+    *,
+    seed: int,
+    iterations: int,
+) -> NodePositions:
+    node_ids = list(component.node_ids)
+    if len(node_ids) == 1:
+        return {node_ids[0]: np.zeros(2, dtype=float)}
 
-    grid_positions = _try_grid_layout_2d(graph)
-    if grid_positions is not None:
-        return grid_positions
-    return _try_planar_layout_2d(graph)
+    fixed_positions = _specialized_anchor_positions(component)
+    if fixed_positions:
+        positions = _compute_force_layout(
+            graph,
+            node_ids=node_ids,
+            dimensions=2,
+            seed=seed,
+            iterations=iterations,
+            fixed_positions=fixed_positions,
+        )
+    else:
+        positions = _compute_force_layout(
+            graph,
+            node_ids=node_ids,
+            dimensions=2,
+            seed=seed,
+            iterations=iterations,
+        )
+
+    _snap_virtual_nodes_to_barycenters(component, positions)
+    return _center_positions(positions, node_ids=node_ids)
+
+
+def _lift_component_layout_3d(
+    graph: _GraphData,
+    component: _LayoutComponent,
+    positions_2d: NodePositions,
+) -> NodePositions:
+    positions = {
+        node_id: np.array([coords[0], coords[1], 0.0], dtype=float)
+        for node_id, coords in positions_2d.items()
+    }
+    _promote_3d_layers(graph, component, positions)
+    return positions
+
+
+def _center_positions(positions: NodePositions, *, node_ids: list[int]) -> NodePositions:
+    arr = np.array([positions[node_id] for node_id in node_ids], dtype=float)
+    arr -= arr.mean(axis=0, keepdims=True)
+    return {node_id: arr[index].copy() for index, node_id in enumerate(node_ids)}
+
+
+def _pack_component_positions(
+    component_positions: list[NodePositions],
+    *,
+    dimensions: int,
+) -> NodePositions:
+    if len(component_positions) == 1:
+        return component_positions[0]
+
+    packed: NodePositions = {}
+    cursor_x = 0.0
+    for positions in component_positions:
+        node_ids = sorted(positions)
+        coords = np.array([positions[node_id] for node_id in node_ids], dtype=float)
+        min_x = float(coords[:, 0].min())
+        max_x = float(coords[:, 0].max())
+        shift = np.zeros(dimensions, dtype=float)
+        shift[0] = cursor_x - min_x
+        if dimensions > 1:
+            shift[1:] = -coords[:, 1:].mean(axis=0)
+
+        for node_id in node_ids:
+            packed[node_id] = positions[node_id] + shift
+
+        cursor_x += max(max_x - min_x, 0.8) + _COMPONENT_GAP
+
+    return packed
 
 
 def _compute_force_layout(
@@ -95,10 +178,28 @@ def _compute_force_layout(
     dimensions: int,
     seed: int,
     iterations: int,
+    fixed_positions: NodePositions | None = None,
 ) -> NodePositions:
     positions = _initial_positions(node_ids, dimensions=dimensions, seed=seed)
     index_by_node = {node_id: index for index, node_id in enumerate(node_ids)}
-    pair_weights = _contraction_weights(graph)
+    pair_weights = _pair_weights_for_node_ids(graph, node_ids=node_ids)
+    fixed_mask = np.zeros(len(node_ids), dtype=bool)
+    fixed_array = np.zeros_like(positions)
+
+    if fixed_positions:
+        fixed_centroid = np.mean(np.stack(list(fixed_positions.values())), axis=0)
+        for node_id, fixed_position in fixed_positions.items():
+            if node_id not in index_by_node:
+                continue
+            index = index_by_node[node_id]
+            fixed_mask[index] = True
+            fixed_array[index] = fixed_position
+            positions[index] = fixed_position
+        for node_id in node_ids:
+            index = index_by_node[node_id]
+            if fixed_mask[index]:
+                continue
+            positions[index] = fixed_centroid + (positions[index] * 0.35)
 
     temperature = 0.12
     for _ in range(iterations):
@@ -110,10 +211,31 @@ def _compute_force_layout(
             pair_weights=pair_weights,
             k=_FORCE_LAYOUT_K,
         )
-        _apply_force_step(positions, displacement, temperature=temperature)
+        if fixed_positions:
+            displacement[fixed_mask] = 0.0
+        _apply_force_step(
+            positions,
+            displacement,
+            temperature=temperature,
+            fixed_mask=fixed_mask if fixed_positions else None,
+            fixed_positions=fixed_array if fixed_positions else None,
+        )
         temperature *= _FORCE_LAYOUT_COOLING_FACTOR
 
     return {node_id: positions[index].copy() for index, node_id in enumerate(node_ids)}
+
+
+def _pair_weights_for_node_ids(
+    graph: _GraphData,
+    *,
+    node_ids: list[int],
+) -> dict[tuple[int, int], int]:
+    node_id_set = set(node_ids)
+    return {
+        pair: weight
+        for pair, weight in _contraction_weights(graph).items()
+        if pair[0] in node_id_set and pair[1] in node_id_set
+    }
 
 
 def _repulsion_displacement(positions: np.ndarray, *, k: float) -> np.ndarray:
@@ -149,97 +271,22 @@ def _apply_force_step(
     displacement: np.ndarray,
     *,
     temperature: float,
+    fixed_mask: np.ndarray | None = None,
+    fixed_positions: np.ndarray | None = None,
 ) -> None:
     norms = np.linalg.norm(displacement, axis=1, keepdims=True)
-    positions += displacement / np.maximum(norms, 1e-6) * temperature
-    positions -= positions.mean(axis=0, keepdims=True)
-    max_norm = np.linalg.norm(positions, axis=1).max()
-    if max_norm > _LAYOUT_TARGET_NORM:
-        positions /= max_norm / _LAYOUT_TARGET_NORM
+    step = displacement / np.maximum(norms, 1e-6) * temperature
+    if fixed_mask is None or fixed_positions is None:
+        positions += step
+        positions -= positions.mean(axis=0, keepdims=True)
+        max_norm = np.linalg.norm(positions, axis=1).max()
+        if max_norm > _LAYOUT_TARGET_NORM:
+            positions /= max_norm / _LAYOUT_TARGET_NORM
+        return
 
-
-def _build_nx_graph_from_graph_data(graph: _GraphData) -> nx.Graph:
-    """Build a NetworkX graph from _GraphData (contraction edges only)."""
-    nx_graph = nx.Graph()
-    nx_graph.add_nodes_from(graph.nodes)
-    for record in _iter_contractions(graph):
-        left_id, right_id = record.node_ids
-        if left_id != right_id:
-            nx_graph.add_edge(left_id, right_id)
-    return nx_graph
-
-
-def _try_grid_layout_2d(graph: _GraphData) -> NodePositions | None:
-    """Attempt regular grid layout when the graph is a 2D grid. Returns None otherwise."""
-    node_ids = list(graph.nodes)
-    if len(node_ids) <= 1 or len(node_ids) > _GRID_LAYOUT_MAX_NODES:
-        return None
-
-    nx_graph = _build_nx_graph_from_graph_data(graph)
-    n_nodes = nx_graph.number_of_nodes()
-    n_edges = nx_graph.number_of_edges()
-    if not nx.is_connected(nx_graph):
-        return None
-
-    degree_histogram = Counter(degree for _, degree in nx_graph.degree())
-    if any(degree > 4 for degree in degree_histogram):
-        return None
-
-    for rows in range(1, n_nodes + 1):
-        if n_nodes % rows != 0:
-            continue
-        cols = n_nodes // rows
-        expected_edges = 2 * rows * cols - rows - cols
-        if n_edges != expected_edges:
-            continue
-        if degree_histogram != _grid_degree_histogram(rows, cols):
-            continue
-        grid_graph = nx.grid_2d_graph(rows, cols)
-        mapping = nx.vf2pp_isomorphism(nx_graph, grid_graph)
-        if mapping is None:
-            continue
-        positions = {
-            node_id: np.array([mapping[node_id][1], mapping[node_id][0]], dtype=float)
-            for node_id in node_ids
-        }
-        return _normalize_positions(positions, node_ids)
-    return None
-
-
-def _try_planar_layout_2d(graph: _GraphData) -> NodePositions | None:
-    """Attempt planar layout for 2D. Returns None if graph is not planar."""
-    node_ids = list(graph.nodes)
-    if len(node_ids) <= 1:
-        return None
-
-    nx_graph = _build_nx_graph_from_graph_data(graph)
-    try:
-        planar_positions = nx.planar_layout(nx_graph)
-    except nx.NetworkXException:
-        return None
-
-    positions = {node_id: np.array(planar_positions[node_id], dtype=float) for node_id in node_ids}
-    return _normalize_positions(positions, node_ids)
-
-
-def _grid_degree_histogram(rows: int, cols: int) -> Counter[int]:
-    if rows == 1:
-        if cols == 2:
-            return Counter({1: 2})
-        return Counter({1: 2, 2: cols - 2})
-    if cols == 1:
-        if rows == 2:
-            return Counter({1: 2})
-        return Counter({1: 2, 2: rows - 2})
-
-    histogram = Counter({2: 4})
-    if rows > 2:
-        histogram[3] += 2 * (rows - 2)
-    if cols > 2:
-        histogram[3] += 2 * (cols - 2)
-    if rows > 2 and cols > 2:
-        histogram[4] = (rows - 2) * (cols - 2)
-    return histogram
+    movable_mask = ~fixed_mask
+    positions[movable_mask] += step[movable_mask]
+    positions[fixed_mask] = fixed_positions[fixed_mask]
 
 
 def _initial_positions(node_ids: list[int], dimensions: int, seed: int) -> Vector:
@@ -263,6 +310,118 @@ def _initial_positions(node_ids: list[int], dimensions: int, seed: int) -> Vecto
 
     positions += rng.normal(loc=0.0, scale=0.03, size=positions.shape)
     return positions
+
+
+def _snap_virtual_nodes_to_barycenters(
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> None:
+    for node_id in component.virtual_node_ids:
+        neighbors = sorted(component.contraction_graph.neighbors(node_id))
+        if not neighbors:
+            continue
+        positions[node_id] = np.mean(
+            np.stack([positions[neighbor_id] for neighbor_id in neighbors]),
+            axis=0,
+        )
+
+
+def _promote_3d_layers(
+    graph: _GraphData,
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> None:
+    layer_indices = dict.fromkeys(component.node_ids, 0)
+
+    for node_id in component.virtual_node_ids:
+        if _node_overlaps_component(node_id, component, positions):
+            layer_indices[node_id] = _next_layer(used_layers=layer_indices.values())
+
+    edges = [
+        tuple(sorted(record.node_ids))
+        for record in _iter_contractions(graph)
+        if all(node_id in component.contraction_graph for node_id in record.node_ids)
+    ]
+
+    for index, left_edge in enumerate(edges):
+        for right_edge in edges[index + 1 :]:
+            if set(left_edge) & set(right_edge):
+                continue
+            if not _segments_cross_2d(
+                positions[left_edge[0]][:2],
+                positions[left_edge[1]][:2],
+                positions[right_edge[0]][:2],
+                positions[right_edge[1]][:2],
+            ):
+                continue
+            promoted = _choose_promotable_node(
+                graph,
+                component,
+                node_ids=left_edge + right_edge,
+            )
+            if promoted is None or layer_indices[promoted] != 0:
+                continue
+            layer_indices[promoted] = _next_layer(used_layers=layer_indices.values())
+
+    for node_id, layer_index in layer_indices.items():
+        positions[node_id][2] = layer_index * _LAYER_SPACING
+
+
+def _next_layer(*, used_layers: object) -> int:
+    used = {int(layer) for layer in used_layers}
+    for candidate in _LAYER_SEQUENCE[1:]:
+        if candidate not in used:
+            return candidate
+    return max(used or {0}, key=abs) + 1
+
+
+def _node_overlaps_component(
+    node_id: int,
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> bool:
+    point = positions[node_id][:2]
+    for other_id in component.node_ids:
+        if other_id == node_id:
+            continue
+        if np.linalg.norm(point - positions[other_id][:2]) < 0.18:
+            return True
+    return False
+
+
+def _choose_promotable_node(
+    graph: _GraphData,
+    component: _LayoutComponent,
+    *,
+    node_ids: tuple[int, ...],
+) -> int | None:
+    leaf_node_ids = set(_leaf_nodes(component))
+    anchor_node_ids = set(component.anchor_node_ids)
+
+    def priority(node_id: int) -> tuple[int, int]:
+        if graph.nodes[node_id].is_virtual:
+            return (0, node_id)
+        if node_id not in anchor_node_ids:
+            return (1, node_id)
+        if node_id in leaf_node_ids:
+            return (2, node_id)
+        return (3, node_id)
+
+    ordered = sorted(dict.fromkeys(node_ids), key=priority)
+    if not ordered:
+        return None
+    return ordered[0]
+
+
+def _segments_cross_2d(a: np.ndarray, b: np.ndarray, c: np.ndarray, d: np.ndarray) -> bool:
+    def orient(p: np.ndarray, q: np.ndarray, r: np.ndarray) -> float:
+        return float((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]))
+
+    o1 = orient(a, b, c)
+    o2 = orient(a, b, d)
+    o3 = orient(c, d, a)
+    o4 = orient(c, d, b)
+    return (o1 > 0.0) != (o2 > 0.0) and (o3 > 0.0) != (o4 > 0.0)
 
 
 def _compute_axis_directions(
@@ -362,35 +521,76 @@ def _compute_free_directions_3d(
     positions: NodePositions,
     directions: AxisDirections,
 ) -> None:
-    center = np.mean(np.stack(list(positions.values())), axis=0)
-    for node_id, node in graph.nodes.items():
-        origin = positions[node_id]
-        radial = origin - center
-        if np.linalg.norm(radial) < 1e-6:
-            radial = np.array([1.0, 0.0, 0.0], dtype=float)
-        radial = radial / np.linalg.norm(radial)
-        basis_a = _orthogonal_unit(radial)
-        basis_b = np.cross(radial, basis_a)
-        basis_b = basis_b / np.linalg.norm(basis_b)
-        axis_count = max(node.degree, 1)
-        free_indices = [
-            axis_index
-            for axis_index in range(axis_count)
-            if (node_id, axis_index) not in directions
-        ]
+    components = _analyze_layout_components(graph)
+    assigned_segments: list[tuple[np.ndarray, np.ndarray]] = []
+    component_by_node = {
+        node_id: component
+        for component in components
+        for node_id in component.node_ids
+    }
 
-        for offset, axis_index in enumerate(free_indices):
+    for node_id, node in graph.nodes.items():
+        component = component_by_node[node_id]
+        axis_count = max(node.degree, 1)
+        axis, lateral, normal = _component_orthogonal_basis(component, positions)
+        candidate_directions = [normal, -normal, lateral, -lateral, axis, -axis]
+
+        for axis_index in range(axis_count):
+            axis_key = (node_id, axis_index)
+            if axis_key in directions:
+                continue
+
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
             named_direction = _direction_from_axis_name(axis_name, dimensions=3)
-            used_dirs = _used_axis_directions(directions, node_id=node_id, axis_count=axis_count)
-            if named_direction is not None and _direction_has_space(named_direction, used_dirs):
-                directions[(node_id, axis_index)] = named_direction
-                continue
-            angle = 2.0 * math.pi * offset / max(len(free_indices), 1)
-            direction = radial + 0.55 * (
-                math.cos(angle) * basis_a + math.sin(angle) * basis_b
-            )
-            directions[(node_id, axis_index)] = direction / np.linalg.norm(direction)
+            origin = positions[node_id]
+            for direction in candidate_directions:
+                if _direction_conflicts_3d(
+                    node_id=node_id,
+                    origin=origin,
+                    direction=direction,
+                    assigned_segments=assigned_segments,
+                    positions=positions,
+                ):
+                    continue
+                directions[axis_key] = direction
+                assigned_segments.append((origin.copy(), direction.copy()))
+                break
+            else:
+                fallback = (
+                    named_direction
+                    if named_direction is not None
+                    else _orthogonal_unit(axis)
+                )
+                directions[axis_key] = fallback / np.linalg.norm(fallback)
+                assigned_segments.append((origin.copy(), directions[axis_key].copy()))
+
+
+def _direction_conflicts_3d(
+    *,
+    node_id: int,
+    origin: np.ndarray,
+    direction: np.ndarray,
+    assigned_segments: list[tuple[np.ndarray, np.ndarray]],
+    positions: NodePositions,
+) -> bool:
+    tip = origin + direction * 0.45
+    for other_id, other_position in positions.items():
+        if other_id == node_id:
+            continue
+        if np.linalg.norm(tip - other_position) < 0.26:
+            return True
+
+    for other_origin, other_direction in assigned_segments:
+        other_tip = other_origin + other_direction * 0.45
+        if np.linalg.norm(tip - other_tip) < 0.26:
+            return True
+        if (
+            np.linalg.norm(origin - other_origin) < 0.12
+            and float(np.dot(direction, other_direction)) > 0.92
+        ):
+            return True
+
+    return False
 
 
 def _used_axis_directions(

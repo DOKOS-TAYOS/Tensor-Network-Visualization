@@ -152,6 +152,16 @@ Important options:
 - `validate_positions=True`: warn about unknown ids or wrong coordinate dimensions
 - `layout_iterations`: tune the force-directed fallback layout
 
+Automatic layout now prefers structural embeddings before falling back to forces:
+
+- linear backbones are drawn as straight chains
+- regular 2D meshes are kept on regular lattices
+- trees use a deterministic hierarchical layout
+- 3D views start from a principal plane and only lift nodes when the planar embedding becomes
+  ambiguous
+- dangling legs and other free exits in 3D use deterministic orthogonal directions instead of
+  radial spreading
+
 ## Important Backend Notes
 
 - Quimb hyper-indices shared by more than two tensors are rendered through internal virtual hubs.
