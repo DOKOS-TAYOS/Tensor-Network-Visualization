@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from typing import TypeAlias
 
 import numpy as np
@@ -560,7 +561,7 @@ def _promote_3d_layers(
         positions[node_id][2] += layer_index * _LAYER_SPACING
 
 
-def _next_layer(*, used_layers: object) -> int:
+def _next_layer(*, used_layers: Iterable[int | float]) -> int:
     used = {int(layer) for layer in used_layers}
     for candidate in _LAYER_SEQUENCE[1:]:
         if candidate not in used:

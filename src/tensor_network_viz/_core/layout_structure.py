@@ -315,7 +315,7 @@ def _layout_planar(nx_graph: nx.Graph) -> dict[int, np.ndarray]:
 
 def _layout_tree(nx_graph: nx.Graph, root_id: int) -> dict[int, np.ndarray]:
     children_by_node: dict[int, list[int]] = {node_id: [] for node_id in nx_graph.nodes}
-    parent_by_node = {root_id: None}
+    parent_by_node: dict[int, int | None] = {root_id: None}
     queue = [root_id]
     for node_id in queue:
         children = sorted(

@@ -9,7 +9,7 @@ from typing import Any, Literal, TypeAlias, cast
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.figure import Figure
+from matplotlib.figure import Figure, SubFigure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from ..config import PlotConfig
@@ -108,7 +108,7 @@ def _prepare_axes(
     figsize: tuple[float, float] | None,
     renderer_name: str,
     dimensions: _Dimensions,
-) -> tuple[Figure, RenderedAxes]:
+) -> tuple[Figure | SubFigure, RenderedAxes]:
     if ax is None:
         if dimensions == 2:
             fig, created_ax = plt.subplots(figsize=figsize or (14, 10))
@@ -159,7 +159,7 @@ def _plot_graph(
     show_index_labels: bool | None = None,
     seed: int = 0,
     renderer_name: str,
-) -> tuple[Figure, RenderedAxes]:
+) -> tuple[Figure | SubFigure, RenderedAxes]:
     style = config or PlotConfig()
     fig, resolved_ax = _prepare_axes(
         ax=ax,
@@ -192,8 +192,8 @@ def _make_plot_functions(
     doc_2d: str,
     doc_3d: str,
 ) -> tuple[
-    Callable[..., tuple[Figure, Axes]],
-    Callable[..., tuple[Figure, Axes3D]],
+    Callable[..., tuple[Figure | SubFigure, Axes]],
+    Callable[..., tuple[Figure | SubFigure, Axes3D]],
 ]:
     """Create plot_2d and plot_3d functions for a backend."""
 
@@ -205,7 +205,7 @@ def _make_plot_functions(
         show_tensor_labels: bool | None = None,
         show_index_labels: bool | None = None,
         seed: int = 0,
-    ) -> tuple[Figure, Axes]:
+    ) -> tuple[Figure | SubFigure, Axes]:
         graph = build_graph_fn(network)
         fig, resolved_ax = _plot_graph(
             graph,
@@ -227,7 +227,7 @@ def _make_plot_functions(
         show_tensor_labels: bool | None = None,
         show_index_labels: bool | None = None,
         seed: int = 0,
-    ) -> tuple[Figure, Axes3D]:
+    ) -> tuple[Figure | SubFigure, Axes3D]:
         graph = build_graph_fn(network)
         fig, resolved_ax = _plot_graph(
             graph,
