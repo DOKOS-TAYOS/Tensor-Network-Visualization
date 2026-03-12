@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core.graph import (
-    _build_edge_label,
-    _EdgeData,
     _EdgeEndpoint,
     _GraphData,
-    _NodeData,
+    _make_contraction_edge,
+    _make_dangling_edge,
+    _make_node,
 )
 from .trace import _normalize_trace, _parse_equation, pair_tensor
 
@@ -24,10 +24,10 @@ class _AxisOrigin:
 
 def _build_graph(trace_input: Any) -> _GraphData:
     trace = _normalize_trace(trace_input)
-    nodes: dict[int, _NodeData] = {}
+    nodes: dict[int, Any] = {}
     node_ids_by_name: dict[str, int] = {}
     live_tensors: dict[str, tuple[_AxisOrigin, ...]] = {}
-    edges: list[_EdgeData] = []
+    edges = []
     produced_names: set[str] = set()
     all_result_names = {pair.result_name for pair in trace}
 
@@ -78,23 +78,11 @@ def _build_graph(trace_input: Any) -> _GraphData:
             if label in right_by_label and label not in output_set:
                 left_origin = left_by_label[label]
                 right_origin = right_by_label[label]
-                endpoints = (
-                    _to_endpoint(left_origin),
-                    _to_endpoint(right_origin),
-                )
-                kind = "self" if left_origin.node_id == right_origin.node_id else "contraction"
-                node_ids = (
-                    (left_origin.node_id,)
-                    if kind == "self"
-                    else (left_origin.node_id, right_origin.node_id)
-                )
                 edges.append(
-                    _EdgeData(
+                    _make_contraction_edge(
+                        _to_endpoint(left_origin),
+                        _to_endpoint(right_origin),
                         name=label,
-                        kind=kind,
-                        node_ids=node_ids,
-                        endpoints=endpoints,
-                        label=_build_edge_label(kind=kind, endpoints=endpoints, edge_name=label),
                     )
                 )
 
@@ -108,11 +96,9 @@ def _build_graph(trace_input: Any) -> _GraphData:
         for origin in origins:
             endpoint = _to_endpoint(origin)
             edges.append(
-                _EdgeData(
+                _make_dangling_edge(
+                    endpoint,
                     name=origin.axis_name or None,
-                    kind="dangling",
-                    node_ids=(origin.node_id,),
-                    endpoints=(endpoint,),
                     label=origin.axis_name or None,
                 )
             )
@@ -124,7 +110,7 @@ def _consume_or_create_tensor(
     tensor_name: str,
     axis_labels: tuple[str, ...],
     *,
-    nodes: dict[int, _NodeData],
+    nodes: dict[int, Any],
     node_ids_by_name: dict[str, int],
     live_tensors: dict[str, tuple[_AxisOrigin, ...]],
     produced_names: set[str],
@@ -149,10 +135,9 @@ def _consume_or_create_tensor(
 
     node_id = len(nodes)
     node_ids_by_name[tensor_name] = node_id
-    nodes[node_id] = _NodeData(
+    nodes[node_id] = _make_node(
         name=tensor_name,
         axes_names=axis_labels,
-        degree=len(axis_labels),
     )
     return tuple(
         _AxisOrigin(node_id=node_id, axis_index=index, axis_name=label)

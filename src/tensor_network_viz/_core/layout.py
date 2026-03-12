@@ -10,6 +10,7 @@ import networkx as nx
 import numpy as np
 
 from .axis_directions import _AXIS_DIR_2D, _AXIS_DIR_3D
+from .contractions import _contraction_weights, _iter_contractions
 from .graph import _GraphData
 
 Vector: TypeAlias = np.ndarray
@@ -30,12 +31,12 @@ def _normalize_positions(
     target_norm: float = _LAYOUT_TARGET_NORM,
 ) -> NodePositions:
     """Center and scale positions to target norm. Returns new dict."""
-    arr = np.array([positions[nid] for nid in node_ids], dtype=float)
+    arr = np.array([positions[node_id] for node_id in node_ids], dtype=float)
     arr -= arr.mean(axis=0, keepdims=True)
     max_norm = np.linalg.norm(arr, axis=1).max()
     if max_norm > 1e-6:
         arr /= max_norm / target_norm
-    return {nid: arr[i].copy() for i, nid in enumerate(node_ids)}
+    return {node_id: arr[index].copy() for index, node_id in enumerate(node_ids)}
 
 
 def _direction_from_axis_name(
@@ -62,70 +63,110 @@ def _compute_layout(
 ) -> NodePositions:
     node_ids = list(graph.nodes)
     if len(node_ids) == 1:
-        origin = np.zeros(dimensions, dtype=float)
-        return {node_ids[0]: origin}
+        return {node_ids[0]: np.zeros(dimensions, dtype=float)}
 
-    if dimensions == 2:
-        grid_pos = _try_grid_layout_2d(graph)
-        if grid_pos is not None:
-            return grid_pos
-        planar_pos = _try_planar_layout_2d(graph)
-        if planar_pos is not None:
-            return planar_pos
+    automatic_positions = _select_automatic_layout(graph, dimensions=dimensions)
+    if automatic_positions is not None:
+        return automatic_positions
 
+    return _compute_force_layout(
+        graph,
+        node_ids=node_ids,
+        dimensions=dimensions,
+        seed=seed,
+        iterations=iterations,
+    )
+
+
+def _select_automatic_layout(graph: _GraphData, *, dimensions: int) -> NodePositions | None:
+    if dimensions != 2:
+        return None
+
+    grid_positions = _try_grid_layout_2d(graph)
+    if grid_positions is not None:
+        return grid_positions
+    return _try_planar_layout_2d(graph)
+
+
+def _compute_force_layout(
+    graph: _GraphData,
+    *,
+    node_ids: list[int],
+    dimensions: int,
+    seed: int,
+    iterations: int,
+) -> NodePositions:
     positions = _initial_positions(node_ids, dimensions=dimensions, seed=seed)
     index_by_node = {node_id: index for index, node_id in enumerate(node_ids)}
+    pair_weights = _contraction_weights(graph)
 
-    pair_weights: dict[tuple[int, int], int] = {}
-    for edge in graph.edges:
-        if edge.kind != "contraction":
-            continue
-        left, right = edge.node_ids
-        key = (left, right) if left < right else (right, left)
-        pair_weights[key] = pair_weights.get(key, 0) + 1
-
-    k = _FORCE_LAYOUT_K
     temperature = 0.12
     for _ in range(iterations):
-        deltas = positions[:, None, :] - positions[None, :, :]
-        distances = np.linalg.norm(deltas, axis=2)
-        np.fill_diagonal(distances, 1.0)
-        directions = deltas / np.maximum(distances[..., None], 1e-6)
-        repulsion = (k * k / np.maximum(distances, 1e-6) ** 2)[..., None] * directions
-        displacement = repulsion.sum(axis=1)
-
-        for (left_id, right_id), weight in pair_weights.items():
-            left_index = index_by_node[left_id]
-            right_index = index_by_node[right_id]
-            delta = positions[right_index] - positions[left_index]
-            distance = max(float(np.linalg.norm(delta)), 1e-6)
-            direction = delta / distance
-            attraction = weight * distance * distance / k * direction
-            displacement[left_index] += attraction
-            displacement[right_index] -= attraction
-
-        norms = np.linalg.norm(displacement, axis=1, keepdims=True)
-        positions += displacement / np.maximum(norms, 1e-6) * temperature
-        positions -= positions.mean(axis=0, keepdims=True)
-        max_norm = np.linalg.norm(positions, axis=1).max()
-        if max_norm > _LAYOUT_TARGET_NORM:
-            positions /= max_norm / _LAYOUT_TARGET_NORM
+        displacement = _repulsion_displacement(positions, k=_FORCE_LAYOUT_K)
+        _apply_attraction_forces(
+            displacement,
+            positions,
+            index_by_node=index_by_node,
+            pair_weights=pair_weights,
+            k=_FORCE_LAYOUT_K,
+        )
+        _apply_force_step(positions, displacement, temperature=temperature)
         temperature *= _FORCE_LAYOUT_COOLING_FACTOR
 
-    return {node_id: positions[index] for index, node_id in enumerate(node_ids)}
+    return {node_id: positions[index].copy() for index, node_id in enumerate(node_ids)}
+
+
+def _repulsion_displacement(positions: np.ndarray, *, k: float) -> np.ndarray:
+    deltas = positions[:, None, :] - positions[None, :, :]
+    distances = np.linalg.norm(deltas, axis=2)
+    np.fill_diagonal(distances, 1.0)
+    directions = deltas / np.maximum(distances[..., None], 1e-6)
+    repulsion = (k * k / np.maximum(distances, 1e-6) ** 2)[..., None] * directions
+    return repulsion.sum(axis=1)
+
+
+def _apply_attraction_forces(
+    displacement: np.ndarray,
+    positions: np.ndarray,
+    *,
+    index_by_node: dict[int, int],
+    pair_weights: dict[tuple[int, int], int],
+    k: float,
+) -> None:
+    for (left_id, right_id), weight in pair_weights.items():
+        left_index = index_by_node[left_id]
+        right_index = index_by_node[right_id]
+        delta = positions[right_index] - positions[left_index]
+        distance = max(float(np.linalg.norm(delta)), 1e-6)
+        direction = delta / distance
+        attraction = weight * distance * distance / k * direction
+        displacement[left_index] += attraction
+        displacement[right_index] -= attraction
+
+
+def _apply_force_step(
+    positions: np.ndarray,
+    displacement: np.ndarray,
+    *,
+    temperature: float,
+) -> None:
+    norms = np.linalg.norm(displacement, axis=1, keepdims=True)
+    positions += displacement / np.maximum(norms, 1e-6) * temperature
+    positions -= positions.mean(axis=0, keepdims=True)
+    max_norm = np.linalg.norm(positions, axis=1).max()
+    if max_norm > _LAYOUT_TARGET_NORM:
+        positions /= max_norm / _LAYOUT_TARGET_NORM
 
 
 def _build_nx_graph_from_graph_data(graph: _GraphData) -> nx.Graph:
     """Build a NetworkX graph from _GraphData (contraction edges only)."""
-    g = nx.Graph()
-    g.add_nodes_from(graph.nodes)
-    for edge in graph.edges:
-        if edge.kind != "contraction":
-            continue
-        left, right = edge.node_ids
-        if left != right:
-            g.add_edge(left, right)
-    return g
+    nx_graph = nx.Graph()
+    nx_graph.add_nodes_from(graph.nodes)
+    for record in _iter_contractions(graph):
+        left_id, right_id = record.node_ids
+        if left_id != right_id:
+            nx_graph.add_edge(left_id, right_id)
+    return nx_graph
 
 
 def _try_grid_layout_2d(graph: _GraphData) -> NodePositions | None:
@@ -134,13 +175,13 @@ def _try_grid_layout_2d(graph: _GraphData) -> NodePositions | None:
     if len(node_ids) <= 1 or len(node_ids) > _GRID_LAYOUT_MAX_NODES:
         return None
 
-    g = _build_nx_graph_from_graph_data(graph)
-    n_nodes = g.number_of_nodes()
-    n_edges = g.number_of_edges()
-    if not nx.is_connected(g):
+    nx_graph = _build_nx_graph_from_graph_data(graph)
+    n_nodes = nx_graph.number_of_nodes()
+    n_edges = nx_graph.number_of_edges()
+    if not nx.is_connected(nx_graph):
         return None
 
-    degree_histogram = Counter(degree for _, degree in g.degree())
+    degree_histogram = Counter(degree for _, degree in nx_graph.degree())
     if any(degree > 4 for degree in degree_histogram):
         return None
 
@@ -153,14 +194,15 @@ def _try_grid_layout_2d(graph: _GraphData) -> NodePositions | None:
             continue
         if degree_histogram != _grid_degree_histogram(rows, cols):
             continue
-        grid_g = nx.grid_2d_graph(rows, cols)
-        mapping = nx.vf2pp_isomorphism(g, grid_g)
-        if mapping is not None:
-            positions = {
-                nid: np.array([mapping[nid][1], mapping[nid][0]], dtype=float)
-                for nid in node_ids
-            }
-            return _normalize_positions(positions, node_ids)
+        grid_graph = nx.grid_2d_graph(rows, cols)
+        mapping = nx.vf2pp_isomorphism(nx_graph, grid_graph)
+        if mapping is None:
+            continue
+        positions = {
+            node_id: np.array([mapping[node_id][1], mapping[node_id][0]], dtype=float)
+            for node_id in node_ids
+        }
+        return _normalize_positions(positions, node_ids)
     return None
 
 
@@ -170,13 +212,13 @@ def _try_planar_layout_2d(graph: _GraphData) -> NodePositions | None:
     if len(node_ids) <= 1:
         return None
 
-    g = _build_nx_graph_from_graph_data(graph)
+    nx_graph = _build_nx_graph_from_graph_data(graph)
     try:
-        pos = nx.planar_layout(g)
+        planar_positions = nx.planar_layout(nx_graph)
     except nx.NetworkXException:
         return None
 
-    positions = {nid: np.array(pos[nid], dtype=float) for nid in node_ids}
+    positions = {node_id: np.array(planar_positions[node_id], dtype=float) for node_id in node_ids}
     return _normalize_positions(positions, node_ids)
 
 
@@ -229,27 +271,21 @@ def _compute_axis_directions(
     dimensions: int,
 ) -> AxisDirections:
     directions: AxisDirections = {}
-    center = np.mean(np.stack(list(positions.values())), axis=0)
-
-    for edge in graph.edges:
-        if edge.kind != "contraction":
-            continue
-        a_id, b_id = edge.node_ids
-        a_ep = next(ep for ep in edge.endpoints if ep.node_id == a_id)
-        b_ep = next(ep for ep in edge.endpoints if ep.node_id == b_id)
-        pa = positions[a_id]
-        pb = positions[b_id]
-        delta = pb - pa
-        dist = max(float(np.linalg.norm(delta)), 1e-6)
-        toward_b = delta / dist
-        toward_a = -toward_b
-        directions[(a_id, a_ep.axis_index)] = toward_b
-        directions[(b_id, b_ep.axis_index)] = toward_a
+    for record in _iter_contractions(graph):
+        left_id, right_id = record.node_ids
+        left_endpoint, right_endpoint = record.endpoints
+        left_position = positions[left_id]
+        right_position = positions[right_id]
+        delta = right_position - left_position
+        distance = max(float(np.linalg.norm(delta)), 1e-6)
+        toward_right = delta / distance
+        directions[(left_id, left_endpoint.axis_index)] = toward_right
+        directions[(right_id, right_endpoint.axis_index)] = -toward_right
 
     if dimensions == 2:
         _compute_free_directions_2d(graph, positions, directions)
     else:
-        _compute_free_directions_3d(graph, positions, center, directions)
+        _compute_free_directions_3d(graph, positions, directions)
 
     return directions
 
@@ -260,8 +296,7 @@ def _compute_free_directions_2d(
     directions: AxisDirections,
 ) -> None:
     node_ids = list(positions)
-    samples = _FREE_DIR_SAMPLES_2D
-    angles = np.linspace(0.0, 2.0 * math.pi, samples, endpoint=False)
+    angles = np.linspace(0.0, 2.0 * math.pi, _FREE_DIR_SAMPLES_2D, endpoint=False)
     unit_circle = np.column_stack((np.cos(angles), np.sin(angles)))
     other_node_positions = {
         node_id: np.array(
@@ -271,10 +306,8 @@ def _compute_free_directions_2d(
         for node_id in node_ids
     }
     neighbor_midpoints: dict[int, list[np.ndarray]] = {node_id: [] for node_id in node_ids}
-    for edge in graph.edges:
-        if edge.kind != "contraction":
-            continue
-        left_id, right_id = edge.node_ids
+    for record in _iter_contractions(graph):
+        left_id, right_id = record.node_ids
         midpoint = (positions[left_id] + positions[right_id]) / 2.0
         neighbor_midpoints[left_id].append(midpoint)
         neighbor_midpoints[right_id].append(midpoint)
@@ -286,56 +319,50 @@ def _compute_free_directions_2d(
             obstacle_parts.append(other_node_positions[node_id])
         if neighbor_midpoints[node_id]:
             obstacle_parts.append(np.array(neighbor_midpoints[node_id], dtype=float))
-        obstacles_arr = (
+        obstacles = (
             np.concatenate(obstacle_parts, axis=0)
             if obstacle_parts
             else np.array([[origin[0] + 1.0, origin[1]]], dtype=float)
         )
 
-        vecs_to_obstacles = obstacles_arr - origin
+        vecs_to_obstacles = obstacles - origin
         dists = np.linalg.norm(vecs_to_obstacles, axis=1, keepdims=True)
-        dists = np.maximum(dists, 1e-6)
-        dirs_to_obstacles = vecs_to_obstacles / dists
+        dirs_to_obstacles = vecs_to_obstacles / np.maximum(dists, 1e-6)
 
         axis_count = max(node.degree, 1)
         for axis_index in range(axis_count):
-            if (node_id, axis_index) in directions:
+            axis_key = (node_id, axis_index)
+            if axis_key in directions:
                 continue
-            used_dirs = [
-                directions[(node_id, j)]
-                for j in range(axis_count)
-                if (node_id, j) in directions
-            ]
+            used_dirs = _used_axis_directions(directions, node_id=node_id, axis_count=axis_count)
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
-            named_d = _direction_from_axis_name(axis_name, dimensions=2)
-            if named_d is not None:
-                overlap = sum(max(0.0, float(np.dot(named_d, u[:2]))) for u in used_dirs)
-                if overlap < _FREE_DIR_OVERLAP_THRESHOLD:
-                    directions[(node_id, axis_index)] = named_d
-                    continue
+            named_direction = _direction_from_axis_name(axis_name, dimensions=2)
+            if named_direction is not None and _direction_has_space(named_direction, used_dirs):
+                directions[axis_key] = named_direction
+                continue
+
             best_score = -np.inf
-            best_d = np.array([1.0, 0.0], dtype=float)
-            for d in unit_circle:
-                d = d.astype(float)
-                toward_obstacles = np.dot(dirs_to_obstacles, d)
+            best_direction = np.array([1.0, 0.0], dtype=float)
+            for direction in unit_circle:
+                toward_obstacles = np.dot(dirs_to_obstacles, direction)
                 away_score = -float(np.min(toward_obstacles))
-                sep_score = 0.0
-                for u in used_dirs:
-                    sim = float(np.dot(d, u[:2]))
-                    sep_score += max(0.0, sim) * 2.0
-                score = away_score - sep_score
+                separation_penalty = sum(
+                    max(0.0, float(np.dot(direction, used_direction[:2]))) * 2.0
+                    for used_direction in used_dirs
+                )
+                score = away_score - separation_penalty
                 if score > best_score:
                     best_score = score
-                    best_d = d.copy()
-            directions[(node_id, axis_index)] = best_d
+                    best_direction = direction.astype(float, copy=True)
+            directions[axis_key] = best_direction
 
 
 def _compute_free_directions_3d(
     graph: _GraphData,
     positions: NodePositions,
-    center: np.ndarray,
     directions: AxisDirections,
 ) -> None:
+    center = np.mean(np.stack(list(positions.values())), axis=0)
     for node_id, node in graph.nodes.items():
         origin = positions[node_id]
         radial = origin - center
@@ -345,28 +372,46 @@ def _compute_free_directions_3d(
         basis_a = _orthogonal_unit(radial)
         basis_b = np.cross(radial, basis_a)
         basis_b = basis_b / np.linalg.norm(basis_b)
+        axis_count = max(node.degree, 1)
         free_indices = [
-            j for j in range(max(node.degree, 1))
-            if (node_id, j) not in directions
+            axis_index
+            for axis_index in range(axis_count)
+            if (node_id, axis_index) not in directions
         ]
-        for idx, axis_index in enumerate(free_indices):
+
+        for offset, axis_index in enumerate(free_indices):
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
-            named_d = _direction_from_axis_name(axis_name, dimensions=3)
-            if named_d is not None:
-                used_dirs = [
-                    directions[(node_id, j)]
-                    for j in range(max(node.degree, 1))
-                    if (node_id, j) in directions
-                ]
-                overlap = sum(max(0.0, float(np.dot(named_d, u))) for u in used_dirs)
-                if overlap < _FREE_DIR_OVERLAP_THRESHOLD:
-                    directions[(node_id, axis_index)] = named_d
-                    continue
-            angle = 2.0 * math.pi * idx / max(len(free_indices), 1)
+            named_direction = _direction_from_axis_name(axis_name, dimensions=3)
+            used_dirs = _used_axis_directions(directions, node_id=node_id, axis_count=axis_count)
+            if named_direction is not None and _direction_has_space(named_direction, used_dirs):
+                directions[(node_id, axis_index)] = named_direction
+                continue
+            angle = 2.0 * math.pi * offset / max(len(free_indices), 1)
             direction = radial + 0.55 * (
                 math.cos(angle) * basis_a + math.sin(angle) * basis_b
             )
             directions[(node_id, axis_index)] = direction / np.linalg.norm(direction)
+
+
+def _used_axis_directions(
+    directions: AxisDirections,
+    *,
+    node_id: int,
+    axis_count: int,
+) -> list[np.ndarray]:
+    return [
+        directions[(node_id, axis_index)]
+        for axis_index in range(axis_count)
+        if (node_id, axis_index) in directions
+    ]
+
+
+def _direction_has_space(direction: np.ndarray, used_dirs: list[np.ndarray]) -> bool:
+    overlap = sum(
+        max(0.0, float(np.dot(direction, used_direction)))
+        for used_direction in used_dirs
+    )
+    return overlap < _FREE_DIR_OVERLAP_THRESHOLD
 
 
 def _orthogonal_unit(vector: Vector) -> Vector:
