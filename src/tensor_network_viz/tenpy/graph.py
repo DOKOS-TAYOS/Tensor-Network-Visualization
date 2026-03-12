@@ -6,11 +6,11 @@ from collections.abc import Callable
 from typing import Any
 
 from .._core.graph import (
-    _build_edge_label,
-    _EdgeData,
     _EdgeEndpoint,
     _GraphData,
-    _NodeData,
+    _make_contraction_edge,
+    _make_dangling_edge,
+    _make_node,
 )
 from .._core.graph_utils import _stringify
 
@@ -49,17 +49,16 @@ def _build_nodes(
     *,
     tensor_at: Callable[[int], Any],
     node_prefix: str,
-) -> tuple[dict[int, _NodeData], dict[int, tuple[str, ...]]]:
-    nodes: dict[int, _NodeData] = {}
+) -> tuple[dict[int, Any], dict[int, tuple[str, ...]]]:
+    nodes: dict[int, Any] = {}
     labels_by_node: dict[int, tuple[str, ...]] = {}
 
     for index in range(length):
         labels = _leg_labels(tensor_at(index))
         labels_by_node[index] = labels
-        nodes[index] = _NodeData(
+        nodes[index] = _make_node(
             name=f"{node_prefix}{index}",
             axes_names=labels,
-            degree=len(labels),
         )
 
     return nodes, labels_by_node
@@ -72,8 +71,8 @@ def _build_chain_edges(
     left_leg: str,
     right_leg: str,
     boundary_mode: str,
-) -> list[_EdgeData]:
-    edges: list[_EdgeData] = []
+) -> list[Any]:
+    edges: list[Any] = []
 
     neighbor_pairs = [(index, index + 1) for index in range(length - 1)]
     if boundary_mode == "periodic" and length > 0:
@@ -92,18 +91,7 @@ def _build_chain_edges(
             axis_index=_find_leg_index(right_labels, left_leg, node_name=f"{right_index}"),
             axis_name=left_leg,
         )
-        endpoints = (left_endpoint, right_endpoint)
-        kind = "self" if left_index == right_index else "contraction"
-        node_ids = (left_index,) if kind == "self" else (left_index, right_index)
-        edges.append(
-            _EdgeData(
-                name=None,
-                kind=kind,
-                node_ids=node_ids,
-                endpoints=endpoints,
-                label=_build_edge_label(kind=kind, endpoints=endpoints, edge_name=None),
-            )
-        )
+        edges.append(_make_contraction_edge(left_endpoint, right_endpoint, name=None))
 
     for index in range(length):
         labels = labels_by_node[index]
@@ -121,15 +109,7 @@ def _build_chain_edges(
                 axis_index=axis_index,
                 axis_name=label,
             )
-            edges.append(
-                _EdgeData(
-                    name=label or None,
-                    kind="dangling",
-                    node_ids=(index,),
-                    endpoints=(endpoint,),
-                    label=label or None,
-                )
-            )
+            edges.append(_make_dangling_edge(endpoint, name=label or None, label=label or None))
 
     return edges
 

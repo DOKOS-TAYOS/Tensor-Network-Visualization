@@ -5,10 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from .._core.graph import (
-    _EdgeData,
     _EdgeEndpoint,
     _GraphData,
-    _NodeData,
+    _make_contraction_edge,
+    _make_dangling_edge,
+    _make_node,
 )
 from .._core.graph_utils import (
     _extract_unique_items,
@@ -60,15 +61,13 @@ def _tensor_display_name(tensor: Any, fallback_index: int) -> str:
 
 def _build_hyperedge_hub(
     *,
-    hub_id: int,
     ind_name: str,
     endpoints: list[_EdgeEndpoint],
-) -> _NodeData:
+) -> Any:
     axis_names = tuple(f"{ind_name}__branch_{index}" for index in range(len(endpoints)))
-    return _NodeData(
+    return _make_node(
         name="",
         axes_names=axis_names,
-        degree=len(endpoints),
         label=ind_name or None,
         is_virtual=True,
     )
@@ -79,16 +78,15 @@ def _build_graph(network: Any) -> _GraphData:
     if not tensor_refs:
         raise ValueError("The tensor network does not expose any tensors to visualize.")
 
-    nodes: dict[int, _NodeData] = {}
+    nodes: dict[int, Any] = {}
     index_endpoints: dict[str, list[_EdgeEndpoint]] = {}
 
     for tensor_index, tensor in enumerate(tensor_refs):
         inds = tuple(_stringify(ind) for ind in getattr(tensor, "inds", ()))
         node_id = id(tensor)
-        nodes[node_id] = _NodeData(
+        nodes[node_id] = _make_node(
             name=_tensor_display_name(tensor, tensor_index),
             axes_names=inds,
-            degree=len(inds),
         )
 
         for axis_index, ind in enumerate(inds):
@@ -100,14 +98,13 @@ def _build_graph(network: Any) -> _GraphData:
                 )
             )
 
-    edges: list[_EdgeData] = []
+    edges = []
     next_virtual_node_id = -1
     for ind_name, endpoints in index_endpoints.items():
         if len(endpoints) > 2:
             hub_id = next_virtual_node_id
             next_virtual_node_id -= 1
             nodes[hub_id] = _build_hyperedge_hub(
-                hub_id=hub_id,
                 ind_name=ind_name,
                 endpoints=endpoints,
             )
@@ -119,32 +116,23 @@ def _build_graph(network: Any) -> _GraphData:
                     axis_name=nodes[hub_id].axes_names[branch_index],
                 )
                 edges.append(
-                    _EdgeData(
+                    _make_contraction_edge(
+                        endpoint,
+                        hub_endpoint,
                         name=ind_name,
-                        kind="contraction",
-                        node_ids=(endpoint.node_id, hub_id),
-                        endpoints=(endpoint, hub_endpoint),
                         label=None,
                     )
                 )
             continue
 
         if len(endpoints) == 1:
-            kind = "dangling"
-            node_ids = (endpoints[0].node_id,)
-        elif endpoints[0].node_id == endpoints[1].node_id:
-            kind = "self"
-            node_ids = (endpoints[0].node_id,)
-        else:
-            kind = "contraction"
-            node_ids = (endpoints[0].node_id, endpoints[1].node_id)
-
+            edges.append(_make_dangling_edge(endpoints[0], name=ind_name, label=ind_name or None))
+            continue
         edges.append(
-            _EdgeData(
+            _make_contraction_edge(
+                endpoints[0],
+                endpoints[1],
                 name=ind_name,
-                kind=kind,
-                node_ids=node_ids,
-                endpoints=tuple(endpoints),
                 label=ind_name or None,
             )
         )

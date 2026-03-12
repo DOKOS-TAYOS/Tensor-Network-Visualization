@@ -56,13 +56,15 @@ def show_tensor_network(
             show_tensor_labels=show_tensor_labels,
             show_index_labels=show_index_labels,
         )
-    else:
+    elif view == "3d":
         fig, ax = plot_3d(
             network,
             config=style,
             show_tensor_labels=show_tensor_labels,
             show_index_labels=show_index_labels,
         )
+    else:
+        raise ValueError(f"Unsupported tensor network view: {view}")
     if show:
         plt.show()
     return fig, ax

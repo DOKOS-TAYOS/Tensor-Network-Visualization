@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from .graph import (
-    _build_edge_label,
-    _EdgeData,
     _EdgeEndpoint,
     _GraphData,
-    _NodeData,
+    _make_contraction_edge,
+    _make_dangling_edge,
+    _make_node,
 )
 from .graph_utils import (
     _extract_unique_items,
@@ -78,7 +78,7 @@ def _build_graph_from_nodes_edges(
     if not node_refs:
         raise ValueError("The tensor network does not expose any nodes to visualize.")
 
-    nodes: dict[int, _NodeData] = {}
+    nodes: dict[int, Any] = {}
     edge_refs: dict[int, Any] = {}
     edge_endpoints: dict[int, list[_EdgeEndpoint]] = {}
 
@@ -94,10 +94,9 @@ def _build_graph_from_nodes_edges(
             )
 
         node_id = id(node)
-        nodes[node_id] = _NodeData(
+        nodes[node_id] = _make_node(
             name=name,
             axes_names=axes_names,
-            degree=len(node_edges),
         )
 
         for axis_index, edge in enumerate(node_edges):
@@ -113,7 +112,7 @@ def _build_graph_from_nodes_edges(
                 )
             )
 
-    edges: list[_EdgeData] = []
+    edges = []
     for edge_id, edge in edge_refs.items():
         name = _optional_string(_require_attr(edge, "name", "edge"))
         node1 = _require_attr(edge, "node1", "edge")
@@ -121,36 +120,21 @@ def _build_graph_from_nodes_edges(
 
         node1_id = id(node1) if node1 is not None and id(node1) in nodes else None
         node2_id = id(node2) if node2 is not None and id(node2) in nodes else None
-        endpoints = tuple(edge_endpoints.get(edge_id, ()))
-        if not endpoints:
+        endpoint_list = edge_endpoints.get(edge_id)
+        if not endpoint_list:
             continue
+        endpoints = tuple(endpoint_list)
         if len(endpoints) > 2:
             raise TypeError("Edges with more than two endpoints are not supported.")
 
-        if node1_id is not None and node2_id is not None:
-            if node1_id == node2_id:
-                kind = "self"
-                node_ids = (node1_id,)
-            else:
-                kind = "contraction"
-                node_ids = (node1_id, node2_id)
-        elif node1_id is not None:
-            kind = "dangling"
-            node_ids = (node1_id,)
-        elif node2_id is not None:
-            kind = "dangling"
-            node_ids = (node2_id,)
-        else:
+        if node1_id is None and node2_id is None:
             continue
-
-        edges.append(
-            _EdgeData(
-                name=name,
-                kind=kind,
-                node_ids=node_ids,
-                endpoints=endpoints,
-                label=_build_edge_label(kind=kind, endpoints=endpoints, edge_name=name),
-            )
-        )
+        if len(endpoints) == 1:
+            edges.append(_make_dangling_edge(endpoints[0], name=name))
+            continue
+        if len(endpoints) != 2:
+            raise TypeError("Edges with more than two endpoints are not supported.")
+        left_endpoint, right_endpoint = endpoints
+        edges.append(_make_contraction_edge(left_endpoint, right_endpoint, name=name))
 
     return _GraphData(nodes=nodes, edges=tuple(edges))

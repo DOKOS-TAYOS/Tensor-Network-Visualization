@@ -1,4 +1,4 @@
-"""Curve geometry and edge grouping utilities."""
+"""Curve geometry utilities."""
 
 from __future__ import annotations
 
@@ -7,32 +7,9 @@ from typing import TypeAlias
 
 import numpy as np
 
-from .axis_directions import _AXIS_OFFSET_SIGN
-from .graph import _EdgeData, _EdgeEndpoint, _GraphData
+from .graph import _EdgeData, _EdgeEndpoint
 
 Vector: TypeAlias = np.ndarray
-
-
-def _offset_sign_from_axis_name(axis_name: str | None) -> int:
-    if not axis_name:
-        return 0
-    return _AXIS_OFFSET_SIGN.get(axis_name.lower().strip(), 0)
-
-
-def _group_contractions(graph: _GraphData) -> dict[tuple[int, int], list[_EdgeData]]:
-    groups: dict[tuple[int, int], list[_EdgeData]] = {}
-    for edge in graph.edges:
-        if edge.kind != "contraction":
-            continue
-        key = tuple(sorted(edge.node_ids))
-        groups.setdefault(key, []).append(edge)
-    for group in groups.values():
-        group.sort(
-            key=lambda edge: _offset_sign_from_axis_name(
-                edge.endpoints[0].axis_name if edge.endpoints else None
-            )
-        )
-    return groups
 
 
 def _quadratic_curve(
