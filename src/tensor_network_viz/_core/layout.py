@@ -121,6 +121,7 @@ def _compute_component_layout_2d(
         )
 
     _snap_virtual_nodes_to_barycenters(component, positions)
+    _place_trimmed_leaf_nodes_2d(component, positions)
     return _center_positions(positions, node_ids=node_ids)
 
 
@@ -133,6 +134,7 @@ def _lift_component_layout_3d(
         node_id: np.array([coords[0], coords[1], 0.0], dtype=float)
         for node_id, coords in positions_2d.items()
     }
+    _place_trimmed_leaf_nodes_3d(component, positions)
     _promote_3d_layers(graph, component, positions)
     return positions
 
@@ -326,6 +328,202 @@ def _snap_virtual_nodes_to_barycenters(
         )
 
 
+def _place_trimmed_leaf_nodes_2d(
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> None:
+    if not component.trimmed_leaf_parents:
+        return
+
+    axis = _component_main_axis_2d(component, positions)
+    perpendicular = np.array([-axis[1], axis[0]], dtype=float)
+    if np.linalg.norm(perpendicular) < 1e-6:
+        perpendicular = np.array([0.0, 1.0], dtype=float)
+    else:
+        perpendicular /= np.linalg.norm(perpendicular)
+    core_node_ids = [
+        node_id
+        for node_id in component.visible_node_ids
+        if node_id not in {leaf_id for leaf_id, _ in component.trimmed_leaf_parents}
+    ]
+    if not core_node_ids:
+        return
+    centroid = np.mean(
+        np.stack([positions[node_id] for node_id in core_node_ids]),
+        axis=0,
+    )
+
+    assigned_targets: list[np.ndarray] = []
+    for leaf_id, parent_id in component.trimmed_leaf_parents:
+        positions[leaf_id] = _best_attachment_position_2d(
+            component=component,
+            origin=positions[parent_id],
+            parent_id=parent_id,
+            leaf_id=leaf_id,
+            candidates=(perpendicular, -perpendicular),
+            axis=axis,
+            centroid=centroid,
+            assigned_targets=assigned_targets,
+            positions=positions,
+        )
+        assigned_targets.append(positions[leaf_id].copy())
+
+
+def _place_trimmed_leaf_nodes_3d(
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> None:
+    if not component.trimmed_leaf_parents:
+        return
+
+    _, lateral, normal = _component_orthogonal_basis(component, positions)
+    candidates = (normal, -normal, lateral, -lateral)
+    assigned_targets: list[np.ndarray] = []
+    for leaf_id, parent_id in component.trimmed_leaf_parents:
+        positions[leaf_id] = _best_attachment_position_3d(
+            origin=positions[parent_id],
+            candidates=candidates,
+            assigned_targets=assigned_targets,
+        )
+        assigned_targets.append(positions[leaf_id].copy())
+
+
+def _component_main_axis_2d(
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> np.ndarray:
+    anchor_node_ids = component.anchor_node_ids or component.visible_node_ids
+    if component.structure_kind == "chain" and len(component.chain_order) >= 2:
+        start = positions[component.chain_order[0]]
+        end = positions[component.chain_order[-1]]
+        axis = end - start
+    elif len(anchor_node_ids) >= 2:
+        coords = np.stack([positions[node_id] for node_id in anchor_node_ids])
+        centered = coords - coords.mean(axis=0, keepdims=True)
+        _, _, vh = np.linalg.svd(centered, full_matrices=False)
+        axis = vh[0]
+    else:
+        axis = np.array([1.0, 0.0], dtype=float)
+    norm = np.linalg.norm(axis)
+    if norm < 1e-6:
+        return np.array([1.0, 0.0], dtype=float)
+    return axis / norm
+
+
+def _best_attachment_position_2d(
+    *,
+    component: _LayoutComponent,
+    origin: np.ndarray,
+    parent_id: int,
+    leaf_id: int,
+    candidates: tuple[np.ndarray, ...],
+    axis: np.ndarray,
+    centroid: np.ndarray,
+    assigned_targets: list[np.ndarray],
+    positions: NodePositions,
+) -> np.ndarray:
+    leaf_node_ids = {node_id for node_id, _ in component.trimmed_leaf_parents}
+    direction_options = (
+        candidates
+        if component.structure_kind == "chain"
+        else (*candidates, axis, -axis)
+    )
+    used_dirs = []
+    for neighbor_id in component.contraction_graph.neighbors(parent_id):
+        if neighbor_id == leaf_id or neighbor_id in leaf_node_ids:
+            continue
+        delta = positions[neighbor_id][:2] - origin[:2]
+        norm = np.linalg.norm(delta)
+        if norm > 1e-6:
+            used_dirs.append(delta / norm)
+
+    outward = origin[:2] - centroid[:2]
+    outward_norm = np.linalg.norm(outward)
+    outward_dir = outward / outward_norm if outward_norm > 1e-6 else np.zeros(2, dtype=float)
+
+    existing_segments = []
+    for left_id, right_id in component.contraction_graph.edges():
+        if leaf_id in (left_id, right_id):
+            continue
+        if left_id in leaf_node_ids or right_id in leaf_node_ids:
+            continue
+        if parent_id in (left_id, right_id):
+            continue
+        existing_segments.append((positions[left_id][:2], positions[right_id][:2]))
+
+    distance = 1.0
+    best_score = -np.inf
+    best_candidate = origin[:2] + candidates[0] * distance
+    for direction in direction_options:
+        candidate = origin + direction * distance
+        score = 0.8 * float(np.dot(direction[:2], outward_dir))
+        score -= 2.5 * sum(
+            max(0.0, float(np.dot(direction[:2], used_dir)))
+            for used_dir in used_dirs
+        )
+        score -= 2.0 * sum(
+            1.0
+            for target in assigned_targets
+            if np.linalg.norm(candidate[:2] - target[:2]) < 0.3
+        )
+        score -= 4.0 * sum(
+            1.0
+            for node_id, position in positions.items()
+            if node_id not in {leaf_id, parent_id}
+            and np.linalg.norm(candidate[:2] - position[:2]) < 0.25
+        )
+        score -= 4.0 * sum(
+            1.0
+            for start, end in existing_segments
+            if _segment_hits_existing_geometry_2d(origin[:2], candidate[:2], start, end)
+        )
+        if score > best_score:
+            best_score = score
+            best_candidate = candidate[:2].copy()
+    return best_candidate
+
+
+def _best_attachment_position_3d(
+    *,
+    origin: np.ndarray,
+    candidates: tuple[np.ndarray, ...],
+    assigned_targets: list[np.ndarray],
+) -> np.ndarray:
+    distance = 1.0
+    for direction in candidates:
+        candidate = origin + direction * distance
+        if all(np.linalg.norm(candidate - target) >= 0.3 for target in assigned_targets):
+            return candidate
+    return origin + candidates[0] * distance
+
+
+def _segment_hits_existing_geometry_2d(
+    start: np.ndarray,
+    end: np.ndarray,
+    other_start: np.ndarray,
+    other_end: np.ndarray,
+) -> bool:
+    if _segments_cross_2d(start, end, other_start, other_end):
+        return True
+    midpoint = (start + end) / 2.0
+    return _point_segment_distance_2d(midpoint, other_start, other_end) < 0.15
+
+
+def _point_segment_distance_2d(
+    point: np.ndarray,
+    start: np.ndarray,
+    end: np.ndarray,
+) -> float:
+    segment = end - start
+    denom = float(np.dot(segment, segment))
+    if denom < 1e-12:
+        return float(np.linalg.norm(point - start))
+    t = float(np.dot(point - start, segment) / denom)
+    t = max(0.0, min(1.0, t))
+    projection = start + t * segment
+    return float(np.linalg.norm(point - projection))
+
+
 def _promote_3d_layers(
     graph: _GraphData,
     component: _LayoutComponent,
@@ -364,7 +562,7 @@ def _promote_3d_layers(
             layer_indices[promoted] = _next_layer(used_layers=layer_indices.values())
 
     for node_id, layer_index in layer_indices.items():
-        positions[node_id][2] = layer_index * _LAYER_SPACING
+        positions[node_id][2] += layer_index * _LAYER_SPACING
 
 
 def _next_layer(*, used_layers: object) -> int:
@@ -542,8 +740,25 @@ def _compute_free_directions_3d(
 
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
             named_direction = _direction_from_axis_name(axis_name, dimensions=3)
+            used_dirs = _used_axis_directions(directions, node_id=node_id, axis_count=axis_count)
             origin = positions[node_id]
+            if (
+                named_direction is not None
+                and _direction_has_space(named_direction, used_dirs)
+                and not _direction_conflicts_3d(
+                    node_id=node_id,
+                    origin=origin,
+                    direction=named_direction,
+                    assigned_segments=assigned_segments,
+                    positions=positions,
+                )
+            ):
+                directions[axis_key] = named_direction
+                assigned_segments.append((origin.copy(), named_direction.copy()))
+                continue
             for direction in candidate_directions:
+                if not _direction_has_space(direction, used_dirs):
+                    continue
                 if _direction_conflicts_3d(
                     node_id=node_id,
                     origin=origin,
@@ -561,6 +776,8 @@ def _compute_free_directions_3d(
                     if named_direction is not None
                     else _orthogonal_unit(axis)
                 )
+                if not _direction_has_space(fallback, used_dirs):
+                    fallback = -fallback
                 directions[axis_key] = fallback / np.linalg.norm(fallback)
                 assigned_segments.append((origin.copy(), directions[axis_key].copy()))
 

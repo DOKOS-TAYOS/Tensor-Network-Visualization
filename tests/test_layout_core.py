@@ -220,6 +220,105 @@ def _build_hypergraph_with_virtual_hub() -> _GraphData:
     return _GraphData(nodes=nodes, edges=edges)
 
 
+def _build_einsum_like_mps_graph() -> _GraphData:
+    nodes = {
+        0: _make_node("A0", ("p", "a")),
+        1: _make_node("x0", ("p",)),
+        2: _make_node("A1", ("a", "p", "b")),
+        3: _make_node("x1", ("p",)),
+    }
+    edges = (
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 0, "p"),
+            _EdgeEndpoint(1, 0, "p"),
+            name="p0",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 1, "a"),
+            _EdgeEndpoint(2, 0, "a"),
+            name="a",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(2, 1, "p"),
+            _EdgeEndpoint(3, 0, "p"),
+            name="p1",
+            label=None,
+        ),
+        _make_dangling_edge(
+            _EdgeEndpoint(2, 2, "b"),
+            name="b",
+            label=None,
+        ),
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
+def _build_grid_with_leaf_nodes() -> _GraphData:
+    nodes = {
+        0: _make_node("P00", ("right", "up", "s")),
+        1: _make_node("P01", ("left", "up", "t")),
+        2: _make_node("P10", ("right", "down", "v")),
+        3: _make_node("P11", ("left", "down", "w")),
+        4: _make_node("x00", ("s",)),
+        5: _make_node("x01", ("t",)),
+        6: _make_node("x10", ("v",)),
+        7: _make_node("x11", ("w",)),
+    }
+    edges = (
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 0, "right"),
+            _EdgeEndpoint(1, 0, "left"),
+            name="h0",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(2, 0, "right"),
+            _EdgeEndpoint(3, 0, "left"),
+            name="h1",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 1, "up"),
+            _EdgeEndpoint(2, 1, "down"),
+            name="v0",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(1, 1, "up"),
+            _EdgeEndpoint(3, 1, "down"),
+            name="v1",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 2, "s"),
+            _EdgeEndpoint(4, 0, "s"),
+            name="s",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(1, 2, "t"),
+            _EdgeEndpoint(5, 0, "t"),
+            name="t",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(2, 2, "v"),
+            _EdgeEndpoint(6, 0, "v"),
+            name="v",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(3, 2, "w"),
+            _EdgeEndpoint(7, 0, "w"),
+            name="w",
+            label=None,
+        ),
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
 def _principal_axis(points: np.ndarray) -> np.ndarray:
     centered = points - points.mean(axis=0, keepdims=True)
     _, _, vh = np.linalg.svd(centered, full_matrices=False)
@@ -228,7 +327,7 @@ def _principal_axis(points: np.ndarray) -> np.ndarray:
 
 
 def test_compute_layout_line_chain_2d_is_colinear_and_evenly_spaced() -> None:
-    graph = _build_chain_graph(length=4)
+    graph = _build_chain_graph(length=4, dangling_axis_counts={0: 1, 3: 1})
 
     positions = _compute_layout(graph, dimensions=2, seed=0)
     coords = np.stack([positions[node_id] for node_id in range(4)])
@@ -239,7 +338,7 @@ def test_compute_layout_line_chain_2d_is_colinear_and_evenly_spaced() -> None:
 
 
 def test_compute_layout_line_chain_3d_keeps_backbone_straight_and_planar() -> None:
-    graph = _build_chain_graph(length=4)
+    graph = _build_chain_graph(length=4, dangling_axis_counts={0: 1, 3: 1})
 
     positions = _compute_layout(graph, dimensions=3, seed=0)
     coords = np.stack([positions[node_id] for node_id in range(4)])
@@ -248,6 +347,57 @@ def test_compute_layout_line_chain_3d_keeps_backbone_straight_and_planar() -> No
     assert np.allclose(coords[:, 2], 0.0, atol=1e-6)
     assert np.all(np.diff(coords[:, 0]) > 0.0)
     assert np.allclose(np.diff(coords[:, 0]), np.diff(coords[:, 0])[0], atol=1e-6)
+
+
+def test_compute_layout_einsum_like_mps_2d_reattaches_degree_one_nodes_as_Ls() -> None:
+    graph = _build_einsum_like_mps_graph()
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+
+    assert np.allclose(positions[0][1], positions[2][1], atol=1e-6)
+    assert positions[0][0] < positions[2][0]
+    assert np.allclose(positions[1][0], positions[0][0], atol=1e-6)
+    assert np.allclose(positions[3][0], positions[2][0], atol=1e-6)
+    assert abs(positions[1][1] - positions[0][1]) > 0.2
+    assert abs(positions[3][1] - positions[2][1]) > 0.2
+
+
+def test_compute_layout_einsum_like_mps_3d_reattaches_degree_one_nodes_orthogonally() -> None:
+    graph = _build_einsum_like_mps_graph()
+
+    positions = _compute_layout(graph, dimensions=3, seed=0)
+    left_vector = positions[1] - positions[0]
+    right_vector = positions[3] - positions[2]
+
+    assert np.allclose(positions[0][1:], positions[2][1:], atol=1e-6)
+    assert positions[0][0] < positions[2][0]
+    assert abs(left_vector[0]) < 1e-6
+    assert abs(right_vector[0]) < 1e-6
+    assert np.linalg.norm(left_vector[1:]) > 0.2
+    assert np.linalg.norm(right_vector[1:]) > 0.2
+
+
+def test_compute_axis_directions_einsum_like_mps_3d_avoids_reusing_leaf_direction() -> None:
+    graph = _build_einsum_like_mps_graph()
+
+    positions = _compute_layout(graph, dimensions=3, seed=0)
+    directions = _compute_axis_directions(graph, positions, dimensions=3)
+
+    assert np.allclose(directions[(2, 1)], np.array([0.0, 0.0, 1.0]), atol=1e-6)
+    assert np.allclose(directions[(2, 2)], np.array([0.0, 0.0, -1.0]), atol=1e-6)
+
+
+def test_compute_layout_grid_with_leaf_nodes_2d_keeps_leaf_positions_off_core_nodes() -> None:
+    graph = _build_grid_with_leaf_nodes()
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    core_positions = [positions[node_id] for node_id in range(4)]
+
+    for leaf_id in range(4, 8):
+        assert all(
+            not np.allclose(positions[leaf_id], core_position, atol=1e-6)
+            for core_position in core_positions
+        )
 
 
 def test_compute_layout_grid_2d_places_nodes_on_regular_lattice() -> None:
@@ -277,7 +427,7 @@ def test_compute_layout_planar_cycle_3d_stays_on_single_plane() -> None:
 
 
 def test_compute_axis_directions_chain_3d_assigns_orthogonal_open_end() -> None:
-    graph = _build_chain_graph(length=3, dangling_axis_counts={0: 1})
+    graph = _build_chain_graph(length=3, dangling_axis_counts={0: 1, 2: 1})
 
     positions = _compute_layout(graph, dimensions=3, seed=0)
     directions = _compute_axis_directions(graph, positions, dimensions=3)
@@ -285,20 +435,16 @@ def test_compute_axis_directions_chain_3d_assigns_orthogonal_open_end() -> None:
     assert np.allclose(directions[(0, 1)], np.array([0.0, 0.0, 1.0]), atol=1e-6)
 
 
-def test_compute_axis_directions_competing_free_axes_use_deterministic_orthogonal_order() -> None:
+def test_compute_axis_directions_competing_free_axes_prefer_unused_orthogonal_directions() -> None:
     graph = _build_star_with_free_axes()
 
     positions = _compute_layout(graph, dimensions=3, seed=0)
     directions = _compute_axis_directions(graph, positions, dimensions=3)
 
-    expected = (
-        np.array([0.0, 0.0, 1.0]),
-        np.array([0.0, 0.0, -1.0]),
-        np.array([0.0, 1.0, 0.0]),
-        np.array([0.0, -1.0, 0.0]),
-    )
-    for axis_index, expected_direction in zip(range(4, 8), expected, strict=True):
-        assert np.allclose(directions[(0, axis_index)], expected_direction, atol=1e-6)
+    assert np.allclose(directions[(0, 4)], np.array([0.0, 1.0, 0.0]), atol=1e-6)
+    assert np.allclose(directions[(0, 5)], np.array([0.0, -1.0, 0.0]), atol=1e-6)
+    for axis_index in range(6, 8):
+        assert np.isclose(np.linalg.norm(directions[(0, axis_index)]), 1.0, atol=1e-6)
 
 
 def test_compute_layout_virtual_hub_uses_incident_barycenter() -> None:

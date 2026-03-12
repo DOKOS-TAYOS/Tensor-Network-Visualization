@@ -20,6 +20,7 @@ class _LayoutComponent:
     node_ids: tuple[int, ...]
     visible_node_ids: tuple[int, ...]
     virtual_node_ids: tuple[int, ...]
+    trimmed_leaf_parents: tuple[tuple[int, int], ...]
     contraction_graph: nx.Graph
     visible_graph: nx.Graph
     proxy_visible_graph: nx.Graph
@@ -43,13 +44,21 @@ def _analyze_layout_components(graph: _GraphData) -> tuple[_LayoutComponent, ...
             sorted(node_id for node_id in component_node_ids if graph.nodes[node_id].is_virtual)
         )
         visible_graph = _build_visible_graph(graph, component_node_ids=component_node_ids)
+        trimmed_visible_graph, trimmed_leaf_parents = _trim_visible_leaf_nodes(
+            graph,
+            visible_graph,
+        )
         proxy_visible_graph = _build_proxy_visible_graph(
             graph,
             component_node_ids=component_node_ids,
         )
         anchor_graph = _select_anchor_graph(
             component_graph=component_graph,
-            visible_graph=visible_graph,
+            visible_graph=(
+                trimmed_visible_graph
+                if trimmed_visible_graph.number_of_nodes() > 0
+                else visible_graph
+            ),
             proxy_visible_graph=proxy_visible_graph,
         )
         structure_kind, chain_order, grid_mapping, tree_root = _classify_anchor_graph(anchor_graph)
@@ -58,6 +67,7 @@ def _analyze_layout_components(graph: _GraphData) -> tuple[_LayoutComponent, ...
                 node_ids=tuple(sorted(component_node_ids)),
                 visible_node_ids=visible_node_ids,
                 virtual_node_ids=virtual_node_ids,
+                trimmed_leaf_parents=trimmed_leaf_parents,
                 contraction_graph=component_graph,
                 visible_graph=visible_graph,
                 proxy_visible_graph=proxy_visible_graph,
@@ -159,6 +169,26 @@ def _largest_nontrivial_component(nx_graph: nx.Graph) -> tuple[int, ...] | None:
         return None
     nontrivial.sort(key=lambda node_ids: (-len(node_ids), node_ids[0]))
     return nontrivial[0]
+
+
+def _trim_visible_leaf_nodes(
+    graph: _GraphData,
+    visible_graph: nx.Graph,
+) -> tuple[nx.Graph, tuple[tuple[int, int], ...]]:
+    trimmed_graph = visible_graph.copy()
+    leaf_parents = []
+    for node_id, degree in visible_graph.degree():
+        if degree != 1 or graph.nodes[node_id].degree != 1:
+            continue
+        parent_id = next(iter(visible_graph.neighbors(node_id)))
+        leaf_parents.append((node_id, parent_id))
+
+    if len(leaf_parents) >= visible_graph.number_of_nodes():
+        return visible_graph.copy(), ()
+
+    trimmed_graph.remove_nodes_from([node_id for node_id, _ in leaf_parents])
+    leaf_parents.sort()
+    return trimmed_graph, tuple(leaf_parents)
 
 
 def _sorted_connected_components(nx_graph: nx.Graph) -> list[tuple[int, ...]]:
