@@ -40,6 +40,17 @@ Shows:
 - non-interactive rendering with `--save` and `--no-show`
 - the iterable-of-nodes input style used by the TensorNetwork adapter
 
+## `mera_tree_demo.py`
+
+Large topology: binary MERA (disentanglers + isometries on `2^L` sites) glued at the apex to a
+full binary tensor tree (TTN). Good for stressing layout on wide, deep graphs.
+
+```bash
+python examples/mera_tree_demo.py 2d
+python examples/mera_tree_demo.py 3d --mera-log2 5 --tree-depth 4
+python examples/mera_tree_demo.py 2d --save mera_tree.png --no-show
+```
+
 ## `quimb_demo.py`
 
 Demonstrates the Quimb backend, including a hypergraph-style example.
