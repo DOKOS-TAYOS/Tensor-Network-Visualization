@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 
 from .axis_directions import _AXIS_OFFSET_SIGN
@@ -54,10 +55,7 @@ def _iter_contractions(graph: _GraphData) -> tuple[_ContractionRecord, ...]:
 
 
 def _contraction_weights(graph: _GraphData) -> dict[ContractionNodeIds, int]:
-    weights: dict[ContractionNodeIds, int] = {}
-    for record in _iter_contractions(graph):
-        weights[record.key] = weights.get(record.key, 0) + 1
-    return weights
+    return dict(Counter(record.key for record in _iter_contractions(graph)))
 
 
 def _group_contractions(graph: _GraphData) -> _ContractionGroups:

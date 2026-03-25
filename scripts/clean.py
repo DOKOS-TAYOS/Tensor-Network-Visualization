@@ -44,29 +44,28 @@ def main() -> int:
     print("Keeping .venv untouched.")
 
     dirs_to_remove: list[Path] = []
+    files_to_remove: list[Path] = []
     for path in root.rglob("*"):
-        if not path.is_dir():
-            continue
         if _should_skip(path, venv):
             continue
-        if (
-            path.name in dir_names
-            or path.name.endswith(".egg-info")
-            or path.name.startswith("pytest-cache-files-")
-        ):
-            dirs_to_remove.append(path)
+        if path.is_dir():
+            if (
+                path.name in dir_names
+                or path.name.endswith(".egg-info")
+                or path.name.startswith("pytest-cache-files-")
+            ):
+                dirs_to_remove.append(path)
+        elif path.is_file() and path.suffix in file_suffixes:
+            files_to_remove.append(path)
 
-    # Remove deepest directories first
     dirs_to_remove.sort(key=lambda p: len(p.parts), reverse=True)
     for path in dirs_to_remove:
         if path.exists():
             shutil.rmtree(path, ignore_errors=True)
             print(f"Removed directory: {path}")
-
-    for path in root.rglob("*"):
-        if path.is_file() and path.suffix in file_suffixes and not _should_skip(path, venv):
-            path.unlink(missing_ok=True)
-            print(f"Removed file: {path}")
+    for path in files_to_remove:
+        path.unlink(missing_ok=True)
+        print(f"Removed file: {path}")
 
     print("Done.")
     return 0

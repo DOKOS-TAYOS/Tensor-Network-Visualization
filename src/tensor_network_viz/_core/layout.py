@@ -166,8 +166,9 @@ def _pack_component_positions(
         if dimensions > 1:
             shift[1:] = -coords[:, 1:].mean(axis=0)
 
-        for node_id in node_ids:
-            packed[node_id] = positions[node_id] + shift
+        packed_coords = coords + shift
+        for index, node_id in enumerate(node_ids):
+            packed[node_id] = packed_coords[index].copy()
 
         cursor_x += max(max_x - min_x, 0.8) + _COMPONENT_GAP
 
@@ -300,16 +301,15 @@ def _initial_positions(node_ids: list[int], dimensions: int, seed: int) -> Vecto
         angles = np.linspace(0.0, 2.0 * math.pi, count, endpoint=False)
         positions = np.column_stack((np.cos(angles), np.sin(angles)))
     else:
-        positions = np.zeros((count, 3), dtype=float)
         golden_angle = math.pi * (3.0 - math.sqrt(5.0))
-        for index in range(count):
-            y = 1.0 - (2.0 * index) / max(count - 1, 1)
-            radius = math.sqrt(max(0.0, 1.0 - y * y))
-            theta = golden_angle * index
-            positions[index] = np.array(
-                [math.cos(theta) * radius, y, math.sin(theta) * radius],
-                dtype=float,
-            )
+        indices = np.arange(count, dtype=float)
+        denom = max(count - 1, 1)
+        y = 1.0 - (2.0 * indices) / denom
+        radius = np.sqrt(np.maximum(0.0, 1.0 - y * y))
+        theta = golden_angle * indices
+        positions = np.column_stack(
+            (np.cos(theta) * radius, y, np.sin(theta) * radius),
+        ).astype(float)
 
     positions += rng.normal(loc=0.0, scale=0.03, size=positions.shape)
     return positions
@@ -694,19 +694,18 @@ def _compute_free_directions_2d(
                 directions[axis_key] = named_direction
                 continue
 
-            best_score = -np.inf
-            best_direction = np.array([1.0, 0.0], dtype=float)
-            for direction in unit_circle:
-                toward_obstacles = np.dot(dirs_to_obstacles, direction)
-                away_score = -float(np.min(toward_obstacles))
-                separation_penalty = sum(
-                    max(0.0, float(np.dot(direction, used_direction[:2]))) * 2.0
-                    for used_direction in used_dirs
+            toward = dirs_to_obstacles @ unit_circle.T
+            away_scores = -np.min(toward, axis=0)
+            if used_dirs:
+                used_stack = np.stack(
+                    [used_direction[:2].astype(float) for used_direction in used_dirs],
                 )
-                score = away_score - separation_penalty
-                if score > best_score:
-                    best_score = score
-                    best_direction = direction.astype(float, copy=True)
+                overlap = unit_circle @ used_stack.T
+                separation = np.maximum(0.0, overlap).sum(axis=1) * 2.0
+            else:
+                separation = np.zeros(unit_circle.shape[0], dtype=float)
+            scores = away_scores - separation
+            best_direction = unit_circle[int(np.argmax(scores))].copy()
             directions[axis_key] = best_direction
 
 
