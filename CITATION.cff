@@ -1,0 +1,25 @@
+cff-version: "1.2.0"
+title: "tensor-network-visualization"
+message: "If you use this software, please cite it as below."
+version: "1.3.3"
+type: software
+license: MIT
+repository-code: "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization"
+abstract: >-
+  Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb,
+  TeNPy, and traced PyTorch/NumPy einsum tensor networks. One unified API
+  across five backends; returns standard Matplotlib Figure and Axes for full
+  customization; 2D and 3D views.
+keywords:
+  - tensor-network
+  - visualization
+  - tensorkrowch
+  - tensornetwork
+  - quimb
+  - tenpy
+  - matplotlib
+authors:
+  - family-names: "Mata Ali"
+    given-names: "Alejandro"
+    orcid: "https://orcid.org/0009-0006-7289-8827"
+    affiliation: "ITCL (Instituto Tecnológico de Castilla y León)"

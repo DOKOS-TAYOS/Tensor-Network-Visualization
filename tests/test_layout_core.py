@@ -255,6 +255,36 @@ def _build_einsum_like_mps_graph() -> _GraphData:
     return _GraphData(nodes=nodes, edges=edges)
 
 
+def _build_complete_graph_5() -> _GraphData:
+    """K5 complete graph: non-planar, classified as 'generic', uses force-directed fallback."""
+    nodes = {}
+    for i in range(5):
+        axes = [f"e{i}_{j}" for j in range(5) if j != i]
+        nodes[i] = _make_node(f"N{i}", tuple(axes))
+
+    axis_by_pair: dict[tuple[int, int], int] = {}
+    for i in range(5):
+        idx = 0
+        for j in range(5):
+            if j != i:
+                axis_by_pair[(i, j)] = idx
+                idx += 1
+
+    edges = []
+    for i in range(5):
+        for j in range(i + 1, 5):
+            name = f"e{i}_{j}"
+            edges.append(
+                _make_contraction_edge(
+                    _EdgeEndpoint(i, axis_by_pair[(i, j)], name),
+                    _EdgeEndpoint(j, axis_by_pair[(j, i)], name),
+                    name=name,
+                    label=None,
+                )
+            )
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
 def _build_grid_with_leaf_nodes() -> _GraphData:
     nodes = {
         0: _make_node("P00", ("right", "up", "s")),
@@ -467,3 +497,16 @@ def test_compute_layout_hypergraph_3d_keeps_visible_nodes_planar() -> None:
 
     assert np.max(np.linalg.norm(off_axis, axis=1)) > 0.2
     assert np.allclose(visible_coords[:, 2], 0.0, atol=1e-6)
+
+
+def test_compute_layout_generic_graph_uses_force_fallback_produces_valid_positions() -> None:
+    """Generic (non-planar) graphs fall back to force-directed layout; output must be valid."""
+    graph = _build_complete_graph_5()
+
+    positions = _compute_layout(graph, dimensions=2, seed=0, iterations=50)
+
+    assert len(positions) == 5
+    coords = np.stack([positions[i] for i in range(5)])
+    assert not np.any(np.isnan(coords))
+    assert not np.any(np.isinf(coords))
+    assert np.all(np.isfinite(coords))

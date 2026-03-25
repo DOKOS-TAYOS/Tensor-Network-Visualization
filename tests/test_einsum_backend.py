@@ -134,6 +134,16 @@ def test_plot_einsum_network_2d_draws_reconstructed_graph() -> None:
     assert len(ax.lines) == 4
 
 
+def test_einsum_trace_requires_binary_explicit_output_equations() -> None:
+    """Einsum backend supports only binary equations with explicit '->' output. Documented limitation."""
+    # Non-binary (3 operands in one equation) is rejected
+    with pytest.raises(ValueError, match="binary"):
+        _build_graph([pair_tensor("A", "B", "r0", "ab,bc,cd->ad")])
+    # Missing explicit output '->' is rejected
+    with pytest.raises(ValueError, match="explicit"):
+        _build_graph([pair_tensor("A", "x", "r0", "ab,b")])
+
+
 def test_plot_einsum_network_3d_returns_3d_axes() -> None:
     trace = [pair_tensor("A", "x", "r0", "ab,b->a")]
 

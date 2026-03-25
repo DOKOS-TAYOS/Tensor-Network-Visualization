@@ -235,6 +235,43 @@ def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
     assert len(ax.lines) == 1
 
 
+def test_plot_tensorkrowch_network_2d_warns_on_unknown_position_keys_when_validate_true() -> None:
+    """validate_positions=True warns when custom positions have unknown node ids."""
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    config = PlotConfig(
+        positions={
+            id(left): (0.0, 0.0),
+            999999: (1.0, 1.0),  # unknown id
+        },
+        validate_positions=True,
+    )
+
+    with pytest.warns(UserWarning, match="does not match any node id"):
+        plot_tensorkrowch_network_2d(DummyNetwork(nodes=[left, right]), config=config)
+
+
+def test_plot_tensorkrowch_network_2d_accepts_full_custom_positions() -> None:
+    """Full custom positions bypass automatic layout; figure must render."""
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    config = PlotConfig(
+        positions={
+            id(left): (0.0, 0.0),
+            id(right): (2.0, 0.0),
+        },
+    )
+
+    fig, ax = plot_tensorkrowch_network_2d(DummyNetwork(nodes=[left, right]), config=config)
+
+    assert fig is ax.figure
+    assert len(ax.lines) == 1
+
+
 def test_plot_tensorkrowch_network_2d_uses_layout_iterations_for_missing_custom_positions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

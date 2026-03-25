@@ -5,100 +5,103 @@ PyTorch/NumPy `einsum` tensor networks.
 
 **Repository:** [https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization](https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization)
 
-## What It Does
+## Problem, Audience, and Scope
 
-- renders tensor networks in `2d` or `3d`
-- works with multiple tensor-network ecosystems through one shared API
-- returns standard Matplotlib `Figure` and `Axes` objects for further customization
-- can also reconstruct and render tensor networks from traced binary `einsum` contractions
+**Problem:** Tensor network libraries (Quimb, TeNPy, TensorNetwork, TensorKrowch) provide different APIs and limited or backend-specific visualization. Researchers often need to switch tools or write custom plotting code when working across ecosystems.
 
-There is no custom UI layer. The package builds a normalized graph and draws it with Matplotlib.
+**Audience:** Researchers in condensed matter physics, quantum chemistry, and machine learning who use tensor networks and need publication-ready diagrams.
 
-## Supported Engines
+**Supported backends:** `tensorkrowch`, `tensornetwork`, `quimb`, `tenpy`, `einsum`
 
-- `tensorkrowch`
-- `tensornetwork`
-- `quimb`
-- `tenpy`
-- `einsum`
-
-## Documentation
-
-- Extended guide: [`docs/guide.md`](docs/guide.md)
-- Examples catalog: [`examples/README.md`](examples/README.md)
-- Third-party licenses: [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md)
+**Differential:** One unified API across five backends; returns standard Matplotlib `Figure` and `Axes` for full customization; 2D and 3D views; reconstructs networks from traced binary `einsum` contractions. No custom UI—builds a normalized graph and draws it with Matplotlib.
 
 ## Installation
 
-### As a dependency
-
-The base package includes the shared rendering core. Install the extra that matches the backend you
-want to visualize:
+### Base
 
 ```bash
-pip install "tensor-network-visualization[tensorkrowch]"
-pip install "tensor-network-visualization[tensornetwork]"
-pip install "tensor-network-visualization[quimb]"
-pip install "tensor-network-visualization[tenpy]"
-pip install "tensor-network-visualization[einsum]"
+pip install tensor-network-visualization
 ```
 
-`[einsum]` installs PyTorch for executing traced contractions. If you already have NumPy and only
-need to render an existing trace, the base package is enough.
+The base package depends only on `matplotlib` and `networkx`. It can render existing `einsum` traces (manual `pair_tensor` lists) without backend extras.
 
-### Local development
+### By backend (extras)
 
-Inside the project virtual environment:
+Install the extra for each backend you use:
 
-```powershell
-.\.venv\Scripts\python -m pip install -e ".[dev]"
+| Backend | Command |
+|---------|---------|
+| TensorKrowch | `pip install "tensor-network-visualization[tensorkrowch]"` |
+| TensorNetwork | `pip install "tensor-network-visualization[tensornetwork]"` |
+| Quimb | `pip install "tensor-network-visualization[quimb]"` |
+| TeNPy | `pip install "tensor-network-visualization[tenpy]"` |
+| einsum (PyTorch) | `pip install "tensor-network-visualization[einsum]"` |
+
+`[einsum]` adds PyTorch for executing traced contractions. For rendering an existing trace with NumPy only, the base package suffices.
+
+## Minimal example
+
+After `pip install "tensor-network-visualization[quimb]"`:
+
+```python
+import quimb.tensor as qtn
+import numpy as np
+from tensor_network_viz import PlotConfig, show_tensor_network
+
+# Build a 3-site MPS
+tensors = []
+for i in range(3):
+    inds = ([f"b{i-1}_{i}"] if i > 0 else []) + [f"p{i}"] + ([f"b{i}_{i+1}"] if i < 2 else [])
+    shape = tuple(2 for _ in inds)
+    tensors.append(qtn.Tensor(np.ones(shape), inds=inds, tags=(f"A{i}",)))
+network = qtn.TensorNetwork(tensors)
+
+fig, ax = show_tensor_network(network, engine="quimb", view="2d", config=PlotConfig(figsize=(8, 6)), show=False)
+fig.savefig("network.png", bbox_inches="tight")
 ```
 
-Runtime-only editable install:
+The function returns `(fig, ax)`. Use `view="3d"` for 3D rendering. Replace `network` and `engine` for other backends.
 
-```powershell
-.\.venv\Scripts\python -m pip install -e .
+## Quick verification (for reviewers)
+
+From a fresh clone, install and run:
+
+```bash
+pip install -e ".[quimb]"
+python examples/quimb_demo.py mps 2d --save quimb_mps.png --no-show
+pytest
 ```
 
-The repository also keeps:
+Verify that `quimb_mps.png` exists and contains a tensor-network diagram. All tests must pass. Alternative: `pip install -e ".[tensornetwork]"` and `python examples/tensornetwork_demo.py mps 2d --save tn_mps.png --no-show` if you prefer TensorNetwork.
 
-- `requirements.txt` -> `-e .`
-- `requirements.dev.txt` -> `-e ".[dev]"`
+## Documentation
 
-These are thin wrappers around the editable installs above.
+- [Extended guide](docs/guide.md) — installation, usage, backend-specific inputs, configuration, troubleshooting
+- [Examples catalog](examples/README.md) — runnable scripts for all backends
+- [Third-party licenses](THIRD_PARTY_LICENSES.md)
 
-## Quick Start
+## Quick start (API reference)
 
 ```python
 from tensor_network_viz import PlotConfig, show_tensor_network
 
-config = PlotConfig(figsize=(8, 6))
-
 fig, ax = show_tensor_network(
     network,
-    engine="tensorkrowch",
+    engine="quimb",
     view="2d",
-    config=config,
+    config=PlotConfig(figsize=(8, 6)),
     show=False,
 )
-
 ax.set_title("My tensor network")
 fig.savefig("network.png", bbox_inches="tight")
 ```
 
-`show_tensor_network(...)` is the main dispatcher. You provide:
-
-- `network`: the backend-native object or node/tensor collection
-- `engine`: which backend adapter to use
-- `view`: `2d` or `3d`
-- `config`: optional `PlotConfig`
-- `show=False` if you want to save or modify the figure before displaying it
-
-The function returns `(fig, ax)`.
+- `network`: backend-native object (e.g. `quimb.TensorNetwork`, iterable of `tensornetwork.Node`, etc.)
+- `engine`: `"tensorkrowch"`, `"tensornetwork"`, `"quimb"`, `"tenpy"`, or `"einsum"`
+- `view`: `"2d"` or `"3d"`
+- Returns `(fig, ax)` — Matplotlib `Figure` and `Axes` objects
 
 ## Public API
-
-From the root package:
 
 ```python
 from tensor_network_viz import (
@@ -110,7 +113,7 @@ from tensor_network_viz import (
 )
 ```
 
-Engine-specific helpers are also available:
+Engine-specific helpers:
 
 ```python
 from tensor_network_viz.tensorkrowch import plot_tensorkrowch_network_2d
@@ -120,67 +123,51 @@ from tensor_network_viz.tenpy import plot_tenpy_network_3d
 from tensor_network_viz.einsum_module import plot_einsum_network_2d
 ```
 
-## Accepted Inputs at a Glance
+## Accepted inputs (summary)
 
-- `tensorkrowch`: a network object with `nodes` or `leaf_nodes`, or an iterable of nodes
-- `tensornetwork`: an iterable of `tensornetwork.Node`
-- `quimb`: a `TensorNetwork` or an iterable of `Tensor`
-- `tenpy`: finite, segment, or infinite `MPS`, and finite or infinite `MPO`
-- `einsum`: an `EinsumTrace` or an ordered iterable of `pair_tensor`
+| Backend | Input |
+|---------|-------|
+| tensorkrowch | Network with `nodes`/`leaf_nodes`, or iterable of nodes |
+| tensornetwork | Iterable of `tensornetwork.Node` |
+| quimb | `TensorNetwork` or iterable of `Tensor` |
+| tenpy | Finite/segment/infinite `MPS`, finite/infinite `MPO` |
+| einsum | `EinsumTrace` or ordered iterable of `pair_tensor` |
 
-See the extended guide for backend-specific details and caveats.
+See [docs/guide.md](docs/guide.md) for backend-specific details.
 
-## Plot Configuration
+## Plot configuration
 
-`PlotConfig` controls figure size, colors, line widths, label visibility, scale parameters, custom
-positions, and layout iterations.
+`PlotConfig` controls figure size, colors, line widths, label visibility, scale parameters, custom positions, and layout iterations. Important options:
 
-```python
-from tensor_network_viz import PlotConfig
+- `positions`: custom node positions (dict mapping node id to `(x, y)` or `(x, y, z)`)
+- `layout_iterations`: force-directed layout iterations (default 220)
+- `validate_positions`: warn on unknown ids or wrong dimensions
 
-config = PlotConfig(
-    figsize=(10, 6),
-    show_tensor_labels=True,
-    show_index_labels=True,
-    layout_iterations=300,
-)
-```
+Layout prefers structural embeddings (linear chains, 2D meshes, trees) before falling back to force-directed placement.
 
-Important options:
-
-- `positions`: custom node positions keyed by node id
-- `validate_positions=True`: warn about unknown ids or wrong coordinate dimensions
-- `layout_iterations`: tune the force-directed fallback layout
-
-Automatic layout now prefers structural embeddings before falling back to forces:
-
-- linear backbones are drawn as straight chains
-- regular 2D meshes are kept on regular lattices
-- trees use a deterministic hierarchical layout
-- 3D views start from a principal plane and only lift nodes when the planar embedding becomes
-  ambiguous
-- dangling legs and other free exits in 3D use deterministic orthogonal directions instead of
-  radial spreading
-
-## Important Backend Notes
+## Backend notes
 
 - Quimb hyper-indices shared by more than two tensors are rendered through internal virtual hubs.
-- Infinite TeNPy `MPS` and `MPO` objects are drawn as one periodic unit cell.
-- The `einsum` backend reconstructs the network of fundamental tensors rather than plotting
-  intermediate contraction results.
-- If you pass only a subset of nodes/tensors, connections to outside objects appear as dangling
-  legs.
-- Disconnected components are supported.
+- Infinite TeNPy `MPS`/`MPO` are drawn as one periodic unit cell.
+- The `einsum` backend reconstructs the network of fundamental tensors, not intermediate contraction results.
+- Subsets of nodes/tensors show connections to outside objects as dangling legs. Disconnected components are supported.
 
 ## Examples
 
-The repository includes runnable scripts for every backend plus an extra TensorKrowch TSP example.
-See [`examples/README.md`](examples/README.md) for commands and a short explanation of each script.
+Runnable scripts for every backend plus a TensorKrowch TSP example. See [examples/README.md](examples/README.md) for commands.
+
+## Support, issues, and contribution
+
+- **Bug reports and feature requests:** [Issue tracker](https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/issues)
+- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Code of Conduct:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ## Development
 
-```powershell
-.\.venv\Scripts\python -m ruff check .
-.\.venv\Scripts\python -m pyright
-.\.venv\Scripts\python -m pytest
+```bash
+pip install -e ".[dev]"
+ruff check .
+ruff format .
+pyright
+pytest
 ```
