@@ -1,5 +1,10 @@
 # Tensor-Network-Visualization
 
+[![CI](https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/actions/workflows/ci.yml/badge.svg)](https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/tensor-network-visualization.svg)](https://pypi.org/project/tensor-network-visualization/)
+[![Python versions](https://img.shields.io/pypi/pyversions/tensor-network-visualization.svg)](https://pypi.org/project/tensor-network-visualization/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced
 PyTorch/NumPy `einsum` tensor networks.
 
@@ -317,6 +322,7 @@ Expect `quimb_mps.png` and all tests passing.
 
 - **[docs/guide.md](docs/guide.md)** — Installation, backends, `PlotConfig` recipes, layout/draw
   behavior, architecture, **extended troubleshooting**.
+- **[CHANGELOG.md](CHANGELOG.md)** — Release notes by version.
 - **[examples/README.md](examples/README.md)** — CLI examples per script.
 - **[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)**
 

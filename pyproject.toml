@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tensor-network-visualization"
-version = "1.3.3"
+version = "1.4.0"
 description = "Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced PyTorch/NumPy einsum tensor networks."
 authors = [{ name = "Alejandro Mata Ali" }]
 readme = "README.md"
@@ -23,7 +23,11 @@ classifiers = [
 ]
 
 [project.urls]
+Homepage = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization"
+Documentation = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/blob/main/docs/guide.md"
+Changelog = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/blob/main/CHANGELOG.md"
 Repository = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization"
+Issues = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/issues"
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "pyright", "ipython", "tensorkrowch", "tensornetwork", "quimb", "physics-tenpy"]

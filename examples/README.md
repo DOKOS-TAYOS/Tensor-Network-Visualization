@@ -2,7 +2,7 @@
 
 Runnable scripts for every supported backend plus larger stress demos. For **installation**, API
 **modes**, and **`PlotConfig`**, see the [user README](../README.md) and the
-[intensive guide](../docs/guide.md).
+[in-depth guide](../docs/guide.md).
 
 Run commands from the **repository root** with a virtual environment that has the matching optional
 dependency (or `pip install -e ".[dev]"` for everything needed by tests).

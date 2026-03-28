@@ -1,12 +1,9 @@
 # Tensor-Network-Visualization Guide
 
-Intensive, code-aligned manual: installation, **modes**, APIs, copy-paste recipes, backends,
+In-depth, code-aligned manual: installation, **modes**, APIs, copy-paste recipes, backends,
 `PlotConfig`, layout and drawing behavior, architecture, and troubleshooting.
 
 ## Table of contents
-
-Each entry links to an **`#toc-…` anchor** in this same file (no separate path), so the editor will
-not try to open a non-existent `guide.md` at the repo root.
 
 - [Overview](#toc-overview)
 - [Installation](#toc-installation)

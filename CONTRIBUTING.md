@@ -123,6 +123,7 @@ Open an issue to discuss the backend and its API before implementing.
 
 - **README.md** — high-level overview, installation, modes, `show_tensor_network` / `PlotConfig`, quick troubleshooting
 - **docs/guide.md** — full manual: backends, recipes, layout/draw behavior, architecture, extended troubleshooting
+- **CHANGELOG.md** — user-facing release notes; add an entry when cutting a PyPI release
 - **examples/** — runnable scripts and **examples/README.md**; update **both** when adding CLI flags (e.g. `--hover-labels`) or new demos
 - **Docstrings** — document public functions with Args, Returns, and a short Example where helpful
 

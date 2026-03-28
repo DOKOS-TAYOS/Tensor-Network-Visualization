@@ -24,7 +24,7 @@ Runtime dependencies relevant to `tensor-network-visualization`.
 | MarkupSafe | 3.0.3 | BSD-3-Clause | https://github.com/pallets/markupsafe/ |
 | mpmath | 1.3.0 | BSD License | http://mpmath.org/ |
 | numpy | 2.4.3 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | https://numpy.org |
-| opt_einsum | 3.4.0 | MIT |  |
+| opt_einsum | 3.4.0 | MIT | https://github.com/dgasmith/opt_einsum |
 | packaging | 26.0 | Apache-2.0 OR BSD-2-Clause | https://github.com/pypa/packaging |
 | pillow | 12.1.1 | MIT-CMU | https://python-pillow.github.io |
 | pyparsing | 3.3.2 | MIT | https://github.com/pyparsing/pyparsing/ |
