@@ -34,7 +34,9 @@ from .graph import (
 )
 from .layout import AxisDirections, NodePositions, _orthogonal_unit
 
-_CURVE_OFFSET_FACTOR: float = 0.18
+_CURVE_OFFSET_FACTOR: float = 0.15
+# Blends with chord length so multiedges keep visible separation when endpoints are close.
+_CURVE_NEAR_PAIR_REF: float = 0.28
 # Extra radius + offset so index captions sit just outside tensor disks (data units).
 _NODE_LABEL_MARGIN_FACTOR: float = 1.22
 # Inflate axis limits so labels near the hull are not clipped as often.
@@ -492,7 +494,14 @@ def _curved_edge_points(
     perpendicular = (
         _perpendicular_3d(direction) if dimensions == 3 else _perpendicular_2d(direction)
     )
-    offset = (offset_index - (edge_count - 1) / 2.0) * _CURVE_OFFSET_FACTOR * scale * distance
+    ref_len = _CURVE_NEAR_PAIR_REF * scale
+    effective_chord = float(math.hypot(distance, ref_len))
+    offset = (
+        (offset_index - (edge_count - 1) / 2.0)
+        * _CURVE_OFFSET_FACTOR
+        * scale
+        * effective_chord
+    )
     control = midpoint + perpendicular * offset
     return _quadratic_curve(start, control, end)
 
@@ -694,19 +703,9 @@ def _draw_edges(
         offset_index, edge_count = contraction_groups.offsets[id(edge)]
         start_base = positions[left_id]
         end_base = positions[right_id]
-        left_virtual = graph.nodes[left_id].is_virtual
-        right_virtual = graph.nodes[right_id].is_virtual
-        if dimensions == 2:
-            chord = end_base - start_base
-            dist = max(float(np.linalg.norm(chord)), 1e-6)
-            direction = chord / dist
-            if dist > 2.0 * p.r + 1e-9:
-                start_t = start_base if left_virtual else start_base + direction * p.r
-                end_t = end_base if right_virtual else end_base - direction * p.r
-            else:
-                start_t, end_t = start_base, end_base
-        else:
-            start_t, end_t = start_base, end_base
+        # 2D: bonds run through the disk (center–center); disks are drawn on top (higher zorder).
+        # 3D: unchanged (already center–center in layout space).
+        start_t, end_t = start_base, end_base
         curve = _curved_edge_points(
             start=start_t,
             end=end_t,

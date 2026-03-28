@@ -19,7 +19,7 @@ jobs:
           cache: "pip"
 
       - name: Install minimal (one backend)
-        run: pip install -e ".[quimb]"
+        run: pip install -e ".[quimb]" pytest
 
       - name: Run headless example
         run: python examples/quimb_demo.py mps 2d --save smoke.png --no-show
