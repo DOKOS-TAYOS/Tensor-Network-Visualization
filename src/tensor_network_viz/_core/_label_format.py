@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-_MATTEXT_ROMAN_ESCAPE_RE = re.compile(r'([#%&_{}~^\\$ ])')
+_MATTEXT_ROMAN_ESCAPE_RE = re.compile(r"([#%&_{}~^\\$ ])")
 
 
 def _escape_for_mathtext_roman(s: str) -> str:

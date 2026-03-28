@@ -49,7 +49,7 @@ pythonpath = ["src"]
 line-length = 100
 target-version = "py310"
 src = ["src", "tests"]
-exclude = [".venv", ".tmp", ".pip_tmp", ".pytest_cache", ".ruff_cache", "pytest-cache-files-*", "tn_tsp.py"]
+exclude = [".venv", ".tmp", ".tmp_venv_*", ".pip_tmp", ".pytest_cache", ".ruff_cache", "pytest-cache-files-*", "tn_tsp.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "C4", "SIM"]

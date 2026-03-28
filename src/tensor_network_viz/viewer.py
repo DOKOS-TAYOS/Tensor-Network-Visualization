@@ -16,7 +16,7 @@ RenderedAxes: TypeAlias = Axes | Axes3D
 def _show_figure(fig: Figure) -> None:
     """Show *fig* in a Jupyter kernel via IPython display, else ``plt.show()``."""
     try:
-        from IPython import get_ipython
+        from IPython.core.getipython import get_ipython
         from IPython.display import display
     except ImportError:
         plt.show()

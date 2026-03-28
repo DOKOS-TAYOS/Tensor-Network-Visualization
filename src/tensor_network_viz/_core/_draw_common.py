@@ -55,6 +55,8 @@ _EDGE_LINE_CAP_STYLE: str = "round"
 _EDGE_LINE_JOIN_STYLE: str = "round"
 # Visual radius for 3D mesh vs layout metric p.r (bonds stay center–center in 3D).
 _OCTAHEDRON_VISUAL_SCALE: float = 0.55
+
+
 # 3D nodes: octahedron (8 tris / node). Full UV spheres are too heavy for interactive mplot3d.
 def _unit_octahedron_triangles() -> np.ndarray:
     """Shape (8, 3, 3): triangular faces; vertices at axis ±1 (circumradius 1)."""
@@ -410,9 +412,7 @@ def _separate_edge_index_labels_2d(ax: Axes) -> None:
     )
     anchors_orig = [np.array(t.get_position(), dtype=float) for t in labels]
     n_lbl = len(labels)
-    max_drift = span_data * float(
-        np.clip(0.016 - 0.00005 * max(0, n_lbl - 28), 0.006, 0.016)
-    )
+    max_drift = span_data * float(np.clip(0.016 - 0.00005 * max(0, n_lbl - 28), 0.006, 0.016))
     base_step = max(span_data * 0.001, 1e-6)
     pad_px = 2.0
     max_shrink_passes = 8
@@ -450,12 +450,8 @@ def _separate_edge_index_labels_2d(ax: Axes) -> None:
                     step = base_step * (1.0 + 0.022 * float(it))
                     p1 = (x1 + dx * step, y1 + dy * step)
                     p2 = (x2 - dx * step, y2 - dy * step)
-                    labels[i].set_position(
-                        _clamp_label_to_anchor(p1, anchors_orig[i], max_drift)
-                    )
-                    labels[j].set_position(
-                        _clamp_label_to_anchor(p2, anchors_orig[j], max_drift)
-                    )
+                    labels[i].set_position(_clamp_label_to_anchor(p1, anchors_orig[i], max_drift))
+                    labels[j].set_position(_clamp_label_to_anchor(p2, anchors_orig[j], max_drift))
             if not moved:
                 break
 
@@ -527,15 +523,11 @@ def _plot_contraction_index_captions(
     if left_virtual:
         i_l = min(max(1, margin_i), n - 2)
     else:
-        i_l = _curve_index_outside_disk(
-            curve, positions[left_id], clearance, from_start=True
-        )
+        i_l = _curve_index_outside_disk(curve, positions[left_id], clearance, from_start=True)
     if right_virtual:
         i_r = max(1, min(n - 2, n - 1 - margin_i))
     else:
-        i_r = _curve_index_outside_disk(
-            curve, positions[right_id], clearance, from_start=False
-        )
+        i_r = _curve_index_outside_disk(curve, positions[right_id], clearance, from_start=False)
     if i_l >= i_r:
         i_r = min(n - 2, i_l + max(2, n // 7))
     if i_r <= i_l:
@@ -687,18 +679,14 @@ def _draw_edges(
                     plotter.plot_text(
                         curve[ia] + off_a,
                         format_tensor_node_label(ca),
-                        **_edge_index_text_kwargs(
-                            config, fontsize=fs_a, bbox_pad=p.index_bbox_pad
-                        ),
+                        **_edge_index_text_kwargs(config, fontsize=fs_a, bbox_pad=p.index_bbox_pad),
                     )
                 if cb:
                     fs_b = _index_label_fontsize_for_caption(p.font_index_end, cb)
                     plotter.plot_text(
                         curve[ib] + off_b,
                         format_tensor_node_label(cb),
-                        **_edge_index_text_kwargs(
-                            config, fontsize=fs_b, bbox_pad=p.index_bbox_pad
-                        ),
+                        **_edge_index_text_kwargs(config, fontsize=fs_b, bbox_pad=p.index_bbox_pad),
                     )
             continue
 
@@ -744,7 +732,7 @@ def _draw_edges(
 
 
 def _display_disk_radius_px_2d(ax: Axes, center: np.ndarray, r_data: float) -> float:
-    """Horizontal data-radius *r_data* at *center* mapped to display pixels (equal aspect 2D axes)."""
+    """Pixel radius for horizontal *r_data* at *center* (equal-aspect 2D)."""
     c = np.asarray(center[:2], dtype=float)
     row0 = c.reshape(1, -1)
     row1 = (c + np.array([float(r_data), 0.0], dtype=float)).reshape(1, -1)
@@ -754,7 +742,7 @@ def _display_disk_radius_px_2d(ax: Axes, center: np.ndarray, r_data: float) -> f
 
 
 def _display_disk_radius_px_3d(ax: Any, center: np.ndarray, r_data: float) -> float:
-    """Conservative on-screen radius for a data-space sphere of radius *r_data* under the current 3D view."""
+    """Conservative screen radius for data-space sphere *r_data* (current 3D view)."""
     c = np.asarray(center, dtype=float)
     r = float(r_data)
     M = ax.get_proj()
@@ -793,9 +781,7 @@ def _tensor_label_fontsize_to_fit(
     fp = FontProperties(size=ref)
     tp = TextPath((0.0, 0.0), text, prop=fp)
     ex = tp.get_extents()
-    diag_pts = (
-        math.hypot(float(ex.width), float(ex.height)) * _TEXT_RENDER_DIAGONAL_FACTOR
-    )
+    diag_pts = math.hypot(float(ex.width), float(ex.height)) * _TEXT_RENDER_DIAGONAL_FACTOR
     if diag_pts <= 1e-12:
         return float(max(3.0, cap_pt))
     diag_px_ref = diag_pts * float(fig.dpi) / 72.0
@@ -841,9 +827,7 @@ def _draw_labels(
             if dimensions == 2:
                 r_px = _display_disk_radius_px_2d(cast(Axes, ax), pos, p.r)
             else:
-                r_px = _display_disk_radius_px_3d(
-                    ax, pos, p.r * _OCTAHEDRON_VISUAL_SCALE
-                )
+                r_px = _display_disk_radius_px_3d(ax, pos, p.r * _OCTAHEDRON_VISUAL_SCALE)
             display_name = format_tensor_node_label(node.name)
             fs = _tensor_label_fontsize_to_fit(
                 text=display_name,
@@ -895,9 +879,7 @@ def _refit_tensor_labels_to_disks(
             if dimensions == 2:
                 r_px = _display_disk_radius_px_2d(cast(Axes, ax), anchor, p.r)
             else:
-                r_px = _display_disk_radius_px_3d(
-                    ax, anchor, p.r * _OCTAHEDRON_VISUAL_SCALE
-                )
+                r_px = _display_disk_radius_px_3d(ax, anchor, p.r * _OCTAHEDRON_VISUAL_SCALE)
             allow = 2.0 * max(r_px, 1e-9) * _TENSOR_LABEL_INSIDE_FILL
             bb = t.get_window_extent(renderer=renderer)
             diag = float(math.hypot(float(bb.width), float(bb.height)))
@@ -961,9 +943,7 @@ def _draw_scale_params(
     font_index_pt = 0.66 * float(bond_ref) * idx_scale
     font_index_end = max(3, min(11, round(font_index_pt)))
     # Tensor names: cap from layout + figure *size* only — not `fs` (bond-label crowding).
-    font_tensor_label_max = float(
-        max(3.0, min(15.0, 10.0 * scale * tensor_fs))
-    )
+    font_tensor_label_max = float(max(3.0, min(15.0, 10.0 * scale * tensor_fs)))
     return _DrawScaleParams(
         r=r,
         stub=stub,

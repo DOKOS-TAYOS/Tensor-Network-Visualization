@@ -1,6 +1,7 @@
 .venv/
 .worktrees/
 .tmp/
+.tmp_venv_*/
 .pip_tmp/
 .ruff_cache/
 .pytest_cache/

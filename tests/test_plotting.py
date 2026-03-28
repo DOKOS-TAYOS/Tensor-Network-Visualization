@@ -437,7 +437,7 @@ def test_show_figure_uses_ipython_display_in_jupyter_kernel(
     def _fake_display(obj: object) -> None:
         displayed.append(obj)
 
-    monkeypatch.setattr("IPython.get_ipython", _fake_get_ipython)
+    monkeypatch.setattr("IPython.core.getipython.get_ipython", _fake_get_ipython)
     monkeypatch.setattr("IPython.display.display", _fake_display)
     viewer_module._show_figure(fig)
     assert displayed == [fig]
