@@ -18,6 +18,7 @@ from mpl_toolkits.mplot3d import proj3d
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from ..config import PlotConfig
+from ._label_format import format_tensor_node_label
 from .contractions import _ContractionGroups, _group_contractions
 from .curves import (
     _ellipse_points,
@@ -308,11 +309,18 @@ def _figure_relative_font_scale(fig: Figure, label_count: int) -> float:
     return float(np.clip(raw, 0.26, 1.28))
 
 
-def _tensor_name_font_scale(n_visible_tensors: int) -> float:
-    """Shrink tensor name tags when many nodes are drawn (independent of line scale)."""
-    if n_visible_tensors <= 6:
-        return 1.0
-    return float(1.0 / math.sqrt(1.0 + 0.16 * float(n_visible_tensors - 6)))
+def _figure_base_size_scale(fig: Figure) -> float:
+    """Figure pixel size only (no bond / index label crowding).
+
+    Tensor names use this for their *upper* bound so MERA/PEPS-sized index counts do not
+    squash every node title to the same tiny cap; per-node fit still clamps by disk.
+    """
+    dpi = float(getattr(fig, "dpi", None) or 100.0)
+    width_in, height_in = fig.get_size_inches()
+    min_px = float(min(width_in, height_in) * dpi)
+    ref_px = 520.0
+    size_part = math.sqrt(min_px / ref_px)
+    return float(np.clip(size_part, 0.35, 1.28))
 
 
 def _index_label_fontsize_for_caption(base: int, caption: str) -> int:
@@ -546,7 +554,7 @@ def _plot_contraction_index_captions(
         fs_l = _index_label_fontsize_for_caption(p.font_index_end, cap_l)
         plotter.plot_text(
             curve[i_l] + perpendicular * off,
-            cap_l,
+            format_tensor_node_label(cap_l),
             **_edge_index_text_kwargs(
                 config,
                 fontsize=fs_l,
@@ -558,7 +566,7 @@ def _plot_contraction_index_captions(
         fs_r = _index_label_fontsize_for_caption(p.font_index_end, cap_r)
         plotter.plot_text(
             curve[i_r] - perpendicular * off,
-            cap_r,
+            format_tensor_node_label(cap_r),
             **_edge_index_text_kwargs(
                 config,
                 fontsize=fs_r,
@@ -605,10 +613,11 @@ def _draw_edges(
                 else:
                     dist_from_center = float(p.r + p.stub * 0.52)
                     label_pos = center + direction * dist_from_center
-                fs_d = _index_label_fontsize_for_caption(p.font_index_end, edge.label)
+                raw_lbl = edge.label
+                fs_d = _index_label_fontsize_for_caption(p.font_index_end, raw_lbl)
                 plotter.plot_text(
                     label_pos,
-                    edge.label,
+                    format_tensor_node_label(raw_lbl),
                     **_edge_index_text_kwargs(
                         config,
                         fontsize=fs_d,
@@ -677,7 +686,7 @@ def _draw_edges(
                     fs_a = _index_label_fontsize_for_caption(p.font_index_end, ca)
                     plotter.plot_text(
                         curve[ia] + off_a,
-                        ca,
+                        format_tensor_node_label(ca),
                         **_edge_index_text_kwargs(
                             config, fontsize=fs_a, bbox_pad=p.index_bbox_pad
                         ),
@@ -686,7 +695,7 @@ def _draw_edges(
                     fs_b = _index_label_fontsize_for_caption(p.font_index_end, cb)
                     plotter.plot_text(
                         curve[ib] + off_b,
-                        cb,
+                        format_tensor_node_label(cb),
                         **_edge_index_text_kwargs(
                             config, fontsize=fs_b, bbox_pad=p.index_bbox_pad
                         ),
@@ -773,13 +782,13 @@ def _display_disk_radius_px_3d(ax: Any, center: np.ndarray, r_data: float) -> fl
 def _tensor_label_fontsize_to_fit(
     *,
     text: str,
-    cap_pt: int,
+    cap_pt: float,
     pixel_radius: float,
     fig: Figure,
-) -> int:
-    """Font size so the tensor name fits inside the node disk at the current figure DPI and view."""
+) -> float:
+    """First-pass font size from TextPath; refined in `_refit_tensor_labels_to_disks`."""
     if not text.strip():
-        return max(3, cap_pt)
+        return float(max(3.0, cap_pt))
     ref = 10.0
     fp = FontProperties(size=ref)
     tp = TextPath((0.0, 0.0), text, prop=fp)
@@ -788,12 +797,12 @@ def _tensor_label_fontsize_to_fit(
         math.hypot(float(ex.width), float(ex.height)) * _TEXT_RENDER_DIAGONAL_FACTOR
     )
     if diag_pts <= 1e-12:
-        return max(3, cap_pt)
+        return float(max(3.0, cap_pt))
     diag_px_ref = diag_pts * float(fig.dpi) / 72.0
     allow = 2.0 * max(float(pixel_radius), 1e-9) * _TENSOR_LABEL_INSIDE_FILL
     max_fs = ref * allow / diag_px_ref
-    lo, hi = 3, max(3, int(cap_pt))
-    return int(max(lo, min(hi, round(max_fs))))
+    lo, hi = 3.0, max(3.0, float(cap_pt))
+    return float(max(lo, min(hi, max_fs)))
 
 
 def _draw_nodes(
@@ -835,15 +844,16 @@ def _draw_labels(
                 r_px = _display_disk_radius_px_3d(
                     ax, pos, p.r * _OCTAHEDRON_VISUAL_SCALE
                 )
+            display_name = format_tensor_node_label(node.name)
             fs = _tensor_label_fontsize_to_fit(
-                text=node.name,
-                cap_pt=p.font_node,
+                text=display_name,
+                cap_pt=p.font_tensor_label_max,
                 pixel_radius=r_px,
                 fig=fig,
             )
             plotter.plot_text(
                 pos,
-                node.name,
+                display_name,
                 color=config.tensor_label_color,
                 ha="center",
                 va="center",
@@ -851,6 +861,55 @@ def _draw_labels(
                 zorder=_ZORDER_TENSOR_NAME,
                 gid=_TENSOR_LABEL_GID,
             )
+
+
+def _tensor_label_data_anchor(t: Any, *, dimensions: Literal[2, 3]) -> np.ndarray:
+    """World coordinates of the tensor name anchor (disk center)."""
+    if dimensions == 3 and hasattr(t, "get_position_3d"):
+        return np.asarray(t.get_position_3d(), dtype=float)
+    x, y = t.get_position()
+    if dimensions == 2:
+        return np.array([float(x), float(y)], dtype=float)
+    z = float(getattr(t, "_z", 0.0))
+    return np.array([float(x), float(y), z], dtype=float)
+
+
+def _refit_tensor_labels_to_disks(
+    *,
+    ax: Any,
+    p: _DrawScaleParams,
+    dimensions: Literal[2, 3],
+) -> None:
+    """Shrink tensor tags using true rendered bboxes so names stay inside disks."""
+    fig = ax.figure
+    labels = [t for t in ax.texts if t.get_gid() == _TENSOR_LABEL_GID]
+    if not labels:
+        return
+    fs_cap = float(p.font_tensor_label_max)
+    for _ in range(5):
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        tightened = False
+        for t in labels:
+            anchor = _tensor_label_data_anchor(t, dimensions=dimensions)
+            if dimensions == 2:
+                r_px = _display_disk_radius_px_2d(cast(Axes, ax), anchor, p.r)
+            else:
+                r_px = _display_disk_radius_px_3d(
+                    ax, anchor, p.r * _OCTAHEDRON_VISUAL_SCALE
+                )
+            allow = 2.0 * max(r_px, 1e-9) * _TENSOR_LABEL_INSIDE_FILL
+            bb = t.get_window_extent(renderer=renderer)
+            diag = float(math.hypot(float(bb.width), float(bb.height)))
+            if diag <= allow + 1.5:
+                continue
+            fs = float(t.get_fontsize())
+            new_fs = max(3.0, min(fs_cap, fs * (allow / max(diag, 1e-9)) * 0.97))
+            if new_fs < fs - 0.05:
+                t.set_fontsize(new_fs)
+                tightened = True
+        if not tightened:
+            break
 
 
 @dataclass(frozen=True)
@@ -862,7 +921,7 @@ class _DrawScaleParams:
     loop_r: float
     lw: float
     font_index_end: int
-    font_node: int
+    font_tensor_label_max: float
     index_bbox_pad: float
     label_offset: float
     ellipse_w: float
@@ -873,14 +932,14 @@ def _draw_scale_params(
     config: PlotConfig,
     scale: float,
     *,
+    fig: Figure,
     is_3d: bool,
     font_figure_scale: float = 1.0,
-    n_visible_tensors: int = 1,
     label_slots: int = 1,
 ) -> _DrawScaleParams:
     """Compute scale-dependent drawing parameters from config."""
     fs = font_figure_scale
-    tag_scale = _tensor_name_font_scale(max(1, n_visible_tensors))
+    tensor_fs = _figure_base_size_scale(fig)
     idx_scale = _edge_index_font_scale(max(1, label_slots))
     bbox_pad = _index_label_bbox_pad(max(1, label_slots))
     r = (
@@ -901,15 +960,17 @@ def _draw_scale_params(
     bond_ref = max(4, round(5.5 * scale * fs))
     font_index_pt = 0.66 * float(bond_ref) * idx_scale
     font_index_end = max(3, min(11, round(font_index_pt)))
-    font_node_pt = 10.0 * scale * fs * tag_scale
-    font_node = max(3, min(15, round(font_node_pt)))
+    # Tensor names: cap from layout + figure *size* only — not `fs` (bond-label crowding).
+    font_tensor_label_max = float(
+        max(3.0, min(15.0, 10.0 * scale * tensor_fs))
+    )
     return _DrawScaleParams(
         r=r,
         stub=stub,
         loop_r=loop_r,
         lw=lw,
         font_index_end=font_index_end,
-        font_node=font_node,
+        font_tensor_label_max=font_tensor_label_max,
         index_bbox_pad=bbox_pad,
         label_offset=0.08 * scale * float(np.clip(0.82 + 0.22 * fs, 0.75, 1.2)),
         ellipse_w=0.16 * scale,
@@ -978,13 +1039,12 @@ def _draw_graph(
         show_index_labels=show_index_labels,
     )
     font_figure_scale = _figure_relative_font_scale(ax.figure, label_slots)
-    n_visible_tensors = sum(1 for node in graph.nodes.values() if not node.is_virtual)
     params = _draw_scale_params(
         config,
         scale,
+        fig=ax.figure,
         is_3d=dimensions == 3,
         font_figure_scale=font_figure_scale,
-        n_visible_tensors=max(1, n_visible_tensors),
         label_slots=max(1, label_slots),
     )
     plotter = _make_plotter(ax, dimensions=dimensions)
@@ -1019,6 +1079,7 @@ def _draw_graph(
         p=params,
         dimensions=dimensions,
     )
+    _refit_tensor_labels_to_disks(ax=ax, p=params, dimensions=dimensions)
     if dimensions == 2:
         ax2d = cast(Axes, ax)
         _separate_edge_index_labels_2d(ax2d)
