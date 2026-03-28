@@ -130,7 +130,7 @@ def test_plot_einsum_network_2d_draws_reconstructed_graph() -> None:
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
-    assert labels >= {"A0", "x0", "A1", "p<->p", "a<->a", "b"}
+    assert labels >= {"A0", "x0", "A1", "p", "a", "b"}
     assert len(ax.lines) == 4
 
 

@@ -26,7 +26,8 @@ def test_build_quimb_graph_accepts_tensor_network() -> None:
 
     assert {node.name for node in graph.nodes.values()} == {"A", "B"}
     assert {edge.kind for edge in graph.edges} == {"contraction", "dangling"}
-    assert {edge.label for edge in graph.edges} >= {"bond", "left", "right"}
+    assert {edge.label for edge in graph.edges if edge.label} >= {"left", "right"}
+    assert any(e.kind == "contraction" and e.name == "bond" for e in graph.edges)
 
 
 def test_get_quimb_tensors_sorts_unordered_iterables_stably() -> None:
@@ -66,7 +67,7 @@ def test_build_quimb_graph_rewrites_hyperedges_through_virtual_hub() -> None:
     contraction_edges = [edge for edge in graph.edges if edge.kind == "contraction"]
     assert len(contraction_edges) == 3
     assert all(hub_id in edge.node_ids for edge in contraction_edges)
-    assert {edge.label for edge in contraction_edges} == {None}
+    assert all(edge.label is None for edge in contraction_edges)
 
 
 def test_plot_quimb_network_2d_draws_simple_contraction() -> None:
@@ -102,6 +103,7 @@ def test_plot_quimb_network_2d_draws_hypergraph_without_showing_virtual_hub() ->
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
     assert labels == {"A", "B", "C", "bond"}
+    assert sum(1 for t in ax.texts if t.get_text() == "bond") == 6
     assert len(ax.lines) == 3
 
 
@@ -116,4 +118,5 @@ def test_plot_quimb_network_3d_draws_hypergraph() -> None:
     assert fig is ax.figure
     assert ax.name == "3d"
     assert labels == {"A", "B", "C", "bond"}
+    assert sum(1 for t in ax.texts if t.get_text() == "bond") == 6
     assert len(ax.lines) == 3

@@ -118,6 +118,27 @@ def _require_contraction_endpoints(edge: _EdgeData) -> tuple[_EdgeEndpoint, _Edg
     return endpoints_by_node[left_id], endpoints_by_node[right_id]
 
 
+def _endpoint_index_caption(
+    endpoint: _EdgeEndpoint,
+    edge: _EdgeData,
+    graph: _GraphData,
+) -> str | None:
+    """Human-readable index name at one end of a bond (tensor-side or hyperedge hub)."""
+    node = graph.nodes[endpoint.node_id]
+    if node.is_virtual:
+        if edge.name:
+            return str(edge.name)
+        axis = endpoint.axis_name
+        if axis and "__branch_" in axis:
+            return axis.split("__branch_", 1)[0]
+        return axis
+    if endpoint.axis_name:
+        return str(endpoint.axis_name)
+    if edge.name:
+        return str(edge.name)
+    return None
+
+
 def _build_edge_label(
     kind: EdgeKind,
     endpoints: tuple[_EdgeEndpoint, ...],
@@ -126,6 +147,4 @@ def _build_edge_label(
     axis_names = [endpoint.axis_name for endpoint in endpoints if endpoint.axis_name]
     if kind == "dangling":
         return axis_names[0] if axis_names else edge_name
-    if len(axis_names) >= 2:
-        return f"{axis_names[0]}<->{axis_names[1]}"
-    return edge_name
+    return None

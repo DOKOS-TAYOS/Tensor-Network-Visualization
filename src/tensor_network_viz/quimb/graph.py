@@ -120,7 +120,6 @@ def _build_graph(network: Any) -> _GraphData:
                         endpoint,
                         hub_endpoint,
                         name=ind_name,
-                        label=None,
                     )
                 )
             continue
@@ -133,7 +132,6 @@ def _build_graph(network: Any) -> _GraphData:
                 endpoints[0],
                 endpoints[1],
                 name=ind_name,
-                label=ind_name or None,
             )
         )
 

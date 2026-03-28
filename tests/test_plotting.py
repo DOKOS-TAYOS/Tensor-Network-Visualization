@@ -206,7 +206,7 @@ def test_plot_tensorkrowch_network_2d_draws_simple_contraction() -> None:
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
-    assert labels >= {"A", "B", "left<->right"}
+    assert labels >= {"A", "B", "left", "right"}
     assert len(ax.lines) == 1
 
 
@@ -219,7 +219,7 @@ def test_plot_tensorkrowch_network_2d_accepts_list_of_nodes() -> None:
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
-    assert labels >= {"A", "B", "left<->right"}
+    assert labels >= {"A", "B", "left", "right"}
     assert len(ax.lines) == 1
 
 
@@ -232,7 +232,7 @@ def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
-    assert labels >= {"A", "B", "left<->right"}
+    assert labels >= {"A", "B", "left", "right"}
     assert len(ax.lines) == 1
 
 
@@ -348,7 +348,7 @@ def test_build_tensorkrowch_graph_detects_self_edge() -> None:
 
     assert len(graph.edges) == 1
     assert graph.edges[0].kind == "self"
-    assert graph.edges[0].label == "left<->right"
+    assert graph.edges[0].label is None
 
 
 def test_plot_tensorkrowch_network_3d_returns_3d_axes() -> None:

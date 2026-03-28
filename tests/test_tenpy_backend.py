@@ -5,6 +5,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pytest
 
+from tensor_network_viz._core.curves import _require_self_endpoints
+from tensor_network_viz._core.graph import _require_contraction_endpoints
 from tensor_network_viz.tenpy import plot_tenpy_network_2d, plot_tenpy_network_3d
 from tensor_network_viz.tenpy.graph import _build_graph as _build_tenpy_graph
 
@@ -48,7 +50,14 @@ def test_build_tenpy_graph_accepts_finite_mps() -> None:
 
     assert [node.name for node in graph.nodes.values()] == ["B0", "B1", "B2"]
     assert {edge.kind for edge in graph.edges} >= {"contraction", "dangling"}
-    assert {edge.label for edge in graph.edges} >= {"p", "vR<->vL"}
+    assert {edge.label for edge in graph.edges if edge.label} >= {"p"}
+    axes = set()
+    for edge in graph.edges:
+        if edge.kind != "contraction":
+            continue
+        lo, hi = _require_contraction_endpoints(edge)
+        axes.update({lo.axis_name, hi.axis_name})
+    assert {"vR", "vL"} <= axes
 
 
 def test_build_tenpy_graph_accepts_finite_mpo() -> None:
@@ -56,7 +65,14 @@ def test_build_tenpy_graph_accepts_finite_mpo() -> None:
 
     assert [node.name for node in graph.nodes.values()] == ["W0", "W1", "W2"]
     assert {edge.kind for edge in graph.edges} >= {"contraction", "dangling"}
-    assert {edge.label for edge in graph.edges} >= {"p", "p*", "wR<->wL"}
+    assert {edge.label for edge in graph.edges if edge.label} >= {"p", "p*"}
+    axes = set()
+    for edge in graph.edges:
+        if edge.kind != "contraction":
+            continue
+        lo, hi = _require_contraction_endpoints(edge)
+        axes.update({lo.axis_name, hi.axis_name})
+    assert {"wR", "wL"} <= axes
 
 
 def test_build_tenpy_graph_accepts_infinite_mps_as_closed_unit_cell() -> None:
@@ -73,7 +89,14 @@ def test_build_tenpy_graph_accepts_infinite_mpo_as_closed_unit_cell() -> None:
     assert [node.name for node in graph.nodes.values()] == ["W0", "W1", "W2"]
     contraction_pairs = [edge.node_ids for edge in graph.edges if edge.kind == "contraction"]
     assert contraction_pairs == [(0, 1), (1, 2), (2, 0)]
-    assert {edge.label for edge in graph.edges} >= {"p", "p*", "wR<->wL"}
+    assert {edge.label for edge in graph.edges if edge.label} >= {"p", "p*"}
+    axes = set()
+    for edge in graph.edges:
+        if edge.kind != "contraction":
+            continue
+        lo, hi = _require_contraction_endpoints(edge)
+        axes.update({lo.axis_name, hi.axis_name})
+    assert {"wR", "wL"} <= axes
 
 
 def test_build_tenpy_graph_builds_single_site_infinite_mps_as_self_edge() -> None:
@@ -82,7 +105,9 @@ def test_build_tenpy_graph_builds_single_site_infinite_mps_as_self_edge() -> Non
     self_edges = [edge for edge in graph.edges if edge.kind == "self"]
     assert len(self_edges) == 1
     assert self_edges[0].node_ids == (0,)
-    assert self_edges[0].label == "vR<->vL"
+    assert self_edges[0].label is None
+    ep_a, ep_b = _require_self_endpoints(self_edges[0])
+    assert {ep_a.axis_name, ep_b.axis_name} == {"vR", "vL"}
 
 
 def test_build_tenpy_graph_builds_two_site_infinite_mps_as_parallel_edges() -> None:
@@ -90,7 +115,11 @@ def test_build_tenpy_graph_builds_two_site_infinite_mps_as_parallel_edges() -> N
 
     contraction_edges = [edge for edge in graph.edges if edge.kind == "contraction"]
     assert [edge.node_ids for edge in contraction_edges] == [(0, 1), (1, 0)]
-    assert all(edge.label == "vR<->vL" for edge in contraction_edges)
+    assert all(edge.label is None for edge in contraction_edges)
+    assert all(
+        {ep.axis_name for ep in _require_contraction_endpoints(edge)} == {"vR", "vL"}
+        for edge in contraction_edges
+    )
 
 
 def test_plot_tenpy_network_2d_draws_finite_mps() -> None:
@@ -98,7 +127,7 @@ def test_plot_tenpy_network_2d_draws_finite_mps() -> None:
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
-    assert labels >= {"B0", "B1", "p", "vR<->vL"}
+    assert labels >= {"B0", "B1", "p", "vR", "vL"}
     assert len(ax.lines) >= 1
 
 
@@ -107,7 +136,7 @@ def test_plot_tenpy_network_2d_draws_infinite_mps() -> None:
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
-    assert labels >= {"B0", "B1", "B2", "p", "vR<->vL"}
+    assert labels >= {"B0", "B1", "B2", "p", "vR", "vL"}
     assert len(ax.lines) == 6
 
 
