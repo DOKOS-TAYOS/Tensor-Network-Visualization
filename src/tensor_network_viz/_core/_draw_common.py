@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import functools
 import math
+from collections import defaultdict
 from contextlib import suppress
 from dataclasses import dataclass
 from itertools import combinations
@@ -10,6 +12,7 @@ from typing import Any, Literal, Protocol, cast
 
 import numpy as np
 from matplotlib.axes import Axes
+from matplotlib.collections import LineCollection, PatchCollection
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.patches import Circle
@@ -35,8 +38,8 @@ from .graph import (
 )
 from .layout import AxisDirections, NodePositions, _orthogonal_unit
 
-# Strong enough that multiedges and dangling phys legs stay visually separated (e.g. weird 2D).
-_CURVE_OFFSET_FACTOR: float = 0.18
+# Multiedge separation; keep in sync with `_LAYOUT_BOND_CURVE_OFFSET_FACTOR` in layout.py.
+_CURVE_OFFSET_FACTOR: float = 0.15
 # Blends with chord length so multiedges keep visible separation when endpoints are close.
 _CURVE_NEAR_PAIR_REF: float = 0.28
 # Extra radius + offset so index captions sit just outside tensor disks (data units).
@@ -71,9 +74,7 @@ def _apply_text_no_clip(kwargs: dict[str, Any]) -> None:
     kwargs.setdefault("clip_on", False)
 
 
-def _set_xy_limits_from_span(
-    ax: Any, span: np.ndarray, center: np.ndarray, pad: float
-) -> None:
+def _set_xy_limits_from_span(ax: Any, span: np.ndarray, center: np.ndarray, pad: float) -> None:
     ax.set_xlim(center[0] - span[0] * pad, center[0] + span[0] * pad)
     ax.set_ylim(center[1] - span[1] * pad, center[1] + span[1] * pad)
 
@@ -120,40 +121,81 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
     if dimensions == 2:
 
         class _2DPlotter:
+            __slots__ = ("_ax", "_edge_segments")
+
+            def __init__(self, ax_2d: Axes) -> None:
+                self._ax = ax_2d
+                self._edge_segments: list[tuple[int, str, float, np.ndarray]] = []
+
+            def flush_edge_collections(self) -> None:
+                """Batch buffered edges into a few LineCollections (call after all edges drawn)."""
+                if not self._edge_segments:
+                    return
+                groups: dict[tuple[int, str, float], list[np.ndarray]] = defaultdict(list)
+                for z, color, lw, seg in self._edge_segments:
+                    groups[(z, color, lw)].append(seg)
+                ax_ = self._ax
+                for (z, color, lw), segs in sorted(groups.items(), key=lambda kv: kv[0][0]):
+                    coll = LineCollection(
+                        segs,
+                        colors=color,
+                        linewidths=lw,
+                        zorder=z,
+                        capstyle=_EDGE_LINE_CAP_STYLE,
+                        joinstyle=_EDGE_LINE_JOIN_STYLE,
+                    )
+                    ax_.add_collection(coll)
+                self._edge_segments.clear()
+
             def plot_line(self, start: np.ndarray, end: np.ndarray, **kwargs: Any) -> None:
                 _apply_edge_line_style(kwargs)
-                ax.plot([start[0], end[0]], [start[1], end[1]], **kwargs)
+                z = int(kwargs.get("zorder", 1))
+                color = str(kwargs.get("color", "#000000"))
+                lw = float(kwargs.get("linewidth", 1.0))
+                seg = np.array(
+                    [[float(start[0]), float(start[1])], [float(end[0]), float(end[1])]],
+                    dtype=float,
+                )
+                self._edge_segments.append((z, color, lw, seg))
 
             def plot_curve(self, curve: np.ndarray, **kwargs: Any) -> None:
                 _apply_edge_line_style(kwargs)
-                ax.plot(curve[:, 0], curve[:, 1], **kwargs)
+                z = int(kwargs.get("zorder", 1))
+                color = str(kwargs.get("color", "#000000"))
+                lw = float(kwargs.get("linewidth", 1.0))
+                seg = np.asarray(curve[:, :2], dtype=float, order="C")
+                self._edge_segments.append((z, color, lw, seg))
 
             def plot_text(self, pos: np.ndarray, text: str, **kwargs: Any) -> None:
                 _apply_text_no_clip(kwargs)
-                ax.text(pos[0], pos[1], text, **kwargs)
+                self._ax.text(pos[0], pos[1], text, **kwargs)
 
             def draw_tensor_nodes(
                 self, coords: np.ndarray, *, config: PlotConfig, p: _DrawScaleParams
             ) -> None:
-                for i in range(coords.shape[0]):
-                    ax.add_patch(
-                        Circle(
-                            (float(coords[i, 0]), float(coords[i, 1])),
-                            radius=p.r,
-                            facecolor=config.node_color,
-                            edgecolor=config.node_edge_color,
-                            linewidth=float(p.lw),
-                            zorder=_ZORDER_NODE_DISK,
-                        )
-                    )
+                n = int(coords.shape[0])
+                if n == 0:
+                    return
+                patches = [
+                    Circle((float(coords[i, 0]), float(coords[i, 1])), radius=p.r) for i in range(n)
+                ]
+                coll = PatchCollection(
+                    patches,
+                    facecolors=config.node_color,
+                    edgecolors=config.node_edge_color,
+                    linewidths=float(p.lw),
+                    zorder=_ZORDER_NODE_DISK,
+                    match_original=False,
+                )
+                self._ax.add_collection(coll)
 
             def style_axes(self, coords: np.ndarray) -> None:
                 span, center, pad = _view_span_center_pad(coords)
-                _set_xy_limits_from_span(ax, span, center, pad)
-                ax.set_aspect("equal", adjustable="box")
-                ax.set_axis_off()
+                _set_xy_limits_from_span(self._ax, span, center, pad)
+                self._ax.set_aspect("equal", adjustable="box")
+                self._ax.set_axis_off()
 
-        return _2DPlotter()
+        return _2DPlotter(ax)
 
     class _3DPlotter:
         def plot_line(self, start: np.ndarray, end: np.ndarray, **kwargs: Any) -> None:
@@ -215,9 +257,7 @@ def _bond_perpendicular_unoriented(
 ) -> np.ndarray:
     dist = max(float(np.linalg.norm(delta)), 1e-6)
     direction = delta / dist
-    return (
-        _perpendicular_3d(direction) if dimensions == 3 else _perpendicular_2d(direction)
-    )
+    return _perpendicular_3d(direction) if dimensions == 3 else _perpendicular_2d(direction)
 
 
 def _signed_bond_perpendicular(
@@ -226,9 +266,7 @@ def _signed_bond_perpendicular(
 ) -> np.ndarray:
     perpendicular = _bond_perpendicular_unoriented(delta, dimensions)
     perpendicular = perpendicular / np.linalg.norm(perpendicular)
-    if (dimensions == 2 and perpendicular[1] < 0) or (
-        dimensions == 3 and perpendicular[2] < 0
-    ):
+    if (dimensions == 2 and perpendicular[1] < 0) or (dimensions == 3 and perpendicular[2] < 0):
         perpendicular = -perpendicular
     return perpendicular
 
@@ -401,12 +439,9 @@ def _index_labels_window_overlap(
     renderer: Any,
     pad_px: float,
 ) -> bool:
-    bbs = [
-        _padded_window_bbox(t.get_window_extent(renderer=renderer), pad_px) for t in labels
-    ]
+    bbs = [_padded_window_bbox(t.get_window_extent(renderer=renderer), pad_px) for t in labels]
     return any(
-        _display_bboxes_overlap(bbs[i], bbs[j])
-        for i, j in combinations(range(len(labels)), 2)
+        _display_bboxes_overlap(bbs[i], bbs[j]) for i, j in combinations(range(len(labels)), 2)
     )
 
 
@@ -424,6 +459,17 @@ def _clamp_label_to_anchor(
     return float(snapped[0]), float(snapped[1])
 
 
+def _index_label_separation_schedule(n_lbl: int) -> tuple[int, int]:
+    """(max_shrink_passes, inner_iters) — fewer passes when many labels (less canvas.draw churn)."""
+    if n_lbl <= 45:
+        return 8, 20
+    if n_lbl <= 90:
+        return 5, 12
+    if n_lbl <= 140:
+        return 4, 8
+    return 3, 5
+
+
 def _separate_edge_index_labels_2d(ax: Axes) -> None:
     """Fix overlaps within a tight move cap; shrink index fonts if still overlapping (MERA)."""
     labels = [t for t in ax.texts if t.get_gid() == _EDGE_INDEX_LABEL_GID]
@@ -439,9 +485,8 @@ def _separate_edge_index_labels_2d(ax: Axes) -> None:
     max_drift = span_data * float(np.clip(0.016 - 0.00005 * max(0, n_lbl - 28), 0.006, 0.016))
     base_step = max(span_data * 0.001, 1e-6)
     pad_px = 2.0
-    max_shrink_passes = 8
+    max_shrink_passes, inner_iters = _index_label_separation_schedule(n_lbl)
     shrink_factor = 0.88
-    inner_iters = 20
 
     for s_pass in range(max_shrink_passes):
         for k, t in enumerate(labels):
@@ -516,10 +561,7 @@ def _curved_edge_points(
     ref_len = _CURVE_NEAR_PAIR_REF * scale
     effective_chord = float(math.hypot(distance, ref_len))
     offset = (
-        (offset_index - (edge_count - 1) / 2.0)
-        * _CURVE_OFFSET_FACTOR
-        * scale
-        * effective_chord
+        (offset_index - (edge_count - 1) / 2.0) * _CURVE_OFFSET_FACTOR * scale * effective_chord
     )
     control = midpoint + perpendicular * offset
     return _quadratic_curve(start, control, end)
@@ -847,6 +889,15 @@ def _tensor_disk_radius_px(
     return _display_disk_radius_px_3d(ax, anchor, p.r * _OCTAHEDRON_VISUAL_SCALE)
 
 
+@functools.lru_cache(maxsize=1024)
+def _textpath_diagonal_points_ref10(text: str) -> float:
+    """Diagonal of TextPath at ref fontsize=10pt in points (path units × calibration factor)."""
+    fp = FontProperties(size=10.0)
+    tp = TextPath((0.0, 0.0), text, prop=fp)
+    ex = tp.get_extents()
+    return float(math.hypot(float(ex.width), float(ex.height)) * _TEXT_RENDER_DIAGONAL_FACTOR)
+
+
 def _tensor_label_fontsize_to_fit(
     *,
     text: str,
@@ -858,10 +909,7 @@ def _tensor_label_fontsize_to_fit(
     if not text.strip():
         return float(max(3.0, cap_pt))
     ref = 10.0
-    fp = FontProperties(size=ref)
-    tp = TextPath((0.0, 0.0), text, prop=fp)
-    ex = tp.get_extents()
-    diag_pts = math.hypot(float(ex.width), float(ex.height)) * _TEXT_RENDER_DIAGONAL_FACTOR
+    diag_pts = _textpath_diagonal_points_ref10(text)
     if diag_pts <= 1e-12:
         return float(max(3.0, cap_pt))
     diag_px_ref = diag_pts * float(fig.dpi) / 72.0
@@ -947,7 +995,9 @@ def _refit_tensor_labels_to_disks(
     if not labels:
         return
     fs_cap = float(p.font_tensor_label_max)
-    for _ in range(5):
+    n_ts = len(labels)
+    max_passes = 5 if n_ts <= 35 else (3 if n_ts <= 75 else 2)
+    for _ in range(max_passes):
         fig.canvas.draw()
         renderer = fig.canvas.get_renderer()
         tightened = False
@@ -1115,6 +1165,10 @@ def _draw_graph(
         dimensions=dimensions,
         p=params,
     )
+    if dimensions == 2:
+        flush = getattr(plotter, "flush_edge_collections", None)
+        if callable(flush):
+            flush()
     coords = _draw_nodes(
         plotter=plotter,
         graph=graph,
@@ -1133,8 +1187,10 @@ def _draw_graph(
         p=params,
         dimensions=dimensions,
     )
-    _refit_tensor_labels_to_disks(ax=ax, p=params, dimensions=dimensions)
+    if config.refine_tensor_labels:
+        _refit_tensor_labels_to_disks(ax=ax, p=params, dimensions=dimensions)
     if dimensions == 2:
         ax2d = cast(Axes, ax)
-        _separate_edge_index_labels_2d(ax2d)
+        if config.separate_index_labels and show_index_labels:
+            _separate_edge_index_labels_2d(ax2d)
         _register_2d_zoom_font_scaling(ax2d)

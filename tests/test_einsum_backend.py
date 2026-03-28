@@ -9,6 +9,7 @@ from collections.abc import Generator
 import matplotlib.pyplot as plt
 import pytest
 
+from plotting_helpers import line_collection_segment_count
 from tensor_network_viz import pair_tensor
 from tensor_network_viz.einsum_module import (
     plot_einsum_network_2d,
@@ -131,7 +132,7 @@ def test_plot_einsum_network_2d_draws_reconstructed_graph() -> None:
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
     assert labels >= {"A0", "x0", "A1", "p", "a", "b"}
-    assert len(ax.lines) == 4
+    assert line_collection_segment_count(ax) == 4
 
 
 def test_einsum_trace_requires_binary_explicit_output_equations() -> None:

@@ -11,7 +11,14 @@ from tensor_network_viz._core.graph import (
     _make_dangling_edge,
     _make_node,
 )
-from tensor_network_viz._core.layout import _compute_axis_directions, _compute_layout
+from tensor_network_viz._core.layout import (
+    _compute_axis_directions,
+    _compute_layout,
+    _dangling_stub_segment_2d,
+    _planar_contraction_bond_segments_2d,
+    _segments_cross_2d,
+)
+from tensor_network_viz._core.renderer import _resolve_draw_scale
 
 
 def _build_chain_graph(
@@ -510,3 +517,81 @@ def test_compute_layout_generic_graph_uses_force_fallback_produces_valid_positio
     assert not np.any(np.isnan(coords))
     assert not np.any(np.isinf(coords))
     assert np.all(np.isfinite(coords))
+
+
+def test_weird_topology_2d_phys_stubs_do_not_cross() -> None:
+    """Regression: example 'weird' graph must not draw crossing dangling (phys) segments in 2D."""
+    nodes = {
+        0: _make_node("center", ("north", "east", "south", "west", "phys")),
+        1: _make_node("north", ("center", "east", "phys")),
+        2: _make_node("east", ("center", "north", "south", "phys")),
+        3: _make_node("south", ("center", "east", "west_a", "west_b", "phys")),
+        4: _make_node("west", ("center", "south_a", "south_b", "phys")),
+    }
+    edges = [
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 0, "north"), _EdgeEndpoint(1, 0, "center"), name=None
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 1, "east"), _EdgeEndpoint(2, 0, "center"), name=None
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 2, "south"), _EdgeEndpoint(3, 0, "center"), name=None
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 3, "west"), _EdgeEndpoint(4, 0, "center"), name=None
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(1, 1, "east"), _EdgeEndpoint(2, 1, "north"), name=None
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(2, 2, "south"), _EdgeEndpoint(3, 1, "east"), name=None
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(3, 2, "west_a"), _EdgeEndpoint(4, 1, "south_a"), name=None
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(3, 3, "west_b"), _EdgeEndpoint(4, 2, "south_b"), name=None
+        ),
+        _make_dangling_edge(_EdgeEndpoint(0, 4, "phys"), name="phys"),
+        _make_dangling_edge(_EdgeEndpoint(1, 2, "phys"), name="phys"),
+        _make_dangling_edge(_EdgeEndpoint(2, 3, "phys"), name="phys"),
+        _make_dangling_edge(_EdgeEndpoint(3, 4, "phys"), name="phys"),
+        _make_dangling_edge(_EdgeEndpoint(4, 3, "phys"), name="phys"),
+    ]
+    graph = _GraphData(nodes=nodes, edges=tuple(edges))
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    ds = _resolve_draw_scale(graph, positions)
+    directions = _compute_axis_directions(
+        graph, positions, dimensions=2, draw_scale=ds
+    )
+
+    stubs: list[tuple[np.ndarray, np.ndarray]] = []
+    for edge in graph.edges:
+        if edge.kind != "dangling":
+            continue
+        ep = edge.endpoints[0]
+        direction = directions[(ep.node_id, ep.axis_index)]
+        origin = positions[ep.node_id]
+        stubs.append(_dangling_stub_segment_2d(origin, direction, draw_scale=ds))
+
+    for i in range(len(stubs)):
+        for j in range(i + 1, len(stubs)):
+            p0, p1 = stubs[i]
+            q0, q1 = stubs[j]
+            assert not _segments_cross_2d(p0, p1, q0, q1), f"stubs {i} and {j} cross"
+
+    bond_segments = _planar_contraction_bond_segments_2d(graph, positions, scale=ds)
+    stub_idx = 0
+    for edge in graph.edges:
+        if edge.kind != "dangling":
+            continue
+        ep = edge.endpoints[0]
+        p0, p1 = stubs[stub_idx]
+        stub_idx += 1
+        for a, b, ba, bb in bond_segments:
+            if a == ep.node_id or b == ep.node_id:
+                continue
+            assert not _segments_cross_2d(p0, p1, ba, bb), (
+                f"stub from node {ep.node_id} crosses bond {a}-{b}"
+            )

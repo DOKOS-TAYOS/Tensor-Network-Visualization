@@ -11,6 +11,7 @@ matplotlib.use("Agg")
 import pytest
 
 from tensor_network_viz import PlotConfig, show_tensor_network
+from tensor_network_viz._core.renderer import _effective_layout_iterations
 from tensor_network_viz.config import EngineName
 
 pytestmark = pytest.mark.filterwarnings("ignore:unit_cell_width.*:UserWarning")
@@ -24,6 +25,19 @@ def test_plot_config_has_expected_defaults() -> None:
     assert config.layout_iterations is None
     assert config.positions is None
     assert config.validate_positions is False
+    assert config.refine_tensor_labels is True
+    assert config.separate_index_labels is True
+
+
+def test_effective_layout_iterations_respects_explicit_setting() -> None:
+    cfg = PlotConfig(layout_iterations=400)
+    assert _effective_layout_iterations(cfg, n_nodes=10_000) == 400
+
+
+def test_effective_layout_iterations_auto_scales_below_default_for_small_graphs() -> None:
+    cfg = PlotConfig()
+    auto = _effective_layout_iterations(cfg, n_nodes=20)
+    assert 45 <= auto < PlotConfig.DEFAULT_LAYOUT_ITERATIONS
 
 
 def test_plot_config_accepts_overrides() -> None:

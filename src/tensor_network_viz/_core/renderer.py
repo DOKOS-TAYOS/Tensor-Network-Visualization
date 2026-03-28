@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import warnings
 from collections.abc import Callable
 from typing import Any, Literal, TypeAlias, cast
@@ -178,10 +179,17 @@ def _prepare_axes(
     return ax.figure, ax
 
 
-def _resolve_iterations(config: PlotConfig) -> int:
+def _effective_layout_iterations(config: PlotConfig, *, n_nodes: int) -> int:
+    """Force-layout iteration count: explicit config wins; else scale down for large n."""
     if config.layout_iterations is not None:
         return config.layout_iterations
-    return PlotConfig.DEFAULT_LAYOUT_ITERATIONS
+    n = max(n_nodes, 1)
+    return int(
+        min(
+            float(PlotConfig.DEFAULT_LAYOUT_ITERATIONS),
+            max(45.0, 14.0 * math.sqrt(float(n))),
+        )
+    )
 
 
 def _resolve_positions(
@@ -191,7 +199,7 @@ def _resolve_positions(
     dimensions: _Dimensions,
     seed: int,
 ) -> NodePositions:
-    iterations = _resolve_iterations(config)
+    iterations = _effective_layout_iterations(config, n_nodes=len(graph.nodes))
     if config.positions is None:
         return _compute_layout(graph, dimensions=dimensions, seed=seed, iterations=iterations)
     return _apply_custom_positions(
@@ -222,11 +230,14 @@ def _plot_graph(
         dimensions=dimensions,
     )
     positions = _resolve_positions(graph, style, dimensions=dimensions, seed=seed)
-    directions = _compute_axis_directions(graph, positions, dimensions=dimensions)
     if dimensions == 2:
         scale = _resolve_draw_scale(graph, positions)
+        directions = _compute_axis_directions(
+            graph, positions, dimensions=dimensions, draw_scale=scale
+        )
     else:
         scale = _compute_scale(_count_visible_nodes(graph))
+        directions = _compute_axis_directions(graph, positions, dimensions=dimensions)
     _draw_graph(
         ax=resolved_ax,
         graph=graph,

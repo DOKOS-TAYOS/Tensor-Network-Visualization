@@ -34,6 +34,8 @@ def test_real_quimb_hypergraph_renders() -> None:
 
     assert fig2d is ax2d.figure
     assert fig3d is ax3d.figure
-    assert len(ax2d.lines) == 3
+    from plotting_helpers import line_collection_segment_count
+
+    assert line_collection_segment_count(ax2d) == 3
     assert len(ax3d.lines) == 3
     assert ax3d.name == "3d"

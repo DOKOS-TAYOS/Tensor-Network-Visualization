@@ -259,12 +259,14 @@ Behavior notes:
 - `dangling_edge_color`
 - `show_tensor_labels`
 - `show_index_labels`
+- `refine_tensor_labels`: extra canvas passes so tensor names fit inside disks; set `False` for faster drawing
+- `separate_index_labels` (2D): extra passes to separate overlapping index captions; set `False` for speed on dense plots
 - `node_radius`
 - `stub_length`
 - `self_loop_radius`
 - `line_width_2d`
 - `line_width_3d`
-- `layout_iterations`
+- `layout_iterations`: if `None`, iteration count is capped for large graphs (explicit value always wins)
 - `positions`
 - `validate_positions`
 
@@ -323,7 +325,7 @@ For scripts or batch jobs, a common pattern is:
 
 ### Interactive zoom and drawing scale
 
-In **2D**, tensors are drawn with Matplotlib circle patches in **data** coordinates, so dangling
+In **2D**, tensors are drawn as a batched patch collection (circles in **data** coordinates), so dangling
 stubs meet the node rim correctly when you zoom or pan. Line widths and label font sizes are still
 in **points** (screen space), so they do not automatically grow when you zoom in.
 

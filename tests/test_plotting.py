@@ -11,7 +11,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from matplotlib.patches import Circle
 
 import tensor_network_viz._core.renderer as core_renderer_module
 import tensor_network_viz.tensorkrowch.graph as tk_graph_module
@@ -19,6 +18,11 @@ import tensor_network_viz.tensorkrowch.renderer as tk_renderer_module
 import tensor_network_viz.tensornetwork.graph as tn_graph_module
 import tensor_network_viz.tensornetwork.renderer as tn_renderer_module
 import tensor_network_viz.viewer as viewer_module
+from plotting_helpers import (
+    line_collection_segment_count,
+    line_collection_segments,
+    patch_collection_circle_count,
+)
 from tensor_network_viz import PlotConfig, show_tensor_network
 from tensor_network_viz.tensorkrowch import (
     plot_tensorkrowch_network_2d,
@@ -207,7 +211,7 @@ def test_plot_tensorkrowch_network_2d_draws_simple_contraction() -> None:
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
     assert labels >= {"A", "B", "left", "right"}
-    assert len(ax.lines) == 1
+    assert line_collection_segment_count(ax) == 1
 
 
 def test_plot_tensorkrowch_network_2d_accepts_list_of_nodes() -> None:
@@ -220,7 +224,7 @@ def test_plot_tensorkrowch_network_2d_accepts_list_of_nodes() -> None:
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
     assert labels >= {"A", "B", "left", "right"}
-    assert len(ax.lines) == 1
+    assert line_collection_segment_count(ax) == 1
 
 
 def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
@@ -233,7 +237,7 @@ def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
     assert labels >= {"A", "B", "left", "right"}
-    assert len(ax.lines) == 1
+    assert line_collection_segment_count(ax) == 1
 
 
 def test_plot_tensorkrowch_network_2d_draws_tensor_nodes_as_circle_patches() -> None:
@@ -243,9 +247,7 @@ def test_plot_tensorkrowch_network_2d_draws_tensor_nodes_as_circle_patches() -> 
 
     _, ax = plot_tensorkrowch_network_2d(DummyNetwork(nodes=[left, right]))
 
-    circles = [p for p in ax.patches if isinstance(p, Circle)]
-    assert len(circles) == 2
-    assert all(c.radius > 0 for c in circles)
+    assert patch_collection_circle_count(ax) == 2
 
 
 def test_extent_scale_factor_reflects_long_dense_chain_vs_pair() -> None:
@@ -291,7 +293,7 @@ def test_plot_tensorkrowch_network_2d_accepts_full_custom_positions() -> None:
     fig, ax = plot_tensorkrowch_network_2d(DummyNetwork(nodes=[left, right]), config=config)
 
     assert fig is ax.figure
-    assert len(ax.lines) == 1
+    assert line_collection_segment_count(ax) == 1
 
 
 def test_plot_tensorkrowch_network_2d_uses_layout_iterations_for_missing_custom_positions(
@@ -330,9 +332,10 @@ def test_plot_tensorkrowch_network_2d_offsets_multiple_edges() -> None:
 
     _, ax = plot_tensorkrowch_network_2d(DummyNetwork(nodes=[left, right]))
 
-    assert len(ax.lines) == 2
-    y0 = ax.lines[0].get_ydata()
-    y1 = ax.lines[1].get_ydata()
+    segs = line_collection_segments(ax)
+    assert len(segs) == 2
+    y0 = segs[0][:, 1]
+    y1 = segs[1][:, 1]
     assert not np.allclose(y0, y1)
 
 

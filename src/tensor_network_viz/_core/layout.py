@@ -9,7 +9,8 @@ from typing import TypeAlias
 import numpy as np
 
 from .axis_directions import _AXIS_DIR_2D, _AXIS_DIR_3D
-from .contractions import _contraction_weights, _iter_contractions
+from .contractions import _contraction_weights, _group_contractions, _iter_contractions
+from .curves import _quadratic_curve
 from .graph import _GraphData
 from .layout_structure import (
     _analyze_layout_components,
@@ -28,6 +29,17 @@ _FORCE_LAYOUT_K: float = 1.6
 _FORCE_LAYOUT_COOLING_FACTOR: float = 0.985
 _FREE_DIR_OVERLAP_THRESHOLD: float = 0.7
 _FREE_DIR_SAMPLES_2D: int = 72
+# Dangling-stub segment in layout units (rim → tip), for 2D crossing checks vs `_draw_*` scale.
+_STUB_LAYOUT_R0: float = 0.06
+_STUB_LAYOUT_R1: float = 0.46
+_STUB_TIP_NODE_CLEAR: float = 0.26
+_STUB_TIP_TIP_CLEAR: float = 0.26
+_STUB_ORIGIN_PAIR_CLEAR: float = 0.12
+_STUB_PARALLEL_DOT: float = 0.92
+# Keep in sync with `_draw_common._CURVE_OFFSET_FACTOR` (stub–bond clash vs drawn bonds).
+_LAYOUT_BOND_CURVE_OFFSET_FACTOR: float = 0.15
+_LAYOUT_BOND_CURVE_NEAR_PAIR_REF: float = 0.28
+_LAYOUT_BOND_CURVE_SAMPLES: int = 24
 _COMPONENT_GAP: float = 1.4
 _LAYER_SPACING: float = 0.55
 _LAYER_SEQUENCE: tuple[int, ...] = (0, 1, -1, 2, -2, 3, -3)
@@ -618,10 +630,134 @@ def _segments_cross_2d(a: np.ndarray, b: np.ndarray, c: np.ndarray, d: np.ndarra
     return (o1 > 0.0) != (o2 > 0.0) and (o3 > 0.0) != (o4 > 0.0)
 
 
+def _normalize_2d(vector: np.ndarray) -> np.ndarray:
+    v = np.asarray(vector, dtype=float).reshape(-1)[:2]
+    n = float(np.linalg.norm(v))
+    if n < 1e-9:
+        return np.array([1.0, 0.0], dtype=float)
+    return v / n
+
+
+def _dangling_stub_segment_2d(
+    origin: np.ndarray,
+    direction_unit: np.ndarray,
+    *,
+    draw_scale: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Polyline for a dangling leg in layout space (approx. rim → stub end).
+
+    Lengths scale with *draw_scale* so conflict checks match `_draw_graph(..., scale=...)`.
+    """
+    o = np.asarray(origin, dtype=float).reshape(-1)[:2]
+    d = _normalize_2d(direction_unit)
+    s = max(float(draw_scale), 1e-6)
+    return o + d * (_STUB_LAYOUT_R0 * s), o + d * (_STUB_LAYOUT_R1 * s)
+
+
+def _bond_perpendicular_unoriented_2d(delta: np.ndarray) -> np.ndarray:
+    direction = delta / max(float(np.linalg.norm(delta)), 1e-6)
+    return np.array([-direction[1], direction[0]], dtype=float)
+
+
+def _layout_quadratic_bond_polyline_2d(
+    start: np.ndarray,
+    end: np.ndarray,
+    offset_index: int,
+    edge_count: int,
+    *,
+    scale: float,
+) -> np.ndarray:
+    """2D bond curve matching the draw path (quadratic Bezier), in layout coordinates."""
+    start2 = np.asarray(start, dtype=float).reshape(-1)[:2]
+    end2 = np.asarray(end, dtype=float).reshape(-1)[:2]
+    midpoint = (start2 + end2) / 2.0
+    delta = end2 - start2
+    distance = max(float(np.linalg.norm(delta)), 1e-6)
+    perpendicular = _bond_perpendicular_unoriented_2d(delta)
+    ref_len = _LAYOUT_BOND_CURVE_NEAR_PAIR_REF * scale
+    effective_chord = float(math.hypot(distance, ref_len))
+    offset = (
+        (offset_index - (edge_count - 1) / 2.0)
+        * _LAYOUT_BOND_CURVE_OFFSET_FACTOR
+        * scale
+        * effective_chord
+    )
+    control = midpoint + perpendicular * offset
+    return _quadratic_curve(start2, control, end2, samples=_LAYOUT_BOND_CURVE_SAMPLES)
+
+
+def _planar_contraction_bond_segments_2d(
+    graph: _GraphData,
+    positions: NodePositions,
+    *,
+    scale: float = 1.0,
+) -> list[tuple[int, int, np.ndarray, np.ndarray]]:
+    """Short segments along each contraction's rendered 2D bond (for stub–bond crossing tests)."""
+    groups = _group_contractions(graph)
+    out: list[tuple[int, int, np.ndarray, np.ndarray]] = []
+    for record in _iter_contractions(graph):
+        left_id, right_id = record.node_ids
+        if left_id == right_id:
+            continue
+        offset_index, edge_count = groups.offsets[id(record.edge)]
+        start = np.asarray(positions[left_id], dtype=float).reshape(-1)[:2]
+        end = np.asarray(positions[right_id], dtype=float).reshape(-1)[:2]
+        poly = _layout_quadratic_bond_polyline_2d(
+            start, end, offset_index, edge_count, scale=scale
+        )
+        for i in range(int(poly.shape[0]) - 1):
+            out.append((left_id, right_id, poly[i].copy(), poly[i + 1].copy()))
+    return out
+
+
+def _direction_conflicts_2d(
+    *,
+    node_id: int,
+    origin: np.ndarray,
+    direction: np.ndarray,
+    assigned_stub_segments: list[tuple[np.ndarray, np.ndarray]],
+    bond_segments: list[tuple[int, int, np.ndarray, np.ndarray]],
+    positions: NodePositions,
+    draw_scale: float = 1.0,
+) -> bool:
+    """True if a candidate dangling direction crosses another stub or a non-incident bond."""
+    d = _normalize_2d(direction)
+    o2 = np.asarray(origin, dtype=float).reshape(-1)[:2]
+    p0, p1 = _dangling_stub_segment_2d(origin, d, draw_scale=draw_scale)
+
+    for a, b, ba, bb in bond_segments:
+        if a == node_id or b == node_id:
+            continue
+        if _segments_cross_2d(p0, p1, ba, bb):
+            return True
+
+    for other_id, other_position in positions.items():
+        if other_id == node_id:
+            continue
+        op = np.asarray(other_position, dtype=float).reshape(-1)[:2]
+        if float(np.linalg.norm(p1 - op)) < _STUB_TIP_NODE_CLEAR:
+            return True
+
+    for q0, q1 in assigned_stub_segments:
+        if _segments_cross_2d(p0, p1, q0, q1):
+            return True
+        if float(np.linalg.norm(p1 - q1)) < _STUB_TIP_TIP_CLEAR:
+            return True
+        d_other = _normalize_2d(q1 - q0)
+        if float(np.linalg.norm(o2 - q0)) < _STUB_ORIGIN_PAIR_CLEAR and float(
+            np.dot(d, d_other)
+        ) > _STUB_PARALLEL_DOT:
+            return True
+
+    return False
+
+
 def _compute_axis_directions(
     graph: _GraphData,
     positions: NodePositions,
     dimensions: int,
+    *,
+    draw_scale: float = 1.0,
 ) -> AxisDirections:
     directions: AxisDirections = {}
     for record in _iter_contractions(graph):
@@ -636,7 +772,7 @@ def _compute_axis_directions(
         directions[(right_id, right_endpoint.axis_index)] = -toward_right
 
     if dimensions == 2:
-        _compute_free_directions_2d(graph, positions, directions)
+        _compute_free_directions_2d(graph, positions, directions, draw_scale=draw_scale)
     else:
         _compute_free_directions_3d(graph, positions, directions)
 
@@ -647,6 +783,8 @@ def _compute_free_directions_2d(
     graph: _GraphData,
     positions: NodePositions,
     directions: AxisDirections,
+    *,
+    draw_scale: float = 1.0,
 ) -> None:
     node_ids = list(positions)
     angles = np.linspace(0.0, 2.0 * math.pi, _FREE_DIR_SAMPLES_2D, endpoint=False)
@@ -665,7 +803,13 @@ def _compute_free_directions_2d(
         neighbor_midpoints[left_id].append(midpoint)
         neighbor_midpoints[right_id].append(midpoint)
 
-    for node_id, node in graph.nodes.items():
+    assigned_stub_segments: list[tuple[np.ndarray, np.ndarray]] = []
+    bond_segments = _planar_contraction_bond_segments_2d(
+        graph, positions, scale=draw_scale
+    )
+
+    for node_id in sorted(graph.nodes.keys()):
+        node = graph.nodes[node_id]
         origin = positions[node_id]
         obstacle_parts: list[np.ndarray] = []
         if other_node_positions[node_id].size:
@@ -690,9 +834,6 @@ def _compute_free_directions_2d(
             used_dirs = _used_axis_directions(directions, node_id=node_id, axis_count=axis_count)
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
             named_direction = _direction_from_axis_name(axis_name, dimensions=2)
-            if named_direction is not None and _direction_has_space(named_direction, used_dirs):
-                directions[axis_key] = named_direction
-                continue
 
             toward = dirs_to_obstacles @ unit_circle.T
             away_scores = -np.min(toward, axis=0)
@@ -705,8 +846,55 @@ def _compute_free_directions_2d(
             else:
                 separation = np.zeros(unit_circle.shape[0], dtype=float)
             scores = away_scores - separation
-            best_direction = unit_circle[int(np.argmax(scores))].copy()
-            directions[axis_key] = best_direction
+            order = np.argsort(-scores)
+
+            picked: np.ndarray | None = None
+            if named_direction is not None and _direction_has_space(named_direction, used_dirs):
+                nd = _normalize_2d(named_direction[:2])
+                if not _direction_conflicts_2d(
+                    node_id=node_id,
+                    origin=origin,
+                    direction=nd,
+                    assigned_stub_segments=assigned_stub_segments,
+                    bond_segments=bond_segments,
+                    positions=positions,
+                    draw_scale=draw_scale,
+                ):
+                    picked = nd
+
+            if picked is None:
+                for idx in order:
+                    cand = unit_circle[int(idx)].copy()
+                    if not _direction_has_space(cand, used_dirs):
+                        continue
+                    if _direction_conflicts_2d(
+                        node_id=node_id,
+                        origin=origin,
+                        direction=cand,
+                        assigned_stub_segments=assigned_stub_segments,
+                        bond_segments=bond_segments,
+                        positions=positions,
+                        draw_scale=draw_scale,
+                    ):
+                        continue
+                    picked = cand
+                    break
+
+            if picked is None:
+                for idx in order:
+                    cand = unit_circle[int(idx)].copy()
+                    if not _direction_has_space(cand, used_dirs):
+                        continue
+                    picked = cand
+                    break
+
+            if picked is None:
+                picked = unit_circle[int(np.argmax(scores))].copy()
+
+            directions[axis_key] = picked
+            assigned_stub_segments.append(
+                _dangling_stub_segment_2d(origin, picked, draw_scale=draw_scale)
+            )
 
 
 def _compute_free_directions_3d(

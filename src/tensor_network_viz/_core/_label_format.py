@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Literal
 
 _MATTEXT_ROMAN_ESCAPE_RE = re.compile(r"([#%&_{}~^\\$ ])")
@@ -159,6 +160,7 @@ def _iter_dollar_runs(
     return runs
 
 
+@lru_cache(maxsize=4096)
 def format_tensor_node_label(text: str) -> str:
     """
     Format a tensor node name or bond / index edge label for Matplotlib (mini-markup + ``$...$``).

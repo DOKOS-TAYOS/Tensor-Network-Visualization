@@ -128,7 +128,9 @@ def test_plot_tenpy_network_2d_draws_finite_mps() -> None:
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
     assert labels >= {"B0", "B1", "p", "vR", "vL"}
-    assert len(ax.lines) >= 1
+    from plotting_helpers import line_collection_segment_count
+
+    assert line_collection_segment_count(ax) >= 1
 
 
 def test_plot_tenpy_network_2d_draws_infinite_mps() -> None:
@@ -137,7 +139,9 @@ def test_plot_tenpy_network_2d_draws_infinite_mps() -> None:
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
     assert labels >= {"B0", "B1", "B2", "p", "vR", "vL"}
-    assert len(ax.lines) == 6
+    from plotting_helpers import line_collection_segment_count
+
+    assert line_collection_segment_count(ax) == 6
 
 
 def test_plot_tenpy_network_3d_returns_3d_axes() -> None:

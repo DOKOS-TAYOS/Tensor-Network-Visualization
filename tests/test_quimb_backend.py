@@ -79,7 +79,9 @@ def test_plot_quimb_network_2d_draws_simple_contraction() -> None:
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
     assert labels >= {"A", "B", "bond"}
-    assert len(ax.lines) == 1
+    from plotting_helpers import line_collection_segment_count
+
+    assert line_collection_segment_count(ax) == 1
 
 
 def test_plot_quimb_network_3d_returns_3d_axes() -> None:
@@ -94,6 +96,8 @@ def test_plot_quimb_network_3d_returns_3d_axes() -> None:
 
 
 def test_plot_quimb_network_2d_draws_hypergraph_without_showing_virtual_hub() -> None:
+    from plotting_helpers import line_collection_segment_count
+
     a = _make_tensor(inds=("bond",), tag="A")
     b = _make_tensor(inds=("bond",), tag="B")
     c = _make_tensor(inds=("bond",), tag="C")
@@ -104,7 +108,7 @@ def test_plot_quimb_network_2d_draws_hypergraph_without_showing_virtual_hub() ->
     assert fig is ax.figure
     assert labels == {"A", "B", "C", "bond"}
     assert sum(1 for t in ax.texts if t.get_text() == "bond") == 6
-    assert len(ax.lines) == 3
+    assert line_collection_segment_count(ax) == 3
 
 
 def test_plot_quimb_network_3d_draws_hypergraph() -> None:
