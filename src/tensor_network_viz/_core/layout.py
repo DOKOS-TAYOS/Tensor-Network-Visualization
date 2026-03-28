@@ -46,31 +46,19 @@ _COMPONENT_GAP: float = 1.4
 _LAYER_SPACING: float = 0.55
 _LAYER_SEQUENCE: tuple[int, ...] = (0, 1, -1, 2, -2, 3, -3)
 
-_PHYSICAL_AXIS_NAMES: frozenset[str] = frozenset({"phys", "physical", "site"})
 
+def _is_dangling_leg_axis(graph: _GraphData, node_id: int, axis_index: int) -> bool:
+    """True when this node axis is the tensor endpoint of a dangling edge.
 
-def _axis_name_tokens(axis_name: str) -> list[str]:
-    tokens: list[str] = []
-    current: list[str] = []
-    for ch in axis_name.lower():
-        if ch.isalnum():
-            current.append(ch)
-        elif current:
-            tokens.append("".join(current))
-            current = []
-    if current:
-        tokens.append("".join(current))
-    return tokens
-
-
-def _is_physical_axis_name(axis_name: str | None) -> bool:
-    """True for axes treated as physical/open legs (strict stub clearance vs other nodes)."""
-    if not axis_name:
-        return False
-    key = axis_name.lower().strip()
-    if key in _PHYSICAL_AXIS_NAMES:
-        return True
-    return any(part in _PHYSICAL_AXIS_NAMES for part in _axis_name_tokens(key))
+    Open legs are the only indices treated as physical for stub clearance and draw bond styling.
+    """
+    for edge in graph.edges:
+        if edge.kind != "dangling":
+            continue
+        ep = edge.endpoints[0]
+        if ep.node_id == int(node_id) and ep.axis_index == int(axis_index):
+            return True
+    return False
 
 
 def _segment_point_min_distance_sq_2d(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
@@ -719,10 +707,7 @@ def _dangling_stub_segment_3d(
     o = np.asarray(origin, dtype=float).reshape(-1)[:3]
     d = np.asarray(direction_unit, dtype=float).reshape(-1)[:3]
     n = float(np.linalg.norm(d))
-    if n < 1e-9:
-        d = np.array([0.0, 0.0, 1.0], dtype=float)
-    else:
-        d = d / n
+    d = np.array([0.0, 0.0, 1.0], dtype=float) if n < 1e-9 else d / n
     s = max(float(draw_scale), 1e-6)
     return o + d * (_STUB_LAYOUT_R0 * s), o + d * (_STUB_LAYOUT_R1 * s)
 
@@ -915,7 +900,7 @@ def _compute_free_directions_2d(
             used_dirs = _used_axis_directions(directions, node_id=node_id, axis_count=axis_count)
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
             named_direction = _direction_from_axis_name(axis_name, dimensions=2)
-            strict_phys = _is_physical_axis_name(axis_name)
+            strict_phys = _is_dangling_leg_axis(graph, node_id, axis_index)
 
             toward = dirs_to_obstacles @ unit_circle.T
             away_scores = -np.min(toward, axis=0)
@@ -1035,7 +1020,7 @@ def _compute_free_directions_3d(
 
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
             named_direction = _direction_from_axis_name(axis_name, dimensions=3)
-            strict_phys = _is_physical_axis_name(axis_name)
+            strict_phys = _is_dangling_leg_axis(graph, node_id, axis_index)
             used_dirs = _used_axis_directions(directions, node_id=node_id, axis_count=axis_count)
             origin = positions[node_id]
             if (
@@ -1076,7 +1061,11 @@ def _compute_free_directions_3d(
                     if named_direction is not None:
                         dirs_try.append(np.asarray(named_direction, dtype=float))
                     dirs_try.extend(list(candidate_directions))
-                    r_disk = float(PlotConfig.DEFAULT_NODE_RADIUS) * max(float(draw_scale), 1e-6) * 1.08
+                    r_disk = (
+                        float(PlotConfig.DEFAULT_NODE_RADIUS)
+                        * max(float(draw_scale), 1e-6)
+                        * 1.08
+                    )
                     o3 = np.asarray(origin, dtype=float).reshape(-1)[:3]
                     other_ids = [oid for oid in positions if oid != node_id]
                     best_d: np.ndarray | None = None

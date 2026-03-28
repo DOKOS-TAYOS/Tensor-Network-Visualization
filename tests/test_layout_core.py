@@ -5,6 +5,7 @@ import math
 import numpy as np
 
 from tensor_network_viz import PlotConfig
+from tensor_network_viz._core._draw_common import _graph_edge_degree
 from tensor_network_viz._core.graph import (
     _EdgeEndpoint,
     _GraphData,
@@ -12,12 +13,11 @@ from tensor_network_viz._core.graph import (
     _make_dangling_edge,
     _make_node,
 )
-from tensor_network_viz._core._draw_common import _graph_edge_degree
 from tensor_network_viz._core.layout import (
     _compute_axis_directions,
     _compute_layout,
     _dangling_stub_segment_2d,
-    _is_physical_axis_name,
+    _is_dangling_leg_axis,
     _planar_contraction_bond_segments_2d,
     _segment_point_min_distance_sq_2d,
     _segments_cross_2d,
@@ -88,14 +88,24 @@ def test_graph_edge_degree_counts_all_edge_kinds() -> None:
     assert _graph_edge_degree(leaf_with_phys, 1) == 2
 
 
-def test_physical_axis_name_detection() -> None:
-    assert _is_physical_axis_name("phys") is True
-    assert _is_physical_axis_name("PHYS") is True
-    assert _is_physical_axis_name("my_phys_leg") is True
-    assert _is_physical_axis_name("physical") is True
-    assert _is_physical_axis_name("site") is True
-    assert _is_physical_axis_name("bond") is False
-    assert _is_physical_axis_name(None) is False
+def test_dangling_leg_axis_matches_open_edges() -> None:
+    g = _GraphData(
+        nodes={
+            0: _make_node("A", ("left", "p")),
+            1: _make_node("B", ("right",)),
+        },
+        edges=(
+            _make_contraction_edge(
+                _EdgeEndpoint(0, 0, "left"),
+                _EdgeEndpoint(1, 0, "right"),
+                name=None,
+            ),
+            _make_dangling_edge(_EdgeEndpoint(0, 1, "p"), name="p"),
+        ),
+    )
+    assert _is_dangling_leg_axis(g, 0, 1) is True
+    assert _is_dangling_leg_axis(g, 0, 0) is False
+    assert _is_dangling_leg_axis(g, 1, 0) is False
 
 
 def test_physical_stub_2d_segment_clears_neighbor_node_disk() -> None:

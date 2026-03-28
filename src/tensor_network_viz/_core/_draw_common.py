@@ -30,11 +30,16 @@ from .curves import (
 )
 from .graph import (
     _EdgeData,
+    _EdgeEndpoint,
     _endpoint_index_caption,
     _GraphData,
     _require_contraction_endpoints,
 )
-from .layout import AxisDirections, NodePositions, _orthogonal_unit
+from .layout import (
+    AxisDirections,
+    NodePositions,
+    _orthogonal_unit,
+)
 
 # Multiedge separation; keep in sync with `_LAYOUT_BOND_CURVE_OFFSET_FACTOR` in layout.py.
 _CURVE_OFFSET_FACTOR: float = 0.15
@@ -44,12 +49,32 @@ _CURVE_NEAR_PAIR_REF: float = 0.28
 _NODE_LABEL_MARGIN_FACTOR: float = 1.22
 # Small extra perpendicular gap (× layout ``scale``) for 2D bond index labels after half-linewidth.
 _INDEX_LABEL_2D_PERP_EXTRA: float = 0.014
-# Target span of edge index text vs on-screen bond length: (100 - 30*2) / (2.3 * 100).
-_EDGE_INDEX_LABEL_SPAN_FRAC: float = (100.0 - 30.0 * 2.0) / (2.3 * 100.0)
+# Tighter pad for stroke-flush captions (contractions / physical stubs); only ``hw + this``.
+_INDEX_LABEL_2D_STROKE_PAD: float = 0.0035
+# Scales ``~1 em`` in data units to extra perp offset so small/large fonts hug the stroke similarly.
+_STROKE_LABEL_EM_PERP_FRAC: float = 0.22
+# Long bonds (e.g. MERA) cap em-based perp offset vs ``hw`` (max font blows up em in data units).
+_STROKE_LABEL_EM_PERP_MAX_HW_MULT: float = 2.0
+# If true curve tangent vs blend diverge (dot product), keep left/right using blended normal.
+_STROKE_LABEL_GEOM_NORMAL_DOT_MIN: float = 0.5
+# Disk clearance as a fraction of shortest bond (``renderer._SHORTEST_EDGE_RADIUS_FRACTION``).
+_EDGE_INDEX_NODE_CLEAR_FRAC: float = 0.3
+# Target caption span × bond length (data units); contraction vs physical-open axis.
+_EDGE_INDEX_LABEL_SPAN_FRAC_CONTRACT: float = 0.45 * (1.0 - 2.0 * _EDGE_INDEX_NODE_CLEAR_FRAC)
+_EDGE_INDEX_LABEL_SPAN_FRAC_PHYS: float = 0.7 * (1.0 - _EDGE_INDEX_NODE_CLEAR_FRAC)
+# Weight of on-curve tangent when blending with chord (2D curved multiedges).
+_CURVE_TANGENT_BLEND_LAMBDA: float = 0.2
+# Global scale on all bond / stub index caption font sizes (~shortest-bond span still per edge).
+_EDGE_INDEX_LABEL_FONT_GLOBAL_SCALE: float = 0.8
+# Open / physical legs: drawn label is 20% larger than internal bond captions (after global scale).
+_PHYSICAL_INDEX_LABEL_FONT_SCALE: float = 1.2
+_AXIS_TIE_EPS: float = 1e-9
 # TextPath width under-estimates padded bbox slightly; calibrate so nominal fraction holds visually.
 _EDGE_INDEX_LABEL_WIDTH_CALIB: float = 1.12
 # Along-edge reference: edge of label aligns at this arc-length fraction from its endpoint.
 _EDGE_INDEX_LABEL_ALONG_FRAC: float = 0.3
+# Physical dangling legs (2D): inset from **open tip** — smaller ⇒ closer to the free end.
+_PHYS_DANGLING_2D_FRAC_FROM_TIP: float = 0.07
 # Draw order: bonds < node disks < edge index labels < tensor names (on top).
 _ZORDER_NODE_DISK: int = 3
 _ZORDER_EDGE_INDEX_LABEL: int = 5
@@ -115,7 +140,8 @@ def _view_outset_margin_data_units(
     scale: float,
     contraction_groups: _ContractionGroups,
 ) -> float:
-    """Absolute data-units padding so disks, stubs, curved bonds, loops, and labels stay in frame."""
+    """Absolute data-units padding so disks, stubs, curved bonds, loops, and
+    labels stay in frame."""
     curve = _max_perpendicular_bond_curve_offset(graph, positions, contraction_groups, scale)
     m = float(p.r + p.stub + curve)
     if any(edge.kind == "self" for edge in graph.edges):
@@ -169,6 +195,71 @@ def _line_halfwidth_data_2d(ax: Axes, lw_pt: float, xy: np.ndarray) -> float:
     return float(half_w_px / px_per_du)
 
 
+def _edge_index_font_em_data_2d(ax: Axes, xy: np.ndarray, fontsize_pt: float) -> float:
+    """Approximate one em in data units at *xy* (isotropic ``transData`` scale).
+
+    Matches the linewidth helper.
+    """
+    dpi = float(getattr(ax.figure, "dpi", None) or 100.0)
+    em_px = (float(fontsize_pt) / 72.0) * dpi
+    x, y = float(xy[0]), float(xy[1])
+    t0 = ax.transData.transform(np.array([[x, y]], dtype=float))[0]
+    t1 = ax.transData.transform(np.array([[x + 1.0, y]], dtype=float))[0]
+    t2 = ax.transData.transform(np.array([[x, y + 1.0]], dtype=float))[0]
+    px_per_du = max(abs(float(t1[0] - t0[0])), abs(float(t2[1] - t0[1])), 1e-12)
+    return float(em_px / px_per_du)
+
+
+def _edge_index_label_span_frac(*, is_physical: bool) -> float:
+    """Bond-length fraction used to size index caption text (non-physical vs physical axis)."""
+    return (
+        _EDGE_INDEX_LABEL_SPAN_FRAC_PHYS
+        if is_physical
+        else _EDGE_INDEX_LABEL_SPAN_FRAC_CONTRACT
+    )
+
+
+def _blend_bond_tangent_with_chord_2d(
+    t_curve_2d: np.ndarray,
+    bond_start_2d: np.ndarray,
+    bond_end_2d: np.ndarray,
+    *,
+    blend_lambda: float = _CURVE_TANGENT_BLEND_LAMBDA,
+) -> np.ndarray:
+    """Unit tangent blended toward chord; curved labels track the bulge slightly less."""
+    d = np.asarray(bond_end_2d, dtype=float).reshape(2) - np.asarray(
+        bond_start_2d, dtype=float
+    ).reshape(2)
+    L = float(np.linalg.norm(d))
+    if L < 1e-15:
+        v = np.asarray(t_curve_2d, dtype=float).reshape(2)
+        nv = float(np.linalg.norm(v))
+        return v / max(nv, 1e-15)
+    t_chord = d / L
+    t_c = np.asarray(t_curve_2d, dtype=float).reshape(2)
+    w = float(np.clip(blend_lambda, 0.0, 1.0))
+    b = (1.0 - w) * t_chord + w * t_c
+    nb = float(np.linalg.norm(b))
+    return b / max(nb, 1e-15)
+
+
+def _edge_index_label_is_vertical_axis_2d(d_out: np.ndarray) -> bool:
+    """True when |dy| >= |dx| for outward bond direction (vertical placement mode)."""
+    d = np.asarray(d_out, dtype=float).reshape(2)
+    return abs(float(d[1])) >= abs(float(d[0]))
+
+
+def _edge_index_label_axis_tie_vertical_2d(
+    d_out: np.ndarray, rng: np.random.Generator
+) -> bool:
+    """When |dx| and |dy| are tied, choose vertical vs horizontal placement at random."""
+    d = np.asarray(d_out, dtype=float).reshape(2)
+    adx, ady = abs(float(d[0])), abs(float(d[1]))
+    if abs(adx - ady) > _AXIS_TIE_EPS:
+        return ady >= adx
+    return bool(rng.random() < 0.5)
+
+
 def _polyline_arc_length_total(curve: np.ndarray) -> float:
     pts = np.asarray(curve, dtype=float)
     if int(pts.shape[0]) < 2:
@@ -209,7 +300,8 @@ def _point_tangent_along_polyline_from_start(
 def _point_tangent_along_polyline_from_end(
     curve: np.ndarray, dist: float
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Like ``_point_tangent_along_polyline_from_start`` but *dist* is measured from ``curve[-1]`` backward."""
+    """Like ``_point_tangent_along_polyline_from_start`` but *dist* counts from
+    ``curve[-1]`` backward."""
     pts = np.asarray(curve, dtype=float)
     total = _polyline_arc_length_total(pts)
     return _point_tangent_along_polyline_from_start(pts, max(0.0, total - float(dist)))
@@ -245,25 +337,103 @@ def _upright_screen_text_rotation_deg_raw(angle_deg: float) -> tuple[float, bool
     return float(a), flipped_180
 
 
+def _edge_index_text_kw_tangent_stroke_align(
+    *,
+    text_ep: Literal["left", "right"],
+    tangent: np.ndarray,
+    ax: Any,
+    dimensions: Literal[2, 3],
+) -> dict[str, Any]:
+    """Anchor on bond outer face: +n side uses bottom, −n uses top (swap if upright flips 180°)."""
+    rot_raw = _tangent_screen_angle_deg(ax, tangent, dimensions)
+    rot, flipped = _upright_screen_text_rotation_deg_raw(rot_raw)
+    va = "bottom" if text_ep == "left" else "top"
+    if flipped:
+        va = "top" if va == "bottom" else "bottom"
+    return {
+        "ha": "center",
+        "va": va,
+        "rotation": rot,
+        "rotation_mode": "anchor",
+    }
+
+
 def _edge_index_along_bond_text_kw(
     *,
     endpoint: Literal["left", "right"],
     tangent: np.ndarray,
     ax: Any,
     dimensions: Literal[2, 3],
+    va: str = "center",
+    ha: str | None = None,
 ) -> dict[str, Any]:
-    """``ha`` / ``rotation`` so the inner caption edge sits at the along-bond reference point *Q*."""
+    """``ha`` / ``va`` / ``rotation`` for index text along a bond.
+
+    Optional ``ha`` override after upright flip.
+    """
     rot_raw = _tangent_screen_angle_deg(ax, tangent, dimensions)
     rot, flipped = _upright_screen_text_rotation_deg_raw(rot_raw)
-    ha = "left" if endpoint == "left" else "right"
-    if flipped:
-        ha = "right" if ha == "left" else "left"
+    if ha is None:
+        ha_end = "left" if endpoint == "left" else "right"
+        if flipped:
+            ha_end = "right" if ha_end == "left" else "left"
+    else:
+        ha_end = ha
+        if flipped and ha_end in ("left", "right"):
+            ha_end = "right" if ha_end == "left" else "left"
     return {
-        "ha": ha,
-        "va": "center",
+        "ha": ha_end,
+        "va": va,
         "rotation": rot,
         "rotation_mode": "anchor",
     }
+
+
+def _edge_index_rim_arc_from_endpoint(*, r_global: float, half_polyline_length: float) -> float:
+    """Arc length along a bond from an endpoint reserved by the node disk.
+
+    *r_global* is the graph-wide tensor radius (``p.r`` ≈ shortest contraction bond × 0.3);
+    it does not vary per edge. Clamped so the rim does not lie past the bond midpoint.
+    """
+    return float(min(float(r_global), float(half_polyline_length) * (1.0 - 1e-9)))
+
+
+def _contraction_edge_index_label_2d_placement(
+    *,
+    Q: np.ndarray,
+    t_geom_2d: np.ndarray,
+    t_align_2d: np.ndarray,
+    text_ep: Literal["left", "right"],
+    p: _DrawScaleParams,
+    ax: Axes,
+    scale: float,
+    fontsize_pt: float,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """2D contraction bond: perp uses true curve tangent; rotation uses chord blend and em term."""
+    Q2 = np.asarray(Q[:2], dtype=float)
+    tg = np.asarray(t_geom_2d, dtype=float).reshape(2)
+    tg = tg / max(float(np.linalg.norm(tg)), 1e-15)
+    ta = np.asarray(t_align_2d, dtype=float).reshape(2)
+    ta = ta / max(float(np.linalg.norm(ta)), 1e-15)
+    n_blend = np.array([-float(ta[1]), float(ta[0])], dtype=float)
+    if float(np.dot(tg, ta)) >= float(_STROKE_LABEL_GEOM_NORMAL_DOT_MIN):
+        n = np.array([-float(tg[1]), float(tg[0])], dtype=float)
+        if float(np.dot(n, n_blend)) < 0.0:
+            n = -n
+    else:
+        n = n_blend
+    side = 1.0 if text_ep == "left" else -1.0
+    hw = _line_halfwidth_data_2d(ax, float(p.lw), Q2)
+    pad = float(_INDEX_LABEL_2D_STROKE_PAD) * float(scale)
+    em_du = _edge_index_font_em_data_2d(ax, Q2, float(fontsize_pt))
+    em_add = float(_STROKE_LABEL_EM_PERP_FRAC) * em_du
+    em_add = min(em_add, float(_STROKE_LABEL_EM_PERP_MAX_HW_MULT) * hw)
+    perp = hw + pad + em_add
+    pos = Q2 + side * n * perp
+    align_kw = _edge_index_text_kw_tangent_stroke_align(
+        text_ep=text_ep, tangent=ta, ax=ax, dimensions=2
+    )
+    return pos, align_kw
 
 
 def _bond_index_label_perp_offset(
@@ -279,7 +449,8 @@ def _bond_index_label_perp_offset(
     display = format_tensor_node_label(caption)
     n = len(display.strip())
     if dimensions == 2:
-        hw = _line_halfwidth_data_2d(cast(Axes, ax), float(p.lw), np.asarray(anchor[:2], dtype=float))
+        xy2 = np.asarray(anchor[:2], dtype=float)
+        hw = _line_halfwidth_data_2d(cast(Axes, ax), float(p.lw), xy2)
         excess = max(0, n - 5)
         span_extra = 0.021 * float(scale) * (float(excess) ** 0.82)
         bump = _INDEX_LABEL_2D_PERP_EXTRA * float(scale)
@@ -409,10 +580,9 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
                     config.node_color_degree_one if degree_one_mask[i] else config.node_color
                     for i in range(n)
                 ]
-                edges_ = [
-                    config.node_edge_color_degree_one if degree_one_mask[i] else config.node_edge_color
-                    for i in range(n)
-                ]
+                c1 = config.node_edge_color_degree_one
+                c0 = config.node_edge_color
+                edges_ = [c1 if degree_one_mask[i] else c0 for i in range(n)]
                 coll = PatchCollection(
                     patches,
                     facecolors=faces,
@@ -524,15 +694,6 @@ def _signed_bond_perpendicular(
     if (dimensions == 2 and perpendicular[1] < 0) or (dimensions == 3 and perpendicular[2] < 0):
         perpendicular = -perpendicular
     return perpendicular
-
-
-def _signed_curve_perpendicular_2d(tangent: np.ndarray) -> np.ndarray:
-    """Normal to the curve in 2D, with the same +y preference as ``_signed_bond_perpendicular``."""
-    perp = _perpendicular_2d(tangent)
-    perp = perp / max(float(np.linalg.norm(perp)), 1e-15)
-    if float(perp[1]) < 0.0:
-        perp = -perp
-    return perp
 
 
 def _node_label_clearance(p: _DrawScaleParams) -> float:
@@ -701,19 +862,27 @@ def _edge_index_fontsize_for_bond(
     bond_end: np.ndarray,
     ax: Any,
     dimensions: Literal[2, 3],
+    is_physical: bool = False,
 ) -> float:
-    """Font size so drawn caption width ~ ``_EDGE_INDEX_LABEL_SPAN_FRAC`` × on-screen bond length."""
+    """Font size from **this** bond's on-screen length × span fraction.
+
+    Disk radius is not used here. ``p.r`` (shortest-bond / global) affects label *position*
+    along edges elsewhere, not this value.
+    """
     show = format_tensor_node_label(caption).strip()
     if not show:
-        return 3.0
+        return 1.0
     bond_px = _bond_reference_span_px_for_font(ax, bond_start, bond_end, dimensions)
-    target_px = float(_EDGE_INDEX_LABEL_SPAN_FRAC) * bond_px
+    target_px = float(_edge_index_label_span_frac(is_physical=is_physical)) * bond_px
     dpi = float(getattr(ax.figure, "dpi", None) or 100.0)
     w_ref = _textpath_width_pts(show, fontsize_pt=10.0) * float(_EDGE_INDEX_LABEL_WIDTH_CALIB)
     if w_ref < 1e-12 or target_px < 1e-12:
-        return 3.0
+        return 1.0
     fs = 10.0 * target_px * 72.0 / (dpi * w_ref)
-    return float(np.clip(fs, 3.0, 22.0))
+    fs *= _EDGE_INDEX_LABEL_FONT_GLOBAL_SCALE
+    if is_physical:
+        fs *= _PHYSICAL_INDEX_LABEL_FONT_SCALE
+    return float(min(fs, 22.0))
 
 
 def _figure_relative_font_scale(fig: Figure, label_count: int) -> float:
@@ -787,28 +956,29 @@ def _plot_contraction_index_captions(
         return
     cvm = np.asarray(curve, dtype=float)
     L = _polyline_arc_length_total(cvm)
-    along = float(_EDGE_INDEX_LABEL_ALONG_FRAC) * L
-    Q_l, t_l = _point_tangent_along_polyline_from_start(cvm, along)
-    Q_r, t_r = _point_tangent_along_polyline_from_end(cvm, along)
+    L_half = 0.5 * L
+    rim_arc = _edge_index_rim_arc_from_endpoint(
+        r_global=float(p.r), half_polyline_length=L_half
+    )
+    s_slot = 0.5 * (rim_arc + L_half)
+    Q_l, t_l = _point_tangent_along_polyline_from_start(cvm, s_slot)
+    Q_r, t_r = _point_tangent_along_polyline_from_end(cvm, s_slot)
     delta = positions[right_id] - positions[left_id]
-    if dimensions == 2:
-        y_l = float(np.asarray(positions[left_id], dtype=float)[1])
-        y_r = float(np.asarray(positions[right_id], dtype=float)[1])
-        # Higher endpoint gets the "+perp" (visually upper) side; equal y keeps left / right default.
-        sign_l, sign_r = (-1, 1) if y_r > y_l + 1e-12 else (1, -1)
-    else:
+    if dimensions == 3:
         sign_l, sign_r = 1, -1
     perp_chord_3d = _signed_bond_perpendicular(delta, dimensions) if dimensions == 3 else None
     bond_start = np.asarray(positions[left_id], dtype=float)
     bond_end = np.asarray(positions[right_id], dtype=float)
+    bond_start_2d = np.asarray(bond_start[:2], dtype=float)
+    bond_end_2d = np.asarray(bond_end[:2], dtype=float)
     _cap_pairs: tuple[
-        tuple[str | None, np.ndarray, np.ndarray, int, Literal["left", "right"]],
-        tuple[str | None, np.ndarray, np.ndarray, int, Literal["left", "right"]],
+        tuple[_EdgeEndpoint, str | None, np.ndarray, np.ndarray, Literal["left", "right"]],
+        tuple[_EdgeEndpoint, str | None, np.ndarray, np.ndarray, Literal["left", "right"]],
     ] = (
-        (cap_l, Q_l, t_l, sign_l, "left"),
-        (cap_r, Q_r, t_r, sign_r, "right"),
+        (ep_l, cap_l, Q_l, t_l, "left"),
+        (ep_r, cap_r, Q_r, t_r, "right"),
     )
-    for cap, Q, t_fwd, sign, endpoint in _cap_pairs:
+    for _ep, cap, Q, t_fwd, text_ep in _cap_pairs:
         if not cap:
             continue
         fs = _edge_index_fontsize_for_bond(
@@ -817,7 +987,41 @@ def _plot_contraction_index_captions(
             bond_end=bond_end,
             ax=ax,
             dimensions=dimensions,
+            is_physical=False,
         )
+        tk = _edge_index_text_kwargs(
+            config,
+            fontsize=fs,
+            stub_kind="bond",
+            bbox_pad=p.index_bbox_pad,
+        )
+        if dimensions == 2:
+            t_curve_2d = np.asarray(t_fwd[:2], dtype=float)
+            t_blend = _blend_bond_tangent_with_chord_2d(
+                t_curve_2d,
+                bond_start_2d,
+                bond_end_2d,
+            )
+            ax2 = cast(Axes, ax)
+            pos2, align_kw = _contraction_edge_index_label_2d_placement(
+                Q=Q,
+                t_geom_2d=t_curve_2d,
+                t_align_2d=t_blend,
+                text_ep=text_ep,
+                p=p,
+                ax=ax2,
+                scale=scale,
+                fontsize_pt=float(fs),
+            )
+            tk = {**tk, **align_kw}
+            plotter.plot_text(
+                pos2,
+                format_tensor_node_label(cap),
+                **tk,
+            )
+            continue
+        assert perp_chord_3d is not None
+        sign = sign_l if text_ep == "left" else sign_r
         off = _bond_index_label_perp_offset(
             cap,
             p=p,
@@ -826,25 +1030,14 @@ def _plot_contraction_index_captions(
             ax=ax,
             anchor=Q,
         )
-        tk = _edge_index_text_kwargs(
-            config,
-            fontsize=fs,
-            stub_kind="bond",
-            bbox_pad=p.index_bbox_pad,
-        )
         align_kw = _edge_index_along_bond_text_kw(
-            endpoint=endpoint,
+            endpoint=text_ep,
             tangent=t_fwd,
             ax=ax,
             dimensions=dimensions,
         )
         tk = {**tk, **align_kw}
-        if dimensions == 2:
-            n_hat = _signed_curve_perpendicular_2d(np.asarray(t_fwd[:2], dtype=float))
-            pos = np.asarray(Q[:2], dtype=float) + float(sign) * n_hat * off
-        else:
-            assert perp_chord_3d is not None
-            pos = np.asarray(Q, dtype=float) + float(sign) * perp_chord_3d * off
+        pos = np.asarray(Q, dtype=float) + float(sign) * perp_chord_3d * off
         plotter.plot_text(
             pos,
             format_tensor_node_label(cap),
@@ -887,6 +1080,7 @@ def _draw_dangling_edge(
             bond_end=end,
             ax=ax,
             dimensions=dimensions,
+            is_physical=True,
         )
         dk = _edge_index_text_kwargs(
             config,
@@ -896,25 +1090,30 @@ def _draw_dangling_edge(
         )
         stub_seg = np.stack([np.asarray(start, dtype=float), np.asarray(end, dtype=float)], axis=0)
         Ls = _polyline_arc_length_total(stub_seg)
-        Q, t_stub = _point_tangent_along_polyline_from_start(stub_seg, float(_EDGE_INDEX_LABEL_ALONG_FRAC) * Ls)
         if dimensions == 2:
-            n_hat = _signed_curve_perpendicular_2d(np.asarray(t_stub[:2], dtype=float))
-            off = _bond_index_label_perp_offset(
-                raw_lbl,
+            ax2 = cast(Axes, ax)
+            start_2 = np.asarray(start[:2], dtype=float)
+            end_2 = np.asarray(end[:2], dtype=float)
+            # Dangling == open leg: hug the **tip** (see ``_PHYS_DANGLING_2D_FRAC_FROM_TIP``).
+            s_from_tip = float(_PHYS_DANGLING_2D_FRAC_FROM_TIP) * Ls
+            Qp, t_stub = _point_tangent_along_polyline_from_end(stub_seg, s_from_tip)
+            t_stub_2 = np.asarray(t_stub[:2], dtype=float)
+            t_blend = _blend_bond_tangent_with_chord_2d(t_stub_2, start_2, end_2)
+            label_pos, align_d = _contraction_edge_index_label_2d_placement(
+                Q=Qp,
+                t_geom_2d=t_stub_2,
+                t_align_2d=t_blend,
+                text_ep="left",
                 p=p,
+                ax=ax2,
                 scale=scale,
-                dimensions=2,
-                ax=ax,
-                anchor=Q,
+                fontsize_pt=float(fs_d),
             )
-            label_pos = np.asarray(Q[:2], dtype=float) + n_hat * off
-            dk = {
-                **dk,
-                **_edge_index_along_bond_text_kw(
-                    endpoint="left", tangent=t_stub, ax=ax, dimensions=2
-                ),
-            }
+            dk = {**dk, **align_d}
         else:
+            Q, t_stub = _point_tangent_along_polyline_from_start(
+                stub_seg, float(_EDGE_INDEX_LABEL_ALONG_FRAC) * Ls
+            )
             dstub = np.asarray(end, dtype=float) - np.asarray(start, dtype=float)
             n3 = _signed_bond_perpendicular(dstub, 3)
             off = _bond_index_label_perp_offset(
@@ -1041,6 +1240,7 @@ def _draw_self_loop_edge(
                 bond_end=loop_span_b,
                 ax=ax,
                 dimensions=dimensions,
+                is_physical=False,
             )
             tk_a = _edge_index_text_kwargs(config, fontsize=fs_a, bbox_pad=p.index_bbox_pad)
             tk_a = {
@@ -1061,6 +1261,7 @@ def _draw_self_loop_edge(
                 bond_end=loop_span_b,
                 ax=ax,
                 dimensions=dimensions,
+                is_physical=False,
             )
             tk_b = _edge_index_text_kwargs(config, fontsize=fs_b, bbox_pad=p.index_bbox_pad)
             tk_b = {
