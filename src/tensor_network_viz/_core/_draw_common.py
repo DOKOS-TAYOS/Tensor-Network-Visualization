@@ -68,6 +68,8 @@ _CURVE_TANGENT_BLEND_LAMBDA: float = 0.2
 _EDGE_INDEX_LABEL_FONT_GLOBAL_SCALE: float = 0.8
 # Open / physical legs: drawn label is 20% larger than internal bond captions (after global scale).
 _PHYSICAL_INDEX_LABEL_FONT_SCALE: float = 1.2
+# All 3D index + tensor labels scale vs 2D (depth reads smaller; sizing uses data-space bond span).
+_LABEL_FONT_3D_SCALE: float = 1.2
 _AXIS_TIE_EPS: float = 1e-9
 # TextPath width under-estimates padded bbox slightly; calibrate so nominal fraction holds visually.
 _EDGE_INDEX_LABEL_WIDTH_CALIB: float = 1.12
@@ -243,6 +245,127 @@ def _blend_bond_tangent_with_chord_2d(
     return b / max(nb, 1e-15)
 
 
+def _blend_bond_tangent_with_chord_3d(
+    t_curve_3d: np.ndarray,
+    bond_start_3d: np.ndarray,
+    bond_end_3d: np.ndarray,
+    *,
+    blend_lambda: float = _CURVE_TANGENT_BLEND_LAMBDA,
+) -> np.ndarray:
+    """3D bond: same chord blend as 2D, for label alignment in world space."""
+    d = np.asarray(bond_end_3d, dtype=float).reshape(3) - np.asarray(
+        bond_start_3d, dtype=float
+    ).reshape(3)
+    L = float(np.linalg.norm(d))
+    if L < 1e-15:
+        v = np.asarray(t_curve_3d, dtype=float).reshape(3)
+        nv = float(np.linalg.norm(v))
+        return v / max(nv, 1e-15)
+    t_chord = d / L
+    t_c = np.asarray(t_curve_3d, dtype=float).reshape(3)
+    w = float(np.clip(blend_lambda, 0.0, 1.0))
+    b = (1.0 - w) * t_chord + w * t_c
+    nb = float(np.linalg.norm(b))
+    return b / max(nb, 1e-15)
+
+
+def _stroke_index_normal_screen_unit_2d(
+    tg_scr: np.ndarray,
+    ta_scr: np.ndarray,
+) -> np.ndarray:
+    """Unit normal in display plane; matches 2D stroke label left/right side choice."""
+    tg = np.asarray(tg_scr, dtype=float).reshape(2)
+    tg = tg / max(float(np.linalg.norm(tg)), 1e-15)
+    ta = np.asarray(ta_scr, dtype=float).reshape(2)
+    ta = ta / max(float(np.linalg.norm(ta)), 1e-15)
+    n_blend = np.array([-float(ta[1]), float(ta[0])], dtype=float)
+    if float(np.dot(tg, ta)) >= float(_STROKE_LABEL_GEOM_NORMAL_DOT_MIN):
+        n = np.array([-float(tg[1]), float(tg[0])], dtype=float)
+        if float(np.dot(n, n_blend)) < 0.0:
+            n = -n
+    else:
+        n = n_blend
+    nn = float(np.linalg.norm(n))
+    return n / max(nn, 1e-15)
+
+
+def _nominal_figure_px_per_data_unit_3d(ax: Any) -> float:
+    """Approximate display pixels per data unit from figure size and axis spans only.
+
+    No camera projection: the max x/y/z extent is mapped to the smaller figure side in pixels.
+    """
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    z0, z1 = ax.get_zlim()
+    span = max(float(x1 - x0), float(y1 - y0), float(z1 - z0), 1e-9)
+    dpi = float(getattr(ax.figure, "dpi", None) or 100.0)
+    w_in, h_in = ax.figure.get_size_inches()
+    min_px = float(min(w_in, h_in) * dpi)
+    return float(min_px / span)
+
+
+def _stroke_perp_distance_data_units_3d(
+    ax: Any,
+    p: _DrawScaleParams,
+    scale: float,
+    fontsize_pt: float,
+) -> float:
+    """Perpendicular stroke clearance in data units (nominal px/du; same layers as 2D)."""
+    px_per_du = _nominal_figure_px_per_data_unit_3d(ax)
+    dpi = float(getattr(ax.figure, "dpi", None) or 100.0)
+    hw_px = (float(p.lw) / 72.0) * dpi * 0.5
+    hw_du = hw_px / max(px_per_du, 1e-15)
+    pad_du = float(_INDEX_LABEL_2D_STROKE_PAD) * float(scale)
+    em_px = (float(fontsize_pt) / 72.0) * dpi * float(_STROKE_LABEL_EM_PERP_FRAC)
+    em_du = em_px / max(px_per_du, 1e-15)
+    em_du = min(em_du, float(_STROKE_LABEL_EM_PERP_MAX_HW_MULT) * hw_du)
+    return float(hw_du + pad_du + em_du)
+
+
+def _contraction_edge_index_label_3d_placement(
+    *,
+    Q: np.ndarray,
+    t_geom_3d: np.ndarray,
+    t_align_3d: np.ndarray,
+    text_ep: Literal["left", "right"],
+    p: _DrawScaleParams,
+    ax: Any,
+    scale: float,
+    fontsize_pt: float,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """3D contraction: offset in data units from tangents only (no camera projection)."""
+    Q3 = np.asarray(Q[:3], dtype=float).reshape(3)
+    tg_u = np.asarray(t_geom_3d, dtype=float).reshape(3)
+    tg_u = tg_u / max(float(np.linalg.norm(tg_u)), 1e-15)
+    ta_u = np.asarray(t_align_3d, dtype=float).reshape(3)
+    ta_u = ta_u / max(float(np.linalg.norm(ta_u)), 1e-15)
+    g_perp = tg_u - float(np.dot(tg_u, ta_u)) * ta_u
+    gn = float(np.linalg.norm(g_perp))
+    if gn < 1e-12:
+        n_world = _perpendicular_3d(ta_u)
+        n_world = n_world / max(float(np.linalg.norm(n_world)), 1e-15)
+    else:
+        e2 = g_perp / gn
+        tg_xy = np.array(
+            [float(np.dot(tg_u, ta_u)), float(np.dot(tg_u, e2))],
+            dtype=float,
+        )
+        ta_xy = np.array([1.0, 0.0], dtype=float)
+        n2 = _stroke_index_normal_screen_unit_2d(tg_xy, ta_xy)
+        n_world = n2[0] * ta_u + n2[1] * e2
+    side = 1.0 if text_ep == "left" else -1.0
+    perp_du = _stroke_perp_distance_data_units_3d(ax, p, scale, fontsize_pt)
+    pos = Q3 + side * n_world * perp_du
+    align_kw = _edge_index_text_kw_tangent_stroke_align(
+        text_ep=text_ep,
+        tangent=t_align_3d,
+        ax=ax,
+        dimensions=3,
+        data_xy_3d=True,
+    )
+    return pos, align_kw
+
+
 def _edge_index_label_is_vertical_axis_2d(d_out: np.ndarray) -> bool:
     """True when |dy| >= |dx| for outward bond direction (vertical placement mode)."""
     d = np.asarray(d_out, dtype=float).reshape(2)
@@ -311,12 +434,33 @@ def _tangent_screen_angle_deg(
     ax: Any,
     tangent: np.ndarray,
     dimensions: Literal[2, 3],
+    *,
+    world_anchor: np.ndarray | None = None,
+    data_xy_3d: bool = False,
 ) -> float:
     """Counter-clockwise degrees for the on-screen direction of *tangent*."""
     t = np.asarray(tangent, dtype=float)
     if dimensions == 2:
         return float(math.degrees(math.atan2(float(t[1]), float(t[0]))))
+    if data_xy_3d:
+        t3 = np.asarray(tangent, dtype=float).reshape(3)
+        return float(math.degrees(math.atan2(float(t3[1]), float(t3[0]))))
     M = ax.get_proj()
+    if world_anchor is not None:
+        q = np.asarray(world_anchor, dtype=float).reshape(3)
+        tu = np.asarray(t, dtype=float).reshape(3)
+        nrm = float(np.linalg.norm(tu))
+        if nrm < 1e-15:
+            return 0.0
+        tu = tu / nrm
+        x0, y0, _ = proj3d.proj_transform(float(q[0]), float(q[1]), float(q[2]), M)
+        x1, y1, _ = proj3d.proj_transform(
+            float(q[0] + tu[0]),
+            float(q[1] + tu[1]),
+            float(q[2] + tu[2]),
+            M,
+        )
+        return float(math.degrees(math.atan2(float(y1 - y0), float(x1 - x0))))
     x0, y0, _ = proj3d.proj_transform(0.0, 0.0, 0.0, M)
     x1, y1, _ = proj3d.proj_transform(float(t[0]), float(t[1]), float(t[2]), M)
     return float(math.degrees(math.atan2(float(y1 - y0), float(x1 - x0))))
@@ -343,9 +487,17 @@ def _edge_index_text_kw_tangent_stroke_align(
     tangent: np.ndarray,
     ax: Any,
     dimensions: Literal[2, 3],
+    world_anchor: np.ndarray | None = None,
+    data_xy_3d: bool = False,
 ) -> dict[str, Any]:
     """Anchor on bond outer face: +n side uses bottom, −n uses top (swap if upright flips 180°)."""
-    rot_raw = _tangent_screen_angle_deg(ax, tangent, dimensions)
+    rot_raw = _tangent_screen_angle_deg(
+        ax,
+        tangent,
+        dimensions,
+        world_anchor=world_anchor,
+        data_xy_3d=data_xy_3d,
+    )
     rot, flipped = _upright_screen_text_rotation_deg_raw(rot_raw)
     va = "bottom" if text_ep == "left" else "top"
     if flipped:
@@ -415,13 +567,7 @@ def _contraction_edge_index_label_2d_placement(
     tg = tg / max(float(np.linalg.norm(tg)), 1e-15)
     ta = np.asarray(t_align_2d, dtype=float).reshape(2)
     ta = ta / max(float(np.linalg.norm(ta)), 1e-15)
-    n_blend = np.array([-float(ta[1]), float(ta[0])], dtype=float)
-    if float(np.dot(tg, ta)) >= float(_STROKE_LABEL_GEOM_NORMAL_DOT_MIN):
-        n = np.array([-float(tg[1]), float(tg[0])], dtype=float)
-        if float(np.dot(n, n_blend)) < 0.0:
-            n = -n
-    else:
-        n = n_blend
+    n = _stroke_index_normal_screen_unit_2d(tg, ta)
     side = 1.0 if text_ep == "left" else -1.0
     hw = _line_halfwidth_data_2d(ax, float(p.lw), Q2)
     pad = float(_INDEX_LABEL_2D_STROKE_PAD) * float(scale)
@@ -444,8 +590,13 @@ def _bond_index_label_perp_offset(
     dimensions: Literal[2, 3],
     ax: Any,
     anchor: np.ndarray,
+    world_perp_dir: np.ndarray | None = None,
 ) -> float:
-    """Distance along the bond normal from centerline to the text anchor (2D: tight to stroke)."""
+    """Distance from curve to label along the outward normal (2D: data units at *anchor*).
+
+    3D: when *world_perp_dir* is a unit direction in world space, return world distance so the
+    on-screen offset matches the 2D stroke + caption-padding stack (pixels).
+    """
     display = format_tensor_node_label(caption)
     n = len(display.strip())
     if dimensions == 2:
@@ -455,6 +606,21 @@ def _bond_index_label_perp_offset(
         span_extra = 0.021 * float(scale) * (float(excess) ** 0.82)
         bump = _INDEX_LABEL_2D_PERP_EXTRA * float(scale)
         return float(hw + span_extra + bump)
+    if world_perp_dir is not None:
+        px_per_du = _nominal_figure_px_per_data_unit_3d(ax)
+        excess = max(0, n - 5)
+        span_extra_data = 0.021 * float(scale) * (float(excess) ** 0.82)
+        bump_data = float(_INDEX_LABEL_2D_PERP_EXTRA) * float(scale)
+        dpi = float(getattr(ax.figure, "dpi", None) or 100.0)
+        hw_px = (float(p.lw) / 72.0) * dpi * 0.5
+        span_px = span_extra_data * px_per_du
+        bump_px = bump_data * px_per_du
+        total_px = hw_px + span_px + bump_px
+        if px_per_du < 1e-12:
+            span_extra = 0.026 * float(scale) * (max(0, n - 1) ** 0.8)
+            base = max(float(p.label_offset) * 0.40, float(p.r) * 0.26)
+            return float(base + span_extra * 1.05)
+        return float(total_px / px_per_du)
     span_extra = 0.026 * float(scale) * (max(0, n - 1) ** 0.8)
     base = max(float(p.label_offset) * 0.40, float(p.r) * 0.26)
     return float(base + span_extra * 1.05)
@@ -475,9 +641,9 @@ _UNIT_NODE_TRIS: np.ndarray = np.asarray(
     dtype=float,
 )
 _OCTAHEDRON_TRI_COUNT: int = int(_UNIT_NODE_TRIS.shape[0])
-# 3D bond curves use ``p.lw``; octahedron rims are drawn finer so solids read lighter than bonds.
-_OCTAHEDRON_EDGE_LINEWIDTH_FACTOR: float = 0.48
-_OCTAHEDRON_EDGE_LINEWIDTH_MIN: float = 0.1
+# 3D bond curves use ``p.lw``; octahedron rims are drawn much finer so edges stay subtle vs bonds.
+_OCTAHEDRON_EDGE_LINEWIDTH_FACTOR: float = 0.18
+_OCTAHEDRON_EDGE_LINEWIDTH_MIN: float = 0.04
 
 
 def _graph_edge_degree(graph: _GraphData, node_id: int) -> int:
@@ -804,6 +970,17 @@ def _textpath_width_pts(text: str, *, fontsize_pt: float) -> float:
     return float(tp.get_extents().width)
 
 
+def _bond_endpoints_xyz3(start: np.ndarray, end: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Promote (x,y) or (x,y,z) endpoints to 3-vectors for mplot3d projection."""
+    s = np.asarray(start, dtype=float).reshape(-1)
+    e = np.asarray(end, dtype=float).reshape(-1)
+    s3 = np.zeros(3, dtype=float)
+    e3 = np.zeros(3, dtype=float)
+    s3[: min(3, s.size)] = s[: min(3, s.size)]
+    e3[: min(3, e.size)] = e[: min(3, e.size)]
+    return s3, e3
+
+
 def _bond_reference_span_px_for_font(
     ax: Any,
     bond_start: np.ndarray,
@@ -818,14 +995,19 @@ def _bond_reference_span_px_for_font(
     ``L_data * (‖∂T/∂x‖ + ‖∂T/∂y‖) / 2`` in 2D avoids lateral legs reading tiny when Matplotlib's
     ``transData`` is temporarily anisotropic before the first full draw (horizontal vs
     vertical ``phys`` on MPS) without pinning all legs to the most inflated scale.
+
+    In 3D, ``bond_px = L_3 * px_per_du`` with ``L_3`` the Euclidean segment length in data
+    space and ``px_per_du`` from figure size and axis spans only (see
+    ``_nominal_figure_px_per_data_unit_3d``) — no camera projection.
+    Pairs ``left``/``right`` share fontsize via ``peer_captions_for_width``.
     """
     s = np.asarray(bond_start, dtype=float)
     e = np.asarray(bond_end, dtype=float)
-    L = float(np.linalg.norm(e - s))
-    if L < 1e-15:
-        return 0.0
-    mid = 0.5 * (s + e)
     if dimensions == 2:
+        L = float(np.linalg.norm(e - s))
+        if L < 1e-15:
+            return 0.0
+        mid = 0.5 * (s + e)
         ax2 = cast(Axes, ax)
         x, y = float(mid[0]), float(mid[1])
         T = ax2.transData.transform
@@ -835,24 +1017,12 @@ def _bond_reference_span_px_for_font(
         ex = float(np.hypot(float(px[0] - p0[0]), float(px[1] - p0[1])))
         ey = float(np.hypot(float(py[0] - p0[0]), float(py[1] - p0[1])))
         return float(L * 0.5 * (ex + ey))
-    M = ax.get_proj()
-    u = (e - s) / L
-    m = np.asarray(mid[:3], dtype=float)
-    eps = max(1e-6, float(1e-4 * L))
-    step = np.asarray(u * eps, dtype=float)
-    xs0, ys0, _ = proj3d.proj_transform(float(m[0]), float(m[1]), float(m[2]), M)
-    xs1, ys1, _ = proj3d.proj_transform(
-        float(m[0] + step[0]),
-        float(m[1] + step[1]),
-        float(m[2] + step[2]),
-        M,
-    )
-    row0 = np.asarray([[float(xs0), float(ys0)]], dtype=float)
-    row1 = np.asarray([[float(xs1), float(ys1)]], dtype=float)
-    p0 = ax.transData.transform(row0)[0]
-    p1 = ax.transData.transform(row1)[0]
-    d_step = float(np.hypot(float(p1[0] - p0[0]), float(p1[1] - p0[1])))
-    return float(L * d_step / max(eps, 1e-15))
+    s3, e3 = _bond_endpoints_xyz3(bond_start, bond_end)
+    L3 = float(np.linalg.norm(e3 - s3))
+    if L3 < 1e-15:
+        return 0.0
+    k = _nominal_figure_px_per_data_unit_3d(ax)
+    return float(L3 * k)
 
 
 def _edge_index_fontsize_for_bond(
@@ -863,11 +1033,15 @@ def _edge_index_fontsize_for_bond(
     ax: Any,
     dimensions: Literal[2, 3],
     is_physical: bool = False,
+    peer_captions_for_width: tuple[str, ...] | None = None,
 ) -> float:
     """Font size from **this** bond's on-screen length × span fraction.
 
     Disk radius is not used here. ``p.r`` (shortest-bond / global) affects label *position*
     along edges elsewhere, not this value.
+
+    When ``peer_captions_for_width`` lists both endpoint captions on the same bond, use the
+    widest TextPath among them so ``left`` / ``right`` (etc.) share one fontsize.
     """
     show = format_tensor_node_label(caption).strip()
     if not show:
@@ -875,14 +1049,34 @@ def _edge_index_fontsize_for_bond(
     bond_px = _bond_reference_span_px_for_font(ax, bond_start, bond_end, dimensions)
     target_px = float(_edge_index_label_span_frac(is_physical=is_physical)) * bond_px
     dpi = float(getattr(ax.figure, "dpi", None) or 100.0)
-    w_ref = _textpath_width_pts(show, fontsize_pt=10.0) * float(_EDGE_INDEX_LABEL_WIDTH_CALIB)
+    if peer_captions_for_width is not None and len(peer_captions_for_width) > 1:
+        w_ref = 0.0
+        for raw_peer in peer_captions_for_width:
+            peer_show = format_tensor_node_label(raw_peer).strip()
+            if not peer_show:
+                continue
+            w_ref = max(
+                w_ref,
+                _textpath_width_pts(peer_show, fontsize_pt=10.0)
+                * float(_EDGE_INDEX_LABEL_WIDTH_CALIB),
+            )
+        if w_ref < 1e-12:
+            w_ref = (
+                _textpath_width_pts(show, fontsize_pt=10.0)
+                * float(_EDGE_INDEX_LABEL_WIDTH_CALIB)
+            )
+    else:
+        w_ref = _textpath_width_pts(show, fontsize_pt=10.0) * float(_EDGE_INDEX_LABEL_WIDTH_CALIB)
     if w_ref < 1e-12 or target_px < 1e-12:
         return 1.0
     fs = 10.0 * target_px * 72.0 / (dpi * w_ref)
     fs *= _EDGE_INDEX_LABEL_FONT_GLOBAL_SCALE
     if is_physical:
         fs *= _PHYSICAL_INDEX_LABEL_FONT_SCALE
-    return float(min(fs, 22.0))
+    if dimensions == 3:
+        fs *= _LABEL_FONT_3D_SCALE
+    cap = 22.0 * _LABEL_FONT_3D_SCALE if dimensions == 3 else 22.0
+    return float(min(fs, cap))
 
 
 def _figure_relative_font_scale(fig: Figure, label_count: int) -> float:
@@ -963,10 +1157,6 @@ def _plot_contraction_index_captions(
     s_slot = 0.5 * (rim_arc + L_half)
     Q_l, t_l = _point_tangent_along_polyline_from_start(cvm, s_slot)
     Q_r, t_r = _point_tangent_along_polyline_from_end(cvm, s_slot)
-    delta = positions[right_id] - positions[left_id]
-    if dimensions == 3:
-        sign_l, sign_r = 1, -1
-    perp_chord_3d = _signed_bond_perpendicular(delta, dimensions) if dimensions == 3 else None
     bond_start = np.asarray(positions[left_id], dtype=float)
     bond_end = np.asarray(positions[right_id], dtype=float)
     bond_start_2d = np.asarray(bond_start[:2], dtype=float)
@@ -978,6 +1168,12 @@ def _plot_contraction_index_captions(
         (ep_l, cap_l, Q_l, t_l, "left"),
         (ep_r, cap_r, Q_r, t_r, "right"),
     )
+    peer_caps: tuple[str, ...] = tuple(
+        c for c in (cap_l, cap_r) if c and format_tensor_node_label(c).strip()
+    )
+    peer_for_width: tuple[str, ...] | None = (
+        peer_caps if len(peer_caps) > 1 else None
+    )
     for _ep, cap, Q, t_fwd, text_ep in _cap_pairs:
         if not cap:
             continue
@@ -988,6 +1184,7 @@ def _plot_contraction_index_captions(
             ax=ax,
             dimensions=dimensions,
             is_physical=False,
+            peer_captions_for_width=peer_for_width,
         )
         tk = _edge_index_text_kwargs(
             config,
@@ -1020,26 +1217,24 @@ def _plot_contraction_index_captions(
                 **tk,
             )
             continue
-        assert perp_chord_3d is not None
-        sign = sign_l if text_ep == "left" else sign_r
-        off = _bond_index_label_perp_offset(
-            cap,
-            p=p,
-            scale=scale,
-            dimensions=dimensions,
-            ax=ax,
-            anchor=Q,
+        t_blend_3d = _blend_bond_tangent_with_chord_3d(
+            np.asarray(t_fwd, dtype=float).reshape(3),
+            bond_start,
+            bond_end,
         )
-        align_kw = _edge_index_along_bond_text_kw(
-            endpoint=text_ep,
-            tangent=t_fwd,
+        pos3, align_kw = _contraction_edge_index_label_3d_placement(
+            Q=np.asarray(Q, dtype=float),
+            t_geom_3d=np.asarray(t_fwd, dtype=float).reshape(3),
+            t_align_3d=t_blend_3d,
+            text_ep=text_ep,
+            p=p,
             ax=ax,
-            dimensions=dimensions,
+            scale=scale,
+            fontsize_pt=float(fs),
         )
         tk = {**tk, **align_kw}
-        pos = np.asarray(Q, dtype=float) + float(sign) * perp_chord_3d * off
         plotter.plot_text(
-            pos,
+            pos3,
             format_tensor_node_label(cap),
             **tk,
         )
@@ -1111,26 +1306,26 @@ def _draw_dangling_edge(
             )
             dk = {**dk, **align_d}
         else:
-            Q, t_stub = _point_tangent_along_polyline_from_start(
-                stub_seg, float(_EDGE_INDEX_LABEL_ALONG_FRAC) * Ls
+            s_from_tip = float(_PHYS_DANGLING_2D_FRAC_FROM_TIP) * Ls
+            Qp, t_stub = _point_tangent_along_polyline_from_end(stub_seg, s_from_tip)
+            start_3 = np.asarray(start, dtype=float).reshape(3)
+            end_3 = np.asarray(end, dtype=float).reshape(3)
+            t_blend_3d = _blend_bond_tangent_with_chord_3d(
+                np.asarray(t_stub, dtype=float).reshape(3),
+                start_3,
+                end_3,
             )
-            dstub = np.asarray(end, dtype=float) - np.asarray(start, dtype=float)
-            n3 = _signed_bond_perpendicular(dstub, 3)
-            off = _bond_index_label_perp_offset(
-                raw_lbl,
+            label_pos, align_d = _contraction_edge_index_label_3d_placement(
+                Q=Qp,
+                t_geom_3d=np.asarray(t_stub, dtype=float).reshape(3),
+                t_align_3d=t_blend_3d,
+                text_ep="left",
                 p=p,
-                scale=scale,
-                dimensions=3,
                 ax=ax,
-                anchor=Q,
+                scale=scale,
+                fontsize_pt=float(fs_d),
             )
-            label_pos = np.asarray(Q, dtype=float) + n3 * off
-            dk = {
-                **dk,
-                **_edge_index_along_bond_text_kw(
-                    endpoint="left", tangent=t_stub, ax=ax, dimensions=3
-                ),
-            }
+            dk = {**dk, **align_d}
         plotter.plot_text(
             label_pos,
             format_tensor_node_label(raw_lbl),
@@ -1209,6 +1404,13 @@ def _draw_self_loop_edge(
         along_loop = float(_EDGE_INDEX_LABEL_ALONG_FRAC) * L_loop
         Q_a, t_a = _point_tangent_along_polyline_from_start(sub_loop, along_loop)
         Q_b, t_b = _point_tangent_along_polyline_from_end(sub_loop, along_loop)
+        peer_loop_caps: tuple[str, ...] = tuple(
+            c for c in (ca, cb) if c and format_tensor_node_label(c).strip()
+        )
+        peer_loop_width: tuple[str, ...] | None = (
+            peer_loop_caps if len(peer_loop_caps) > 1 else None
+        )
+        perp3 = dir_unit if dimensions == 3 else None
         if ca:
             off_a_mag = _bond_index_label_perp_offset(
                 ca,
@@ -1217,6 +1419,7 @@ def _draw_self_loop_edge(
                 dimensions=dimensions,
                 ax=ax,
                 anchor=Q_a,
+                world_perp_dir=perp3,
             )
             off_a = dir_unit * off_a_mag
         else:
@@ -1229,6 +1432,7 @@ def _draw_self_loop_edge(
                 dimensions=dimensions,
                 ax=ax,
                 anchor=Q_b,
+                world_perp_dir=perp3,
             )
             off_b = -dir_unit * off_b_mag * 0.88
         else:
@@ -1241,6 +1445,7 @@ def _draw_self_loop_edge(
                 ax=ax,
                 dimensions=dimensions,
                 is_physical=False,
+                peer_captions_for_width=peer_loop_width,
             )
             tk_a = _edge_index_text_kwargs(config, fontsize=fs_a, bbox_pad=p.index_bbox_pad)
             tk_a = {
@@ -1262,6 +1467,7 @@ def _draw_self_loop_edge(
                 ax=ax,
                 dimensions=dimensions,
                 is_physical=False,
+                peer_captions_for_width=peer_loop_width,
             )
             tk_b = _edge_index_text_kwargs(config, fontsize=fs_b, bbox_pad=p.index_bbox_pad)
             tk_b = {
@@ -1502,6 +1708,9 @@ def _draw_labels(
                 pixel_radius=r_px,
                 fig=fig,
             )
+            if dimensions == 3:
+                cap_tensor = float(p.font_tensor_label_max) * _LABEL_FONT_3D_SCALE
+                fs = min(float(fs) * _LABEL_FONT_3D_SCALE, cap_tensor)
             plotter.plot_text(
                 pos,
                 display_name,
@@ -1536,7 +1745,9 @@ def _refit_tensor_labels_to_disks(
     labels = [t for t in ax.texts if t.get_gid() == _TENSOR_LABEL_GID]
     if not labels:
         return
-    fs_cap = float(p.font_tensor_label_max)
+    fs_cap = float(p.font_tensor_label_max) * (
+        _LABEL_FONT_3D_SCALE if dimensions == 3 else 1.0
+    )
     n_ts = len(labels)
     max_passes = 5 if n_ts <= 35 else (3 if n_ts <= 75 else 2)
     for _ in range(max_passes):
