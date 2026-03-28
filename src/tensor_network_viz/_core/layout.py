@@ -1062,9 +1062,7 @@ def _compute_free_directions_3d(
                         dirs_try.append(np.asarray(named_direction, dtype=float))
                     dirs_try.extend(list(candidate_directions))
                     r_disk = (
-                        float(PlotConfig.DEFAULT_NODE_RADIUS)
-                        * max(float(draw_scale), 1e-6)
-                        * 1.08
+                        float(PlotConfig.DEFAULT_NODE_RADIUS) * max(float(draw_scale), 1e-6) * 1.08
                     )
                     o3 = np.asarray(origin, dtype=float).reshape(-1)[:3]
                     other_ids = [oid for oid in positions if oid != node_id]

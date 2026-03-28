@@ -47,11 +47,12 @@ def show_tensor_network(
         engine: Rendering engine; supported values are "tensorkrowch",
             "tensornetwork", "quimb", "tenpy", and "einsum".
         view: "2d" or "3d" visualization mode.
-        config: Optional styling; uses defaults if None.
-        show_tensor_labels: Whether to display tensor names on nodes. None uses
-            config default.
-        show_index_labels: Whether to display axis names on edges. None uses
-            config default.
+        config: Optional styling; uses defaults if None. Use ``PlotConfig`` for
+            colors, layout, ``hover_labels`` (interactive hover tooltips), etc.
+        show_tensor_labels: Whether to display tensor names on nodes. ``None``
+            uses ``config.show_tensor_labels``.
+        show_index_labels: Whether to display axis names on edges. ``None``
+            uses ``config.show_index_labels``.
         show: If True, display the figure. In a Jupyter kernel this uses
             ``IPython.display.display(fig)`` (use ``pip install
             "tensor-network-visualization[jupyter]"`` and ``%matplotlib widget``

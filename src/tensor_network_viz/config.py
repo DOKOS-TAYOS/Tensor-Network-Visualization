@@ -11,9 +11,9 @@ ViewName: TypeAlias = Literal["2d", "3d"]
 class PlotConfig:
     """Configuration for tensor network plot styling.
 
-    Input may be a network-like object exposing `nodes` or `leaf_nodes`, or any
-    iterable of nodes. Each node must have `edges`, `axes_names` or
-    `axis_names`, and `name`. Each edge must have `node1`, `node2`, and `name`.
+    Used by ``show_tensor_network`` and backend ``plot_*_network_*`` helpers.
+    Label visibility can also be overridden per call via
+    ``show_tensor_network(..., show_tensor_labels=..., show_index_labels=...)``.
 
     Attributes:
         node_color: Fill color for tensor nodes (hex or named color).
@@ -41,9 +41,9 @@ class PlotConfig:
         layout_iterations: Force-directed layout iterations; None uses default (220).
         validate_positions: If True, warn when custom positions have unknown keys or
             wrong dimension count for the view.
-        refine_tensor_labels: If True, run a post-draw pass that shrinks tensor names so
-            they stay inside node disks (uses extra canvas draws). Set False for faster
-            plots when visual polish is less important.
+        refine_tensor_labels: If True, run post-draw passes that shrink tensor names so
+            they fit the node marker in 2D or 3D (uses extra canvas draws). Set False for
+            faster plots when visual polish is less important.
         hover_labels: If True, tensor names and bond index labels are hidden until the pointer
             hovers over a node or edge (2D: hit-testing in axes space; 3D: projected screen
             distance). Use an interactive Matplotlib window.

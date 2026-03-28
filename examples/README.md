@@ -1,21 +1,62 @@
 # Examples
 
-This folder contains runnable scripts for every supported backend plus one larger TensorKrowch
-example. For the full package guide, see `[../docs/guide.md](../docs/guide.md)`.
+Runnable scripts for every supported backend plus larger stress demos. For **installation**, API
+**modes**, and **`PlotConfig`**, see the [user README](../README.md) and the
+[intensive guide](../docs/guide.md).
 
-Run examples from the project root, using the project virtual environment or an equivalent Python
-environment with the needed optional dependencies installed.
+Run commands from the **repository root** with a virtual environment that has the matching optional
+dependency (or `pip install -e ".[dev]"` for everything needed by tests).
+
+## Copy-paste runs
+
+**Windows (PowerShell)** — from repo root:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[quimb]"
+python examples\quimb_demo.py mps 2d
+```
+
+**Linux / macOS:**
+
+```bash
+source .venv/bin/activate
+python -m pip install -e ".[quimb]"
+python examples/quimb_demo.py mps 2d
+```
+
+Swap `.[quimb]` for `.[tensorkrowch]`, `.[tensornetwork]`, `.[tenpy]`, `.[einsum]`, etc.
+
+Shared CLI helpers live in [`demo_cli.py`](demo_cli.py): **`add_hover_labels_argument`** adds
+`--hover-labels`, and **`demo_plot_config(args)`** returns **`None`** or **`PlotConfig(hover_labels=True)`**
+for the `config=` argument to **`show_tensor_network`**.
 
 ## Interactive labels (`--hover-labels`)
 
-Most example scripts accept `--hover-labels`: tensor names and bond indices appear in a tooltip when
-you hover over a node or edge (see `PlotConfig.hover_labels`). **2D** uses axes hit-testing; **3D**
-uses screen-space distance after projecting the graph. Use a normal interactive Matplotlib window;
-the flag has no visible effect with `--no-show` or PNG-only workflows.
+Most example scripts accept **`--hover-labels`**. That sets **`PlotConfig(hover_labels=True)`** so
+tensor names and bond indices appear when you **hover** over a node or edge:
+
+- **2D:** axes pick event hit-testing.
+- **3D:** screen-space distance after projecting the geometry.
+
+Requires a **real interactive** Matplotlib window (or **`%matplotlib widget`** in Jupyter). The
+flag has **no visible effect** with **`--no-show`** or PNG-only / **Agg** batch runs, because there
+is no pointer event loop.
+
+To use the same behavior directly in code:
+
+```python
+from tensor_network_viz import PlotConfig, show_tensor_network
+
+fig, ax = show_tensor_network(
+    network,
+    engine="quimb",
+    view="2d",
+    config=PlotConfig(figsize=(8, 6), hover_labels=True),
+)
+```
 
 ## `tensorkrowch_demo.py`
-
-Demonstrates the TensorKrowch backend with regular toy topologies.
 
 ```bash
 python examples/tensorkrowch_demo.py mps 2d
@@ -24,15 +65,9 @@ python examples/tensorkrowch_demo.py disconnected 2d
 python examples/tensorkrowch_demo.py mps 2d --from-list
 ```
 
-Shows:
-
-- `mps`, `mpo`, `peps`, `weird`, and `disconnected` examples
-- object-level dispatch with a full TensorKrowch network
-- subset-style dispatch by passing a list of nodes with `--from-list`
+Covers `mps`, `mpo`, `peps`, `weird`, `disconnected`; full network vs **subset** via `--from-list`.
 
 ## `tensornetwork_demo.py`
-
-Demonstrates the TensorNetwork backend using `tensornetwork.Node` collections.
 
 ```bash
 python examples/tensornetwork_demo.py mps 2d
@@ -41,16 +76,9 @@ python examples/tensornetwork_demo.py disconnected 2d
 python examples/tensornetwork_demo.py mps 2d --save mps.png --no-show
 ```
 
-Shows:
-
-- `mps`, `mpo`, `peps`, `weird`, and `disconnected` examples
-- non-interactive rendering with `--save` and `--no-show`
-- the iterable-of-nodes input style used by the TensorNetwork adapter
-
 ## `mera_tree_demo.py`
 
-Large topology: binary MERA (disentanglers + isometries on `2^L` sites) glued at the apex to a
-full binary tensor tree (TTN). Good for stressing layout on wide, deep graphs.
+Large binary MERA + TTN (layout stress test).
 
 ```bash
 python examples/mera_tree_demo.py 2d
@@ -60,9 +88,7 @@ python examples/mera_tree_demo.py 2d --save mera_tree.png --no-show
 
 ## `cubic_peps_demo.py`
 
-Volumetric cubic PEPS: one tensor per site on an `Lx * Ly * Lz` grid with face bonds. Defaults to
-3D view so the network reads in depth; node positions are computed by the library layout (the example
-does not set coordinates).
+Volumetric cubic PEPS on an `Lx × Ly × Lz` grid; **3D** view is the default.
 
 ```bash
 python examples/cubic_peps_demo.py
@@ -72,7 +98,7 @@ python examples/cubic_peps_demo.py 2d --save cubic_peps.png --no-show
 
 ## `quimb_demo.py`
 
-Demonstrates the Quimb backend, including a hypergraph-style example.
+Includes a **hyper-index** example.
 
 ```bash
 python examples/quimb_demo.py hyper 2d
@@ -81,15 +107,9 @@ python examples/quimb_demo.py weird 3d
 python examples/quimb_demo.py mps 2d --from-list --save quimb.png --no-show
 ```
 
-Shows:
-
-- `hyper`, `mps`, `mpo`, `peps`, `weird`, and `disconnected` examples
-- dispatch with a full `TensorNetwork`
-- dispatch with a list of tensors via `--from-list`
-
 ## `tenpy_demo.py`
 
-Demonstrates the TeNPy backend for both finite and infinite structures.
+Finite and infinite TeNPy structures.
 
 ```bash
 python examples/tenpy_demo.py mps 2d
@@ -98,15 +118,9 @@ python examples/tenpy_demo.py imps 2d
 python examples/tenpy_demo.py impo 3d --save tenpy-infinite.png --no-show
 ```
 
-Shows:
-
-- finite `mps` and `mpo`
-- infinite `imps` and `impo`
-- headless rendering and saving from the command line
-
 ## `einsum_demo.py`
 
-Demonstrates the `einsum` backend in both auto-traced and manual-trace modes.
+Auto-traced vs manual `pair_tensor` lists.
 
 ```bash
 python examples/einsum_demo.py mps 2d
@@ -116,20 +130,11 @@ python examples/einsum_demo.py disconnected 3d
 python examples/einsum_demo.py mps 2d --save einsum.png --no-show
 ```
 
-Shows:
-
-- `mps`, `peps`, and `disconnected` traces
-- `--mode auto` using `EinsumTrace` + `tensor_network_viz.einsum(...)`
-- `--mode manual` using ordered `pair_tensor` entries + `torch.einsum(...)`
-
-Note:
-
-- install `tensor-network-visualization[einsum]` if you want to execute the examples with PyTorch
+Install **`tensor-network-visualization[einsum]`** (PyTorch) if you execute contractions in the demo.
 
 ## `tn_tsp.py`
 
-Builds and visualizes the TensorKrowch tensor network used for a TSP formulation before
-contraction.
+TensorKrowch TSP tensor network (larger than toy demos).
 
 ```bash
 python examples/tn_tsp.py -n 4 --view 2d
@@ -137,13 +142,12 @@ python examples/tn_tsp.py -n 5 --view 3d
 python examples/tn_tsp.py --cities 6 --view 2d
 ```
 
-Useful when you want:
+## `demo_cli.py`
 
-- a larger TensorKrowch example than the toy demos
-- a concrete grid-like layout use case
-- an example tied to a real tensor-network modeling workflow
+Not a top-level entry point: **`add_hover_labels_argument`** and **`demo_plot_config`** for the
+other scripts.
 
-To apply everything, use
+## Run-all cheat sheet
 
 ```bash
 python examples/tensorkrowch_demo.py mps 2d
@@ -204,3 +208,7 @@ python examples/tn_tsp.py -n 6 --view 2d
 python examples/tn_tsp.py -n 6 --view 3d
 ```
 
+## See also
+
+- [README.md](../README.md) — **Modes**, **`show_tensor_network`**, **`PlotConfig`** table, short troubleshooting.
+- [docs/guide.md](../docs/guide.md) — Full manual, recipes, and **Troubleshooting** section.

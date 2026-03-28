@@ -121,12 +121,12 @@ Open an issue to discuss the backend and its API before implementing.
 
 ## Updating Documentation and Examples
 
-- **README.md** — high-level overview, installation, quick start, public API
-- **docs/guide.md** — extended usage, backend-specific notes, configuration
-- **examples/** — runnable scripts; add new demos when introducing backends or notable features
+- **README.md** — high-level overview, installation, modes, `show_tensor_network` / `PlotConfig`, quick troubleshooting
+- **docs/guide.md** — full manual: backends, recipes, layout/draw behavior, architecture, extended troubleshooting
+- **examples/** — runnable scripts and **examples/README.md**; update **both** when adding CLI flags (e.g. `--hover-labels`) or new demos
 - **Docstrings** — document public functions with Args, Returns, and a short Example where helpful
 
-Keep docs in sync with code. If you change behavior, update the relevant docs.
+**When you change the public API or defaults**, update **README.md**, **docs/guide.md**, and any affected **examples** text so PyPI and the repo stay aligned with `_core` behavior.
 
 ## Pre-PR Checklist
 

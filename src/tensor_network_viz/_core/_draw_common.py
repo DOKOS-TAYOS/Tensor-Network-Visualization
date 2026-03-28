@@ -121,10 +121,7 @@ def _max_perpendicular_bond_curve_offset(
         distance = max(float(np.linalg.norm(delta)), 1e-6)
         effective_chord = float(math.hypot(distance, _CURVE_NEAR_PAIR_REF * scale))
         raw = (
-            (offset_index - (edge_count - 1) / 2.0)
-            * _CURVE_OFFSET_FACTOR
-            * scale
-            * effective_chord
+            (offset_index - (edge_count - 1) / 2.0) * _CURVE_OFFSET_FACTOR * scale * effective_chord
         )
         best = max(best, abs(float(raw)))
     return best
@@ -214,11 +211,7 @@ def _edge_index_font_em_data_2d(ax: Axes, xy: np.ndarray, fontsize_pt: float) ->
 
 def _edge_index_label_span_frac(*, is_physical: bool) -> float:
     """Bond-length fraction used to size index caption text (non-physical vs physical axis)."""
-    return (
-        _EDGE_INDEX_LABEL_SPAN_FRAC_PHYS
-        if is_physical
-        else _EDGE_INDEX_LABEL_SPAN_FRAC_CONTRACT
-    )
+    return _EDGE_INDEX_LABEL_SPAN_FRAC_PHYS if is_physical else _EDGE_INDEX_LABEL_SPAN_FRAC_CONTRACT
 
 
 def _blend_bond_tangent_with_chord_2d(
@@ -372,9 +365,7 @@ def _edge_index_label_is_vertical_axis_2d(d_out: np.ndarray) -> bool:
     return abs(float(d[1])) >= abs(float(d[0]))
 
 
-def _edge_index_label_axis_tie_vertical_2d(
-    d_out: np.ndarray, rng: np.random.Generator
-) -> bool:
+def _edge_index_label_axis_tie_vertical_2d(d_out: np.ndarray, rng: np.random.Generator) -> bool:
     """When |dx| and |dy| are tied, choose vertical vs horizontal placement at random."""
     d = np.asarray(d_out, dtype=float).reshape(2)
     adx, ady = abs(float(d[0])), abs(float(d[1]))
@@ -818,11 +809,7 @@ def _make_plotter(
             face_list: list[str] = []
             edge_list: list[str] = []
             for i in range(n_nod):
-                fc = (
-                    config.node_color_degree_one
-                    if degree_one_mask[i]
-                    else config.node_color
-                )
+                fc = config.node_color_degree_one if degree_one_mask[i] else config.node_color
                 ec = (
                     config.node_edge_color_degree_one
                     if degree_one_mask[i]
@@ -1236,9 +1223,7 @@ def _register_3d_hover_labels(
                     c = c3
                 rpx = _tensor_disk_radius_px(ax, c, p, 3)
                 M = ax.get_proj()
-                xs, ys, _zs = proj3d.proj_transform(
-                    float(c[0]), float(c[1]), float(c[2]), M
-                )
+                xs, ys, _zs = proj3d.proj_transform(float(c[0]), float(c[1]), float(c[2]), M)
                 pt = np.asarray(ax.transData.transform((xs, ys)), dtype=float).ravel()
                 dx = float(pt[0]) - x_d
                 dy = float(pt[1]) - y_d
@@ -1384,9 +1369,8 @@ def _edge_index_fontsize_for_bond(
                 * float(_EDGE_INDEX_LABEL_WIDTH_CALIB),
             )
         if w_ref < 1e-12:
-            w_ref = (
-                _textpath_width_pts(show, fontsize_pt=10.0)
-                * float(_EDGE_INDEX_LABEL_WIDTH_CALIB)
+            w_ref = _textpath_width_pts(show, fontsize_pt=10.0) * float(
+                _EDGE_INDEX_LABEL_WIDTH_CALIB
             )
     else:
         w_ref = _textpath_width_pts(show, fontsize_pt=10.0) * float(_EDGE_INDEX_LABEL_WIDTH_CALIB)
@@ -1474,9 +1458,7 @@ def _plot_contraction_index_captions(
     cvm = np.asarray(curve, dtype=float)
     L = _polyline_arc_length_total(cvm)
     L_half = 0.5 * L
-    rim_arc = _edge_index_rim_arc_from_endpoint(
-        r_global=float(p.r), half_polyline_length=L_half
-    )
+    rim_arc = _edge_index_rim_arc_from_endpoint(r_global=float(p.r), half_polyline_length=L_half)
     s_slot = 0.5 * (rim_arc + L_half)
     Q_l, t_l = _point_tangent_along_polyline_from_start(cvm, s_slot)
     Q_r, t_r = _point_tangent_along_polyline_from_end(cvm, s_slot)
@@ -1494,9 +1476,7 @@ def _plot_contraction_index_captions(
     peer_caps: tuple[str, ...] = tuple(
         c for c in (cap_l, cap_r) if c and format_tensor_node_label(c).strip()
     )
-    peer_for_width: tuple[str, ...] | None = (
-        peer_caps if len(peer_caps) > 1 else None
-    )
+    peer_for_width: tuple[str, ...] | None = peer_caps if len(peer_caps) > 1 else None
     for _ep, cap, Q, t_fwd, text_ep in _cap_pairs:
         if not cap:
             continue
@@ -2113,9 +2093,7 @@ def _refit_tensor_labels_to_disks(
     labels = [t for t in ax.texts if t.get_gid() == _TENSOR_LABEL_GID]
     if not labels:
         return
-    fs_cap = float(p.font_tensor_label_max) * (
-        _LABEL_FONT_3D_SCALE if dimensions == 3 else 1.0
-    )
+    fs_cap = float(p.font_tensor_label_max) * (_LABEL_FONT_3D_SCALE if dimensions == 3 else 1.0)
     n_ts = len(labels)
     max_passes = 5 if n_ts <= 35 else (3 if n_ts <= 75 else 2)
     for _ in range(max_passes):
@@ -2283,9 +2261,7 @@ def _draw_graph(
     view_margin = _view_outset_margin_data_units(
         graph, positions, params, scale, contraction_groups
     )
-    _apply_axis_limits_with_outset(
-        ax, pre_coords, view_margin=view_margin, dimensions=dimensions
-    )
+    _apply_axis_limits_with_outset(ax, pre_coords, view_margin=view_margin, dimensions=dimensions)
 
     _draw_edges(
         plotter=plotter,
@@ -2328,9 +2304,7 @@ def _draw_graph(
     if dimensions == 2:
         _register_2d_zoom_font_scaling(cast(Axes, ax))
     if config.hover_labels and (show_tensor_labels or show_index_labels):
-        vis_ids = [
-            node_id for node_id, node in graph.nodes.items() if not node.is_virtual
-        ]
+        vis_ids = [node_id for node_id, node in graph.nodes.items() if not node.is_virtual]
         if dimensions == 2:
             node_coll = getattr(plotter, "_node_disk_collection", None)
             _register_2d_hover_labels(

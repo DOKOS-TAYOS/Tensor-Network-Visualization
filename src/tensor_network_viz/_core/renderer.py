@@ -271,9 +271,7 @@ def _plot_graph(
     )
     positions = _resolve_positions(graph, style, dimensions=dimensions, seed=seed)
     scale = _resolve_draw_scale(graph, positions)
-    directions = _compute_axis_directions(
-        graph, positions, dimensions=dimensions, draw_scale=scale
-    )
+    directions = _compute_axis_directions(graph, positions, dimensions=dimensions, draw_scale=scale)
     _draw_graph(
         ax=resolved_ax,
         graph=graph,
