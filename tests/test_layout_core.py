@@ -12,6 +12,7 @@ from tensor_network_viz._core.graph import (
     _make_dangling_edge,
     _make_node,
 )
+from tensor_network_viz._core._draw_common import _graph_edge_degree
 from tensor_network_viz._core.layout import (
     _compute_axis_directions,
     _compute_layout,
@@ -70,6 +71,19 @@ def _build_chain_graph(
             )
 
     return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
+def test_graph_edge_degree_counts_all_edge_kinds() -> None:
+    graph = _build_chain_graph(length=3)
+    assert _graph_edge_degree(graph, 0) == 1
+    assert _graph_edge_degree(graph, 1) == 2
+    assert _graph_edge_degree(graph, 2) == 1
+
+    isolated_dangling = _build_chain_graph(length=1, dangling_axis_counts={0: 1})
+    assert _graph_edge_degree(isolated_dangling, 0) == 1
+
+    leaf_with_phys = _build_chain_graph(length=2, dangling_axis_counts={1: 1})
+    assert _graph_edge_degree(leaf_with_phys, 1) == 2
 
 
 def test_resolve_draw_scale_from_shortest_contraction_edge() -> None:

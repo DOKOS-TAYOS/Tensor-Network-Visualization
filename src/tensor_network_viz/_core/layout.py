@@ -31,7 +31,8 @@ _FREE_DIR_OVERLAP_THRESHOLD: float = 0.7
 _FREE_DIR_SAMPLES_2D: int = 72
 # Dangling-stub segment in layout units (rim → tip), for 2D crossing checks vs `_draw_*` scale.
 _STUB_LAYOUT_R0: float = 0.06
-_STUB_LAYOUT_R1: float = 0.46
+# Keep (R1 − R0) * draw_scale ≈ ``PlotConfig.DEFAULT_STUB_LENGTH * draw_scale`` (rim → tip).
+_STUB_LAYOUT_R1: float = 0.22
 _STUB_TIP_NODE_CLEAR: float = 0.26
 _STUB_TIP_TIP_CLEAR: float = 0.26
 _STUB_ORIGIN_PAIR_CLEAR: float = 0.12

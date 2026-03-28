@@ -28,13 +28,15 @@ class PlotConfig:
             the shortest contraction-edge length times the renderer fraction (see
             ``_SHORTEST_EDGE_RADIUS_FRACTION``); setting this scales that radius
             proportionally.
-        stub_length: Length of dangling index stubs; None uses default (0.34).
+        stub_length: Length of dangling index stubs; None uses default (0.16).
         self_loop_radius: Radius for self-contraction loops; None uses default (0.2).
         line_width_2d: Line width for 2D plots (node outlines and tensor edges); None uses default.
         line_width_3d: Line width for 3D plots (node outlines and tensor edges); None uses default.
         positions: Custom node positions for grid/PEPS layout; dict mapping node id to
             (x, y) for 2D or (x, y, z) for 3D. None uses automatic layout.
         node_edge_color: Border color for tensor nodes; use dark for contrast on light nodes.
+        node_color_degree_one: Fill for non-virtual tensors with graph degree 1 (any edge kinds).
+        node_edge_color_degree_one: Border for those same tensors.
         tensor_label_color: Color for tensor names on nodes; use dark for readability.
         layout_iterations: Force-directed layout iterations; None uses default (220).
         validate_positions: If True, warn when custom positions have unknown keys or
@@ -48,7 +50,7 @@ class PlotConfig:
     """
 
     DEFAULT_NODE_RADIUS: ClassVar[float] = 0.08
-    DEFAULT_STUB_LENGTH: ClassVar[float] = 0.34
+    DEFAULT_STUB_LENGTH: ClassVar[float] = 0.16
     DEFAULT_SELF_LOOP_RADIUS: ClassVar[float] = 0.2
     DEFAULT_LINE_WIDTH_2D: ClassVar[float] = 0.85
     DEFAULT_LINE_WIDTH_3D: ClassVar[float] = 0.75
@@ -56,6 +58,8 @@ class PlotConfig:
 
     node_color: str = "#E8E8E8"
     node_edge_color: str = "#2D3748"
+    node_color_degree_one: str = "#E8D6D6"
+    node_edge_color_degree_one: str = "#4A3436"
     tensor_label_color: str = "#1A202C"
     label_color: str = "#0C1319"
     bond_edge_color: str = "#00008B"

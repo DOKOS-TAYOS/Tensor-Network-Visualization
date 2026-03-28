@@ -44,9 +44,6 @@ _CURVE_OFFSET_FACTOR: float = 0.15
 _CURVE_NEAR_PAIR_REF: float = 0.28
 # Extra radius + offset so index captions sit just outside tensor disks (data units).
 _NODE_LABEL_MARGIN_FACTOR: float = 1.22
-# Inflate axis limits so labels near the hull are not clipped as often.
-_VIEW_PAD_INNER: float = 0.9
-_VIEW_PAD_EXPANSION: float = 1.12
 # Draw order: bonds < node disks < edge index labels < tensor names (on top).
 _ZORDER_NODE_DISK: int = 3
 _ZORDER_EDGE_INDEX_LABEL: int = 5
@@ -72,17 +69,78 @@ def _apply_text_no_clip(kwargs: dict[str, Any]) -> None:
     kwargs.setdefault("clip_on", False)
 
 
-def _set_xy_limits_from_span(ax: Any, span: np.ndarray, center: np.ndarray, pad: float) -> None:
-    ax.set_xlim(center[0] - span[0] * pad, center[0] + span[0] * pad)
-    ax.set_ylim(center[1] - span[1] * pad, center[1] + span[1] * pad)
+def _max_perpendicular_bond_curve_offset(
+    graph: _GraphData,
+    positions: NodePositions,
+    contraction_groups: _ContractionGroups,
+    scale: float,
+) -> float:
+    """Max |offset| used for quadratic bond bulge (same formula as ``_curved_edge_points``)."""
+    best = 0.0
+    for edge in graph.edges:
+        if edge.kind != "contraction":
+            continue
+        left_id, right_id = edge.node_ids
+        offset_index, edge_count = contraction_groups.offsets[id(edge)]
+        delta = np.asarray(positions[right_id], dtype=float) - np.asarray(
+            positions[left_id], dtype=float
+        )
+        distance = max(float(np.linalg.norm(delta)), 1e-6)
+        effective_chord = float(math.hypot(distance, _CURVE_NEAR_PAIR_REF * scale))
+        raw = (
+            (offset_index - (edge_count - 1) / 2.0)
+            * _CURVE_OFFSET_FACTOR
+            * scale
+            * effective_chord
+        )
+        best = max(best, abs(float(raw)))
+    return best
 
 
-def _view_span_center_pad(coords: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
-    span = np.ptp(coords, axis=0)
-    span = np.maximum(span, 1.0)
-    center = coords.mean(axis=0)
-    pad = _VIEW_PAD_INNER * _VIEW_PAD_EXPANSION
-    return span, center, pad
+def _self_loop_spatial_extent(p: _DrawScaleParams) -> float:
+    """Conservative distance from node center to farthest self-loop ellipse shell (2D/3D)."""
+    return float(p.r + p.loop_r + math.hypot(float(p.ellipse_w), float(p.ellipse_h)))
+
+
+def _view_outset_margin_data_units(
+    graph: _GraphData,
+    positions: NodePositions,
+    p: _DrawScaleParams,
+    scale: float,
+    contraction_groups: _ContractionGroups,
+) -> float:
+    """Absolute data-units padding so disks, stubs, curved bonds, loops, and labels stay in frame."""
+    curve = _max_perpendicular_bond_curve_offset(graph, positions, contraction_groups, scale)
+    m = float(p.r + p.stub + curve)
+    if any(edge.kind == "self" for edge in graph.edges):
+        m = max(m, _self_loop_spatial_extent(p))
+    m = max(m, float(p.r) + max(p.label_offset * 0.55, p.r * 0.35))
+    return m
+
+
+def _apply_axis_limits_with_outset(
+    ax: Any,
+    coords: np.ndarray,
+    *,
+    view_margin: float,
+    dimensions: Literal[2, 3],
+) -> None:
+    if coords.size == 0:
+        return
+    min_c = coords.min(axis=0)
+    max_c = coords.max(axis=0)
+    span_raw = max_c - min_c
+    breathe = np.maximum(span_raw * 0.02, 1e-9)
+    lo = min_c - view_margin - breathe
+    hi = max_c + view_margin + breathe
+    ax.set_xlim(float(lo[0]), float(hi[0]))
+    ax.set_ylim(float(lo[1]), float(hi[1]))
+    if dimensions == 3:
+        ax.set_zlim(float(lo[2]), float(hi[2]))
+        ax.set_box_aspect((hi - lo).astype(float))
+    else:
+        ax.set_aspect("equal", adjustable="box")
+    ax.set_axis_off()
 
 
 # 3D nodes: octahedron (8 tris / node). Full UV spheres are too heavy for interactive mplot3d.
@@ -99,6 +157,20 @@ _UNIT_NODE_TRIS: np.ndarray = np.asarray(
     ],
     dtype=float,
 )
+_OCTAHEDRON_TRI_COUNT: int = int(_UNIT_NODE_TRIS.shape[0])
+# 3D bond curves use ``p.lw``; octahedron rims are drawn finer so solids read lighter than bonds.
+_OCTAHEDRON_EDGE_LINEWIDTH_FACTOR: float = 0.48
+_OCTAHEDRON_EDGE_LINEWIDTH_MIN: float = 0.1
+
+
+def _graph_edge_degree(graph: _GraphData, node_id: int) -> int:
+    """Number of graph edges incident on *node_id* (contractions, dangling stubs, self-loops)."""
+    return sum(1 for edge in graph.edges for nid in edge.node_ids if nid == node_id)
+
+
+def _visible_degree_one_mask(graph: _GraphData, visible_node_ids: list[int]) -> np.ndarray:
+    """True when a visible tensor has total graph degree 1."""
+    return np.array([_graph_edge_degree(graph, nid) == 1 for nid in visible_node_ids], dtype=bool)
 
 
 class _PlotAdapter(Protocol):
@@ -108,9 +180,14 @@ class _PlotAdapter(Protocol):
     def plot_curve(self, curve: np.ndarray, **kwargs: Any) -> None: ...
     def plot_text(self, pos: np.ndarray, text: str, **kwargs: Any) -> None: ...
     def draw_tensor_nodes(
-        self, coords: np.ndarray, *, config: PlotConfig, p: _DrawScaleParams
+        self,
+        coords: np.ndarray,
+        *,
+        config: PlotConfig,
+        p: _DrawScaleParams,
+        degree_one_mask: np.ndarray,
     ) -> None: ...
-    def style_axes(self, coords: np.ndarray) -> None: ...
+    def style_axes(self, coords: np.ndarray, *, view_margin: float) -> None: ...
 
 
 def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
@@ -169,7 +246,12 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
                 self._ax.text(pos[0], pos[1], text, **kwargs)
 
             def draw_tensor_nodes(
-                self, coords: np.ndarray, *, config: PlotConfig, p: _DrawScaleParams
+                self,
+                coords: np.ndarray,
+                *,
+                config: PlotConfig,
+                p: _DrawScaleParams,
+                degree_one_mask: np.ndarray,
             ) -> None:
                 n = int(coords.shape[0])
                 if n == 0:
@@ -177,21 +259,28 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
                 patches = [
                     Circle((float(coords[i, 0]), float(coords[i, 1])), radius=p.r) for i in range(n)
                 ]
+                faces = [
+                    config.node_color_degree_one if degree_one_mask[i] else config.node_color
+                    for i in range(n)
+                ]
+                edges_ = [
+                    config.node_edge_color_degree_one if degree_one_mask[i] else config.node_edge_color
+                    for i in range(n)
+                ]
                 coll = PatchCollection(
                     patches,
-                    facecolors=config.node_color,
-                    edgecolors=config.node_edge_color,
+                    facecolors=faces,
+                    edgecolors=edges_,
                     linewidths=float(p.lw),
                     zorder=_ZORDER_NODE_DISK,
                     match_original=False,
                 )
                 self._ax.add_collection(coll)
 
-            def style_axes(self, coords: np.ndarray) -> None:
-                span, center, pad = _view_span_center_pad(coords)
-                _set_xy_limits_from_span(self._ax, span, center, pad)
-                self._ax.set_aspect("equal", adjustable="box")
-                self._ax.set_axis_off()
+            def style_axes(self, coords: np.ndarray, *, view_margin: float) -> None:
+                _apply_axis_limits_with_outset(
+                    self._ax, coords, view_margin=view_margin, dimensions=2
+                )
 
         return _2DPlotter(ax)
 
@@ -209,9 +298,15 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
             ax.text(pos[0], pos[1], pos[2], text, **kwargs)
 
         def draw_tensor_nodes(
-            self, coords: np.ndarray, *, config: PlotConfig, p: _DrawScaleParams
+            self,
+            coords: np.ndarray,
+            *,
+            config: PlotConfig,
+            p: _DrawScaleParams,
+            degree_one_mask: np.ndarray,
         ) -> None:
-            if coords.shape[0] == 0:
+            n_nod = int(coords.shape[0])
+            if n_nod == 0:
                 return
             # Unit octahedron vertices lie on axes at distance 1; scale by p.r so circumradius = p.r
             # (same metric as 2D disks; radius tracks shortest bond via renderer fraction).
@@ -219,22 +314,36 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
             c = coords.astype(float, copy=False)
             stacked = scaled[np.newaxis, :, :, :] + c[:, np.newaxis, np.newaxis, :]
             polys = stacked.reshape(-1, 3, 3)
-            lw = max(float(p.lw), 0.18)
+            node_edge_lw = max(
+                float(p.lw) * _OCTAHEDRON_EDGE_LINEWIDTH_FACTOR,
+                _OCTAHEDRON_EDGE_LINEWIDTH_MIN,
+            )
+            face_list: list[str] = []
+            edge_list: list[str] = []
+            for i in range(n_nod):
+                fc = (
+                    config.node_color_degree_one
+                    if degree_one_mask[i]
+                    else config.node_color
+                )
+                ec = (
+                    config.node_edge_color_degree_one
+                    if degree_one_mask[i]
+                    else config.node_edge_color
+                )
+                face_list.extend([fc] * _OCTAHEDRON_TRI_COUNT)
+                edge_list.extend([ec] * _OCTAHEDRON_TRI_COUNT)
             coll = Poly3DCollection(
                 polys,
-                facecolors=config.node_color,
-                edgecolors=config.node_edge_color,
-                linewidths=lw,
+                facecolors=face_list,
+                edgecolors=edge_list,
+                linewidths=node_edge_lw,
             )
             coll.set_sort_zpos(_ZORDER_NODE_DISK)
             ax.add_collection3d(coll)
 
-        def style_axes(self, coords: np.ndarray) -> None:
-            span, center, pad = _view_span_center_pad(coords)
-            _set_xy_limits_from_span(ax, span, center, pad)
-            ax.set_zlim(center[2] - span[2] * pad, center[2] + span[2] * pad)
-            ax.set_box_aspect(span)
-            ax.set_axis_off()
+        def style_axes(self, coords: np.ndarray, *, view_margin: float) -> None:
+            _apply_axis_limits_with_outset(ax, coords, view_margin=view_margin, dimensions=3)
 
     return _3DPlotter()
 
@@ -930,7 +1039,8 @@ def _draw_nodes(
     visible_node_ids = [node_id for node_id, node in graph.nodes.items() if not node.is_virtual]
     if visible_node_ids:
         coords = np.stack([positions[node_id] for node_id in visible_node_ids])
-        plotter.draw_tensor_nodes(coords, config=config, p=p)
+        deg1 = _visible_degree_one_mask(graph, visible_node_ids)
+        plotter.draw_tensor_nodes(coords, config=config, p=p, degree_one_mask=deg1)
         return coords
     return np.stack(list(positions.values()))
 
@@ -1176,7 +1286,10 @@ def _draw_graph(
         config=config,
         p=params,
     )
-    plotter.style_axes(coords)
+    view_margin = _view_outset_margin_data_units(
+        graph, positions, params, scale, contraction_groups
+    )
+    plotter.style_axes(coords, view_margin=view_margin)
     _draw_labels(
         plotter=plotter,
         ax=ax,

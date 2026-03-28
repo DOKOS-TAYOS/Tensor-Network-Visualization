@@ -253,6 +253,7 @@ Behavior notes:
 - `figsize`: figure size in inches
 - `node_color`
 - `node_edge_color`
+- `node_color_degree_one`, `node_edge_color_degree_one`: tensors with total graph degree 1 (any edges)
 - `tensor_label_color`
 - `label_color`
 - `bond_edge_color`
