@@ -15,6 +15,11 @@ except ImportError:
     sys.path.insert(0, str(root / "src"))
     from tensor_network_viz import show_tensor_network
 
+_EXAMPLES_DIR = Path(__file__).resolve().parent
+if str(_EXAMPLES_DIR) not in sys.path:
+    sys.path.insert(0, str(_EXAMPLES_DIR))
+from demo_cli import add_hover_labels_argument, demo_plot_config
+
 DESCRIPTION = """\
 3D tensor network topology: cubic PEPS (a PEPS on an Lx * Ly * Lz grid). Each bulk tensor has a
 physical leg plus up to six face bonds to neighbors. Intended to be viewed in 3D so the graph can
@@ -26,6 +31,7 @@ Examples:
   python examples/cubic_peps_demo.py
   python examples/cubic_peps_demo.py 3d --lx 3 --ly 3 --lz 4
   python examples/cubic_peps_demo.py 2d --save cubic_peps.png --no-show
+  python examples/cubic_peps_demo.py 2d --hover-labels
 """
 
 
@@ -123,6 +129,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Render without opening an interactive Matplotlib window.",
     )
+    add_hover_labels_argument(parser)
     return parser.parse_args()
 
 
@@ -143,6 +150,7 @@ def main() -> None:
         nodes,
         engine="tensornetwork",
         view=args.view,
+        config=demo_plot_config(args),
         show=False,
     )
     fig.suptitle(

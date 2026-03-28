@@ -15,6 +15,11 @@ except ImportError:
     sys.path.insert(0, str(root / "src"))
     from tensor_network_viz import show_tensor_network
 
+_EXAMPLES_DIR = Path(__file__).resolve().parent
+if str(_EXAMPLES_DIR) not in sys.path:
+    sys.path.insert(0, str(_EXAMPLES_DIR))
+from demo_cli import add_hover_labels_argument, demo_plot_config
+
 DESCRIPTION = """\
 Large topology demo: a binary MERA stack merged at the top into a hierarchical binary tensor tree
 (TTN). Useful to stress-test layout and rendering on deep, wide graphs.
@@ -26,6 +31,7 @@ Examples:
   python examples/mera_tree_demo.py 2d
   python examples/mera_tree_demo.py 3d --mera-log2 5 --tree-depth 4
   python examples/mera_tree_demo.py 2d --save mera_tree.png --no-show
+  python examples/mera_tree_demo.py 2d --hover-labels
 """
 
 
@@ -157,6 +163,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Render without opening an interactive Matplotlib window.",
     )
+    add_hover_labels_argument(parser)
     return parser.parse_args()
 
 
@@ -180,6 +187,7 @@ def main() -> None:
         nodes,
         engine="tensornetwork",
         view=args.view,
+        config=demo_plot_config(args),
         show=False,
     )
     fig.suptitle(

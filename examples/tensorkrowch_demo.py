@@ -15,6 +15,11 @@ except ImportError:
     sys.path.insert(0, str(root / "src"))
     from tensor_network_viz import show_tensor_network
 
+_EXAMPLES_DIR = Path(__file__).resolve().parent
+if str(_EXAMPLES_DIR) not in sys.path:
+    sys.path.insert(0, str(_EXAMPLES_DIR))
+from demo_cli import add_hover_labels_argument, demo_plot_config
+
 DESCRIPTION = """\
 Small demo for the plotting dispatcher.
 
@@ -31,6 +36,7 @@ Examples:
   python examples/tensorkrowch_demo.py weird 3d
   python examples/tensorkrowch_demo.py mps 2d --from-list
   python examples/tensorkrowch_demo.py disconnected 2d
+  python examples/tensorkrowch_demo.py mps 2d --hover-labels
 """
 
 
@@ -196,6 +202,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Pass the network as a list of nodes instead of a TensorNetwork object.",
     )
+    add_hover_labels_argument(parser)
     return parser.parse_args()
 
 
@@ -222,6 +229,7 @@ def main() -> None:
         show_input,
         engine="tensorkrowch",
         view=args.view,
+        config=demo_plot_config(args),
         show=False,
     )
     fig.suptitle(f"{args.network.upper()} ({args.view.upper()})", fontsize=16)

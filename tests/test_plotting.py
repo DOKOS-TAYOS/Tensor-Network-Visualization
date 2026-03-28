@@ -35,6 +35,7 @@ from tensor_network_viz.tensornetwork import (
     plot_tensornetwork_network_2d,
     plot_tensornetwork_network_3d,
 )
+from tensor_network_viz._core import _draw_common
 from tensor_network_viz.tensornetwork.graph import (
     _build_graph as _build_tensornetwork_graph,
 )
@@ -238,6 +239,41 @@ def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
     assert fig is ax.figure
     assert labels >= {"A", "B", "left", "right"}
     assert line_collection_segment_count(ax) == 1
+
+
+def test_plot_tensornetwork_network_2d_hover_labels_skips_static_label_artists() -> None:
+    left = DummyTensorNetworkNode("A", ["left"])
+    right = DummyTensorNetworkNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = plot_tensornetwork_network_2d(
+        {left, right},
+        config=PlotConfig(figsize=(4, 3), hover_labels=True),
+    )
+    try:
+        gids = {t.get_gid() for t in ax.texts if t.get_gid()}
+        assert _draw_common._TENSOR_LABEL_GID not in gids
+        assert _draw_common._EDGE_INDEX_LABEL_GID not in gids
+        assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+    finally:
+        plt.close(fig)
+
+
+def test_plot_tensornetwork_network_3d_hover_flag_does_not_hide_static_labels() -> None:
+    left = DummyTensorNetworkNode("A", ["left"])
+    right = DummyTensorNetworkNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = plot_tensornetwork_network_3d(
+        {left, right},
+        config=PlotConfig(figsize=(4, 3), hover_labels=True),
+    )
+    try:
+        gids = {t.get_gid() for t in ax.texts if t.get_gid()}
+        assert _draw_common._TENSOR_LABEL_GID in gids
+        assert getattr(fig, "_tensor_network_viz_hover_cid", None) is None
+    finally:
+        plt.close(fig)
 
 
 def test_plot_tensorkrowch_network_2d_draws_tensor_nodes_as_circle_patches() -> None:

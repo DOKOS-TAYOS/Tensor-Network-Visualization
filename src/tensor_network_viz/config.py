@@ -44,6 +44,9 @@ class PlotConfig:
         refine_tensor_labels: If True, run a post-draw pass that shrinks tensor names so
             they stay inside node disks (uses extra canvas draws). Set False for faster
             plots when visual polish is less important.
+        hover_labels: If True (2D only), tensor names and bond index labels are hidden until
+            the pointer hovers over the node disk or bond. In 3D plots this flag is ignored
+            and labels follow ``show_tensor_labels`` / ``show_index_labels`` as usual.
     """
 
     DEFAULT_NODE_RADIUS: ClassVar[float] = 0.08
@@ -73,3 +76,4 @@ class PlotConfig:
     positions: dict[int, tuple[float, ...]] | None = None
     validate_positions: bool = False
     refine_tensor_labels: bool = True
+    hover_labels: bool = False

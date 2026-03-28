@@ -15,6 +15,11 @@ except ImportError:
     sys.path.insert(0, str(root / "src"))
     from tensor_network_viz import EinsumTrace, einsum, pair_tensor, show_tensor_network
 
+_EXAMPLES_DIR = Path(__file__).resolve().parent
+if str(_EXAMPLES_DIR) not in sys.path:
+    sys.path.insert(0, str(_EXAMPLES_DIR))
+from demo_cli import add_hover_labels_argument, demo_plot_config
+
 TraceMode = Literal["auto", "manual"]
 TraceInput = EinsumTrace | list[pair_tensor]
 
@@ -37,6 +42,7 @@ Examples:
   python examples/einsum_demo.py peps 3d
   python examples/einsum_demo.py disconnected 3d
   python examples/einsum_demo.py mps 2d --save einsum.png --no-show
+  python examples/einsum_demo.py mps 2d --hover-labels
 """
 
 
@@ -217,6 +223,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Render without opening an interactive Matplotlib window.",
     )
+    add_hover_labels_argument(parser)
     return parser.parse_args()
 
 
@@ -241,6 +248,7 @@ def main() -> None:
         trace,
         engine="einsum",
         view=args.view,
+        config=demo_plot_config(args),
         show=False,
     )
     fig.suptitle(f"{args.network.upper()} ({args.view.upper()}, {args.mode.upper()})", fontsize=16)

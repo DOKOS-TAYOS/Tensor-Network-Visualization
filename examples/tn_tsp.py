@@ -25,6 +25,11 @@ except ImportError:
     sys.path.insert(0, str(root / "src"))
     from tensor_network_viz import show_tensor_network
 
+_EXAMPLES_DIR = Path(__file__).resolve().parent
+if str(_EXAMPLES_DIR) not in sys.path:
+    sys.path.insert(0, str(_EXAMPLES_DIR))
+from demo_cli import add_hover_labels_argument, demo_plot_config
+
 
 def generate_superposition_layer(tn: tk.TensorNetwork, n_nodes: int) -> list[tk.Node]:
     """Creates uniform superposition vectors of cities."""
@@ -293,6 +298,7 @@ def parse_args() -> argparse.Namespace:
         default="2d",
         help="Visualization mode (default: 2d).",
     )
+    add_hover_labels_argument(parser)
     return parser.parse_args()
 
 
@@ -316,6 +322,7 @@ def main() -> None:
         network_view,
         engine="tensorkrowch",
         view=args.view,
+        config=demo_plot_config(args),
         show=False,
     )
     fig.suptitle(f"TSP Tensor Network ({n_cities} cities, step 0)", fontsize=16)
