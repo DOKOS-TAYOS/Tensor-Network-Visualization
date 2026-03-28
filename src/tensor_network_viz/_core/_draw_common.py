@@ -10,7 +10,11 @@ from typing import Any, Literal, Protocol, cast
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from matplotlib.font_manager import FontProperties
 from matplotlib.patches import Circle
+from matplotlib.textpath import TextPath
+from matplotlib.transforms import Bbox as _DisplayBbox
+from mpl_toolkits.mplot3d import proj3d
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from ..config import PlotConfig
@@ -39,6 +43,12 @@ _VIEW_PAD_EXPANSION: float = 1.12
 _ZORDER_NODE_DISK: int = 3
 _ZORDER_EDGE_INDEX_LABEL: int = 5
 _ZORDER_TENSOR_NAME: int = 8
+_EDGE_INDEX_LABEL_GID: str = "tnv_edge_index"
+_TENSOR_LABEL_GID: str = "tnv_tensor"
+# TextPath under-estimates the final Text bbox; scale diagonal for "fits inside disk" checks.
+_TEXT_RENDER_DIAGONAL_FACTOR: float = 1.52
+# Keep tensor names slightly inset from the disk / projected octahedron silhouette.
+_TENSOR_LABEL_INSIDE_FILL: float = 0.88
 # Line end caps / joins: slight rounding reads softer than Matplotlib's default butt/miter.
 _EDGE_LINE_CAP_STYLE: str = "round"
 _EDGE_LINE_JOIN_STYLE: str = "round"
@@ -200,25 +210,34 @@ def _edge_index_text_kwargs(
     *,
     fontsize: int,
     stub_kind: Literal["bond", "dangling"] = "bond",
+    bbox_pad: float = 0.18,
 ) -> dict[str, Any]:
     """Matplotlib kwargs for index labels (semi-transparent, tinted bbox)."""
     if stub_kind == "dangling":
-        facecolor: tuple[float, float, float, float] = (0.99, 0.92, 0.91, 0.76)
+        rgb = (0.99, 0.92, 0.91)
         edgecolor: tuple[float, float, float, float] = (0.58, 0.36, 0.36, 0.52)
     else:
-        facecolor = (0.90, 0.93, 0.99, 0.76)
+        rgb = (0.90, 0.93, 0.99)
         edgecolor = (0.36, 0.42, 0.58, 0.52)
+    if bbox_pad <= 0.09:
+        alpha_fill = 0.52
+    elif bbox_pad <= 0.14:
+        alpha_fill = 0.64
+    else:
+        alpha_fill = 0.74
+    facecolor: tuple[float, float, float, float] = (rgb[0], rgb[1], rgb[2], alpha_fill)
     return {
         "color": config.label_color,
         "fontsize": fontsize,
         "zorder": _ZORDER_EDGE_INDEX_LABEL,
+        "gid": _EDGE_INDEX_LABEL_GID,
         "ha": "center",
         "va": "center",
         "bbox": {
-            "boxstyle": "round,pad=0.18",
+            "boxstyle": f"round,pad={bbox_pad}",
             "facecolor": facecolor,
             "edgecolor": edgecolor,
-            "linewidth": 0.5,
+            "linewidth": 0.45,
         },
     }
 
@@ -286,7 +305,171 @@ def _figure_relative_font_scale(fig: Figure, label_count: int) -> float:
     size_part = math.sqrt(min_px / ref_px)
     crowd = 3.0 + math.sqrt(float(label_count))
     raw = size_part * 7.0 / crowd
-    return float(np.clip(raw, 0.38, 1.28))
+    return float(np.clip(raw, 0.26, 1.28))
+
+
+def _tensor_name_font_scale(n_visible_tensors: int) -> float:
+    """Shrink tensor name tags when many nodes are drawn (independent of line scale)."""
+    if n_visible_tensors <= 6:
+        return 1.0
+    return float(1.0 / math.sqrt(1.0 + 0.16 * float(n_visible_tensors - 6)))
+
+
+def _index_label_fontsize_for_caption(base: int, caption: str) -> int:
+    """Larger glyphs for very short index names; smaller for long identifiers."""
+    raw = caption.strip()
+    n = len(raw)
+    if n <= 0:
+        return base
+    if n == 1:
+        factor = 1.32
+    elif n == 2:
+        factor = 1.17
+    elif n <= 4:
+        factor = 1.02
+    elif n <= 8:
+        factor = 0.93
+    elif n <= 14:
+        factor = 0.84
+    else:
+        factor = max(0.7, 0.84 - 0.028 * float(n - 14))
+    return max(3, min(14, round(float(base) * factor)))
+
+
+def _edge_index_font_scale(label_slots: int) -> float:
+    """Shrink bond/dangling index captions when many labels are drawn (e.g. MERA, PEPS)."""
+    if label_slots <= 14:
+        return 1.0
+    return float(1.0 / math.sqrt(1.0 + 0.058 * float(label_slots - 14)))
+
+
+def _padded_window_bbox(bb: Any, pad_px: float) -> _DisplayBbox:
+    return _DisplayBbox.from_extents(
+        float(bb.x0) - pad_px,
+        float(bb.y0) - pad_px,
+        float(bb.x1) + pad_px,
+        float(bb.y1) + pad_px,
+    )
+
+
+def _display_bboxes_overlap(a: _DisplayBbox, b: _DisplayBbox) -> bool:
+    return not (
+        float(a.x1) < float(b.x0)
+        or float(b.x1) < float(a.x0)
+        or float(a.y1) < float(b.y0)
+        or float(b.y1) < float(a.y0)
+    )
+
+
+def _index_labels_window_overlap(
+    labels: list[Any],
+    renderer: Any,
+    pad_px: float,
+) -> bool:
+    bbs: list[_DisplayBbox] = []
+    for t in labels:
+        bbs.append(_padded_window_bbox(t.get_window_extent(renderer=renderer), pad_px))
+    for i in range(len(labels)):
+        for j in range(i + 1, len(labels)):
+            if _display_bboxes_overlap(bbs[i], bbs[j]):
+                return True
+    return False
+
+
+def _clamp_label_to_anchor(
+    xy: tuple[float, float],
+    anchor: np.ndarray,
+    max_drift: float,
+) -> tuple[float, float]:
+    p = np.array(xy, dtype=float)
+    delta = p - anchor
+    dist = float(np.linalg.norm(delta))
+    if dist <= max_drift or dist < 1e-15:
+        return float(p[0]), float(p[1])
+    snapped = anchor + delta * (max_drift / dist)
+    return float(snapped[0]), float(snapped[1])
+
+
+def _separate_edge_index_labels_2d(ax: Axes) -> None:
+    """Fix overlaps within a tight move cap; shrink index fonts if still overlapping (MERA)."""
+    labels = [t for t in ax.texts if t.get_gid() == _EDGE_INDEX_LABEL_GID]
+    if len(labels) < 2:
+        return
+    fig = ax.figure
+    span_data = max(
+        float(ax.get_xlim()[1] - ax.get_xlim()[0]),
+        float(ax.get_ylim()[1] - ax.get_ylim()[0]),
+    )
+    anchors_orig = [np.array(t.get_position(), dtype=float) for t in labels]
+    n_lbl = len(labels)
+    max_drift = span_data * float(
+        np.clip(0.016 - 0.00005 * max(0, n_lbl - 28), 0.006, 0.016)
+    )
+    base_step = max(span_data * 0.001, 1e-6)
+    pad_px = 2.0
+    max_shrink_passes = 8
+    shrink_factor = 0.88
+    inner_iters = 20
+
+    for s_pass in range(max_shrink_passes):
+        for k, t in enumerate(labels):
+            t.set_position((float(anchors_orig[k][0]), float(anchors_orig[k][1])))
+
+        for it in range(inner_iters):
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+            if renderer is None:
+                return
+            bbs: list[_DisplayBbox] = []
+            for t in labels:
+                raw = t.get_window_extent(renderer=renderer)
+                bbs.append(_padded_window_bbox(raw, pad_px))
+            moved = False
+            for i in range(len(labels)):
+                for j in range(i + 1, len(labels)):
+                    if not _display_bboxes_overlap(bbs[i], bbs[j]):
+                        continue
+                    moved = True
+                    x1, y1 = labels[i].get_position()
+                    x2, y2 = labels[j].get_position()
+                    dx, dy = x1 - x2, y1 - y2
+                    dist = math.hypot(dx, dy)
+                    if dist < 1e-12:
+                        ang = (it % 6) * (math.pi / 3.0)
+                        dx, dy = math.cos(ang), math.sin(ang)
+                    else:
+                        dx, dy = dx / dist, dy / dist
+                    step = base_step * (1.0 + 0.022 * float(it))
+                    p1 = (x1 + dx * step, y1 + dy * step)
+                    p2 = (x2 - dx * step, y2 - dy * step)
+                    labels[i].set_position(
+                        _clamp_label_to_anchor(p1, anchors_orig[i], max_drift)
+                    )
+                    labels[j].set_position(
+                        _clamp_label_to_anchor(p2, anchors_orig[j], max_drift)
+                    )
+            if not moved:
+                break
+
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        if renderer is None:
+            return
+        if not _index_labels_window_overlap(labels, renderer, pad_px):
+            return
+        if s_pass == max_shrink_passes - 1:
+            return
+        for t in labels:
+            t.set_fontsize(max(3, round(float(t.get_fontsize()) * shrink_factor)))
+
+
+def _index_label_bbox_pad(label_slots: int) -> float:
+    """Tighter rounded box on dense plots so semi-transparent patches overlap less."""
+    if label_slots <= 36:
+        return 0.18
+    if label_slots <= 90:
+        return 0.13
+    return 0.085
 
 
 def _curved_edge_points(
@@ -359,11 +542,30 @@ def _plot_contraction_index_captions(
     if (dimensions == 2 and perpendicular[1] < 0) or (dimensions == 3 and perpendicular[2] < 0):
         perpendicular = -perpendicular
     off = float(max(p.label_offset * 0.52, p.r * 0.31))
-    text_kw = _edge_index_text_kwargs(config, fontsize=p.font_index_end, stub_kind="bond")
     if cap_l:
-        plotter.plot_text(curve[i_l] + perpendicular * off, cap_l, **text_kw)
+        fs_l = _index_label_fontsize_for_caption(p.font_index_end, cap_l)
+        plotter.plot_text(
+            curve[i_l] + perpendicular * off,
+            cap_l,
+            **_edge_index_text_kwargs(
+                config,
+                fontsize=fs_l,
+                stub_kind="bond",
+                bbox_pad=p.index_bbox_pad,
+            ),
+        )
     if cap_r:
-        plotter.plot_text(curve[i_r] - perpendicular * off, cap_r, **text_kw)
+        fs_r = _index_label_fontsize_for_caption(p.font_index_end, cap_r)
+        plotter.plot_text(
+            curve[i_r] - perpendicular * off,
+            cap_r,
+            **_edge_index_text_kwargs(
+                config,
+                fontsize=fs_r,
+                stub_kind="bond",
+                bbox_pad=p.index_bbox_pad,
+            ),
+        )
 
 
 def _draw_edges(
@@ -403,11 +605,15 @@ def _draw_edges(
                 else:
                     dist_from_center = float(p.r + p.stub * 0.52)
                     label_pos = center + direction * dist_from_center
+                fs_d = _index_label_fontsize_for_caption(p.font_index_end, edge.label)
                 plotter.plot_text(
                     label_pos,
                     edge.label,
                     **_edge_index_text_kwargs(
-                        config, fontsize=p.font_index_end, stub_kind="dangling"
+                        config,
+                        fontsize=fs_d,
+                        stub_kind="dangling",
+                        bbox_pad=p.index_bbox_pad,
                     ),
                 )
             continue
@@ -468,16 +674,22 @@ def _draw_edges(
                 off_a = dir_unit * off_mag
                 off_b = -dir_unit * off_mag * 0.88
                 if ca:
+                    fs_a = _index_label_fontsize_for_caption(p.font_index_end, ca)
                     plotter.plot_text(
                         curve[ia] + off_a,
                         ca,
-                        **_edge_index_text_kwargs(config, fontsize=p.font_index_end),
+                        **_edge_index_text_kwargs(
+                            config, fontsize=fs_a, bbox_pad=p.index_bbox_pad
+                        ),
                     )
                 if cb:
+                    fs_b = _index_label_fontsize_for_caption(p.font_index_end, cb)
                     plotter.plot_text(
                         curve[ib] + off_b,
                         cb,
-                        **_edge_index_text_kwargs(config, fontsize=p.font_index_end),
+                        **_edge_index_text_kwargs(
+                            config, fontsize=fs_b, bbox_pad=p.index_bbox_pad
+                        ),
                     )
             continue
 
@@ -522,6 +734,68 @@ def _draw_edges(
             )
 
 
+def _display_disk_radius_px_2d(ax: Axes, center: np.ndarray, r_data: float) -> float:
+    """Horizontal data-radius *r_data* at *center* mapped to display pixels (equal aspect 2D axes)."""
+    c = np.asarray(center[:2], dtype=float)
+    row0 = c.reshape(1, -1)
+    row1 = (c + np.array([float(r_data), 0.0], dtype=float)).reshape(1, -1)
+    t0 = ax.transData.transform(row0)[0]
+    t1 = ax.transData.transform(row1)[0]
+    return float(np.hypot(float(t0[0] - t1[0]), float(t0[1] - t1[1])))
+
+
+def _display_disk_radius_px_3d(ax: Any, center: np.ndarray, r_data: float) -> float:
+    """Conservative on-screen radius for a data-space sphere of radius *r_data* under the current 3D view."""
+    c = np.asarray(center, dtype=float)
+    r = float(r_data)
+    M = ax.get_proj()
+    xs0, ys0, _zs0 = proj3d.proj_transform(c[0], c[1], c[2], M)
+    pt_center = ax.transData.transform((xs0, ys0))
+    md = math.inf
+    for ex, ey, ez in (
+        (1.0, 0.0, 0.0),
+        (-1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0),
+        (0.0, -1.0, 0.0),
+        (0.0, 0.0, 1.0),
+        (0.0, 0.0, -1.0),
+    ):
+        p = c + r * np.array([ex, ey, ez], dtype=float)
+        xs, ys, _zs = proj3d.proj_transform(p[0], p[1], p[2], M)
+        pt = ax.transData.transform((xs, ys))
+        d = float(np.hypot(pt[0] - pt_center[0], pt[1] - pt_center[1]))
+        md = min(md, d)
+    if not math.isfinite(md):
+        return 0.0
+    return float(md)
+
+
+def _tensor_label_fontsize_to_fit(
+    *,
+    text: str,
+    cap_pt: int,
+    pixel_radius: float,
+    fig: Figure,
+) -> int:
+    """Font size so the tensor name fits inside the node disk at the current figure DPI and view."""
+    if not text.strip():
+        return max(3, cap_pt)
+    ref = 10.0
+    fp = FontProperties(size=ref)
+    tp = TextPath((0.0, 0.0), text, prop=fp)
+    ex = tp.get_extents()
+    diag_pts = (
+        math.hypot(float(ex.width), float(ex.height)) * _TEXT_RENDER_DIAGONAL_FACTOR
+    )
+    if diag_pts <= 1e-12:
+        return max(3, cap_pt)
+    diag_px_ref = diag_pts * float(fig.dpi) / 72.0
+    allow = 2.0 * max(float(pixel_radius), 1e-9) * _TENSOR_LABEL_INSIDE_FILL
+    max_fs = ref * allow / diag_px_ref
+    lo, hi = 3, max(3, int(cap_pt))
+    return int(max(lo, min(hi, round(max_fs))))
+
+
 def _draw_nodes(
     *,
     plotter: _PlotAdapter,
@@ -541,24 +815,41 @@ def _draw_nodes(
 def _draw_labels(
     *,
     plotter: _PlotAdapter,
+    ax: Any,
     graph: _GraphData,
     positions: NodePositions,
     show_tensor_labels: bool,
     config: PlotConfig,
     p: _DrawScaleParams,
+    dimensions: Literal[2, 3],
 ) -> None:
     if show_tensor_labels:
+        fig = ax.figure
         for node_id, node in graph.nodes.items():
             if node.is_virtual:
                 continue
+            pos = positions[node_id]
+            if dimensions == 2:
+                r_px = _display_disk_radius_px_2d(cast(Axes, ax), pos, p.r)
+            else:
+                r_px = _display_disk_radius_px_3d(
+                    ax, pos, p.r * _OCTAHEDRON_VISUAL_SCALE
+                )
+            fs = _tensor_label_fontsize_to_fit(
+                text=node.name,
+                cap_pt=p.font_node,
+                pixel_radius=r_px,
+                fig=fig,
+            )
             plotter.plot_text(
-                positions[node_id],
+                pos,
                 node.name,
                 color=config.tensor_label_color,
                 ha="center",
                 va="center",
-                fontsize=p.font_node,
+                fontsize=fs,
                 zorder=_ZORDER_TENSOR_NAME,
+                gid=_TENSOR_LABEL_GID,
             )
 
 
@@ -572,6 +863,7 @@ class _DrawScaleParams:
     lw: float
     font_index_end: int
     font_node: int
+    index_bbox_pad: float
     label_offset: float
     ellipse_w: float
     ellipse_h: float
@@ -583,9 +875,14 @@ def _draw_scale_params(
     *,
     is_3d: bool,
     font_figure_scale: float = 1.0,
+    n_visible_tensors: int = 1,
+    label_slots: int = 1,
 ) -> _DrawScaleParams:
     """Compute scale-dependent drawing parameters from config."""
     fs = font_figure_scale
+    tag_scale = _tensor_name_font_scale(max(1, n_visible_tensors))
+    idx_scale = _edge_index_font_scale(max(1, label_slots))
+    bbox_pad = _index_label_bbox_pad(max(1, label_slots))
     r = (
         config.node_radius if config.node_radius is not None else PlotConfig.DEFAULT_NODE_RADIUS
     ) * scale
@@ -601,15 +898,19 @@ def _draw_scale_params(
     lw_attr = config.line_width_3d if is_3d else config.line_width_2d
     lw = (lw_attr if lw_attr is not None else lw_default) * scale
 
-    bond_ref = max(6, round(5.5 * scale * fs))
-    font_index_end = max(8, round(0.66 * bond_ref))
+    bond_ref = max(4, round(5.5 * scale * fs))
+    font_index_pt = 0.66 * float(bond_ref) * idx_scale
+    font_index_end = max(3, min(11, round(font_index_pt)))
+    font_node_pt = 10.0 * scale * fs * tag_scale
+    font_node = max(3, min(15, round(font_node_pt)))
     return _DrawScaleParams(
         r=r,
         stub=stub,
         loop_r=loop_r,
         lw=lw,
         font_index_end=font_index_end,
-        font_node=max(6, round(10 * scale * fs)),
+        font_node=font_node,
+        index_bbox_pad=bbox_pad,
         label_offset=0.08 * scale * float(np.clip(0.82 + 0.22 * fs, 0.75, 1.2)),
         ellipse_w=0.16 * scale,
         ellipse_h=0.12 * scale,
@@ -632,7 +933,7 @@ def _on_2d_limits_changed(ax: Axes) -> None:
     for text, base_fs in state["sizes"].items():
         if text.figure is None:
             continue
-        text.set_fontsize(max(5.0, base_fs * factor))
+        text.set_fontsize(max(3.0, base_fs * factor))
 
 
 def _register_2d_zoom_font_scaling(ax: Axes) -> None:
@@ -677,8 +978,14 @@ def _draw_graph(
         show_index_labels=show_index_labels,
     )
     font_figure_scale = _figure_relative_font_scale(ax.figure, label_slots)
+    n_visible_tensors = sum(1 for node in graph.nodes.values() if not node.is_virtual)
     params = _draw_scale_params(
-        config, scale, is_3d=dimensions == 3, font_figure_scale=font_figure_scale
+        config,
+        scale,
+        is_3d=dimensions == 3,
+        font_figure_scale=font_figure_scale,
+        n_visible_tensors=max(1, n_visible_tensors),
+        label_slots=max(1, label_slots),
     )
     plotter = _make_plotter(ax, dimensions=dimensions)
 
@@ -701,14 +1008,18 @@ def _draw_graph(
         config=config,
         p=params,
     )
+    plotter.style_axes(coords)
     _draw_labels(
         plotter=plotter,
+        ax=ax,
         graph=graph,
         positions=positions,
         show_tensor_labels=show_tensor_labels,
         config=config,
         p=params,
+        dimensions=dimensions,
     )
-    plotter.style_axes(coords)
     if dimensions == 2:
-        _register_2d_zoom_font_scaling(cast(Axes, ax))
+        ax2d = cast(Axes, ax)
+        _separate_edge_index_labels_2d(ax2d)
+        _register_2d_zoom_font_scaling(ax2d)
