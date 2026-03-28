@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 import numpy as np
+from matplotlib.patches import Circle
 
 from ..config import PlotConfig
 from .contractions import _ContractionGroups, _group_contractions
@@ -27,7 +28,9 @@ class _PlotAdapter(Protocol):
     def plot_line(self, start: np.ndarray, end: np.ndarray, **kwargs: Any) -> None: ...
     def plot_curve(self, curve: np.ndarray, **kwargs: Any) -> None: ...
     def plot_text(self, pos: np.ndarray, text: str, **kwargs: Any) -> None: ...
-    def scatter(self, coords: np.ndarray, **kwargs: Any) -> None: ...
+    def draw_tensor_nodes(
+        self, coords: np.ndarray, *, config: PlotConfig, p: _DrawScaleParams
+    ) -> None: ...
     def style_axes(self, coords: np.ndarray) -> None: ...
 
 
@@ -46,8 +49,20 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
             def plot_text(self, pos: np.ndarray, text: str, **kwargs: Any) -> None:
                 ax.text(pos[0], pos[1], text, **kwargs)
 
-            def scatter(self, coords: np.ndarray, **kwargs: Any) -> None:
-                ax.scatter(coords[:, 0], coords[:, 1], **kwargs)
+            def draw_tensor_nodes(
+                self, coords: np.ndarray, *, config: PlotConfig, p: _DrawScaleParams
+            ) -> None:
+                for i in range(coords.shape[0]):
+                    ax.add_patch(
+                        Circle(
+                            (float(coords[i, 0]), float(coords[i, 1])),
+                            radius=p.r,
+                            facecolor=config.node_color,
+                            edgecolor=config.node_edge_color,
+                            linewidth=float(p.lw),
+                            zorder=3,
+                        )
+                    )
 
             def style_axes(self, coords: np.ndarray) -> None:
                 span = np.ptp(coords, axis=0)
@@ -70,9 +85,22 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
         def plot_text(self, pos: np.ndarray, text: str, **kwargs: Any) -> None:
             ax.text(pos[0], pos[1], pos[2], text, **kwargs)
 
-        def scatter(self, coords: np.ndarray, **kwargs: Any) -> None:
-            kwargs.setdefault("depthshade", False)
-            ax.scatter(coords[:, 0], coords[:, 1], coords[:, 2], **kwargs)
+        def draw_tensor_nodes(
+            self, coords: np.ndarray, *, config: PlotConfig, p: _DrawScaleParams
+        ) -> None:
+            if coords.shape[0] == 0:
+                return
+            ax.scatter(
+                coords[:, 0],
+                coords[:, 1],
+                coords[:, 2],
+                s=p.scatter_s,
+                c=config.node_color,
+                edgecolors=config.node_edge_color,
+                linewidths=float(p.lw),
+                zorder=3,
+                depthshade=False,
+            )
 
         def style_axes(self, coords: np.ndarray) -> None:
             span = np.ptp(coords, axis=0)
@@ -137,8 +165,17 @@ def _draw_edges(
         if edge.kind == "dangling":
             endpoint = edge.endpoints[0]
             direction = directions[(endpoint.node_id, endpoint.axis_index)]
-            start = positions[endpoint.node_id] + direction * p.r
-            end = start + direction * p.stub
+            center = positions[endpoint.node_id]
+            # 2D: Circle radius is in data units, so the stub starts on the rim.
+            # 3D: scatter marker size is in points^2; zoom changes apparent size in data
+            # units while p.r does not, so rim-based starts look detached. Match bonds
+            # (center–center) by anchoring at the node center and extending r + stub.
+            if dimensions == 3:
+                start = center
+                end = center + direction * (p.r + p.stub)
+            else:
+                start = center + direction * p.r
+                end = start + direction * p.stub
             plotter.plot_line(
                 start, end, color=config.dangling_edge_color, linewidth=p.lw, zorder=2
             )
@@ -205,9 +242,22 @@ def _draw_edges(
 
         left_id, right_id = edge.node_ids
         offset_index, edge_count = contraction_groups.offsets[id(edge)]
+        start_base = positions[left_id]
+        end_base = positions[right_id]
+        if dimensions == 2:
+            chord = end_base - start_base
+            dist = max(float(np.linalg.norm(chord)), 1e-6)
+            direction = chord / dist
+            if dist > 2.0 * p.r + 1e-9:
+                start_t = start_base + direction * p.r
+                end_t = end_base - direction * p.r
+            else:
+                start_t, end_t = start_base, end_base
+        else:
+            start_t, end_t = start_base, end_base
         curve = _curved_edge_points(
-            start=positions[left_id],
-            end=positions[right_id],
+            start=start_t,
+            end=end_t,
             offset_index=offset_index,
             edge_count=edge_count,
             dimensions=dimensions,
@@ -249,14 +299,7 @@ def _draw_nodes(
     visible_node_ids = [node_id for node_id, node in graph.nodes.items() if not node.is_virtual]
     if visible_node_ids:
         coords = np.stack([positions[node_id] for node_id in visible_node_ids])
-        plotter.scatter(
-            coords,
-            s=p.scatter_s,
-            c=config.node_color,
-            edgecolors=config.node_edge_color,
-            linewidths=p.lw,
-            zorder=3,
-        )
+        plotter.draw_tensor_nodes(coords, config=config, p=p)
         return coords
     return np.stack(list(positions.values()))
 

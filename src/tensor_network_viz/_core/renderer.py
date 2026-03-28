@@ -102,6 +102,60 @@ def _compute_scale(n_nodes: int) -> float:
     return max(_SCALE_MIN, min(_SCALE_MAX, _SCALE_BASE - _SCALE_PER_NODE * n_nodes))
 
 
+_EXTENT_REF_SPAN: float = 2.6
+_EXTENT_REF_NN: float = 0.38
+_EXTENT_FACTOR_CLAMP: tuple[float, float] = (0.5, 1.3)
+_DRAW_SCALE_CLAMP: tuple[float, float] = (0.35, 1.85)
+
+
+def _visible_tensor_coords(positions: NodePositions, graph: _GraphData) -> np.ndarray:
+    """Stack positions of non-virtual (tensor) nodes for layout metrics."""
+    visible_ids = [node_id for node_id, node in graph.nodes.items() if not node.is_virtual]
+    if not visible_ids:
+        values = list(positions.values())
+        if not values:
+            return np.zeros((0, 1), dtype=float)
+        return np.stack(values)
+    return np.stack([positions[node_id] for node_id in visible_ids])
+
+
+def _median_nearest_neighbor_distance(coords: np.ndarray) -> float:
+    """Median nearest-neighbor distance; 1.0 when there is at most one point."""
+    count = int(coords.shape[0])
+    if count < 2:
+        return 1.0
+    delta = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
+    dist = np.linalg.norm(delta, axis=2)
+    np.fill_diagonal(dist, np.inf)
+    nearest = dist.min(axis=1)
+    return float(np.median(nearest))
+
+
+def _extent_scale_factor(coords: np.ndarray) -> float:
+    """Scale multiplier from bbox span and crowding (smaller when spread out or dense)."""
+    if coords.size == 0:
+        return 1.0
+    span_axes = np.ptp(coords, axis=0)
+    span_axes = span_axes[np.isfinite(span_axes)]
+    span = float(np.max(span_axes)) if span_axes.size else 0.0
+    span = max(span, 1e-6)
+    f_span: float = _EXTENT_REF_SPAN / span
+    d_nn: float = _median_nearest_neighbor_distance(coords)
+    f_nn: float = d_nn / _EXTENT_REF_NN
+    combined: float = 0.5 * f_span + 0.5 * f_nn
+    lo, hi = _EXTENT_FACTOR_CLAMP
+    return float(np.clip(combined, lo, hi))
+
+
+def _resolve_draw_scale(graph: _GraphData, positions: NodePositions) -> float:
+    """Combine node-count scale with layout extent / nearest-neighbor crowding."""
+    count_scale = _compute_scale(_count_visible_nodes(graph))
+    extent_scale = _extent_scale_factor(_visible_tensor_coords(positions, graph))
+    product = float(count_scale * extent_scale)
+    lo, hi = _DRAW_SCALE_CLAMP
+    return float(np.clip(product, lo, hi))
+
+
 def _prepare_axes(
     ax: RenderedAxes | None,
     *,
@@ -169,7 +223,10 @@ def _plot_graph(
     )
     positions = _resolve_positions(graph, style, dimensions=dimensions, seed=seed)
     directions = _compute_axis_directions(graph, positions, dimensions=dimensions)
-    scale = _compute_scale(_count_visible_nodes(graph))
+    if dimensions == 2:
+        scale = _resolve_draw_scale(graph, positions)
+    else:
+        scale = _compute_scale(_count_visible_nodes(graph))
     _draw_graph(
         ax=resolved_ax,
         graph=graph,

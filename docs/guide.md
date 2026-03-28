@@ -288,6 +288,18 @@ For scripts or batch jobs, a common pattern is:
 - save the figure
 - close it explicitly if needed
 
+### Interactive zoom and drawing scale
+
+In **2D**, tensors are drawn with Matplotlib circle patches in **data** coordinates, so dangling
+stubs meet the node rim correctly when you zoom or pan. Line widths and label font sizes are still
+in **points** (screen space), so they do not automatically grow when you zoom in.
+
+In **3D**, tensors use ``scatter`` markers (sizes in typographic points; typical Matplotlib
+behavior under zoom). Line widths and label fonts also use points.
+
+In **2D** only, draw scaling also considers layout span and neighbor spacing (in addition to the
+tensor count). **3D** draw scaling uses the tensor-count heuristic only.
+
 ## Example Scripts
 
 The repository ships example scripts in [`examples/`](../examples/README.md):

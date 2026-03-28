@@ -1,7 +1,7 @@
 # Examples
 
 This folder contains runnable scripts for every supported backend plus one larger TensorKrowch
-example. For the full package guide, see [`../docs/guide.md`](../docs/guide.md).
+example. For the full package guide, see `[../docs/guide.md](../docs/guide.md)`.
 
 Run examples from the project root, using the project virtual environment or an equivalent Python
 environment with the needed optional dependencies installed.
@@ -49,6 +49,18 @@ full binary tensor tree (TTN). Good for stressing layout on wide, deep graphs.
 python examples/mera_tree_demo.py 2d
 python examples/mera_tree_demo.py 3d --mera-log2 5 --tree-depth 4
 python examples/mera_tree_demo.py 2d --save mera_tree.png --no-show
+```
+
+## `cubic_peps_demo.py`
+
+Volumetric cubic PEPS: one tensor per site on an `Lx * Ly * Lz` grid with face bonds. Defaults to
+3D view so the network reads in depth; node positions are computed by the library layout (the example
+does not set coordinates).
+
+```bash
+python examples/cubic_peps_demo.py
+python examples/cubic_peps_demo.py 3d --lx 3 --ly 3 --lz 4
+python examples/cubic_peps_demo.py 2d --save cubic_peps.png --no-show
 ```
 
 ## `quimb_demo.py`
@@ -125,6 +137,7 @@ Useful when you want:
 - an example tied to a real tensor-network modeling workflow
 
 To apply everything, use
+
 ```bash
 python examples/tensorkrowch_demo.py mps 2d
 python examples/tensorkrowch_demo.py mps 3d
@@ -183,3 +196,4 @@ python examples/tn_tsp.py -n 5 --view 3d
 python examples/tn_tsp.py -n 6 --view 2d
 python examples/tn_tsp.py -n 6 --view 3d
 ```
+

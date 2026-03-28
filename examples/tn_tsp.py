@@ -252,20 +252,8 @@ def create_tsp_tensor_network(
     return layers
 
 
-def _grid_positions_from_layers(
-    layers: list[list[tk.Node]],
-) -> dict[int, tuple[float, float, float]]:
-    """Build PEPS-style grid positions: rows = layers, cols = positions along path.
-    Returns 3D coords (x, y, z) for compatibility with both 2D and 3D views."""
-    positions: dict[int, tuple[float, float, float]] = {}
-    for row, layer in enumerate(layers):
-        for col, node in enumerate(layer):
-            positions[id(node)] = (float(col), -float(row), 0.0)
-    return positions
-
-
-def _network_view_for_grid(layers: list[list[tk.Node]]) -> Any:
-    """Wrapper exposing only grid nodes (excludes virtual templates) for PEPS layout."""
+def _network_view_from_layers(layers: list[list[tk.Node]]) -> Any:
+    """Flatten layer lists into a single node iterable for the visualizer (layout is automatic)."""
 
     class _View:
         def __init__(self, ls: list[list[tk.Node]]) -> None:
@@ -319,17 +307,15 @@ def main() -> None:
     tn = tk.TensorNetwork(name="TSP")
     layers = create_tsp_tensor_network(tn, distances, tau, n_layers)
 
-    network_view = _network_view_for_grid(layers)
-    grid_positions = _grid_positions_from_layers(layers)
+    network_view = _network_view_from_layers(layers)
 
-    print(f"TSP tensor network: {len(network_view.nodes)} nodes (grid)")
+    print(f"TSP tensor network: {len(network_view.nodes)} nodes (automatic layout)")
     print(f"Instance: {n_cities} cities, tau={tau}, view={args.view}")
 
     config = PlotConfig(
         figsize=(12, 8),
         show_tensor_labels=args.view == "2d",
         show_index_labels=args.view == "2d",
-        positions=grid_positions,
     )
     fig, ax = show_tensor_network(
         network_view,

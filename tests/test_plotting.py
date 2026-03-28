@@ -11,6 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.patches import Circle
 
 import tensor_network_viz._core.renderer as core_renderer_module
 import tensor_network_viz.tensorkrowch.graph as tk_graph_module
@@ -235,6 +236,27 @@ def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
     assert len(ax.lines) == 1
 
 
+def test_plot_tensorkrowch_network_2d_draws_tensor_nodes_as_circle_patches() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    _, ax = plot_tensorkrowch_network_2d(DummyNetwork(nodes=[left, right]))
+
+    circles = [p for p in ax.patches if isinstance(p, Circle)]
+    assert len(circles) == 2
+    assert all(c.radius > 0 for c in circles)
+
+
+def test_extent_scale_factor_reflects_long_dense_chain_vs_pair() -> None:
+    """Large span with small nearest-neighbor spacing should shrink glyphs vs a loose pair."""
+    long_dense = np.array([[i * 0.2, 0.0] for i in range(20)], dtype=float)
+    pair = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
+    assert core_renderer_module._extent_scale_factor(long_dense) < core_renderer_module._extent_scale_factor(
+        pair
+    )
+
+
 def test_plot_tensorkrowch_network_2d_warns_on_unknown_position_keys_when_validate_true() -> None:
     """validate_positions=True warns when custom positions have unknown node ids."""
     left = DummyTensorKrowchNode("A", ["left"])
@@ -339,6 +361,7 @@ def test_plot_tensorkrowch_network_3d_returns_3d_axes() -> None:
     assert fig is ax.figure
     assert ax.name == "3d"
     assert len(ax.lines) == 1
+    assert len(ax.collections) >= 1
 
 
 def test_plot_tensornetwork_network_3d_returns_3d_axes() -> None:
