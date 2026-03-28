@@ -17,7 +17,9 @@ from tensor_network_viz._core.layout import (
     _compute_axis_directions,
     _compute_layout,
     _dangling_stub_segment_2d,
+    _is_physical_axis_name,
     _planar_contraction_bond_segments_2d,
+    _segment_point_min_distance_sq_2d,
     _segments_cross_2d,
 )
 from tensor_network_viz._core.renderer import (
@@ -84,6 +86,44 @@ def test_graph_edge_degree_counts_all_edge_kinds() -> None:
 
     leaf_with_phys = _build_chain_graph(length=2, dangling_axis_counts={1: 1})
     assert _graph_edge_degree(leaf_with_phys, 1) == 2
+
+
+def test_physical_axis_name_detection() -> None:
+    assert _is_physical_axis_name("phys") is True
+    assert _is_physical_axis_name("PHYS") is True
+    assert _is_physical_axis_name("my_phys_leg") is True
+    assert _is_physical_axis_name("physical") is True
+    assert _is_physical_axis_name("site") is True
+    assert _is_physical_axis_name("bond") is False
+    assert _is_physical_axis_name(None) is False
+
+
+def test_physical_stub_2d_segment_clears_neighbor_node_disk() -> None:
+    """Physical dangling legs use strict clearance: stub polyline must not pierce neighbor disks."""
+    nodes = {
+        0: _make_node("A", ("right", "phys")),
+        1: _make_node("B", ("left",)),
+    }
+    edges = [
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 0, "right"),
+            _EdgeEndpoint(1, 0, "left"),
+            name="bond",
+        ),
+        _make_dangling_edge(_EdgeEndpoint(0, 1, "phys"), name="phys"),
+    ]
+    graph = _GraphData(nodes=nodes, edges=tuple(edges))
+    positions = {
+        0: np.array([0.0, 0.0], dtype=float),
+        1: np.array([0.35, 0.0], dtype=float),
+    }
+    ds = _resolve_draw_scale(graph, positions)
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=ds)
+    direction = directions[(0, 1)]
+    p0, p1 = _dangling_stub_segment_2d(positions[0], direction, draw_scale=ds)
+    r_disk = float(PlotConfig.DEFAULT_NODE_RADIUS) * max(float(ds), 1e-6) * 1.08
+    dist = math.sqrt(_segment_point_min_distance_sq_2d(p0, p1, positions[1]))
+    assert dist >= r_disk - 1e-9
 
 
 def test_resolve_draw_scale_from_shortest_contraction_edge() -> None:

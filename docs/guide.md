@@ -261,7 +261,6 @@ Behavior notes:
 - `show_tensor_labels`
 - `show_index_labels`
 - `refine_tensor_labels`: extra canvas passes so tensor names fit inside disks; set `False` for faster drawing
-- `separate_index_labels` (2D): extra passes to separate overlapping index captions; set `False` for speed on dense plots
 - `node_radius`
 - `stub_length`
 - `self_loop_radius`

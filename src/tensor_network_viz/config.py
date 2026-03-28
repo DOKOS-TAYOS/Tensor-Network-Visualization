@@ -44,9 +44,6 @@ class PlotConfig:
         refine_tensor_labels: If True, run a post-draw pass that shrinks tensor names so
             they stay inside node disks (uses extra canvas draws). Set False for faster
             plots when visual polish is less important.
-        separate_index_labels: If True (2D only), nudge overlapping index captions apart
-            and may shrink their fonts (uses extra canvas draws). Set False for speed on
-            very dense networks; captions may overlap more.
     """
 
     DEFAULT_NODE_RADIUS: ClassVar[float] = 0.08
@@ -76,4 +73,3 @@ class PlotConfig:
     positions: dict[int, tuple[float, ...]] | None = None
     validate_positions: bool = False
     refine_tensor_labels: bool = True
-    separate_index_labels: bool = True

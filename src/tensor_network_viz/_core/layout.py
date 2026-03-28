@@ -8,6 +8,7 @@ from typing import TypeAlias
 
 import numpy as np
 
+from ..config import PlotConfig
 from .axis_directions import _AXIS_DIR_2D, _AXIS_DIR_3D
 from .contractions import _contraction_weights, _group_contractions, _iter_contractions
 from .curves import _quadratic_curve
@@ -44,6 +45,60 @@ _LAYOUT_BOND_CURVE_SAMPLES: int = 24
 _COMPONENT_GAP: float = 1.4
 _LAYER_SPACING: float = 0.55
 _LAYER_SEQUENCE: tuple[int, ...] = (0, 1, -1, 2, -2, 3, -3)
+
+_PHYSICAL_AXIS_NAMES: frozenset[str] = frozenset({"phys", "physical", "site"})
+
+
+def _axis_name_tokens(axis_name: str) -> list[str]:
+    tokens: list[str] = []
+    current: list[str] = []
+    for ch in axis_name.lower():
+        if ch.isalnum():
+            current.append(ch)
+        elif current:
+            tokens.append("".join(current))
+            current = []
+    if current:
+        tokens.append("".join(current))
+    return tokens
+
+
+def _is_physical_axis_name(axis_name: str | None) -> bool:
+    """True for axes treated as physical/open legs (strict stub clearance vs other nodes)."""
+    if not axis_name:
+        return False
+    key = axis_name.lower().strip()
+    if key in _PHYSICAL_AXIS_NAMES:
+        return True
+    return any(part in _PHYSICAL_AXIS_NAMES for part in _axis_name_tokens(key))
+
+
+def _segment_point_min_distance_sq_2d(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
+    a2 = np.asarray(a, dtype=float).reshape(-1)[:2]
+    b2 = np.asarray(b, dtype=float).reshape(-1)[:2]
+    c2 = np.asarray(c, dtype=float).reshape(-1)[:2]
+    ab = b2 - a2
+    denom = float(np.dot(ab, ab))
+    if denom < 1e-18:
+        return float(np.sum((c2 - a2) ** 2))
+    t = float(np.dot(c2 - a2, ab)) / denom
+    t = max(0.0, min(1.0, t))
+    closest = a2 + t * ab
+    return float(np.sum((c2 - closest) ** 2))
+
+
+def _segment_point_min_distance_sq_3d(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
+    a3 = np.asarray(a, dtype=float).reshape(-1)[:3]
+    b3 = np.asarray(b, dtype=float).reshape(-1)[:3]
+    c3 = np.asarray(c, dtype=float).reshape(-1)[:3]
+    ab = b3 - a3
+    denom = float(np.dot(ab, ab))
+    if denom < 1e-18:
+        return float(np.sum((c3 - a3) ** 2))
+    t = float(np.dot(c3 - a3, ab)) / denom
+    t = max(0.0, min(1.0, t))
+    closest = a3 + t * ab
+    return float(np.sum((c3 - closest) ** 2))
 
 
 def _normalize_positions(
@@ -655,6 +710,23 @@ def _dangling_stub_segment_2d(
     return o + d * (_STUB_LAYOUT_R0 * s), o + d * (_STUB_LAYOUT_R1 * s)
 
 
+def _dangling_stub_segment_3d(
+    origin: np.ndarray,
+    direction_unit: np.ndarray,
+    *,
+    draw_scale: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    o = np.asarray(origin, dtype=float).reshape(-1)[:3]
+    d = np.asarray(direction_unit, dtype=float).reshape(-1)[:3]
+    n = float(np.linalg.norm(d))
+    if n < 1e-9:
+        d = np.array([0.0, 0.0, 1.0], dtype=float)
+    else:
+        d = d / n
+    s = max(float(draw_scale), 1e-6)
+    return o + d * (_STUB_LAYOUT_R0 * s), o + d * (_STUB_LAYOUT_R1 * s)
+
+
 def _bond_perpendicular_unoriented_2d(delta: np.ndarray) -> np.ndarray:
     direction = delta / max(float(np.linalg.norm(delta)), 1e-6)
     return np.array([-direction[1], direction[0]], dtype=float)
@@ -718,11 +790,13 @@ def _direction_conflicts_2d(
     bond_segments: list[tuple[int, int, np.ndarray, np.ndarray]],
     positions: NodePositions,
     draw_scale: float = 1.0,
+    strict_physical_node_clearance: bool = False,
 ) -> bool:
     """True if a candidate dangling direction crosses another stub or a non-incident bond."""
     d = _normalize_2d(direction)
     o2 = np.asarray(origin, dtype=float).reshape(-1)[:2]
     p0, p1 = _dangling_stub_segment_2d(origin, d, draw_scale=draw_scale)
+    s = max(float(draw_scale), 1e-6)
 
     for a, b, ba, bb in bond_segments:
         if a == node_id or b == node_id:
@@ -730,12 +804,21 @@ def _direction_conflicts_2d(
         if _segments_cross_2d(p0, p1, ba, bb):
             return True
 
-    for other_id, other_position in positions.items():
-        if other_id == node_id:
-            continue
-        op = np.asarray(other_position, dtype=float).reshape(-1)[:2]
-        if float(np.linalg.norm(p1 - op)) < _STUB_TIP_NODE_CLEAR:
-            return True
+    if strict_physical_node_clearance:
+        r_disk = float(PlotConfig.DEFAULT_NODE_RADIUS) * s * 1.08
+        for other_id, other_position in positions.items():
+            if other_id == node_id:
+                continue
+            op = np.asarray(other_position, dtype=float).reshape(-1)[:2]
+            if math.sqrt(_segment_point_min_distance_sq_2d(p0, p1, op)) < r_disk:
+                return True
+    else:
+        for other_id, other_position in positions.items():
+            if other_id == node_id:
+                continue
+            op = np.asarray(other_position, dtype=float).reshape(-1)[:2]
+            if float(np.linalg.norm(p1 - op)) < _STUB_TIP_NODE_CLEAR:
+                return True
 
     for q0, q1 in assigned_stub_segments:
         if _segments_cross_2d(p0, p1, q0, q1):
@@ -774,7 +857,7 @@ def _compute_axis_directions(
     if dimensions == 2:
         _compute_free_directions_2d(graph, positions, directions, draw_scale=draw_scale)
     else:
-        _compute_free_directions_3d(graph, positions, directions)
+        _compute_free_directions_3d(graph, positions, directions, draw_scale=draw_scale)
 
     return directions
 
@@ -832,6 +915,7 @@ def _compute_free_directions_2d(
             used_dirs = _used_axis_directions(directions, node_id=node_id, axis_count=axis_count)
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
             named_direction = _direction_from_axis_name(axis_name, dimensions=2)
+            strict_phys = _is_physical_axis_name(axis_name)
 
             toward = dirs_to_obstacles @ unit_circle.T
             away_scores = -np.min(toward, axis=0)
@@ -857,6 +941,7 @@ def _compute_free_directions_2d(
                     bond_segments=bond_segments,
                     positions=positions,
                     draw_scale=draw_scale,
+                    strict_physical_node_clearance=strict_phys,
                 ):
                     picked = nd
 
@@ -873,18 +958,47 @@ def _compute_free_directions_2d(
                         bond_segments=bond_segments,
                         positions=positions,
                         draw_scale=draw_scale,
+                        strict_physical_node_clearance=strict_phys,
                     ):
                         continue
                     picked = cand
                     break
 
-            if picked is None:
+            if picked is None and not strict_phys:
                 for idx in order:
                     cand = unit_circle[int(idx)].copy()
                     if not _direction_has_space(cand, used_dirs):
                         continue
                     picked = cand
                     break
+
+            if picked is None and strict_phys:
+                r_disk = float(PlotConfig.DEFAULT_NODE_RADIUS) * max(float(draw_scale), 1e-6) * 1.08
+                other_ids = [oid for oid in positions if oid != node_id]
+                best_idx: int | None = None
+                best_margin = -1e300
+                for idx in range(int(unit_circle.shape[0])):
+                    cand = unit_circle[idx].copy()
+                    p0s, p1s = _dangling_stub_segment_2d(origin, cand, draw_scale=draw_scale)
+                    if other_ids:
+                        margin = min(
+                            math.sqrt(
+                                _segment_point_min_distance_sq_2d(
+                                    p0s,
+                                    p1s,
+                                    np.asarray(positions[oid], dtype=float).reshape(-1)[:2],
+                                )
+                            )
+                            - r_disk
+                            for oid in other_ids
+                        )
+                    else:
+                        margin = 0.0
+                    if margin > best_margin:
+                        best_margin = margin
+                        best_idx = idx
+                if best_idx is not None:
+                    picked = unit_circle[int(best_idx)].copy()
 
             if picked is None:
                 picked = unit_circle[int(np.argmax(scores))].copy()
@@ -899,6 +1013,8 @@ def _compute_free_directions_3d(
     graph: _GraphData,
     positions: NodePositions,
     directions: AxisDirections,
+    *,
+    draw_scale: float = 1.0,
 ) -> None:
     components = _analyze_layout_components(graph)
     assigned_segments: list[tuple[np.ndarray, np.ndarray]] = []
@@ -919,6 +1035,7 @@ def _compute_free_directions_3d(
 
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
             named_direction = _direction_from_axis_name(axis_name, dimensions=3)
+            strict_phys = _is_physical_axis_name(axis_name)
             used_dirs = _used_axis_directions(directions, node_id=node_id, axis_count=axis_count)
             origin = positions[node_id]
             if (
@@ -930,6 +1047,8 @@ def _compute_free_directions_3d(
                     direction=named_direction,
                     assigned_segments=assigned_segments,
                     positions=positions,
+                    draw_scale=draw_scale,
+                    strict_physical_node_clearance=strict_phys,
                 )
             ):
                 directions[axis_key] = named_direction
@@ -944,12 +1063,52 @@ def _compute_free_directions_3d(
                     direction=direction,
                     assigned_segments=assigned_segments,
                     positions=positions,
+                    draw_scale=draw_scale,
+                    strict_physical_node_clearance=strict_phys,
                 ):
                     continue
                 directions[axis_key] = direction
                 assigned_segments.append((origin.copy(), direction.copy()))
                 break
             else:
+                if strict_phys:
+                    dirs_try: list[np.ndarray] = []
+                    if named_direction is not None:
+                        dirs_try.append(np.asarray(named_direction, dtype=float))
+                    dirs_try.extend(list(candidate_directions))
+                    r_disk = float(PlotConfig.DEFAULT_NODE_RADIUS) * max(float(draw_scale), 1e-6) * 1.08
+                    o3 = np.asarray(origin, dtype=float).reshape(-1)[:3]
+                    other_ids = [oid for oid in positions if oid != node_id]
+                    best_d: np.ndarray | None = None
+                    best_margin = -1e300
+                    for raw in dirs_try:
+                        dvec = np.asarray(raw, dtype=float).reshape(-1)[:3]
+                        nn = float(np.linalg.norm(dvec))
+                        if nn < 1e-9:
+                            continue
+                        d_unit = dvec / nn
+                        p0s, p1s = _dangling_stub_segment_3d(o3, d_unit, draw_scale=draw_scale)
+                        if other_ids:
+                            margin = min(
+                                math.sqrt(
+                                    _segment_point_min_distance_sq_3d(
+                                        p0s,
+                                        p1s,
+                                        np.asarray(positions[oid], dtype=float).reshape(-1)[:3],
+                                    )
+                                )
+                                - r_disk
+                                for oid in other_ids
+                            )
+                        else:
+                            margin = 0.0
+                        if margin > best_margin:
+                            best_margin = margin
+                            best_d = d_unit
+                    if best_d is not None:
+                        directions[axis_key] = best_d
+                        assigned_segments.append((origin.copy(), best_d.copy()))
+                        continue
                 fallback = (
                     named_direction if named_direction is not None else _orthogonal_unit(axis)
                 )
@@ -966,13 +1125,30 @@ def _direction_conflicts_3d(
     direction: np.ndarray,
     assigned_segments: list[tuple[np.ndarray, np.ndarray]],
     positions: NodePositions,
+    draw_scale: float = 1.0,
+    strict_physical_node_clearance: bool = False,
 ) -> bool:
     tip = origin + direction * 0.45
-    for other_id, other_position in positions.items():
-        if other_id == node_id:
-            continue
-        if np.linalg.norm(tip - other_position) < 0.26:
-            return True
+
+    if strict_physical_node_clearance:
+        d = np.asarray(direction, dtype=float).reshape(-1)[:3]
+        nrm = float(np.linalg.norm(d))
+        d_unit = d / nrm if nrm >= 1e-9 else np.array([0.0, 0.0, 1.0], dtype=float)
+        s = max(float(draw_scale), 1e-6)
+        p0, p1 = _dangling_stub_segment_3d(origin, d_unit, draw_scale=draw_scale)
+        r_disk = float(PlotConfig.DEFAULT_NODE_RADIUS) * s * 1.08
+        for other_id, other_position in positions.items():
+            if other_id == node_id:
+                continue
+            op = np.asarray(other_position, dtype=float).reshape(-1)[:3]
+            if math.sqrt(_segment_point_min_distance_sq_3d(p0, p1, op)) < r_disk:
+                return True
+    else:
+        for other_id, other_position in positions.items():
+            if other_id == node_id:
+                continue
+            if np.linalg.norm(tip - other_position) < 0.26:
+                return True
 
     for other_origin, other_direction in assigned_segments:
         other_tip = other_origin + other_direction * 0.45

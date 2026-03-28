@@ -7,7 +7,6 @@ import math
 from collections import defaultdict
 from contextlib import suppress
 from dataclasses import dataclass
-from itertools import combinations
 from typing import Any, Literal, Protocol, cast
 
 import numpy as np
@@ -17,7 +16,6 @@ from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.patches import Circle
 from matplotlib.textpath import TextPath
-from matplotlib.transforms import Bbox as _DisplayBbox
 from mpl_toolkits.mplot3d import proj3d
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
@@ -44,6 +42,14 @@ _CURVE_OFFSET_FACTOR: float = 0.15
 _CURVE_NEAR_PAIR_REF: float = 0.28
 # Extra radius + offset so index captions sit just outside tensor disks (data units).
 _NODE_LABEL_MARGIN_FACTOR: float = 1.22
+# Small extra perpendicular gap (× layout ``scale``) for 2D bond index labels after half-linewidth.
+_INDEX_LABEL_2D_PERP_EXTRA: float = 0.014
+# Target span of edge index text vs on-screen bond length: (100 - 30*2) / (2.3 * 100).
+_EDGE_INDEX_LABEL_SPAN_FRAC: float = (100.0 - 30.0 * 2.0) / (2.3 * 100.0)
+# TextPath width under-estimates padded bbox slightly; calibrate so nominal fraction holds visually.
+_EDGE_INDEX_LABEL_WIDTH_CALIB: float = 1.12
+# Along-edge reference: edge of label aligns at this arc-length fraction from its endpoint.
+_EDGE_INDEX_LABEL_ALONG_FRAC: float = 0.3
 # Draw order: bonds < node disks < edge index labels < tensor names (on top).
 _ZORDER_NODE_DISK: int = 3
 _ZORDER_EDGE_INDEX_LABEL: int = 5
@@ -141,6 +147,146 @@ def _apply_axis_limits_with_outset(
     else:
         ax.set_aspect("equal", adjustable="box")
     ax.set_axis_off()
+
+
+def _stack_visible_tensor_coords(graph: _GraphData, positions: NodePositions) -> np.ndarray:
+    visible_ids = [nid for nid, n in graph.nodes.items() if not n.is_virtual]
+    if visible_ids:
+        return np.stack([np.asarray(positions[nid], dtype=float) for nid in visible_ids])
+    if not positions:
+        return np.zeros((0, 2), dtype=float)
+    return np.stack([np.asarray(v, dtype=float) for v in positions.values()])
+
+
+def _line_halfwidth_data_2d(ax: Axes, lw_pt: float, xy: np.ndarray) -> float:
+    """Half of a bond linewidth in data units at *xy* (robust for ``set_aspect('equal')``)."""
+    x, y = float(xy[0]), float(xy[1])
+    half_w_px = (float(lw_pt) / 72.0) * float(ax.figure.dpi) * 0.5
+    t0 = ax.transData.transform(np.array([[x, y]], dtype=float))[0]
+    t1 = ax.transData.transform(np.array([[x + 1.0, y]], dtype=float))[0]
+    t2 = ax.transData.transform(np.array([[x, y + 1.0]], dtype=float))[0]
+    px_per_du = max(abs(float(t1[0] - t0[0])), abs(float(t2[1] - t0[1])), 1e-12)
+    return float(half_w_px / px_per_du)
+
+
+def _polyline_arc_length_total(curve: np.ndarray) -> float:
+    pts = np.asarray(curve, dtype=float)
+    if int(pts.shape[0]) < 2:
+        return 0.0
+    return float(np.sum(np.linalg.norm(np.diff(pts, axis=0), axis=1)))
+
+
+def _point_tangent_along_polyline_from_start(
+    curve: np.ndarray, dist: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Point at arc *dist* from ``curve[0]`` and unit tangent in the forward polyline direction."""
+    pts = np.asarray(curve, dtype=float)
+    n = int(pts.shape[0])
+    dim = int(pts.shape[1])
+    if n < 2:
+        t0 = np.zeros(dim, dtype=float)
+        t0[0] = 1.0
+        return pts[0].copy(), t0
+    seg = np.diff(pts, axis=0)
+    sl = np.linalg.norm(seg, axis=1)
+    cum = np.concatenate([np.array([0.0], dtype=float), np.cumsum(sl)])
+    total = float(cum[-1])
+    if total < 1e-15:
+        t0 = seg[0] / max(float(sl[0]), 1e-15)
+        return pts[0].copy(), t0
+    target = float(np.clip(dist, 0.0, total))
+    for i in range(len(sl)):
+        if float(cum[i + 1]) >= target - 1e-12:
+            seg_t = (target - float(cum[i])) / max(float(sl[i]), 1e-15)
+            seg_t = float(np.clip(seg_t, 0.0, 1.0))
+            point = pts[i] + seg_t * seg[i]
+            tangent = seg[i] / max(float(sl[i]), 1e-15)
+            return point, tangent
+    tangent = seg[-1] / max(float(sl[-1]), 1e-15)
+    return pts[-1].copy(), tangent
+
+
+def _point_tangent_along_polyline_from_end(
+    curve: np.ndarray, dist: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Like ``_point_tangent_along_polyline_from_start`` but *dist* is measured from ``curve[-1]`` backward."""
+    pts = np.asarray(curve, dtype=float)
+    total = _polyline_arc_length_total(pts)
+    return _point_tangent_along_polyline_from_start(pts, max(0.0, total - float(dist)))
+
+
+def _tangent_screen_angle_deg(
+    ax: Any,
+    tangent: np.ndarray,
+    dimensions: Literal[2, 3],
+) -> float:
+    """Counter-clockwise degrees for the on-screen direction of *tangent*."""
+    t = np.asarray(tangent, dtype=float)
+    if dimensions == 2:
+        return float(math.degrees(math.atan2(float(t[1]), float(t[0]))))
+    M = ax.get_proj()
+    x0, y0, _ = proj3d.proj_transform(0.0, 0.0, 0.0, M)
+    x1, y1, _ = proj3d.proj_transform(float(t[0]), float(t[1]), float(t[2]), M)
+    return float(math.degrees(math.atan2(float(y1 - y0), float(x1 - x0))))
+
+
+def _upright_screen_text_rotation_deg_raw(angle_deg: float) -> tuple[float, bool]:
+    """Map rotation to ``[-90, 90]``; return whether ±180° was applied (then swap *ha*)."""
+    a = float(angle_deg) % 360.0
+    if a > 180.0:
+        a -= 360.0
+    flipped_180 = False
+    if a > 90.0:
+        a -= 180.0
+        flipped_180 = True
+    elif a < -90.0:
+        a += 180.0
+        flipped_180 = True
+    return float(a), flipped_180
+
+
+def _edge_index_along_bond_text_kw(
+    *,
+    endpoint: Literal["left", "right"],
+    tangent: np.ndarray,
+    ax: Any,
+    dimensions: Literal[2, 3],
+) -> dict[str, Any]:
+    """``ha`` / ``rotation`` so the inner caption edge sits at the along-bond reference point *Q*."""
+    rot_raw = _tangent_screen_angle_deg(ax, tangent, dimensions)
+    rot, flipped = _upright_screen_text_rotation_deg_raw(rot_raw)
+    ha = "left" if endpoint == "left" else "right"
+    if flipped:
+        ha = "right" if ha == "left" else "left"
+    return {
+        "ha": ha,
+        "va": "center",
+        "rotation": rot,
+        "rotation_mode": "anchor",
+    }
+
+
+def _bond_index_label_perp_offset(
+    caption: str,
+    *,
+    p: _DrawScaleParams,
+    scale: float,
+    dimensions: Literal[2, 3],
+    ax: Any,
+    anchor: np.ndarray,
+) -> float:
+    """Distance along the bond normal from centerline to the text anchor (2D: tight to stroke)."""
+    display = format_tensor_node_label(caption)
+    n = len(display.strip())
+    if dimensions == 2:
+        hw = _line_halfwidth_data_2d(cast(Axes, ax), float(p.lw), np.asarray(anchor[:2], dtype=float))
+        excess = max(0, n - 5)
+        span_extra = 0.021 * float(scale) * (float(excess) ** 0.82)
+        bump = _INDEX_LABEL_2D_PERP_EXTRA * float(scale)
+        return float(hw + span_extra + bump)
+    span_extra = 0.026 * float(scale) * (max(0, n - 1) ** 0.8)
+    base = max(float(p.label_offset) * 0.40, float(p.r) * 0.26)
+    return float(base + span_extra * 1.05)
 
 
 # 3D nodes: octahedron (8 tris / node). Full UV spheres are too heavy for interactive mplot3d.
@@ -380,6 +526,15 @@ def _signed_bond_perpendicular(
     return perpendicular
 
 
+def _signed_curve_perpendicular_2d(tangent: np.ndarray) -> np.ndarray:
+    """Normal to the curve in 2D, with the same +y preference as ``_signed_bond_perpendicular``."""
+    perp = _perpendicular_2d(tangent)
+    perp = perp / max(float(np.linalg.norm(perp)), 1e-15)
+    if float(perp[1]) < 0.0:
+        perp = -perp
+    return perp
+
+
 def _node_label_clearance(p: _DrawScaleParams) -> float:
     """Minimum distance from a tensor center to an index label anchor (data units)."""
     return float(p.r * _NODE_LABEL_MARGIN_FACTOR + p.label_offset * 0.46)
@@ -388,7 +543,7 @@ def _node_label_clearance(p: _DrawScaleParams) -> float:
 def _edge_index_text_kwargs(
     config: PlotConfig,
     *,
-    fontsize: int,
+    fontsize: float,
     stub_kind: Literal["bond", "dangling"] = "bond",
     bbox_pad: float = 0.18,
 ) -> dict[str, Any]:
@@ -479,6 +634,88 @@ def _figure_size_sqrt_ratio(fig: Figure) -> float:
     return float(math.sqrt(min_px / _FIGURE_MIN_PX_REF))
 
 
+def _textpath_width_pts(text: str, *, fontsize_pt: float) -> float:
+    """Horizontal advance of *text* from Matplotlib TextPath at *fontsize_pt* (points)."""
+    if not text.strip():
+        return 0.0
+    fp = FontProperties(size=float(fontsize_pt))
+    tp = TextPath((0.0, 0.0), text, prop=fp)
+    return float(tp.get_extents().width)
+
+
+def _bond_reference_span_px_for_font(
+    ax: Any,
+    bond_start: np.ndarray,
+    bond_end: np.ndarray,
+    dimensions: Literal[2, 3],
+) -> float:
+    """Stable pixel length for sizing index labels vs a *data-space* bond length.
+
+    Before the first full canvas draw, ``Axes.transData`` can be anisotropic (different
+    ∂x/∂data vs ∂y/∂data) even with ``equal`` aspect, so chord length in display space
+    depends on whether the bond is horizontal or vertical. Using
+    ``L_data * (‖∂T/∂x‖ + ‖∂T/∂y‖) / 2`` in 2D avoids lateral legs reading tiny when Matplotlib's
+    ``transData`` is temporarily anisotropic before the first full draw (horizontal vs
+    vertical ``phys`` on MPS) without pinning all legs to the most inflated scale.
+    """
+    s = np.asarray(bond_start, dtype=float)
+    e = np.asarray(bond_end, dtype=float)
+    L = float(np.linalg.norm(e - s))
+    if L < 1e-15:
+        return 0.0
+    mid = 0.5 * (s + e)
+    if dimensions == 2:
+        ax2 = cast(Axes, ax)
+        x, y = float(mid[0]), float(mid[1])
+        T = ax2.transData.transform
+        p0 = T(np.array([[x, y]], dtype=float))[0]
+        px = T(np.array([[x + 1.0, y]], dtype=float))[0]
+        py = T(np.array([[x, y + 1.0]], dtype=float))[0]
+        ex = float(np.hypot(float(px[0] - p0[0]), float(px[1] - p0[1])))
+        ey = float(np.hypot(float(py[0] - p0[0]), float(py[1] - p0[1])))
+        return float(L * 0.5 * (ex + ey))
+    M = ax.get_proj()
+    u = (e - s) / L
+    m = np.asarray(mid[:3], dtype=float)
+    eps = max(1e-6, float(1e-4 * L))
+    step = np.asarray(u * eps, dtype=float)
+    xs0, ys0, _ = proj3d.proj_transform(float(m[0]), float(m[1]), float(m[2]), M)
+    xs1, ys1, _ = proj3d.proj_transform(
+        float(m[0] + step[0]),
+        float(m[1] + step[1]),
+        float(m[2] + step[2]),
+        M,
+    )
+    row0 = np.asarray([[float(xs0), float(ys0)]], dtype=float)
+    row1 = np.asarray([[float(xs1), float(ys1)]], dtype=float)
+    p0 = ax.transData.transform(row0)[0]
+    p1 = ax.transData.transform(row1)[0]
+    d_step = float(np.hypot(float(p1[0] - p0[0]), float(p1[1] - p0[1])))
+    return float(L * d_step / max(eps, 1e-15))
+
+
+def _edge_index_fontsize_for_bond(
+    caption: str,
+    *,
+    bond_start: np.ndarray,
+    bond_end: np.ndarray,
+    ax: Any,
+    dimensions: Literal[2, 3],
+) -> float:
+    """Font size so drawn caption width ~ ``_EDGE_INDEX_LABEL_SPAN_FRAC`` × on-screen bond length."""
+    show = format_tensor_node_label(caption).strip()
+    if not show:
+        return 3.0
+    bond_px = _bond_reference_span_px_for_font(ax, bond_start, bond_end, dimensions)
+    target_px = float(_EDGE_INDEX_LABEL_SPAN_FRAC) * bond_px
+    dpi = float(getattr(ax.figure, "dpi", None) or 100.0)
+    w_ref = _textpath_width_pts(show, fontsize_pt=10.0) * float(_EDGE_INDEX_LABEL_WIDTH_CALIB)
+    if w_ref < 1e-12 or target_px < 1e-12:
+        return 3.0
+    fs = 10.0 * target_px * 72.0 / (dpi * w_ref)
+    return float(np.clip(fs, 3.0, 22.0))
+
+
 def _figure_relative_font_scale(fig: Figure, label_count: int) -> float:
     """Scale font sizes from figure dimensions and expected label crowding."""
     size_part = _figure_size_sqrt_ratio(fig)
@@ -495,154 +732,6 @@ def _figure_base_size_scale(fig: Figure) -> float:
     """
     size_part = _figure_size_sqrt_ratio(fig)
     return float(np.clip(size_part, 0.35, 1.28))
-
-
-def _index_label_fontsize_for_caption(base: int, caption: str) -> int:
-    """Larger glyphs for very short index names; smaller for long identifiers."""
-    raw = caption.strip()
-    n = len(raw)
-    if n <= 0:
-        return base
-    if n == 1:
-        factor = 1.32
-    elif n == 2:
-        factor = 1.17
-    elif n <= 4:
-        factor = 1.02
-    elif n <= 8:
-        factor = 0.93
-    elif n <= 14:
-        factor = 0.84
-    else:
-        factor = max(0.7, 0.84 - 0.028 * float(n - 14))
-    return max(3, min(14, round(float(base) * factor)))
-
-
-def _edge_index_font_scale(label_slots: int) -> float:
-    """Shrink bond/dangling index captions when many labels are drawn (e.g. MERA, PEPS)."""
-    if label_slots <= 14:
-        return 1.0
-    return float(1.0 / math.sqrt(1.0 + 0.058 * float(label_slots - 14)))
-
-
-def _padded_window_bbox(bb: Any, pad_px: float) -> _DisplayBbox:
-    return _DisplayBbox.from_extents(
-        float(bb.x0) - pad_px,
-        float(bb.y0) - pad_px,
-        float(bb.x1) + pad_px,
-        float(bb.y1) + pad_px,
-    )
-
-
-def _display_bboxes_overlap(a: _DisplayBbox, b: _DisplayBbox) -> bool:
-    return not (
-        float(a.x1) < float(b.x0)
-        or float(b.x1) < float(a.x0)
-        or float(a.y1) < float(b.y0)
-        or float(b.y1) < float(a.y0)
-    )
-
-
-def _index_labels_window_overlap(
-    labels: list[Any],
-    renderer: Any,
-    pad_px: float,
-) -> bool:
-    bbs = [_padded_window_bbox(t.get_window_extent(renderer=renderer), pad_px) for t in labels]
-    return any(
-        _display_bboxes_overlap(bbs[i], bbs[j]) for i, j in combinations(range(len(labels)), 2)
-    )
-
-
-def _clamp_label_to_anchor(
-    xy: tuple[float, float],
-    anchor: np.ndarray,
-    max_drift: float,
-) -> tuple[float, float]:
-    p = np.array(xy, dtype=float)
-    delta = p - anchor
-    dist = float(np.linalg.norm(delta))
-    if dist <= max_drift or dist < 1e-15:
-        return float(p[0]), float(p[1])
-    snapped = anchor + delta * (max_drift / dist)
-    return float(snapped[0]), float(snapped[1])
-
-
-def _index_label_separation_schedule(n_lbl: int) -> tuple[int, int]:
-    """(max_shrink_passes, inner_iters) — fewer passes when many labels (less canvas.draw churn)."""
-    if n_lbl <= 45:
-        return 8, 20
-    if n_lbl <= 90:
-        return 5, 12
-    if n_lbl <= 140:
-        return 4, 8
-    return 3, 5
-
-
-def _separate_edge_index_labels_2d(ax: Axes) -> None:
-    """Fix overlaps within a tight move cap; shrink index fonts if still overlapping (MERA)."""
-    labels = [t for t in ax.texts if t.get_gid() == _EDGE_INDEX_LABEL_GID]
-    if len(labels) < 2:
-        return
-    fig = ax.figure
-    span_data = max(
-        float(ax.get_xlim()[1] - ax.get_xlim()[0]),
-        float(ax.get_ylim()[1] - ax.get_ylim()[0]),
-    )
-    anchors_orig = [np.array(t.get_position(), dtype=float) for t in labels]
-    n_lbl = len(labels)
-    max_drift = span_data * float(np.clip(0.016 - 0.00005 * max(0, n_lbl - 28), 0.006, 0.016))
-    base_step = max(span_data * 0.001, 1e-6)
-    pad_px = 2.0
-    max_shrink_passes, inner_iters = _index_label_separation_schedule(n_lbl)
-    shrink_factor = 0.88
-
-    for s_pass in range(max_shrink_passes):
-        for k, t in enumerate(labels):
-            t.set_position((float(anchors_orig[k][0]), float(anchors_orig[k][1])))
-
-        for it in range(inner_iters):
-            fig.canvas.draw()
-            renderer = fig.canvas.get_renderer()
-            if renderer is None:
-                return
-            bbs: list[_DisplayBbox] = []
-            for t in labels:
-                raw = t.get_window_extent(renderer=renderer)
-                bbs.append(_padded_window_bbox(raw, pad_px))
-            moved = False
-            for i in range(len(labels)):
-                for j in range(i + 1, len(labels)):
-                    if not _display_bboxes_overlap(bbs[i], bbs[j]):
-                        continue
-                    moved = True
-                    x1, y1 = labels[i].get_position()
-                    x2, y2 = labels[j].get_position()
-                    dx, dy = x1 - x2, y1 - y2
-                    dist = math.hypot(dx, dy)
-                    if dist < 1e-12:
-                        ang = (it % 6) * (math.pi / 3.0)
-                        dx, dy = math.cos(ang), math.sin(ang)
-                    else:
-                        dx, dy = dx / dist, dy / dist
-                    step = base_step * (1.0 + 0.022 * float(it))
-                    p1 = (x1 + dx * step, y1 + dy * step)
-                    p2 = (x2 - dx * step, y2 - dy * step)
-                    labels[i].set_position(_clamp_label_to_anchor(p1, anchors_orig[i], max_drift))
-                    labels[j].set_position(_clamp_label_to_anchor(p2, anchors_orig[j], max_drift))
-            if not moved:
-                break
-
-        fig.canvas.draw()
-        renderer = fig.canvas.get_renderer()
-        if renderer is None:
-            return
-        if not _index_labels_window_overlap(labels, renderer, pad_px):
-            return
-        if s_pass == max_shrink_passes - 1:
-            return
-        for t in labels:
-            t.set_fontsize(max(3, round(float(t.get_fontsize()) * shrink_factor)))
 
 
 def _index_label_bbox_pad(label_slots: int) -> float:
@@ -688,45 +777,78 @@ def _plot_contraction_index_captions(
     config: PlotConfig,
     p: _DrawScaleParams,
     dimensions: Literal[2, 3],
+    ax: Any,
+    scale: float,
 ) -> None:
     ep_l, ep_r = _require_contraction_endpoints(edge)
     cap_l: str | None = _endpoint_index_caption(ep_l, edge, graph)
     cap_r: str | None = _endpoint_index_caption(ep_r, edge, graph)
     if not cap_l and not cap_r:
         return
-    n = int(curve.shape[0])
-    clearance = _node_label_clearance(p)
-    left_virtual = graph.nodes[left_id].is_virtual
-    right_virtual = graph.nodes[right_id].is_virtual
-    margin_i = max(1, n // 24)
-    if left_virtual:
-        i_l = min(max(1, margin_i), n - 2)
-    else:
-        i_l = _curve_index_outside_disk(curve, positions[left_id], clearance, from_start=True)
-    if right_virtual:
-        i_r = max(1, min(n - 2, n - 1 - margin_i))
-    else:
-        i_r = _curve_index_outside_disk(curve, positions[right_id], clearance, from_start=False)
-    if i_l >= i_r:
-        i_r = min(n - 2, i_l + max(2, n // 7))
-    if i_r <= i_l:
-        i_l = max(1, i_r - max(2, n // 7))
+    cvm = np.asarray(curve, dtype=float)
+    L = _polyline_arc_length_total(cvm)
+    along = float(_EDGE_INDEX_LABEL_ALONG_FRAC) * L
+    Q_l, t_l = _point_tangent_along_polyline_from_start(cvm, along)
+    Q_r, t_r = _point_tangent_along_polyline_from_end(cvm, along)
     delta = positions[right_id] - positions[left_id]
-    perpendicular = _signed_bond_perpendicular(delta, dimensions)
-    off = float(max(p.label_offset * 0.52, p.r * 0.31))
-    for cap, idx, sign in ((cap_l, i_l, 1), (cap_r, i_r, -1)):
+    if dimensions == 2:
+        y_l = float(np.asarray(positions[left_id], dtype=float)[1])
+        y_r = float(np.asarray(positions[right_id], dtype=float)[1])
+        # Higher endpoint gets the "+perp" (visually upper) side; equal y keeps left / right default.
+        sign_l, sign_r = (-1, 1) if y_r > y_l + 1e-12 else (1, -1)
+    else:
+        sign_l, sign_r = 1, -1
+    perp_chord_3d = _signed_bond_perpendicular(delta, dimensions) if dimensions == 3 else None
+    bond_start = np.asarray(positions[left_id], dtype=float)
+    bond_end = np.asarray(positions[right_id], dtype=float)
+    _cap_pairs: tuple[
+        tuple[str | None, np.ndarray, np.ndarray, int, Literal["left", "right"]],
+        tuple[str | None, np.ndarray, np.ndarray, int, Literal["left", "right"]],
+    ] = (
+        (cap_l, Q_l, t_l, sign_l, "left"),
+        (cap_r, Q_r, t_r, sign_r, "right"),
+    )
+    for cap, Q, t_fwd, sign, endpoint in _cap_pairs:
         if not cap:
             continue
-        fs = _index_label_fontsize_for_caption(p.font_index_end, cap)
+        fs = _edge_index_fontsize_for_bond(
+            cap,
+            bond_start=bond_start,
+            bond_end=bond_end,
+            ax=ax,
+            dimensions=dimensions,
+        )
+        off = _bond_index_label_perp_offset(
+            cap,
+            p=p,
+            scale=scale,
+            dimensions=dimensions,
+            ax=ax,
+            anchor=Q,
+        )
+        tk = _edge_index_text_kwargs(
+            config,
+            fontsize=fs,
+            stub_kind="bond",
+            bbox_pad=p.index_bbox_pad,
+        )
+        align_kw = _edge_index_along_bond_text_kw(
+            endpoint=endpoint,
+            tangent=t_fwd,
+            ax=ax,
+            dimensions=dimensions,
+        )
+        tk = {**tk, **align_kw}
+        if dimensions == 2:
+            n_hat = _signed_curve_perpendicular_2d(np.asarray(t_fwd[:2], dtype=float))
+            pos = np.asarray(Q[:2], dtype=float) + float(sign) * n_hat * off
+        else:
+            assert perp_chord_3d is not None
+            pos = np.asarray(Q, dtype=float) + float(sign) * perp_chord_3d * off
         plotter.plot_text(
-            curve[idx] + sign * perpendicular * off,
+            pos,
             format_tensor_node_label(cap),
-            **_edge_index_text_kwargs(
-                config,
-                fontsize=fs,
-                stub_kind="bond",
-                bbox_pad=p.index_bbox_pad,
-            ),
+            **tk,
         )
 
 
@@ -740,6 +862,8 @@ def _draw_dangling_edge(
     config: PlotConfig,
     dimensions: Literal[2, 3],
     p: _DrawScaleParams,
+    ax: Any,
+    scale: float,
 ) -> None:
     endpoint = edge.endpoints[0]
     direction = directions[(endpoint.node_id, endpoint.axis_index)]
@@ -756,22 +880,62 @@ def _draw_dangling_edge(
         end = start + direction * p.stub
     plotter.plot_line(start, end, color=config.dangling_edge_color, linewidth=p.lw, zorder=2)
     if show_index_labels and edge.label:
-        if dimensions == 2:
-            label_pos = start + direction * (p.stub * 0.54)
-        else:
-            dist_from_center = float(p.r + p.stub * 0.52)
-            label_pos = center + direction * dist_from_center
         raw_lbl = edge.label
-        fs_d = _index_label_fontsize_for_caption(p.font_index_end, raw_lbl)
+        fs_d = _edge_index_fontsize_for_bond(
+            raw_lbl,
+            bond_start=start,
+            bond_end=end,
+            ax=ax,
+            dimensions=dimensions,
+        )
+        dk = _edge_index_text_kwargs(
+            config,
+            fontsize=fs_d,
+            stub_kind="dangling",
+            bbox_pad=p.index_bbox_pad,
+        )
+        stub_seg = np.stack([np.asarray(start, dtype=float), np.asarray(end, dtype=float)], axis=0)
+        Ls = _polyline_arc_length_total(stub_seg)
+        Q, t_stub = _point_tangent_along_polyline_from_start(stub_seg, float(_EDGE_INDEX_LABEL_ALONG_FRAC) * Ls)
+        if dimensions == 2:
+            n_hat = _signed_curve_perpendicular_2d(np.asarray(t_stub[:2], dtype=float))
+            off = _bond_index_label_perp_offset(
+                raw_lbl,
+                p=p,
+                scale=scale,
+                dimensions=2,
+                ax=ax,
+                anchor=Q,
+            )
+            label_pos = np.asarray(Q[:2], dtype=float) + n_hat * off
+            dk = {
+                **dk,
+                **_edge_index_along_bond_text_kw(
+                    endpoint="left", tangent=t_stub, ax=ax, dimensions=2
+                ),
+            }
+        else:
+            dstub = np.asarray(end, dtype=float) - np.asarray(start, dtype=float)
+            n3 = _signed_bond_perpendicular(dstub, 3)
+            off = _bond_index_label_perp_offset(
+                raw_lbl,
+                p=p,
+                scale=scale,
+                dimensions=3,
+                ax=ax,
+                anchor=Q,
+            )
+            label_pos = np.asarray(Q, dtype=float) + n3 * off
+            dk = {
+                **dk,
+                **_edge_index_along_bond_text_kw(
+                    endpoint="left", tangent=t_stub, ax=ax, dimensions=3
+                ),
+            }
         plotter.plot_text(
             label_pos,
             format_tensor_node_label(raw_lbl),
-            **_edge_index_text_kwargs(
-                config,
-                fontsize=fs_d,
-                stub_kind="dangling",
-                bbox_pad=p.index_bbox_pad,
-            ),
+            **dk,
         )
 
 
@@ -786,6 +950,8 @@ def _draw_self_loop_edge(
     config: PlotConfig,
     dimensions: Literal[2, 3],
     p: _DrawScaleParams,
+    ax: Any,
+    scale: float,
 ) -> None:
     endpoint_a, endpoint_b = _require_self_endpoints(edge)
     direction_a = directions[(endpoint_a.node_id, endpoint_a.axis_index)]
@@ -837,22 +1003,76 @@ def _draw_self_loop_edge(
             ia = max(1, ib - min_sep)
         dir_norm = float(np.linalg.norm(label_offset_dir))
         dir_unit = label_offset_dir / max(dir_norm, 1e-9)
-        off_mag = float(max(p.label_offset * 0.52, p.r * 0.32))
-        off_a = dir_unit * off_mag
-        off_b = -dir_unit * off_mag * 0.88
+        loop_span_a = np.asarray(curve[ia], dtype=float)
+        loop_span_b = np.asarray(curve[ib], dtype=float)
+        sub_loop = np.asarray(curve[ia : ib + 1], dtype=float)
+        L_loop = _polyline_arc_length_total(sub_loop)
+        along_loop = float(_EDGE_INDEX_LABEL_ALONG_FRAC) * L_loop
+        Q_a, t_a = _point_tangent_along_polyline_from_start(sub_loop, along_loop)
+        Q_b, t_b = _point_tangent_along_polyline_from_end(sub_loop, along_loop)
         if ca:
-            fs_a = _index_label_fontsize_for_caption(p.font_index_end, ca)
+            off_a_mag = _bond_index_label_perp_offset(
+                ca,
+                p=p,
+                scale=scale,
+                dimensions=dimensions,
+                ax=ax,
+                anchor=Q_a,
+            )
+            off_a = dir_unit * off_a_mag
+        else:
+            off_a = dir_unit * 0.0
+        if cb:
+            off_b_mag = _bond_index_label_perp_offset(
+                cb,
+                p=p,
+                scale=scale,
+                dimensions=dimensions,
+                ax=ax,
+                anchor=Q_b,
+            )
+            off_b = -dir_unit * off_b_mag * 0.88
+        else:
+            off_b = -dir_unit * 0.0
+        if ca:
+            fs_a = _edge_index_fontsize_for_bond(
+                ca,
+                bond_start=loop_span_a,
+                bond_end=loop_span_b,
+                ax=ax,
+                dimensions=dimensions,
+            )
+            tk_a = _edge_index_text_kwargs(config, fontsize=fs_a, bbox_pad=p.index_bbox_pad)
+            tk_a = {
+                **tk_a,
+                **_edge_index_along_bond_text_kw(
+                    endpoint="left", tangent=t_a, ax=ax, dimensions=dimensions
+                ),
+            }
             plotter.plot_text(
-                curve[ia] + off_a,
+                np.asarray(Q_a, dtype=float) + off_a,
                 format_tensor_node_label(ca),
-                **_edge_index_text_kwargs(config, fontsize=fs_a, bbox_pad=p.index_bbox_pad),
+                **tk_a,
             )
         if cb:
-            fs_b = _index_label_fontsize_for_caption(p.font_index_end, cb)
+            fs_b = _edge_index_fontsize_for_bond(
+                cb,
+                bond_start=loop_span_a,
+                bond_end=loop_span_b,
+                ax=ax,
+                dimensions=dimensions,
+            )
+            tk_b = _edge_index_text_kwargs(config, fontsize=fs_b, bbox_pad=p.index_bbox_pad)
+            tk_b = {
+                **tk_b,
+                **_edge_index_along_bond_text_kw(
+                    endpoint="right", tangent=t_b, ax=ax, dimensions=dimensions
+                ),
+            }
             plotter.plot_text(
-                curve[ib] + off_b,
+                np.asarray(Q_b, dtype=float) + off_b,
                 format_tensor_node_label(cb),
-                **_edge_index_text_kwargs(config, fontsize=fs_b, bbox_pad=p.index_bbox_pad),
+                **tk_b,
             )
 
 
@@ -868,6 +1088,7 @@ def _draw_contraction_edge(
     scale: float,
     dimensions: Literal[2, 3],
     p: _DrawScaleParams,
+    ax: Any,
 ) -> None:
     left_id, right_id = edge.node_ids
     offset_index, edge_count = contraction_groups.offsets[id(edge)]
@@ -896,6 +1117,8 @@ def _draw_contraction_edge(
             config=config,
             p=p,
             dimensions=dimensions,
+            ax=ax,
+            scale=scale,
         )
 
 
@@ -911,6 +1134,7 @@ def _draw_edges(
     scale: float,
     dimensions: Literal[2, 3],
     p: _DrawScaleParams,
+    ax: Any,
 ) -> None:
     for edge in graph.edges:
         if edge.kind == "dangling":
@@ -923,6 +1147,8 @@ def _draw_edges(
                 config=config,
                 dimensions=dimensions,
                 p=p,
+                ax=ax,
+                scale=scale,
             )
         elif edge.kind == "self":
             _draw_self_loop_edge(
@@ -935,6 +1161,8 @@ def _draw_edges(
                 config=config,
                 dimensions=dimensions,
                 p=p,
+                ax=ax,
+                scale=scale,
             )
         else:
             _draw_contraction_edge(
@@ -948,6 +1176,7 @@ def _draw_edges(
                 scale=scale,
                 dimensions=dimensions,
                 p=p,
+                ax=ax,
             )
 
 
@@ -1038,11 +1267,13 @@ def _draw_nodes(
 ) -> np.ndarray:
     visible_node_ids = [node_id for node_id, node in graph.nodes.items() if not node.is_virtual]
     if visible_node_ids:
-        coords = np.stack([positions[node_id] for node_id in visible_node_ids])
+        coords = np.stack(
+            [np.asarray(positions[node_id], dtype=float) for node_id in visible_node_ids]
+        )
         deg1 = _visible_degree_one_mask(graph, visible_node_ids)
         plotter.draw_tensor_nodes(coords, config=config, p=p, degree_one_mask=deg1)
         return coords
-    return np.stack(list(positions.values()))
+    return _stack_visible_tensor_coords(graph, positions)
 
 
 def _draw_labels(
@@ -1136,7 +1367,6 @@ class _DrawScaleParams:
     stub: float
     loop_r: float
     lw: float
-    font_index_end: int
     font_tensor_label_max: float
     index_bbox_pad: float
     label_offset: float
@@ -1156,7 +1386,6 @@ def _draw_scale_params(
     """Compute scale-dependent drawing parameters from config."""
     fs = font_figure_scale
     tensor_fs = _figure_base_size_scale(fig)
-    idx_scale = _edge_index_font_scale(max(1, label_slots))
     bbox_pad = _index_label_bbox_pad(max(1, label_slots))
     r = (
         config.node_radius if config.node_radius is not None else PlotConfig.DEFAULT_NODE_RADIUS
@@ -1173,9 +1402,6 @@ def _draw_scale_params(
     lw_attr = config.line_width_3d if is_3d else config.line_width_2d
     lw = (lw_attr if lw_attr is not None else lw_default) * scale
 
-    bond_ref = max(4, round(5.5 * scale * fs))
-    font_index_pt = 0.66 * float(bond_ref) * idx_scale
-    font_index_end = max(3, min(11, round(font_index_pt)))
     # Tensor names: cap from layout + figure *size* only — not `fs` (bond-label crowding).
     font_tensor_label_max = float(max(3.0, min(15.0, 10.0 * scale * tensor_fs)))
     return _DrawScaleParams(
@@ -1183,7 +1409,6 @@ def _draw_scale_params(
         stub=stub,
         loop_r=loop_r,
         lw=lw,
-        font_index_end=font_index_end,
         font_tensor_label_max=font_tensor_label_max,
         index_bbox_pad=bbox_pad,
         label_offset=0.08 * scale * float(np.clip(0.82 + 0.22 * fs, 0.75, 1.2)),
@@ -1262,6 +1487,13 @@ def _draw_graph(
         label_slots=max(1, label_slots),
     )
     plotter = _make_plotter(ax, dimensions=dimensions)
+    pre_coords = _stack_visible_tensor_coords(graph, positions)
+    view_margin = _view_outset_margin_data_units(
+        graph, positions, params, scale, contraction_groups
+    )
+    _apply_axis_limits_with_outset(
+        ax, pre_coords, view_margin=view_margin, dimensions=dimensions
+    )
 
     _draw_edges(
         plotter=plotter,
@@ -1274,6 +1506,7 @@ def _draw_graph(
         scale=scale,
         dimensions=dimensions,
         p=params,
+        ax=ax,
     )
     if dimensions == 2:
         flush = getattr(plotter, "flush_edge_collections", None)
@@ -1285,9 +1518,6 @@ def _draw_graph(
         positions=positions,
         config=config,
         p=params,
-    )
-    view_margin = _view_outset_margin_data_units(
-        graph, positions, params, scale, contraction_groups
     )
     plotter.style_axes(coords, view_margin=view_margin)
     _draw_labels(
@@ -1303,7 +1533,4 @@ def _draw_graph(
     if config.refine_tensor_labels:
         _refit_tensor_labels_to_disks(ax=ax, p=params, dimensions=dimensions)
     if dimensions == 2:
-        ax2d = cast(Axes, ax)
-        if config.separate_index_labels and show_index_labels:
-            _separate_edge_index_labels_2d(ax2d)
-        _register_2d_zoom_font_scaling(ax2d)
+        _register_2d_zoom_font_scaling(cast(Axes, ax))

@@ -26,7 +26,6 @@ def test_plot_config_has_expected_defaults() -> None:
     assert config.positions is None
     assert config.validate_positions is False
     assert config.refine_tensor_labels is True
-    assert config.separate_index_labels is True
 
 
 def test_effective_layout_iterations_respects_explicit_setting() -> None:
