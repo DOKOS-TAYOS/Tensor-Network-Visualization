@@ -9,12 +9,12 @@ import numpy as np
 import tensornetwork as tn
 
 try:
-    from tensor_network_viz import PlotConfig, show_tensor_network
+    from tensor_network_viz import show_tensor_network
 except ImportError:
     # Allow running the example directly from the repo without installing the package.
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root / "src"))
-    from tensor_network_viz import PlotConfig, show_tensor_network
+    from tensor_network_viz import show_tensor_network
 
 DESCRIPTION = """\
 Small demo for the TensorNetwork backend.
@@ -199,17 +199,10 @@ def main() -> None:
     print("Passing as: list of TensorNetwork nodes")
     print("Rendering figure...")
 
-    config = PlotConfig(
-        figsize=(8, 5),
-        show_tensor_labels=args.view == "2d",
-        show_index_labels=args.view == "2d",
-    )
-
     fig, ax = show_tensor_network(
         nodes,
         engine="tensornetwork",
         view=args.view,
-        config=config,
         show=False,
     )
     fig.suptitle(f"{args.network.upper()} ({args.view.upper()})", fontsize=16)

@@ -9,11 +9,11 @@ import matplotlib
 import torch
 
 try:
-    from tensor_network_viz import EinsumTrace, PlotConfig, einsum, pair_tensor, show_tensor_network
+    from tensor_network_viz import EinsumTrace, einsum, pair_tensor, show_tensor_network
 except ImportError:
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root / "src"))
-    from tensor_network_viz import EinsumTrace, PlotConfig, einsum, pair_tensor, show_tensor_network
+    from tensor_network_viz import EinsumTrace, einsum, pair_tensor, show_tensor_network
 
 TraceMode = Literal["auto", "manual"]
 TraceInput = EinsumTrace | list[pair_tensor]
@@ -237,16 +237,10 @@ def main() -> None:
         print("Passing as: ordered list of pair_tensor entries")
     print("Rendering figure...")
 
-    config = PlotConfig(
-        figsize=(8, 5) if args.network == "peps" else (7, 4),
-        show_tensor_labels=args.view == "2d",
-        show_index_labels=args.view == "2d",
-    )
     fig, ax = show_tensor_network(
         trace,
         engine="einsum",
         view=args.view,
-        config=config,
         show=False,
     )
     fig.suptitle(f"{args.network.upper()} ({args.view.upper()}, {args.mode.upper()})", fontsize=16)

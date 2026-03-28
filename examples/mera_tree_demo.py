@@ -9,11 +9,11 @@ import numpy as np
 import tensornetwork as tn
 
 try:
-    from tensor_network_viz import PlotConfig, show_tensor_network
+    from tensor_network_viz import show_tensor_network
 except ImportError:
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root / "src"))
-    from tensor_network_viz import PlotConfig, show_tensor_network
+    from tensor_network_viz import show_tensor_network
 
 DESCRIPTION = """\
 Large topology demo: a binary MERA stack merged at the top into a hierarchical binary tensor tree
@@ -176,16 +176,10 @@ def main() -> None:
     print(f"  View: {args.view}")
     print("Rendering figure...")
 
-    config = PlotConfig(
-        figsize=(10, 7),
-        show_tensor_labels=args.view == "2d",
-        show_index_labels=args.view == "2d",
-    )
     fig, _ax = show_tensor_network(
         nodes,
         engine="tensornetwork",
         view=args.view,
-        config=config,
         show=False,
     )
     fig.suptitle(

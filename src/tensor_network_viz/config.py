@@ -23,11 +23,15 @@ class PlotConfig:
         figsize: Figure size as (width, height) in inches; None uses Matplotlib default.
         show_tensor_labels: Whether to display tensor names on nodes.
         show_index_labels: Whether to display axis names on edges.
-        node_radius: Radius of tensor nodes; None uses default (0.08).
+        node_radius: Base radius of tensor nodes in data units before draw scale; None uses
+            default (0.08). Draw scale is chosen so that, for the default radius, disk radius is
+            the shortest contraction-edge length times the renderer fraction (see
+            ``_SHORTEST_EDGE_RADIUS_FRACTION``); setting this scales that radius
+            proportionally.
         stub_length: Length of dangling index stubs; None uses default (0.34).
         self_loop_radius: Radius for self-contraction loops; None uses default (0.2).
-        line_width_2d: Line width for 2D plots; None uses default (1.8).
-        line_width_3d: Line width for 3D plots; None uses default (1.6).
+        line_width_2d: Line width for 2D plots (node outlines and tensor edges); None uses default.
+        line_width_3d: Line width for 3D plots (node outlines and tensor edges); None uses default.
         positions: Custom node positions for grid/PEPS layout; dict mapping node id to
             (x, y) for 2D or (x, y, z) for 3D. None uses automatic layout.
         node_edge_color: Border color for tensor nodes; use dark for contrast on light nodes.
@@ -46,8 +50,8 @@ class PlotConfig:
     DEFAULT_NODE_RADIUS: ClassVar[float] = 0.08
     DEFAULT_STUB_LENGTH: ClassVar[float] = 0.34
     DEFAULT_SELF_LOOP_RADIUS: ClassVar[float] = 0.2
-    DEFAULT_LINE_WIDTH_2D: ClassVar[float] = 1.8
-    DEFAULT_LINE_WIDTH_3D: ClassVar[float] = 1.6
+    DEFAULT_LINE_WIDTH_2D: ClassVar[float] = 0.85
+    DEFAULT_LINE_WIDTH_3D: ClassVar[float] = 0.75
     DEFAULT_LAYOUT_ITERATIONS: ClassVar[int] = 220
 
     node_color: str = "#E8E8E8"

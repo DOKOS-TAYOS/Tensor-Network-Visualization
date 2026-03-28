@@ -95,18 +95,55 @@ _SCALE_MAX: float = 1.6
 _SCALE_BASE: float = 2.2
 _SCALE_PER_NODE: float = 0.07
 
-
-def _compute_scale(n_nodes: int) -> float:
-    """Scale factor for visual elements: larger for few nodes, smaller for many."""
-    if n_nodes <= 1:
-        return _SCALE_SINGLE_NODE
-    return max(_SCALE_MIN, min(_SCALE_MAX, _SCALE_BASE - _SCALE_PER_NODE * n_nodes))
-
+# Node disk radius ≈ this fraction of the shortest **contraction** edge length (center to center),
+# when geometry is available. Resolved scale is (fraction * d_min) / DEFAULT_NODE_RADIUS so that
+# ``r = scale * node_radius`` matches ``fraction * d_min`` for the default ``node_radius``.
+_SHORTEST_EDGE_RADIUS_FRACTION: float = 0.3
 
 _EXTENT_REF_SPAN: float = 2.6
 _EXTENT_REF_NN: float = 0.38
 _EXTENT_FACTOR_CLAMP: tuple[float, float] = (0.5, 1.3)
 _DRAW_SCALE_CLAMP: tuple[float, float] = (0.35, 1.85)
+
+
+def _compute_scale(n_nodes: int) -> float:
+    """Heuristic scale factor when graph geometry does not define a shortest bond length."""
+    if n_nodes <= 1:
+        return _SCALE_SINGLE_NODE
+    return max(_SCALE_MIN, min(_SCALE_MAX, _SCALE_BASE - _SCALE_PER_NODE * n_nodes))
+
+
+def _min_contraction_edge_length(graph: _GraphData, positions: NodePositions) -> float | None:
+    """Shortest center–center distance among non-degenerate contraction edges, or None."""
+    best: float | None = None
+    for edge in graph.edges:
+        if edge.kind != "contraction":
+            continue
+        if len(edge.node_ids) != 2:
+            continue
+        a_id, b_id = edge.node_ids
+        if a_id not in positions or b_id not in positions:
+            continue
+        delta = np.asarray(positions[a_id], dtype=float) - np.asarray(positions[b_id], dtype=float)
+        dist = float(np.linalg.norm(delta))
+        if dist <= 1e-12 or not math.isfinite(dist):
+            continue
+        best = dist if best is None else min(best, dist)
+    return best
+
+
+def _geometric_draw_scale(d_min: float) -> float:
+    """Scale so ``DEFAULT_NODE_RADIUS * scale == fraction * d_min`` (exact for default radius)."""
+    return float((_SHORTEST_EDGE_RADIUS_FRACTION * d_min) / PlotConfig.DEFAULT_NODE_RADIUS)
+
+
+def _heuristic_draw_scale(graph: _GraphData, positions: NodePositions) -> float:
+    """Previous node-count × extent heuristic (2D/3D fallback when no contraction bonds exist)."""
+    count_scale = _compute_scale(_count_visible_nodes(graph))
+    extent_scale = _extent_scale_factor(_visible_tensor_coords(positions, graph))
+    product = float(count_scale * extent_scale)
+    lo, hi = _DRAW_SCALE_CLAMP
+    return float(np.clip(product, lo, hi))
 
 
 def _visible_tensor_coords(positions: NodePositions, graph: _GraphData) -> np.ndarray:
@@ -149,12 +186,15 @@ def _extent_scale_factor(coords: np.ndarray) -> float:
 
 
 def _resolve_draw_scale(graph: _GraphData, positions: NodePositions) -> float:
-    """Combine node-count scale with layout extent / nearest-neighbor crowding."""
-    count_scale = _compute_scale(_count_visible_nodes(graph))
-    extent_scale = _extent_scale_factor(_visible_tensor_coords(positions, graph))
-    product = float(count_scale * extent_scale)
-    lo, hi = _DRAW_SCALE_CLAMP
-    return float(np.clip(product, lo, hi))
+    """Pick draw scale so node radius tracks the shortest contraction edge (see fraction constant).
+
+    Uses center–center distances of contraction edges (two distinct endpoints) only.
+    Falls back to the legacy node-count × extent heuristic when that set is empty or degenerate.
+    """
+    d_min = _min_contraction_edge_length(graph, positions)
+    if d_min is not None:
+        return _geometric_draw_scale(d_min)
+    return _heuristic_draw_scale(graph, positions)
 
 
 def _prepare_axes(
@@ -230,14 +270,10 @@ def _plot_graph(
         dimensions=dimensions,
     )
     positions = _resolve_positions(graph, style, dimensions=dimensions, seed=seed)
-    if dimensions == 2:
-        scale = _resolve_draw_scale(graph, positions)
-        directions = _compute_axis_directions(
-            graph, positions, dimensions=dimensions, draw_scale=scale
-        )
-    else:
-        scale = _compute_scale(_count_visible_nodes(graph))
-        directions = _compute_axis_directions(graph, positions, dimensions=dimensions)
+    scale = _resolve_draw_scale(graph, positions)
+    directions = _compute_axis_directions(
+        graph, positions, dimensions=dimensions, draw_scale=scale
+    )
     _draw_graph(
         ax=resolved_ax,
         graph=graph,

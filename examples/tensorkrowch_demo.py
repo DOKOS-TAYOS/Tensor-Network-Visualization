@@ -8,12 +8,12 @@ import matplotlib.pyplot as plt
 import tensorkrowch as tk
 
 try:
-    from tensor_network_viz import PlotConfig, show_tensor_network
+    from tensor_network_viz import show_tensor_network
 except ImportError:
     # Allow running the example directly from the repo without installing the package.
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root / "src"))
-    from tensor_network_viz import PlotConfig, show_tensor_network
+    from tensor_network_viz import show_tensor_network
 
 DESCRIPTION = """\
 Small demo for the plotting dispatcher.
@@ -208,13 +208,6 @@ def main() -> None:
     print(f"Passing as: {'list of nodes' if args.from_list else 'TensorNetwork'}")
     print("Rendering window...")
 
-    # Centralized plotting options shared by the generic plotting dispatcher.
-    config = PlotConfig(
-        figsize=(8, 5),
-        show_tensor_labels=args.view == "2d",
-        show_index_labels=args.view == "2d",
-    )
-
     # With --from-list, pass the list of nodes instead of the TensorNetwork.
     if args.from_list:
         raw = network.nodes
@@ -229,7 +222,6 @@ def main() -> None:
         show_input,
         engine="tensorkrowch",
         view=args.view,
-        config=config,
         show=False,
     )
     fig.suptitle(f"{args.network.upper()} ({args.view.upper()})", fontsize=16)

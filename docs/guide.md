@@ -329,11 +329,14 @@ In **2D**, tensors are drawn as a batched patch collection (circles in **data** 
 stubs meet the node rim correctly when you zoom or pan. Line widths and label font sizes are still
 in **points** (screen space), so they do not automatically grow when you zoom in.
 
-In **3D**, tensors use ``scatter`` markers (sizes in typographic points; typical Matplotlib
-behavior under zoom). Line widths and label fonts also use points.
+In **3D**, tensors are drawn as lightweight octahedra in **data** coordinates (circumradius equals
+the same metric radius as 2D disks). Line widths and label fonts use points.
 
-In **2D** only, draw scaling also considers layout span and neighbor spacing (in addition to the
-tensor count). **3D** draw scaling uses the tensor-count heuristic only.
+Draw scaling (2D and 3D) uses the same rule: with the default ``node_radius``, node **radius** in
+data units is **exactly** ``0.3 × d_min`` (see ``_SHORTEST_EDGE_RADIUS_FRACTION``), where ``d_min`` is the shortest **contraction** edge
+length (center-to-center). Octahedron tips and 2D circle rims both lie at that radius. Graphs
+without contraction bonds fall back to a node-count × layout-extent heuristic.
+``PlotConfig.node_radius`` multiplies that radius.
 
 ## Example Scripts
 

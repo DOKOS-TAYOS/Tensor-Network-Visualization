@@ -19,11 +19,11 @@ import torch
 import tensorkrowch as tk
 
 try:
-    from tensor_network_viz import PlotConfig, show_tensor_network
+    from tensor_network_viz import show_tensor_network
 except ImportError:
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root / "src"))
-    from tensor_network_viz import PlotConfig, show_tensor_network
+    from tensor_network_viz import show_tensor_network
 
 
 def generate_superposition_layer(tn: tk.TensorNetwork, n_nodes: int) -> list[tk.Node]:
@@ -312,16 +312,10 @@ def main() -> None:
     print(f"TSP tensor network: {len(network_view.nodes)} nodes (automatic layout)")
     print(f"Instance: {n_cities} cities, tau={tau}, view={args.view}")
 
-    config = PlotConfig(
-        figsize=(8, 5),
-        show_tensor_labels=args.view == "2d",
-        show_index_labels=args.view == "2d",
-    )
     fig, ax = show_tensor_network(
         network_view,
         engine="tensorkrowch",
         view=args.view,
-        config=config,
         show=False,
     )
     fig.suptitle(f"TSP Tensor Network ({n_cities} cities, step 0)", fontsize=16)

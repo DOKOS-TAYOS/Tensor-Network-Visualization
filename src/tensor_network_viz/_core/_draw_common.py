@@ -60,8 +60,6 @@ _TENSOR_LABEL_INSIDE_FILL: float = 0.88
 # Line end caps / joins: slight rounding reads softer than Matplotlib's default butt/miter.
 _EDGE_LINE_CAP_STYLE: str = "round"
 _EDGE_LINE_JOIN_STYLE: str = "round"
-# Visual radius for 3D mesh vs layout metric p.r (bonds stay center–center in 3D).
-_OCTAHEDRON_VISUAL_SCALE: float = 0.55
 _FIGURE_MIN_PX_REF: float = 520.0
 
 
@@ -215,11 +213,13 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
         ) -> None:
             if coords.shape[0] == 0:
                 return
-            scaled = _UNIT_NODE_TRIS * (p.r * _OCTAHEDRON_VISUAL_SCALE)
+            # Unit octahedron vertices lie on axes at distance 1; scale by p.r so circumradius = p.r
+            # (same metric as 2D disks; radius tracks shortest bond via renderer fraction).
+            scaled = _UNIT_NODE_TRIS * p.r
             c = coords.astype(float, copy=False)
             stacked = scaled[np.newaxis, :, :, :] + c[:, np.newaxis, np.newaxis, :]
             polys = stacked.reshape(-1, 3, 3)
-            lw = max(float(p.lw), 0.35)
+            lw = max(float(p.lw), 0.18)
             coll = Poly3DCollection(
                 polys,
                 facecolors=config.node_color,
@@ -886,7 +886,7 @@ def _tensor_disk_radius_px(
 ) -> float:
     if dimensions == 2:
         return _display_disk_radius_px_2d(cast(Axes, ax), anchor, p.r)
-    return _display_disk_radius_px_3d(ax, anchor, p.r * _OCTAHEDRON_VISUAL_SCALE)
+    return _display_disk_radius_px_3d(ax, anchor, p.r)
 
 
 @functools.lru_cache(maxsize=1024)

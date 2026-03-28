@@ -4,6 +4,7 @@ import math
 
 import numpy as np
 
+from tensor_network_viz import PlotConfig
 from tensor_network_viz._core.graph import (
     _EdgeEndpoint,
     _GraphData,
@@ -18,7 +19,10 @@ from tensor_network_viz._core.layout import (
     _planar_contraction_bond_segments_2d,
     _segments_cross_2d,
 )
-from tensor_network_viz._core.renderer import _resolve_draw_scale
+from tensor_network_viz._core.renderer import (
+    _SHORTEST_EDGE_RADIUS_FRACTION,
+    _resolve_draw_scale,
+)
 
 
 def _build_chain_graph(
@@ -66,6 +70,38 @@ def _build_chain_graph(
             )
 
     return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
+def test_resolve_draw_scale_from_shortest_contraction_edge() -> None:
+    graph = _build_chain_graph(length=3)
+    positions = {
+        0: np.array([0.0, 0.0], dtype=float),
+        1: np.array([0.4, 0.0], dtype=float),
+        2: np.array([1.4, 0.0], dtype=float),
+    }
+    frac = float(_SHORTEST_EDGE_RADIUS_FRACTION)
+    nr = float(PlotConfig.DEFAULT_NODE_RADIUS)
+    s = _resolve_draw_scale(graph, positions)
+    d_min = 0.4
+    assert abs(s - frac * d_min / nr) < 1e-9
+    assert abs(frac * d_min - nr * s) < 1e-9
+
+    tight = {
+        0: np.array([0.0, 0.0], dtype=float),
+        1: np.array([0.25, 0.0], dtype=float),
+        2: np.array([2.0, 0.0], dtype=float),
+    }
+    st = _resolve_draw_scale(graph, tight)
+    assert abs(st - frac * 0.25 / nr) < 1e-9
+    assert abs(frac * 0.25 - nr * st) < 1e-9
+
+
+def test_resolve_draw_scale_heuristic_when_no_contraction_edges() -> None:
+    graph = _build_chain_graph(length=1)
+    positions = {0: np.array([0.0, 0.0], dtype=float)}
+    s = _resolve_draw_scale(graph, positions)
+    lo, hi = 0.35, 1.85
+    assert lo <= s <= hi
 
 
 def _build_grid_graph(rows: int, cols: int) -> _GraphData:

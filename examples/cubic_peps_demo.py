@@ -9,11 +9,11 @@ import numpy as np
 import tensornetwork as tn
 
 try:
-    from tensor_network_viz import PlotConfig, show_tensor_network
+    from tensor_network_viz import show_tensor_network
 except ImportError:
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root / "src"))
-    from tensor_network_viz import PlotConfig, show_tensor_network
+    from tensor_network_viz import show_tensor_network
 
 DESCRIPTION = """\
 3D tensor network topology: cubic PEPS (a PEPS on an Lx * Ly * Lz grid). Each bulk tensor has a
@@ -139,16 +139,10 @@ def main() -> None:
     print(f"  View: {args.view}")
     print("Rendering figure...")
 
-    config = PlotConfig(
-        figsize=(9, 7) if args.view == "3d" else (8, 6),
-        show_tensor_labels=args.view == "2d",
-        show_index_labels=args.view == "2d",
-    )
     fig, _ax = show_tensor_network(
         nodes,
         engine="tensornetwork",
         view=args.view,
-        config=config,
         show=False,
     )
     fig.suptitle(

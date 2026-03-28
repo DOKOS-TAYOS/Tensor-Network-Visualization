@@ -9,12 +9,12 @@ import numpy as np
 import quimb.tensor as qtn
 
 try:
-    from tensor_network_viz import PlotConfig, show_tensor_network
+    from tensor_network_viz import show_tensor_network
 except ImportError:
     # Allow running the example directly from the repo without installing the package.
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root / "src"))
-    from tensor_network_viz import PlotConfig, show_tensor_network
+    from tensor_network_viz import show_tensor_network
 
 DESCRIPTION = """\
 Small demo for the Quimb backend.
@@ -175,12 +175,6 @@ def main() -> None:
     print(f"Passing as: {'list of tensors' if args.from_list else 'TensorNetwork'}")
     print("Rendering figure...")
 
-    config = PlotConfig(
-        figsize=(8, 5),
-        show_tensor_labels=args.view == "2d",
-        show_index_labels=args.view == "2d",
-    )
-
     show_input: qtn.TensorNetwork | list[qtn.Tensor]
     show_input = list(network.tensors) if args.from_list else network
 
@@ -188,7 +182,6 @@ def main() -> None:
         show_input,
         engine="quimb",
         view=args.view,
-        config=config,
         show=False,
     )
     fig.suptitle(f"{args.network.upper()} ({args.view.upper()})", fontsize=16)
