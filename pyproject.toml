@@ -10,7 +10,7 @@ authors = [{ name = "Alejandro Mata Ali" }]
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-keywords = ["tensor-network", "visualization", "tensorkrowch", "tensornetwork", "quimb", "tenpy", "matplotlib"]
+keywords = ["tensor-network", "visualization", "pytorch", "numpy", "tensorkrowch", "tensornetwork", "quimb", "tenpy", "einsum", "quantum-inspired", "matplotlib"]
 dependencies = [
     "matplotlib>=3.7",
     "networkx>=3.0",
