@@ -779,6 +779,9 @@ def _make_plotter(
         return _2DPlotter(ax, hover_edge_targets)
 
     class _3DPlotter:
+        def __init__(self, hover_edges: list[tuple[np.ndarray, str]] | None) -> None:
+            self._hover_edge_targets = hover_edges
+
         def plot_line(self, start: np.ndarray, end: np.ndarray, **kwargs: Any) -> None:
             _apply_edge_line_style(kwargs)
             ax.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]], **kwargs)
@@ -839,7 +842,7 @@ def _make_plotter(
         def style_axes(self, coords: np.ndarray, *, view_margin: float) -> None:
             _apply_axis_limits_with_outset(ax, coords, view_margin=view_margin, dimensions=3)
 
-    return _3DPlotter()
+    return _3DPlotter(hover_edge_targets)
 
 
 def _perpendicular_2d(direction: np.ndarray) -> np.ndarray:
@@ -1036,6 +1039,33 @@ def _min_sqdist_point_to_polyline_display(
     return best
 
 
+def _min_sqdist_point_to_polyline_display_3d(
+    ax: Any,
+    poly_world: np.ndarray,
+    x_disp: float,
+    y_disp: float,
+) -> float:
+    pts = np.asarray(poly_world, dtype=float)
+    if pts.ndim != 2 or pts.shape[1] < 3:
+        return math.inf
+    M = ax.get_proj()
+    n = int(pts.shape[0])
+    scr = np.empty((n, 2), dtype=float)
+    for i in range(n):
+        x, y, z = float(pts[i, 0]), float(pts[i, 1]), float(pts[i, 2])
+        xs, ys, _zs = proj3d.proj_transform(x, y, z, M)
+        t = np.asarray(ax.transData.transform((xs, ys)), dtype=float).ravel()
+        scr[i, 0] = float(t[0])
+        scr[i, 1] = float(t[1])
+    best = math.inf
+    for i in range(n - 1):
+        x0, y0 = scr[i, 0], scr[i, 1]
+        x1, y1 = scr[i + 1, 0], scr[i + 1, 1]
+        d = _sqdist_point_to_segment(x_disp, y_disp, x0, y0, x1, y1)
+        best = min(best, d)
+    return best
+
+
 _HOVER_EDGE_PICK_RADIUS_PX: float = 10.0
 
 
@@ -1056,7 +1086,7 @@ def _register_2d_hover_labels(
     edge_hover: list[tuple[np.ndarray, str]],
     line_width_px_hint: float,
 ) -> None:
-    """Show tensor / bond labels in a tooltip while the pointer hovers (2D only)."""
+    """Show tensor / bond labels in a tooltip while the pointer hovers (2D axes)."""
     fig = ax.figure
     _disconnect_tensor_network_hover(fig)
 
@@ -1133,6 +1163,112 @@ def _register_2d_hover_labels(
             return
 
         ann.xy = (float(event.xdata), float(event.ydata))
+        ann.set_text(label)
+        ann.set_fontsize(max(7.5, min(14.0, fs_hint)))
+        ann.set_visible(True)
+        fig.canvas.draw_idle()
+
+    fig._tensor_network_viz_hover_cid = fig.canvas.mpl_connect("motion_notify_event", on_move)
+
+
+def _register_3d_hover_labels(
+    ax: Any,
+    fig: Figure,
+    *,
+    positions: NodePositions,
+    visible_node_ids: list[int],
+    tensor_hover: dict[int, tuple[str, float]],
+    edge_hover: list[tuple[np.ndarray, str]],
+    line_width_px_hint: float,
+    p: _DrawScaleParams,
+) -> None:
+    """Show tensor / bond labels in a figure-space tooltip while the pointer hovers (3D)."""
+    _disconnect_tensor_network_hover(fig)
+
+    if not tensor_hover and not edge_hover:
+        return
+
+    pick_r = max(_HOVER_EDGE_PICK_RADIUS_PX, float(line_width_px_hint) * 2.0)
+
+    ann = ax.annotate(
+        "",
+        xy=(0.0, 0.0),
+        xycoords="figure pixels",
+        xytext=(12, -12),
+        textcoords="offset points",
+        ha="left",
+        va="top",
+        fontsize=10.0,
+        color="#1A202C",
+        bbox={
+            "boxstyle": "round,pad=0.35",
+            "facecolor": (0.99, 0.97, 0.92, 0.94),
+            "edgecolor": (0.35, 0.35, 0.4, 0.55),
+            "linewidth": 0.6,
+        },
+        visible=False,
+        zorder=1_000_000,
+        clip_on=False,
+    )
+    fig._tensor_network_viz_hover_ann = ann
+
+    def on_move(event: Any) -> None:
+        if event.inaxes != ax or event.x is None or event.y is None:
+            ann.set_visible(False)
+            fig.canvas.draw_idle()
+            return
+
+        x_d, y_d = float(event.x), float(event.y)
+        label: str | None = None
+        fs_hint = 10.0
+
+        if tensor_hover:
+            best_d2 = math.inf
+            best_pair: tuple[str, float] | None = None
+            for nid in visible_node_ids:
+                pair = tensor_hover.get(nid)
+                if not pair:
+                    continue
+                c = np.asarray(positions[nid], dtype=float).reshape(-1)
+                if c.size < 3:
+                    c3 = np.zeros(3, dtype=float)
+                    c3[: c.size] = c
+                    c = c3
+                rpx = _tensor_disk_radius_px(ax, c, p, 3)
+                M = ax.get_proj()
+                xs, ys, _zs = proj3d.proj_transform(
+                    float(c[0]), float(c[1]), float(c[2]), M
+                )
+                pt = np.asarray(ax.transData.transform((xs, ys)), dtype=float).ravel()
+                dx = float(pt[0]) - x_d
+                dy = float(pt[1]) - y_d
+                d2 = dx * dx + dy * dy
+                if d2 <= rpx * rpx and d2 < best_d2:
+                    best_d2 = d2
+                    best_pair = pair
+            if best_pair is not None:
+                label, fs_hint = best_pair[0], float(best_pair[1])
+
+        if label is None and edge_hover:
+            best = math.inf
+            best_txt = ""
+            for poly, txt in edge_hover:
+                if not txt:
+                    continue
+                d = _min_sqdist_point_to_polyline_display_3d(ax, poly, x_d, y_d)
+                if d < best:
+                    best = d
+                    best_txt = txt
+            if best <= pick_r * pick_r:
+                label = best_txt
+                fs_hint = 9.0
+
+        if not label:
+            ann.set_visible(False)
+            fig.canvas.draw_idle()
+            return
+
+        ann.xy = (x_d, y_d)
         ann.set_text(label)
         ann.set_fontsize(max(7.5, min(14.0, fs_hint)))
         ann.set_visible(True)
@@ -1455,11 +1591,11 @@ def _draw_dangling_edge(
         end = start + direction * p.stub
     plotter.plot_line(start, end, color=config.dangling_edge_color, linewidth=p.lw, zorder=2)
     if show_index_labels and edge.label:
-        if config.hover_labels and dimensions == 2:
-            ht = getattr(plotter, "_hover_edge_targets", None)
-            if ht is not None:
-                cap = _dangling_hover_label_text(edge)
-                if cap:
+        hover_ht = getattr(plotter, "_hover_edge_targets", None)
+        if config.hover_labels and hover_ht is not None:
+            cap = _dangling_hover_label_text(edge)
+            if cap:
+                if dimensions == 2:
                     stub_xy = np.stack(
                         [
                             np.asarray(start[:2], dtype=float),
@@ -1467,8 +1603,17 @@ def _draw_dangling_edge(
                         ],
                         axis=0,
                     )
-                    ht.append((stub_xy, cap))
-                return
+                    hover_ht.append((stub_xy, cap))
+                else:
+                    s3 = np.zeros(3, dtype=float)
+                    e3 = np.zeros(3, dtype=float)
+                    sa = np.asarray(start, dtype=float).reshape(-1)
+                    ea = np.asarray(end, dtype=float).reshape(-1)
+                    s3[: min(3, sa.size)] = sa[: min(3, sa.size)]
+                    e3[: min(3, ea.size)] = ea[: min(3, ea.size)]
+                    stub_xyz = np.stack([s3, e3], axis=0)
+                    hover_ht.append((stub_xyz, cap))
+            return
         raw_lbl = edge.label
         fs_d = _edge_index_fontsize_for_bond(
             raw_lbl,
@@ -1584,13 +1729,15 @@ def _draw_self_loop_edge(
         label_offset_dir = binormal * p.ellipse_w
     plotter.plot_curve(curve, color=config.bond_edge_color, linewidth=p.lw, zorder=2)
     if show_index_labels:
-        if config.hover_labels and dimensions == 2:
-            ht = getattr(plotter, "_hover_edge_targets", None)
-            if ht is not None:
-                cap = _self_loop_hover_label_text(edge, graph)
-                if cap:
-                    ht.append((np.asarray(curve[:, :2], dtype=float, order="C"), cap))
-                return
+        hover_ht = getattr(plotter, "_hover_edge_targets", None)
+        if config.hover_labels and hover_ht is not None:
+            cap = _self_loop_hover_label_text(edge, graph)
+            if cap:
+                if dimensions == 2:
+                    hover_ht.append((np.asarray(curve[:, :2], dtype=float, order="C"), cap))
+                else:
+                    hover_ht.append((np.asarray(curve[:, :3], dtype=float, order="C"), cap))
+            return
         ca = _endpoint_index_caption(endpoint_a, edge, graph)
         cb = _endpoint_index_caption(endpoint_b, edge, graph)
         n = int(curve.shape[0])
@@ -1721,12 +1868,14 @@ def _draw_contraction_edge(
     )
     plotter.plot_curve(curve, color=config.bond_edge_color, linewidth=p.lw, zorder=1)
     if show_index_labels:
-        if config.hover_labels and dimensions == 2:
-            ht = getattr(plotter, "_hover_edge_targets", None)
-            if ht is not None:
-                cap = _contraction_hover_label_text(edge, graph)
-                if cap:
-                    ht.append((np.asarray(curve[:, :2], dtype=float, order="C"), cap))
+        hover_ht = getattr(plotter, "_hover_edge_targets", None)
+        if config.hover_labels and hover_ht is not None:
+            cap = _contraction_hover_label_text(edge, graph)
+            if cap:
+                if dimensions == 2:
+                    hover_ht.append((np.asarray(curve[:, :2], dtype=float, order="C"), cap))
+                else:
+                    hover_ht.append((np.asarray(curve[:, :3], dtype=float, order="C"), cap))
         else:
             _plot_contraction_index_captions(
                 plotter=plotter,
@@ -2101,8 +2250,7 @@ def _draw_graph(
     dimensions: Literal[2, 3],
     scale: float = 1.0,
 ) -> None:
-    if dimensions == 2:
-        _disconnect_tensor_network_hover(ax.figure)
+    _disconnect_tensor_network_hover(ax.figure)
     ax.cla()
     contraction_groups = _group_contractions(graph)
     label_slots = _estimate_drawn_label_count(
@@ -2121,7 +2269,7 @@ def _draw_graph(
     )
     hover_edge_list: list[tuple[np.ndarray, str]] | None = None
     tensor_hover_map: dict[int, tuple[str, float]] | None = None
-    if config.hover_labels and dimensions == 2:
+    if config.hover_labels:
         if show_index_labels:
             hover_edge_list = []
         if show_tensor_labels:
@@ -2179,16 +2327,28 @@ def _draw_graph(
         _refit_tensor_labels_to_disks(ax=ax, p=params, dimensions=dimensions)
     if dimensions == 2:
         _register_2d_zoom_font_scaling(cast(Axes, ax))
-    if config.hover_labels and dimensions == 2 and (show_tensor_labels or show_index_labels):
+    if config.hover_labels and (show_tensor_labels or show_index_labels):
         vis_ids = [
             node_id for node_id, node in graph.nodes.items() if not node.is_virtual
         ]
-        node_coll = getattr(plotter, "_node_disk_collection", None)
-        _register_2d_hover_labels(
-            cast(Axes, ax),
-            node_patch_coll=node_coll if show_tensor_labels else None,
-            visible_node_ids=vis_ids,
-            tensor_hover=tensor_hover_map or {},
-            edge_hover=list(hover_edge_list or ()),
-            line_width_px_hint=float(params.lw),
-        )
+        if dimensions == 2:
+            node_coll = getattr(plotter, "_node_disk_collection", None)
+            _register_2d_hover_labels(
+                cast(Axes, ax),
+                node_patch_coll=node_coll if show_tensor_labels else None,
+                visible_node_ids=vis_ids,
+                tensor_hover=tensor_hover_map or {},
+                edge_hover=list(hover_edge_list or ()),
+                line_width_px_hint=float(params.lw),
+            )
+        else:
+            _register_3d_hover_labels(
+                ax,
+                ax.figure,
+                positions=positions,
+                visible_node_ids=vis_ids,
+                tensor_hover=tensor_hover_map or {},
+                edge_hover=list(hover_edge_list or ()),
+                line_width_px_hint=float(params.lw),
+                p=params,
+            )

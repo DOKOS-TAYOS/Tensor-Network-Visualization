@@ -12,7 +12,7 @@ def add_hover_labels_argument(parser: argparse.ArgumentParser) -> None:
         "--hover-labels",
         action="store_true",
         help=(
-            "2D only: show tensor names and bond index labels on pointer hover. "
+            "Show tensor names and bond index labels on pointer hover (2D axes or 3D projection). "
             "Requires an interactive window (useless with --no-show / non-interactive only)."
         ),
     )

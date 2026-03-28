@@ -8,11 +8,10 @@ environment with the needed optional dependencies installed.
 
 ## Interactive labels (`--hover-labels`)
 
-For **2D** plots, most example scripts accept `--hover-labels`: tensor names and bond indices appear
-in a tooltip when you hover over a node or edge (see `PlotConfig.hover_labels` in the package).
-Use a normal interactive Matplotlib window; the flag has no visible effect with `--no-show` or
-PNG-only workflows. In **3D** views the library still draws labels as usual; the flag does not
-change 3D behavior.
+Most example scripts accept `--hover-labels`: tensor names and bond indices appear in a tooltip when
+you hover over a node or edge (see `PlotConfig.hover_labels`). **2D** uses axes hit-testing; **3D**
+uses screen-space distance after projecting the graph. Use a normal interactive Matplotlib window;
+the flag has no visible effect with `--no-show` or PNG-only workflows.
 
 ## `tensorkrowch_demo.py`
 

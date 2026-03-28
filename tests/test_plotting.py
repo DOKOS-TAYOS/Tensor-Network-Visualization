@@ -24,6 +24,7 @@ from plotting_helpers import (
     patch_collection_circle_count,
 )
 from tensor_network_viz import PlotConfig, show_tensor_network
+from tensor_network_viz._core import _draw_common
 from tensor_network_viz.tensorkrowch import (
     plot_tensorkrowch_network_2d,
     plot_tensorkrowch_network_3d,
@@ -35,7 +36,6 @@ from tensor_network_viz.tensornetwork import (
     plot_tensornetwork_network_2d,
     plot_tensornetwork_network_3d,
 )
-from tensor_network_viz._core import _draw_common
 from tensor_network_viz.tensornetwork.graph import (
     _build_graph as _build_tensornetwork_graph,
 )
@@ -259,7 +259,7 @@ def test_plot_tensornetwork_network_2d_hover_labels_skips_static_label_artists()
         plt.close(fig)
 
 
-def test_plot_tensornetwork_network_3d_hover_flag_does_not_hide_static_labels() -> None:
+def test_plot_tensornetwork_network_3d_hover_labels_skips_static_label_artists() -> None:
     left = DummyTensorNetworkNode("A", ["left"])
     right = DummyTensorNetworkNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
@@ -270,8 +270,9 @@ def test_plot_tensornetwork_network_3d_hover_flag_does_not_hide_static_labels() 
     )
     try:
         gids = {t.get_gid() for t in ax.texts if t.get_gid()}
-        assert _draw_common._TENSOR_LABEL_GID in gids
-        assert getattr(fig, "_tensor_network_viz_hover_cid", None) is None
+        assert _draw_common._TENSOR_LABEL_GID not in gids
+        assert _draw_common._EDGE_INDEX_LABEL_GID not in gids
+        assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
     finally:
         plt.close(fig)
 
