@@ -10,9 +10,7 @@ from matplotlib.collections import LineCollection, PatchCollection
 
 def line_collection_segment_count(ax: Any) -> int:
     """Number of polylines drawn as LineCollections (2D batched edges)."""
-    return sum(
-        len(c.get_segments()) for c in ax.collections if isinstance(c, LineCollection)
-    )
+    return sum(len(c.get_segments()) for c in ax.collections if isinstance(c, LineCollection))
 
 
 def line_collection_segments(ax: Any) -> list[np.ndarray]:

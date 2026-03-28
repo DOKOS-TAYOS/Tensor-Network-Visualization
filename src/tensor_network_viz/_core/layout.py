@@ -702,9 +702,7 @@ def _planar_contraction_bond_segments_2d(
         offset_index, edge_count = groups.offsets[id(record.edge)]
         start = np.asarray(positions[left_id], dtype=float).reshape(-1)[:2]
         end = np.asarray(positions[right_id], dtype=float).reshape(-1)[:2]
-        poly = _layout_quadratic_bond_polyline_2d(
-            start, end, offset_index, edge_count, scale=scale
-        )
+        poly = _layout_quadratic_bond_polyline_2d(start, end, offset_index, edge_count, scale=scale)
         for i in range(int(poly.shape[0]) - 1):
             out.append((left_id, right_id, poly[i].copy(), poly[i + 1].copy()))
     return out
@@ -744,9 +742,10 @@ def _direction_conflicts_2d(
         if float(np.linalg.norm(p1 - q1)) < _STUB_TIP_TIP_CLEAR:
             return True
         d_other = _normalize_2d(q1 - q0)
-        if float(np.linalg.norm(o2 - q0)) < _STUB_ORIGIN_PAIR_CLEAR and float(
-            np.dot(d, d_other)
-        ) > _STUB_PARALLEL_DOT:
+        if (
+            float(np.linalg.norm(o2 - q0)) < _STUB_ORIGIN_PAIR_CLEAR
+            and float(np.dot(d, d_other)) > _STUB_PARALLEL_DOT
+        ):
             return True
 
     return False
@@ -804,9 +803,7 @@ def _compute_free_directions_2d(
         neighbor_midpoints[right_id].append(midpoint)
 
     assigned_stub_segments: list[tuple[np.ndarray, np.ndarray]] = []
-    bond_segments = _planar_contraction_bond_segments_2d(
-        graph, positions, scale=draw_scale
-    )
+    bond_segments = _planar_contraction_bond_segments_2d(graph, positions, scale=draw_scale)
 
     for node_id in sorted(graph.nodes.keys()):
         node = graph.nodes[node_id]

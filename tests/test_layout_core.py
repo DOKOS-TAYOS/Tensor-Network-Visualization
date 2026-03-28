@@ -562,9 +562,7 @@ def test_weird_topology_2d_phys_stubs_do_not_cross() -> None:
     graph = _GraphData(nodes=nodes, edges=tuple(edges))
     positions = _compute_layout(graph, dimensions=2, seed=0)
     ds = _resolve_draw_scale(graph, positions)
-    directions = _compute_axis_directions(
-        graph, positions, dimensions=2, draw_scale=ds
-    )
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=ds)
 
     stubs: list[tuple[np.ndarray, np.ndarray]] = []
     for edge in graph.edges:

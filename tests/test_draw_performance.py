@@ -46,9 +46,7 @@ def test_dense_2d_draw_fast_flags_complete() -> None:
     graph = _chain_graph(n)
     positions = {i: np.array([float(i) * 0.5, 0.0], dtype=float) for i in range(n)}
     ds = _resolve_draw_scale(graph, positions)
-    directions = _compute_axis_directions(
-        graph, positions, dimensions=2, draw_scale=ds
-    )
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=ds)
     fig, ax = plt.subplots(figsize=(10, 6))
     try:
         _draw_graph(
@@ -79,9 +77,7 @@ def test_dense_2d_draw_full_quality_completes_reasonably() -> None:
     graph = _chain_graph(n)
     positions = {i: np.array([float(i) * 0.5, 0.0], dtype=float) for i in range(n)}
     ds = _resolve_draw_scale(graph, positions)
-    directions = _compute_axis_directions(
-        graph, positions, dimensions=2, draw_scale=ds
-    )
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=ds)
     fig, ax = plt.subplots(figsize=(10, 6))
     try:
         t0 = time.perf_counter()
