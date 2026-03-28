@@ -418,6 +418,32 @@ def test_show_tensor_network_displays_selected_renderer(monkeypatch: pytest.Monk
     assert fig is ax.figure
 
 
+def test_show_figure_uses_ipython_display_in_jupyter_kernel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("IPython")
+    fig, _ax = plt.subplots()
+    displayed: list[object] = []
+
+    class _FakeKernel:
+        pass
+
+    class _FakeIPython:
+        kernel = _FakeKernel()
+
+    def _fake_get_ipython() -> _FakeIPython:
+        return _FakeIPython()
+
+    def _fake_display(obj: object) -> None:
+        displayed.append(obj)
+
+    monkeypatch.setattr("IPython.get_ipython", _fake_get_ipython)
+    monkeypatch.setattr("IPython.display.display", _fake_display)
+    viewer_module._show_figure(fig)
+    assert displayed == [fig]
+    plt.close(fig)
+
+
 def test_show_tensor_network_supports_tensornetwork_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

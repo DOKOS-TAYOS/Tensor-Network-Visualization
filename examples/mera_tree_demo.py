@@ -177,7 +177,7 @@ def main() -> None:
     print("Rendering figure...")
 
     config = PlotConfig(
-        figsize=(18, 12),
+        figsize=(10, 7),
         show_tensor_labels=args.view == "2d",
         show_index_labels=args.view == "2d",
     )

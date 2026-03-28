@@ -13,6 +13,21 @@ from .config import EngineName, PlotConfig, ViewName
 RenderedAxes: TypeAlias = Axes | Axes3D
 
 
+def _show_figure(fig: Figure) -> None:
+    """Show *fig* in a Jupyter kernel via IPython display, else ``plt.show()``."""
+    try:
+        from IPython import get_ipython
+        from IPython.display import display
+    except ImportError:
+        plt.show()
+        return
+    ip = get_ipython()
+    if ip is not None and getattr(ip, "kernel", None) is not None:
+        display(fig)
+        return
+    plt.show()
+
+
 def show_tensor_network(
     network: Any,
     *,
@@ -37,8 +52,10 @@ def show_tensor_network(
             config default.
         show_index_labels: Whether to display axis names on edges. None uses
             config default.
-        show: If True, call plt.show() to display the figure. Set False when
-            integrating into other applications (e.g. adding a title before showing).
+        show: If True, display the figure. In a Jupyter kernel this uses
+            ``IPython.display.display(fig)`` (use ``pip install
+            "tensor-network-visualization[jupyter]"`` and ``%matplotlib widget``
+            for interactive figures). Otherwise ``plt.show()`` is used.
 
     Returns:
         Tuple of (Figure, Axes) for further customization.
@@ -66,5 +83,5 @@ def show_tensor_network(
     else:
         raise ValueError(f"Unsupported tensor network view: {view}")
     if show:
-        plt.show()
+        _show_figure(fig)
     return fig, ax

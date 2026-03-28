@@ -313,7 +313,7 @@ def main() -> None:
     print(f"Instance: {n_cities} cities, tau={tau}, view={args.view}")
 
     config = PlotConfig(
-        figsize=(12, 8),
+        figsize=(8, 5),
         show_tensor_labels=args.view == "2d",
         show_index_labels=args.view == "2d",
     )

@@ -238,7 +238,7 @@ def main() -> None:
     print("Rendering figure...")
 
     config = PlotConfig(
-        figsize=(12, 8) if args.network == "peps" else (10, 6),
+        figsize=(8, 5) if args.network == "peps" else (7, 4),
         show_tensor_labels=args.view == "2d",
         show_index_labels=args.view == "2d",
     )

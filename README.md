@@ -36,8 +36,11 @@ Install the extra for each backend you use:
 | Quimb | `pip install "tensor-network-visualization[quimb]"` |
 | TeNPy | `pip install "tensor-network-visualization[tenpy]"` |
 | einsum (PyTorch) | `pip install "tensor-network-visualization[einsum]"` |
+| Jupyter (interactive notebooks) | `pip install "tensor-network-visualization[jupyter]"` |
 
 `[einsum]` adds PyTorch for executing traced contractions. For rendering an existing trace with NumPy only, the base package suffices.
+
+For **interactive** figures (e.g. rotatable 3D), install `[jupyter]` (`ipympl`, `ipywidgets`, JupyterLab, and classic Jupyter Notebook 7+) and run **`jupyter notebook` or `jupyter lab`**, then open the notebook in the **browser**. The tutorial selects the `widget` backend there by default. The **Cursor / VS Code notebook tab** cannot load `jupyter-matplotlib`; use `TNVIZ_MPL_BACKEND=inline` in a workspace `.env` (or the notebook’s setup) for that UI. Combine extras as needed, e.g. `pip install "tensor-network-visualization[quimb,jupyter]"`.
 
 ## Minimal example
 

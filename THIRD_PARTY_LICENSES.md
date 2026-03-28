@@ -48,3 +48,11 @@ When installing with `[dev]`, the following additional packages are used:
 | scipy | 1.17.1 | BSD License | https://scipy.org/ |
 
 Development-only tooling such as `pytest`, `ruff`, `pyright`, `pip`, and `setuptools` is intentionally excluded.
+
+## Optional dependencies (Jupyter)
+
+When installing with `[jupyter]`, the following additional package is declared in `pyproject.toml` (it brings in its own dependencies, e.g. `ipython` and `ipywidgets`):
+
+| Package | Version | License | Home page |
+| --- | --- | --- | --- |
+| ipympl | ≥0.9.0 | BSD-3-Clause | https://github.com/matplotlib/ipympl |

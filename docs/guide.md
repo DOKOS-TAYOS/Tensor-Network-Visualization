@@ -28,6 +28,7 @@ pip install "tensor-network-visualization[tensornetwork]"
 pip install "tensor-network-visualization[quimb]"
 pip install "tensor-network-visualization[tenpy]"
 pip install "tensor-network-visualization[einsum]"
+pip install "tensor-network-visualization[jupyter]"
 ```
 
 ### Which extra should you choose?
@@ -37,6 +38,7 @@ pip install "tensor-network-visualization[einsum]"
 - `quimb`: visualize Quimb `TensorNetwork` objects or tensor lists
 - `tenpy`: visualize TeNPy `MPS` and `MPO` objects
 - `einsum`: execute and trace binary `einsum` calls with PyTorch
+- `jupyter`: `ipympl` for interactive Matplotlib figures in Jupyter; use with `%matplotlib widget`
 
 ### Editable installs for development
 
@@ -54,6 +56,37 @@ The repository also includes thin wrapper files:
 
 - `requirements.txt` for `-e .`
 - `requirements.dev.txt` for `-e ".[dev]"`
+
+### Jupyter / notebooks interactivos
+
+Static notebook output uses Matplotlib’s default backend; for **pan, zoom, and toolbar interaction**
+inside the cell, install the `jupyter` extra and select the `ipympl` widget backend **before** any
+figures are created (typically the first code cell):
+
+```bash
+pip install "tensor-network-visualization[jupyter]"
+# optionally combine with a tensor backend, e.g. quimb:
+pip install "tensor-network-visualization[quimb,jupyter]"
+```
+
+```python
+%matplotlib widget
+from tensor_network_viz import PlotConfig, show_tensor_network
+
+fig, ax = show_tensor_network(network, engine="quimb", view="2d", config=PlotConfig(figsize=(8, 6)))
+```
+
+With `show=True` (the default), `show_tensor_network` uses `IPython.display.display(fig)` in a
+Jupyter kernel instead of `plt.show()`, which matches interactive backends cleanly.
+
+**Notes:**
+
+- Use JupyterLab 3+ or VS Code with widget support; `ipympl` relies on the Jupyter widgets stack.
+- 3D views still use Matplotlib’s 3D axis (not WebGL); interaction is usable but not as smooth as a
+  dedicated WebGL viewer.
+- If the **last line** of a cell is a bare call that returns `(fig, ax)`, some front ends may render
+  the figure twice. Prefer assigning (`fig, ax = show_tensor_network(...)`) or use `show=False` and
+  `from IPython.display import display` / `display(fig)` yourself.
 
 ## Core Usage
 

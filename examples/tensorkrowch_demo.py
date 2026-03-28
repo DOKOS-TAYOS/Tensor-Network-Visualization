@@ -210,7 +210,7 @@ def main() -> None:
 
     # Centralized plotting options shared by the generic plotting dispatcher.
     config = PlotConfig(
-        figsize=(10, 6),
+        figsize=(8, 5),
         show_tensor_labels=args.view == "2d",
         show_index_labels=args.view == "2d",
     )

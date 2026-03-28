@@ -140,7 +140,7 @@ def main() -> None:
     print("Rendering figure...")
 
     config = PlotConfig(
-        figsize=(14, 11) if args.view == "3d" else (12, 9),
+        figsize=(9, 7) if args.view == "3d" else (8, 6),
         show_tensor_labels=args.view == "2d",
         show_index_labels=args.view == "2d",
     )
