@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from contextlib import suppress
 from dataclasses import dataclass
+from itertools import combinations
 from typing import Any, Literal, Protocol, cast
 
 import numpy as np
@@ -34,7 +35,8 @@ from .graph import (
 )
 from .layout import AxisDirections, NodePositions, _orthogonal_unit
 
-_CURVE_OFFSET_FACTOR: float = 0.15
+# Strong enough that multiedges and dangling phys legs stay visually separated (e.g. weird 2D).
+_CURVE_OFFSET_FACTOR: float = 0.18
 # Blends with chord length so multiedges keep visible separation when endpoints are close.
 _CURVE_NEAR_PAIR_REF: float = 0.28
 # Extra radius + offset so index captions sit just outside tensor disks (data units).
@@ -57,33 +59,47 @@ _EDGE_LINE_CAP_STYLE: str = "round"
 _EDGE_LINE_JOIN_STYLE: str = "round"
 # Visual radius for 3D mesh vs layout metric p.r (bonds stay center–center in 3D).
 _OCTAHEDRON_VISUAL_SCALE: float = 0.55
+_FIGURE_MIN_PX_REF: float = 520.0
+
+
+def _apply_edge_line_style(kwargs: dict[str, Any]) -> None:
+    kwargs.setdefault("solid_capstyle", _EDGE_LINE_CAP_STYLE)
+    kwargs.setdefault("solid_joinstyle", _EDGE_LINE_JOIN_STYLE)
+
+
+def _apply_text_no_clip(kwargs: dict[str, Any]) -> None:
+    kwargs.setdefault("clip_on", False)
+
+
+def _set_xy_limits_from_span(
+    ax: Any, span: np.ndarray, center: np.ndarray, pad: float
+) -> None:
+    ax.set_xlim(center[0] - span[0] * pad, center[0] + span[0] * pad)
+    ax.set_ylim(center[1] - span[1] * pad, center[1] + span[1] * pad)
+
+
+def _view_span_center_pad(coords: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
+    span = np.ptp(coords, axis=0)
+    span = np.maximum(span, 1.0)
+    center = coords.mean(axis=0)
+    pad = _VIEW_PAD_INNER * _VIEW_PAD_EXPANSION
+    return span, center, pad
 
 
 # 3D nodes: octahedron (8 tris / node). Full UV spheres are too heavy for interactive mplot3d.
-def _unit_octahedron_triangles() -> np.ndarray:
-    """Shape (8, 3, 3): triangular faces; vertices at axis ±1 (circumradius 1)."""
-    xp = np.array([1.0, 0.0, 0.0], dtype=float)
-    xn = np.array([-1.0, 0.0, 0.0], dtype=float)
-    yp = np.array([0.0, 1.0, 0.0], dtype=float)
-    yn = np.array([0.0, -1.0, 0.0], dtype=float)
-    zp = np.array([0.0, 0.0, 1.0], dtype=float)
-    zn = np.array([0.0, 0.0, -1.0], dtype=float)
-    return np.asarray(
-        [
-            [zp, xp, yp],
-            [zp, yp, xn],
-            [zp, xn, yn],
-            [zp, yn, xp],
-            [zn, yp, xp],
-            [zn, xn, yp],
-            [zn, yn, xn],
-            [zn, xp, yn],
-        ],
-        dtype=float,
-    )
-
-
-_UNIT_NODE_TRIS: np.ndarray = _unit_octahedron_triangles()
+_UNIT_NODE_TRIS: np.ndarray = np.asarray(
+    [
+        [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        [[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]],
+        [[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]],
+        [[0.0, 0.0, 1.0], [0.0, -1.0, 0.0], [1.0, 0.0, 0.0]],
+        [[0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]],
+        [[0.0, 0.0, -1.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        [[0.0, 0.0, -1.0], [0.0, -1.0, 0.0], [-1.0, 0.0, 0.0]],
+        [[0.0, 0.0, -1.0], [1.0, 0.0, 0.0], [0.0, -1.0, 0.0]],
+    ],
+    dtype=float,
+)
 
 
 class _PlotAdapter(Protocol):
@@ -105,17 +121,15 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
 
         class _2DPlotter:
             def plot_line(self, start: np.ndarray, end: np.ndarray, **kwargs: Any) -> None:
-                kwargs.setdefault("solid_capstyle", _EDGE_LINE_CAP_STYLE)
-                kwargs.setdefault("solid_joinstyle", _EDGE_LINE_JOIN_STYLE)
+                _apply_edge_line_style(kwargs)
                 ax.plot([start[0], end[0]], [start[1], end[1]], **kwargs)
 
             def plot_curve(self, curve: np.ndarray, **kwargs: Any) -> None:
-                kwargs.setdefault("solid_capstyle", _EDGE_LINE_CAP_STYLE)
-                kwargs.setdefault("solid_joinstyle", _EDGE_LINE_JOIN_STYLE)
+                _apply_edge_line_style(kwargs)
                 ax.plot(curve[:, 0], curve[:, 1], **kwargs)
 
             def plot_text(self, pos: np.ndarray, text: str, **kwargs: Any) -> None:
-                kwargs.setdefault("clip_on", False)
+                _apply_text_no_clip(kwargs)
                 ax.text(pos[0], pos[1], text, **kwargs)
 
             def draw_tensor_nodes(
@@ -134,12 +148,8 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
                     )
 
             def style_axes(self, coords: np.ndarray) -> None:
-                span = np.ptp(coords, axis=0)
-                span = np.maximum(span, 1.0)
-                center = coords.mean(axis=0)
-                pad = _VIEW_PAD_INNER * _VIEW_PAD_EXPANSION
-                ax.set_xlim(center[0] - span[0] * pad, center[0] + span[0] * pad)
-                ax.set_ylim(center[1] - span[1] * pad, center[1] + span[1] * pad)
+                span, center, pad = _view_span_center_pad(coords)
+                _set_xy_limits_from_span(ax, span, center, pad)
                 ax.set_aspect("equal", adjustable="box")
                 ax.set_axis_off()
 
@@ -147,17 +157,15 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
 
     class _3DPlotter:
         def plot_line(self, start: np.ndarray, end: np.ndarray, **kwargs: Any) -> None:
-            kwargs.setdefault("solid_capstyle", _EDGE_LINE_CAP_STYLE)
-            kwargs.setdefault("solid_joinstyle", _EDGE_LINE_JOIN_STYLE)
+            _apply_edge_line_style(kwargs)
             ax.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]], **kwargs)
 
         def plot_curve(self, curve: np.ndarray, **kwargs: Any) -> None:
-            kwargs.setdefault("solid_capstyle", _EDGE_LINE_CAP_STYLE)
-            kwargs.setdefault("solid_joinstyle", _EDGE_LINE_JOIN_STYLE)
+            _apply_edge_line_style(kwargs)
             ax.plot(curve[:, 0], curve[:, 1], curve[:, 2], **kwargs)
 
         def plot_text(self, pos: np.ndarray, text: str, **kwargs: Any) -> None:
-            kwargs.setdefault("clip_on", False)
+            _apply_text_no_clip(kwargs)
             ax.text(pos[0], pos[1], pos[2], text, **kwargs)
 
         def draw_tensor_nodes(
@@ -180,12 +188,8 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
             ax.add_collection3d(coll)
 
         def style_axes(self, coords: np.ndarray) -> None:
-            span = np.ptp(coords, axis=0)
-            span = np.maximum(span, 1.0)
-            center = coords.mean(axis=0)
-            pad = _VIEW_PAD_INNER * _VIEW_PAD_EXPANSION
-            ax.set_xlim(center[0] - span[0] * pad, center[0] + span[0] * pad)
-            ax.set_ylim(center[1] - span[1] * pad, center[1] + span[1] * pad)
+            span, center, pad = _view_span_center_pad(coords)
+            _set_xy_limits_from_span(ax, span, center, pad)
             ax.set_zlim(center[2] - span[2] * pad, center[2] + span[2] * pad)
             ax.set_box_aspect(span)
             ax.set_axis_off()
@@ -203,6 +207,30 @@ def _perpendicular_3d(direction: np.ndarray) -> np.ndarray:
     if np.linalg.norm(perp) < 1e-6:
         perp = np.cross(direction, np.array([0.0, 1.0, 0.0], dtype=float))
     return perp / np.linalg.norm(perp)
+
+
+def _bond_perpendicular_unoriented(
+    delta: np.ndarray,
+    dimensions: Literal[2, 3],
+) -> np.ndarray:
+    dist = max(float(np.linalg.norm(delta)), 1e-6)
+    direction = delta / dist
+    return (
+        _perpendicular_3d(direction) if dimensions == 3 else _perpendicular_2d(direction)
+    )
+
+
+def _signed_bond_perpendicular(
+    delta: np.ndarray,
+    dimensions: Literal[2, 3],
+) -> np.ndarray:
+    perpendicular = _bond_perpendicular_unoriented(delta, dimensions)
+    perpendicular = perpendicular / np.linalg.norm(perpendicular)
+    if (dimensions == 2 and perpendicular[1] < 0) or (
+        dimensions == 3 and perpendicular[2] < 0
+    ):
+        perpendicular = -perpendicular
+    return perpendicular
 
 
 def _node_label_clearance(p: _DrawScaleParams) -> float:
@@ -287,27 +315,26 @@ def _estimate_drawn_label_count(
             if edge.label:
                 count += 1
             continue
-        if edge.kind == "self":
-            ep_a, ep_b = _require_self_endpoints(edge)
-            for ep in (ep_a, ep_b):
-                if _endpoint_index_caption(ep, edge, graph):
-                    count += 1
-            continue
-        if edge.kind == "contraction":
-            ep_l, ep_r = _require_contraction_endpoints(edge)
-            for ep in (ep_l, ep_r):
-                if _endpoint_index_caption(ep, edge, graph):
-                    count += 1
+        if edge.kind in ("self", "contraction"):
+            endpoints = (
+                _require_self_endpoints(edge)
+                if edge.kind == "self"
+                else _require_contraction_endpoints(edge)
+            )
+            count += sum(1 for ep in endpoints if _endpoint_index_caption(ep, edge, graph))
     return max(1, count)
+
+
+def _figure_size_sqrt_ratio(fig: Figure) -> float:
+    dpi = float(getattr(fig, "dpi", None) or 100.0)
+    width_in, height_in = fig.get_size_inches()
+    min_px = float(min(width_in, height_in) * dpi)
+    return float(math.sqrt(min_px / _FIGURE_MIN_PX_REF))
 
 
 def _figure_relative_font_scale(fig: Figure, label_count: int) -> float:
     """Scale font sizes from figure dimensions and expected label crowding."""
-    dpi = float(getattr(fig, "dpi", None) or 100.0)
-    width_in, height_in = fig.get_size_inches()
-    min_px = float(min(width_in, height_in) * dpi)
-    ref_px = 520.0
-    size_part = math.sqrt(min_px / ref_px)
+    size_part = _figure_size_sqrt_ratio(fig)
     crowd = 3.0 + math.sqrt(float(label_count))
     raw = size_part * 7.0 / crowd
     return float(np.clip(raw, 0.26, 1.28))
@@ -319,11 +346,7 @@ def _figure_base_size_scale(fig: Figure) -> float:
     Tensor names use this for their *upper* bound so MERA/PEPS-sized index counts do not
     squash every node title to the same tiny cap; per-node fit still clamps by disk.
     """
-    dpi = float(getattr(fig, "dpi", None) or 100.0)
-    width_in, height_in = fig.get_size_inches()
-    min_px = float(min(width_in, height_in) * dpi)
-    ref_px = 520.0
-    size_part = math.sqrt(min_px / ref_px)
+    size_part = _figure_size_sqrt_ratio(fig)
     return float(np.clip(size_part, 0.35, 1.28))
 
 
@@ -378,14 +401,13 @@ def _index_labels_window_overlap(
     renderer: Any,
     pad_px: float,
 ) -> bool:
-    bbs: list[_DisplayBbox] = []
-    for t in labels:
-        bbs.append(_padded_window_bbox(t.get_window_extent(renderer=renderer), pad_px))
-    for i in range(len(labels)):
-        for j in range(i + 1, len(labels)):
-            if _display_bboxes_overlap(bbs[i], bbs[j]):
-                return True
-    return False
+    bbs = [
+        _padded_window_bbox(t.get_window_extent(renderer=renderer), pad_px) for t in labels
+    ]
+    return any(
+        _display_bboxes_overlap(bbs[i], bbs[j])
+        for i, j in combinations(range(len(labels)), 2)
+    )
 
 
 def _clamp_label_to_anchor(
@@ -490,10 +512,7 @@ def _curved_edge_points(
     midpoint = (start + end) / 2.0
     delta = end - start
     distance = max(float(np.linalg.norm(delta)), 1e-6)
-    direction = delta / distance
-    perpendicular = (
-        _perpendicular_3d(direction) if dimensions == 3 else _perpendicular_2d(direction)
-    )
+    perpendicular = _bond_perpendicular_unoriented(delta, dimensions)
     ref_len = _CURVE_NEAR_PAIR_REF * scale
     effective_chord = float(math.hypot(distance, ref_len))
     offset = (
@@ -542,38 +561,190 @@ def _plot_contraction_index_captions(
     if i_r <= i_l:
         i_l = max(1, i_r - max(2, n // 7))
     delta = positions[right_id] - positions[left_id]
-    dist = max(float(np.linalg.norm(delta)), 1e-6)
-    direction = delta / dist
-    perpendicular = (
-        _perpendicular_3d(direction) if dimensions == 3 else _perpendicular_2d(direction)
-    )
-    perpendicular = perpendicular / np.linalg.norm(perpendicular)
-    if (dimensions == 2 and perpendicular[1] < 0) or (dimensions == 3 and perpendicular[2] < 0):
-        perpendicular = -perpendicular
+    perpendicular = _signed_bond_perpendicular(delta, dimensions)
     off = float(max(p.label_offset * 0.52, p.r * 0.31))
-    if cap_l:
-        fs_l = _index_label_fontsize_for_caption(p.font_index_end, cap_l)
+    for cap, idx, sign in ((cap_l, i_l, 1), (cap_r, i_r, -1)):
+        if not cap:
+            continue
+        fs = _index_label_fontsize_for_caption(p.font_index_end, cap)
         plotter.plot_text(
-            curve[i_l] + perpendicular * off,
-            format_tensor_node_label(cap_l),
+            curve[idx] + sign * perpendicular * off,
+            format_tensor_node_label(cap),
             **_edge_index_text_kwargs(
                 config,
-                fontsize=fs_l,
+                fontsize=fs,
                 stub_kind="bond",
                 bbox_pad=p.index_bbox_pad,
             ),
         )
-    if cap_r:
-        fs_r = _index_label_fontsize_for_caption(p.font_index_end, cap_r)
+
+
+def _draw_dangling_edge(
+    *,
+    plotter: _PlotAdapter,
+    edge: _EdgeData,
+    positions: NodePositions,
+    directions: AxisDirections,
+    show_index_labels: bool,
+    config: PlotConfig,
+    dimensions: Literal[2, 3],
+    p: _DrawScaleParams,
+) -> None:
+    endpoint = edge.endpoints[0]
+    direction = directions[(endpoint.node_id, endpoint.axis_index)]
+    center = positions[endpoint.node_id]
+    # 2D: Circle radius is in data units, so the stub starts on the rim.
+    # 3D: scatter marker size is in points^2; zoom changes apparent size in data
+    # units while p.r does not, so rim-based starts look detached. Match bonds
+    # (center–center) by anchoring at the node center and extending r + stub.
+    if dimensions == 3:
+        start = center
+        end = center + direction * (p.r + p.stub)
+    else:
+        start = center + direction * p.r
+        end = start + direction * p.stub
+    plotter.plot_line(start, end, color=config.dangling_edge_color, linewidth=p.lw, zorder=2)
+    if show_index_labels and edge.label:
+        if dimensions == 2:
+            label_pos = start + direction * (p.stub * 0.54)
+        else:
+            dist_from_center = float(p.r + p.stub * 0.52)
+            label_pos = center + direction * dist_from_center
+        raw_lbl = edge.label
+        fs_d = _index_label_fontsize_for_caption(p.font_index_end, raw_lbl)
         plotter.plot_text(
-            curve[i_r] - perpendicular * off,
-            format_tensor_node_label(cap_r),
+            label_pos,
+            format_tensor_node_label(raw_lbl),
             **_edge_index_text_kwargs(
                 config,
-                fontsize=fs_r,
-                stub_kind="bond",
+                fontsize=fs_d,
+                stub_kind="dangling",
                 bbox_pad=p.index_bbox_pad,
             ),
+        )
+
+
+def _draw_self_loop_edge(
+    *,
+    plotter: _PlotAdapter,
+    edge: _EdgeData,
+    graph: _GraphData,
+    positions: NodePositions,
+    directions: AxisDirections,
+    show_index_labels: bool,
+    config: PlotConfig,
+    dimensions: Literal[2, 3],
+    p: _DrawScaleParams,
+) -> None:
+    endpoint_a, endpoint_b = _require_self_endpoints(edge)
+    direction_a = directions[(endpoint_a.node_id, endpoint_a.axis_index)]
+    direction_b = directions[(endpoint_b.node_id, endpoint_b.axis_index)]
+    orientation = direction_a + direction_b
+    if np.linalg.norm(orientation) < 1e-6:
+        orientation = (
+            np.array([1.0, 0.0, 0.0], dtype=float)
+            if dimensions == 3
+            else np.array([1.0, 0.0], dtype=float)
+        )
+    orientation = orientation / np.linalg.norm(orientation)
+    center_pt = positions[endpoint_a.node_id] + orientation * (p.r + p.loop_r)
+    if dimensions == 2:
+        normal = _perpendicular_2d(orientation)
+        curve = _ellipse_points(
+            center_pt,
+            orientation,
+            normal,
+            width=p.ellipse_w,
+            height=p.ellipse_h,
+        )
+        label_offset_dir = normal * p.ellipse_w
+    else:
+        normal = _orthogonal_unit(orientation)
+        binormal = np.cross(orientation, normal)
+        binormal = binormal / np.linalg.norm(binormal)
+        curve = _ellipse_points_3d(
+            center_pt,
+            normal,
+            binormal,
+            width=p.ellipse_w,
+            height=p.ellipse_h,
+        )
+        label_offset_dir = binormal * p.ellipse_w
+    plotter.plot_curve(curve, color=config.bond_edge_color, linewidth=p.lw, zorder=2)
+    if show_index_labels:
+        ca = _endpoint_index_caption(endpoint_a, edge, graph)
+        cb = _endpoint_index_caption(endpoint_b, edge, graph)
+        n = int(curve.shape[0])
+        node_c = positions[endpoint_a.node_id]
+        cl = _node_label_clearance(p)
+        ia = _curve_index_outside_disk(curve, node_c, cl, from_start=True)
+        ib = _curve_index_outside_disk(curve, node_c, cl, from_start=False)
+        min_sep = max(2, n // 8)
+        if abs(ia - ib) < min_sep:
+            ib = min(n - 2, ia + min_sep)
+        if ib <= ia:
+            ia = max(1, ib - min_sep)
+        dir_norm = float(np.linalg.norm(label_offset_dir))
+        dir_unit = label_offset_dir / max(dir_norm, 1e-9)
+        off_mag = float(max(p.label_offset * 0.52, p.r * 0.32))
+        off_a = dir_unit * off_mag
+        off_b = -dir_unit * off_mag * 0.88
+        if ca:
+            fs_a = _index_label_fontsize_for_caption(p.font_index_end, ca)
+            plotter.plot_text(
+                curve[ia] + off_a,
+                format_tensor_node_label(ca),
+                **_edge_index_text_kwargs(config, fontsize=fs_a, bbox_pad=p.index_bbox_pad),
+            )
+        if cb:
+            fs_b = _index_label_fontsize_for_caption(p.font_index_end, cb)
+            plotter.plot_text(
+                curve[ib] + off_b,
+                format_tensor_node_label(cb),
+                **_edge_index_text_kwargs(config, fontsize=fs_b, bbox_pad=p.index_bbox_pad),
+            )
+
+
+def _draw_contraction_edge(
+    *,
+    plotter: _PlotAdapter,
+    edge: _EdgeData,
+    graph: _GraphData,
+    positions: NodePositions,
+    contraction_groups: _ContractionGroups,
+    show_index_labels: bool,
+    config: PlotConfig,
+    scale: float,
+    dimensions: Literal[2, 3],
+    p: _DrawScaleParams,
+) -> None:
+    left_id, right_id = edge.node_ids
+    offset_index, edge_count = contraction_groups.offsets[id(edge)]
+    start_base = positions[left_id]
+    end_base = positions[right_id]
+    # 2D: bonds run through the disk (center–center); disks are drawn on top (higher zorder).
+    # 3D: unchanged (already center–center in layout space).
+    curve = _curved_edge_points(
+        start=start_base,
+        end=end_base,
+        offset_index=offset_index,
+        edge_count=edge_count,
+        dimensions=dimensions,
+        scale=scale,
+    )
+    plotter.plot_curve(curve, color=config.bond_edge_color, linewidth=p.lw, zorder=1)
+    if show_index_labels:
+        _plot_contraction_index_captions(
+            plotter=plotter,
+            curve=curve,
+            edge=edge,
+            graph=graph,
+            positions=positions,
+            left_id=left_id,
+            right_id=right_id,
+            config=config,
+            p=p,
+            dimensions=dimensions,
         )
 
 
@@ -592,141 +763,40 @@ def _draw_edges(
 ) -> None:
     for edge in graph.edges:
         if edge.kind == "dangling":
-            endpoint = edge.endpoints[0]
-            direction = directions[(endpoint.node_id, endpoint.axis_index)]
-            center = positions[endpoint.node_id]
-            # 2D: Circle radius is in data units, so the stub starts on the rim.
-            # 3D: scatter marker size is in points^2; zoom changes apparent size in data
-            # units while p.r does not, so rim-based starts look detached. Match bonds
-            # (center–center) by anchoring at the node center and extending r + stub.
-            if dimensions == 3:
-                start = center
-                end = center + direction * (p.r + p.stub)
-            else:
-                start = center + direction * p.r
-                end = start + direction * p.stub
-            plotter.plot_line(
-                start, end, color=config.dangling_edge_color, linewidth=p.lw, zorder=2
-            )
-            if show_index_labels and edge.label:
-                if dimensions == 2:
-                    label_pos = start + direction * (p.stub * 0.54)
-                else:
-                    dist_from_center = float(p.r + p.stub * 0.52)
-                    label_pos = center + direction * dist_from_center
-                raw_lbl = edge.label
-                fs_d = _index_label_fontsize_for_caption(p.font_index_end, raw_lbl)
-                plotter.plot_text(
-                    label_pos,
-                    format_tensor_node_label(raw_lbl),
-                    **_edge_index_text_kwargs(
-                        config,
-                        fontsize=fs_d,
-                        stub_kind="dangling",
-                        bbox_pad=p.index_bbox_pad,
-                    ),
-                )
-            continue
-
-        if edge.kind == "self":
-            endpoint_a, endpoint_b = _require_self_endpoints(edge)
-            direction_a = directions[(endpoint_a.node_id, endpoint_a.axis_index)]
-            direction_b = directions[(endpoint_b.node_id, endpoint_b.axis_index)]
-            orientation = direction_a + direction_b
-            if np.linalg.norm(orientation) < 1e-6:
-                orientation = (
-                    np.array([1.0, 0.0, 0.0], dtype=float)
-                    if dimensions == 3
-                    else np.array([1.0, 0.0], dtype=float)
-                )
-            orientation = orientation / np.linalg.norm(orientation)
-            center_pt = positions[endpoint_a.node_id] + orientation * (p.r + p.loop_r)
-            if dimensions == 2:
-                normal = _perpendicular_2d(orientation)
-                curve = _ellipse_points(
-                    center_pt,
-                    orientation,
-                    normal,
-                    width=p.ellipse_w,
-                    height=p.ellipse_h,
-                )
-                label_offset_dir = normal * p.ellipse_w
-            else:
-                normal = _orthogonal_unit(orientation)
-                binormal = np.cross(orientation, normal)
-                binormal = binormal / np.linalg.norm(binormal)
-                curve = _ellipse_points_3d(
-                    center_pt,
-                    normal,
-                    binormal,
-                    width=p.ellipse_w,
-                    height=p.ellipse_h,
-                )
-                label_offset_dir = binormal * p.ellipse_w
-            plotter.plot_curve(curve, color=config.bond_edge_color, linewidth=p.lw, zorder=2)
-            if show_index_labels:
-                ep_a, ep_b = _require_self_endpoints(edge)
-                ca = _endpoint_index_caption(ep_a, edge, graph)
-                cb = _endpoint_index_caption(ep_b, edge, graph)
-                n = int(curve.shape[0])
-                node_c = positions[endpoint_a.node_id]
-                cl = _node_label_clearance(p)
-                ia = _curve_index_outside_disk(curve, node_c, cl, from_start=True)
-                ib = _curve_index_outside_disk(curve, node_c, cl, from_start=False)
-                min_sep = max(2, n // 8)
-                if abs(ia - ib) < min_sep:
-                    ib = min(n - 2, ia + min_sep)
-                if ib <= ia:
-                    ia = max(1, ib - min_sep)
-                dir_norm = float(np.linalg.norm(label_offset_dir))
-                dir_unit = label_offset_dir / max(dir_norm, 1e-9)
-                off_mag = float(max(p.label_offset * 0.52, p.r * 0.32))
-                off_a = dir_unit * off_mag
-                off_b = -dir_unit * off_mag * 0.88
-                if ca:
-                    fs_a = _index_label_fontsize_for_caption(p.font_index_end, ca)
-                    plotter.plot_text(
-                        curve[ia] + off_a,
-                        format_tensor_node_label(ca),
-                        **_edge_index_text_kwargs(config, fontsize=fs_a, bbox_pad=p.index_bbox_pad),
-                    )
-                if cb:
-                    fs_b = _index_label_fontsize_for_caption(p.font_index_end, cb)
-                    plotter.plot_text(
-                        curve[ib] + off_b,
-                        format_tensor_node_label(cb),
-                        **_edge_index_text_kwargs(config, fontsize=fs_b, bbox_pad=p.index_bbox_pad),
-                    )
-            continue
-
-        left_id, right_id = edge.node_ids
-        offset_index, edge_count = contraction_groups.offsets[id(edge)]
-        start_base = positions[left_id]
-        end_base = positions[right_id]
-        # 2D: bonds run through the disk (center–center); disks are drawn on top (higher zorder).
-        # 3D: unchanged (already center–center in layout space).
-        start_t, end_t = start_base, end_base
-        curve = _curved_edge_points(
-            start=start_t,
-            end=end_t,
-            offset_index=offset_index,
-            edge_count=edge_count,
-            dimensions=dimensions,
-            scale=scale,
-        )
-        plotter.plot_curve(curve, color=config.bond_edge_color, linewidth=p.lw, zorder=1)
-        if show_index_labels:
-            _plot_contraction_index_captions(
+            _draw_dangling_edge(
                 plotter=plotter,
-                curve=curve,
+                edge=edge,
+                positions=positions,
+                directions=directions,
+                show_index_labels=show_index_labels,
+                config=config,
+                dimensions=dimensions,
+                p=p,
+            )
+        elif edge.kind == "self":
+            _draw_self_loop_edge(
+                plotter=plotter,
                 edge=edge,
                 graph=graph,
                 positions=positions,
-                left_id=left_id,
-                right_id=right_id,
+                directions=directions,
+                show_index_labels=show_index_labels,
                 config=config,
-                p=p,
                 dimensions=dimensions,
+                p=p,
+            )
+        else:
+            _draw_contraction_edge(
+                plotter=plotter,
+                edge=edge,
+                graph=graph,
+                positions=positions,
+                contraction_groups=contraction_groups,
+                show_index_labels=show_index_labels,
+                config=config,
+                scale=scale,
+                dimensions=dimensions,
+                p=p,
             )
 
 
@@ -764,6 +834,17 @@ def _display_disk_radius_px_3d(ax: Any, center: np.ndarray, r_data: float) -> fl
     if not math.isfinite(md):
         return 0.0
     return float(md)
+
+
+def _tensor_disk_radius_px(
+    ax: Any,
+    anchor: np.ndarray,
+    p: _DrawScaleParams,
+    dimensions: Literal[2, 3],
+) -> float:
+    if dimensions == 2:
+        return _display_disk_radius_px_2d(cast(Axes, ax), anchor, p.r)
+    return _display_disk_radius_px_3d(ax, anchor, p.r * _OCTAHEDRON_VISUAL_SCALE)
 
 
 def _tensor_label_fontsize_to_fit(
@@ -823,10 +904,7 @@ def _draw_labels(
             if node.is_virtual:
                 continue
             pos = positions[node_id]
-            if dimensions == 2:
-                r_px = _display_disk_radius_px_2d(cast(Axes, ax), pos, p.r)
-            else:
-                r_px = _display_disk_radius_px_3d(ax, pos, p.r * _OCTAHEDRON_VISUAL_SCALE)
+            r_px = _tensor_disk_radius_px(ax, pos, p, dimensions)
             display_name = format_tensor_node_label(node.name)
             fs = _tensor_label_fontsize_to_fit(
                 text=display_name,
@@ -875,10 +953,7 @@ def _refit_tensor_labels_to_disks(
         tightened = False
         for t in labels:
             anchor = _tensor_label_data_anchor(t, dimensions=dimensions)
-            if dimensions == 2:
-                r_px = _display_disk_radius_px_2d(cast(Axes, ax), anchor, p.r)
-            else:
-                r_px = _display_disk_radius_px_3d(ax, anchor, p.r * _OCTAHEDRON_VISUAL_SCALE)
+            r_px = _tensor_disk_radius_px(ax, anchor, p, dimensions)
             allow = 2.0 * max(r_px, 1e-9) * _TENSOR_LABEL_INSIDE_FILL
             bb = t.get_window_extent(renderer=renderer)
             diag = float(math.hypot(float(bb.width), float(bb.height)))
