@@ -7,6 +7,7 @@ from typing import Any, Literal, Protocol
 
 import numpy as np
 from matplotlib.patches import Circle
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from ..config import PlotConfig
 from .contractions import _ContractionGroups, _group_contractions
@@ -20,6 +21,33 @@ from .graph import _GraphData
 from .layout import AxisDirections, NodePositions, _orthogonal_unit
 
 _CURVE_OFFSET_FACTOR: float = 0.18
+# Visual radius for 3D mesh vs layout metric p.r (bonds stay center–center in 3D).
+_OCTAHEDRON_VISUAL_SCALE: float = 0.55
+# 3D nodes: octahedron (8 tris / node). Full UV spheres are too heavy for interactive mplot3d.
+def _unit_octahedron_triangles() -> np.ndarray:
+    """Shape (8, 3, 3): triangular faces; vertices at axis ±1 (circumradius 1)."""
+    xp = np.array([1.0, 0.0, 0.0], dtype=float)
+    xn = np.array([-1.0, 0.0, 0.0], dtype=float)
+    yp = np.array([0.0, 1.0, 0.0], dtype=float)
+    yn = np.array([0.0, -1.0, 0.0], dtype=float)
+    zp = np.array([0.0, 0.0, 1.0], dtype=float)
+    zn = np.array([0.0, 0.0, -1.0], dtype=float)
+    return np.asarray(
+        [
+            [zp, xp, yp],
+            [zp, yp, xn],
+            [zp, xn, yn],
+            [zp, yn, xp],
+            [zn, yp, xp],
+            [zn, xn, yp],
+            [zn, yn, xn],
+            [zn, xp, yn],
+        ],
+        dtype=float,
+    )
+
+
+_UNIT_NODE_TRIS: np.ndarray = _unit_octahedron_triangles()
 
 
 class _PlotAdapter(Protocol):
@@ -90,17 +118,18 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
         ) -> None:
             if coords.shape[0] == 0:
                 return
-            ax.scatter(
-                coords[:, 0],
-                coords[:, 1],
-                coords[:, 2],
-                s=p.scatter_s,
-                c=config.node_color,
+            scaled = _UNIT_NODE_TRIS * (p.r * _OCTAHEDRON_VISUAL_SCALE)
+            c = coords.astype(float, copy=False)
+            polys = (scaled[np.newaxis, :, :, :] + c[:, np.newaxis, np.newaxis, :]).reshape(-1, 3, 3)
+            lw = max(float(p.lw), 0.35)
+            coll = Poly3DCollection(
+                polys,
+                facecolors=config.node_color,
                 edgecolors=config.node_edge_color,
-                linewidths=float(p.lw),
-                zorder=3,
-                depthshade=False,
+                linewidths=lw,
             )
+            coll.set_sort_zpos(3)
+            ax.add_collection3d(coll)
 
         def style_axes(self, coords: np.ndarray) -> None:
             span = np.ptp(coords, axis=0)
@@ -356,7 +385,6 @@ class _DrawScaleParams:
     label_offset: float
     ellipse_w: float
     ellipse_h: float
-    scatter_s: float
 
 
 def _draw_scale_params(config: PlotConfig, scale: float, *, is_3d: bool) -> _DrawScaleParams:
@@ -375,7 +403,6 @@ def _draw_scale_params(config: PlotConfig, scale: float, *, is_3d: bool) -> _Dra
     lw_default = PlotConfig.DEFAULT_LINE_WIDTH_3D if is_3d else PlotConfig.DEFAULT_LINE_WIDTH_2D
     lw_attr = config.line_width_3d if is_3d else config.line_width_2d
     lw = (lw_attr if lw_attr is not None else lw_default) * scale
-    scatter_s = (120 if is_3d else 900) * (scale**2)
 
     return _DrawScaleParams(
         r=r,
@@ -388,7 +415,6 @@ def _draw_scale_params(config: PlotConfig, scale: float, *, is_3d: bool) -> _Dra
         label_offset=0.08 * scale,
         ellipse_w=0.16 * scale,
         ellipse_h=0.12 * scale,
-        scatter_s=scatter_s,
     )
 
 
