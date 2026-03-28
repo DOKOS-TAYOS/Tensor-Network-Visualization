@@ -252,9 +252,9 @@ def test_extent_scale_factor_reflects_long_dense_chain_vs_pair() -> None:
     """Large span with small nearest-neighbor spacing should shrink glyphs vs a loose pair."""
     long_dense = np.array([[i * 0.2, 0.0] for i in range(20)], dtype=float)
     pair = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
-    assert core_renderer_module._extent_scale_factor(long_dense) < core_renderer_module._extent_scale_factor(
-        pair
-    )
+    s_long = core_renderer_module._extent_scale_factor(long_dense)
+    s_pair = core_renderer_module._extent_scale_factor(pair)
+    assert s_long < s_pair
 
 
 def test_plot_tensorkrowch_network_2d_warns_on_unknown_position_keys_when_validate_true() -> None:

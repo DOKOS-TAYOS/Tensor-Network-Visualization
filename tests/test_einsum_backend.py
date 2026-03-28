@@ -135,7 +135,7 @@ def test_plot_einsum_network_2d_draws_reconstructed_graph() -> None:
 
 
 def test_einsum_trace_requires_binary_explicit_output_equations() -> None:
-    """Einsum backend supports only binary equations with explicit '->' output. Documented limitation."""
+    """Binary equations with explicit '->' only; other forms are rejected (documented)."""
     # Non-binary (3 operands in one equation) is rejected
     with pytest.raises(ValueError, match="binary"):
         _build_graph([pair_tensor("A", "B", "r0", "ab,bc,cd->ad")])

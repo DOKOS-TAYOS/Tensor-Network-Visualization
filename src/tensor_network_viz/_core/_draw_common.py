@@ -120,7 +120,8 @@ def _make_plotter(ax: Any, *, dimensions: Literal[2, 3]) -> _PlotAdapter:
                 return
             scaled = _UNIT_NODE_TRIS * (p.r * _OCTAHEDRON_VISUAL_SCALE)
             c = coords.astype(float, copy=False)
-            polys = (scaled[np.newaxis, :, :, :] + c[:, np.newaxis, np.newaxis, :]).reshape(-1, 3, 3)
+            stacked = scaled[np.newaxis, :, :, :] + c[:, np.newaxis, np.newaxis, :]
+            polys = stacked.reshape(-1, 3, 3)
             lw = max(float(p.lw), 0.35)
             coll = Poly3DCollection(
                 polys,

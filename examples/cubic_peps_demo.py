@@ -45,7 +45,9 @@ def build_cubic_peps(lx: int, ly: int, lz: int) -> list[tn.Node]:
     if min(lx, ly, lz) < 1:
         raise ValueError("lx, ly, lz must be >= 1")
 
-    keys: list[tuple[int, int, int]] = [(i, j, k) for i in range(lx) for j in range(ly) for k in range(lz)]
+    keys: list[tuple[int, int, int]] = [
+        (i, j, k) for i in range(lx) for j in range(ly) for k in range(lz)
+    ]
     axes_by_key: dict[tuple[int, int, int], list[str]] = {}
 
     for i, j, k in keys:

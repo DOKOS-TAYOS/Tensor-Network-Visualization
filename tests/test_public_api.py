@@ -10,10 +10,10 @@ matplotlib.use("Agg")
 
 import pytest
 
-pytestmark = pytest.mark.filterwarnings("ignore:unit_cell_width.*:UserWarning")
-
 from tensor_network_viz import PlotConfig, show_tensor_network
 from tensor_network_viz.config import EngineName
+
+pytestmark = pytest.mark.filterwarnings("ignore:unit_cell_width.*:UserWarning")
 
 
 def test_plot_config_has_expected_defaults() -> None:
