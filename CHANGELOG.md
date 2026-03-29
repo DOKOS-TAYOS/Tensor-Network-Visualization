@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] — 2026-03-29
+
 ### Added
 
 - `py.typed` marker (PEP 561) so type checkers treat the installed package as typed.
@@ -18,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `show_tensor_network` package export: `TYPE_CHECKING` import preserves lazy runtime import while exposing the real signature, annotations, and docstring to IDEs.
 
 ### Changed
+
+- **Performance (layout & draw):** cache contraction records, pair weights, and ``_group_contractions`` output per ``_GraphData`` instance; force-directed layout uses subgraph-local pair weights, vectorized attraction, and a reused displacement buffer; layout structure builds visible/proxy graphs from each component subgraph instead of rescanning all contractions; one ``_analyze_layout_components`` pass per plot feeds layout and 3D axis directions; 2D free-axis obstacle lists use a shared coordinate matrix; draw scale and bond-curve viewport padding share two passes over cached contractions; extent heuristic subsamples nodes when computing median nearest-neighbor distance above an internal cap (deterministic RNG). Optional bench scripts: ``scripts/bench_layout_draw.py`` and ``scripts/bench_layout_compare.py`` (see ``scripts/BENCH_LAYOUT_COMPARE_RESULTS.txt`` for example before/after timings).
 - Tensor label metrics: LRU cache on ``_textpath_width_pts`` (text + fontsize); optional fast 3D tensor-disk pixel radius via ``PlotConfig.approximate_3d_tensor_disk_px`` (default True) using nominal px/data-unit from axis spans; expanded ``refine_tensor_labels`` docs on cost.
 - Refactor of the `_core` module into tiny pieces.
 - Removed unused code.
@@ -33,4 +37,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[1.4.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.3.3...v1.4.0

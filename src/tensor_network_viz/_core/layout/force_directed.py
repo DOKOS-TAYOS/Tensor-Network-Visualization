@@ -6,7 +6,7 @@ import math
 
 import numpy as np
 
-from ..contractions import _contraction_weights
+from ..contractions import _iter_contractions
 from ..graph import _GraphData
 from .parameters import _FORCE_LAYOUT_COOLING_FACTOR, _FORCE_LAYOUT_K, _LAYOUT_TARGET_NORM
 from .types import NodePositions, Vector
@@ -22,11 +22,12 @@ def _pair_weights_for_node_ids(
     node_ids: list[int],
 ) -> dict[tuple[int, int], int]:
     node_id_set = set(node_ids)
-    return {
-        pair: weight
-        for pair, weight in _contraction_weights(graph).items()
-        if pair[0] in node_id_set and pair[1] in node_id_set
-    }
+    counts: dict[tuple[int, int], int] = {}
+    for record in _iter_contractions(graph):
+        a, b = record.key
+        if a in node_id_set and b in node_id_set:
+            counts[record.key] = counts.get(record.key, 0) + 1
+    return counts
 
 
 def _repulsion_displacement(
@@ -34,19 +35,25 @@ def _repulsion_displacement(
     *,
     k: float,
     rng: np.random.Generator,
+    out: np.ndarray | None = None,
 ) -> np.ndarray:
     """Repulsion between nodes; full O(n²) when n is modest, sampled pairs when n is large."""
     n = int(positions.shape[0])
+    if out is None:
+        out = np.zeros_like(positions)
+    else:
+        out.fill(0.0)
+
     if n <= _REPULSION_DENSE_NODE_CAP:
         deltas = positions[:, None, :] - positions[None, :, :]
         distances = np.linalg.norm(deltas, axis=2)
         np.fill_diagonal(distances, 1.0)
         directions = deltas / np.maximum(distances[..., None], 1e-6)
         repulsion = (k * k / np.maximum(distances, 1e-6) ** 2)[..., None] * directions
-        return repulsion.sum(axis=1)
+        out[:] = repulsion.sum(axis=1)
+        return out
 
     m_sample = min(n - 1, max(_REPULSION_SAMPLE_MIN, int(_REPULSION_SAMPLE_LINEAR * math.sqrt(n))))
-    out = np.zeros_like(positions)
     for i in range(n):
         pool = [j for j in range(n) if j != i]
         if len(pool) <= m_sample:
@@ -62,6 +69,26 @@ def _repulsion_displacement(
     return out
 
 
+def _accumulate_attraction_forces(
+    displacement: np.ndarray,
+    positions: np.ndarray,
+    *,
+    left_idx: np.ndarray,
+    right_idx: np.ndarray,
+    edge_weights: np.ndarray,
+    k: float,
+) -> None:
+    if left_idx.size == 0:
+        return
+    dvec = positions[right_idx] - positions[left_idx]
+    dist = np.linalg.norm(dvec, axis=1)
+    dist = np.maximum(dist, 1e-6)
+    direction = dvec / dist[:, np.newaxis]
+    mag = (edge_weights * dist * dist / k)[:, np.newaxis] * direction
+    np.add.at(displacement, left_idx, mag)
+    np.add.at(displacement, right_idx, -mag)
+
+
 def _apply_attraction_forces(
     displacement: np.ndarray,
     positions: np.ndarray,
@@ -70,15 +97,20 @@ def _apply_attraction_forces(
     pair_weights: dict[tuple[int, int], int],
     k: float,
 ) -> None:
-    for (left_id, right_id), weight in pair_weights.items():
-        left_index = index_by_node[left_id]
-        right_index = index_by_node[right_id]
-        delta = positions[right_index] - positions[left_index]
-        distance = max(float(np.linalg.norm(delta)), 1e-6)
-        direction = delta / distance
-        attraction = weight * distance * distance / k * direction
-        displacement[left_index] += attraction
-        displacement[right_index] -= attraction
+    if not pair_weights:
+        return
+    items = sorted(pair_weights.items(), key=lambda item: item[0])
+    left_idx = np.array([index_by_node[a] for (a, _b), _w in items], dtype=np.int64)
+    right_idx = np.array([index_by_node[b] for (_a, b), _w in items], dtype=np.int64)
+    edge_weights = np.array([float(w) for _pair, w in items], dtype=np.float64)
+    _accumulate_attraction_forces(
+        displacement,
+        positions,
+        left_idx=left_idx,
+        right_idx=right_idx,
+        edge_weights=edge_weights,
+        k=k,
+    )
 
 
 def _apply_force_step(
@@ -141,6 +173,7 @@ def _compute_force_layout(
     pair_weights = _pair_weights_for_node_ids(graph, node_ids=node_ids)
     fixed_mask = np.zeros(len(node_ids), dtype=bool)
     fixed_array = np.zeros_like(positions)
+    displacement = np.zeros_like(positions)
 
     if fixed_positions:
         fixed_centroid = np.mean(np.stack(list(fixed_positions.values())), axis=0)
@@ -159,7 +192,7 @@ def _compute_force_layout(
 
     temperature = 0.12
     for _ in range(iterations):
-        displacement = _repulsion_displacement(positions, k=_FORCE_LAYOUT_K, rng=rng_rep)
+        _repulsion_displacement(positions, k=_FORCE_LAYOUT_K, rng=rng_rep, out=displacement)
         _apply_attraction_forces(
             displacement,
             positions,
@@ -182,6 +215,7 @@ def _compute_force_layout(
 
 
 __all__ = [
+    "_accumulate_attraction_forces",
     "_apply_attraction_forces",
     "_apply_force_step",
     "_compute_force_layout",

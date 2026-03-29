@@ -95,18 +95,15 @@ def _direction_from_axis_name(
     return None
 
 
-def _compute_layout(
+def _compute_layout_from_components(
     graph: _GraphData,
+    components: tuple[_LayoutComponent, ...],
     dimensions: int,
     seed: int,
     *,
     iterations: int = 220,
 ) -> NodePositions:
     node_ids = list(graph.nodes)
-    if len(node_ids) == 1:
-        return {node_ids[0]: np.zeros(dimensions, dtype=float)}
-
-    components = _analyze_layout_components(graph)
     component_positions: list[NodePositions] = []
     for index, component in enumerate(components):
         positions_2d = _compute_component_layout_2d(
@@ -122,6 +119,27 @@ def _compute_layout(
 
     packed_positions = _pack_component_positions(component_positions, dimensions=dimensions)
     return _normalize_positions(packed_positions, node_ids)
+
+
+def _compute_layout(
+    graph: _GraphData,
+    dimensions: int,
+    seed: int,
+    *,
+    iterations: int = 220,
+) -> NodePositions:
+    node_ids = list(graph.nodes)
+    if len(node_ids) == 1:
+        return {node_ids[0]: np.zeros(dimensions, dtype=float)}
+
+    components = _analyze_layout_components(graph)
+    return _compute_layout_from_components(
+        graph,
+        components,
+        dimensions,
+        seed,
+        iterations=iterations,
+    )
 
 
 def _compute_component_layout_2d(
@@ -669,6 +687,7 @@ def _compute_axis_directions(
     *,
     draw_scale: float = 1.0,
     contraction_groups: _ContractionGroups | None = None,
+    layout_components: tuple[_LayoutComponent, ...] | None = None,
 ) -> AxisDirections:
     directions: AxisDirections = {}
     for record in _iter_contractions(graph):
@@ -691,7 +710,18 @@ def _compute_axis_directions(
             contraction_groups=contraction_groups,
         )
     else:
-        _compute_free_directions_3d(graph, positions, directions, draw_scale=draw_scale)
+        components_3d = (
+            layout_components
+            if layout_components is not None
+            else _analyze_layout_components(graph)
+        )
+        _compute_free_directions_3d(
+            graph,
+            positions,
+            directions,
+            draw_scale=draw_scale,
+            layout_components=components_3d,
+        )
 
     return directions
 
@@ -704,17 +734,15 @@ def _compute_free_directions_2d(
     draw_scale: float = 1.0,
     contraction_groups: _ContractionGroups | None = None,
 ) -> None:
-    node_ids = list(positions)
+    node_list = sorted(positions.keys())
+    n_nodes = len(node_list)
+    index_of: dict[int, int] = {node_id: idx for idx, node_id in enumerate(node_list)}
+    coords_xy = np.stack(
+        [np.asarray(positions[nid], dtype=float).reshape(-1)[:2] for nid in node_list],
+    )
     angles = np.linspace(0.0, 2.0 * math.pi, _FREE_DIR_SAMPLES_2D, endpoint=False)
     unit_circle = np.column_stack((np.cos(angles), np.sin(angles)))
-    other_node_positions = {
-        node_id: np.array(
-            [positions[other_id] for other_id in node_ids if other_id != node_id],
-            dtype=float,
-        )
-        for node_id in node_ids
-    }
-    neighbor_midpoints: dict[int, list[np.ndarray]] = {node_id: [] for node_id in node_ids}
+    neighbor_midpoints: dict[int, list[np.ndarray]] = {node_id: [] for node_id in node_list}
     for record in _iter_contractions(graph):
         left_id, right_id = record.node_ids
         midpoint = (positions[left_id] + positions[right_id]) / 2.0
@@ -733,8 +761,13 @@ def _compute_free_directions_2d(
         node = graph.nodes[node_id]
         origin = positions[node_id]
         obstacle_parts: list[np.ndarray] = []
-        if other_node_positions[node_id].size:
-            obstacle_parts.append(other_node_positions[node_id])
+        if n_nodes > 1:
+            self_idx = index_of[node_id]
+            mask = np.ones(n_nodes, dtype=bool)
+            mask[self_idx] = False
+            other_rows = coords_xy[mask]
+            if other_rows.size:
+                obstacle_parts.append(other_rows)
         if neighbor_midpoints[node_id]:
             obstacle_parts.append(np.array(neighbor_midpoints[node_id], dtype=float))
         obstacles = (
@@ -855,11 +888,11 @@ def _compute_free_directions_3d(
     directions: AxisDirections,
     *,
     draw_scale: float = 1.0,
+    layout_components: tuple[_LayoutComponent, ...],
 ) -> None:
-    components = _analyze_layout_components(graph)
     assigned_segments: list[tuple[np.ndarray, np.ndarray]] = []
     component_by_node = {
-        node_id: component for component in components for node_id in component.node_ids
+        node_id: component for component in layout_components for node_id in component.node_ids
     }
 
     for node_id, node in graph.nodes.items():
@@ -1042,6 +1075,7 @@ __all__ = [
     "_component_main_axis_2d",
     "_compute_axis_directions",
     "_compute_component_layout_2d",
+    "_compute_layout_from_components",
     "_compute_free_directions_2d",
     "_compute_free_directions_3d",
     "_compute_layout",

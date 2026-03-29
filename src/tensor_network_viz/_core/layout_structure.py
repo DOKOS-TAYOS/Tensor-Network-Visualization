@@ -47,14 +47,20 @@ def _analyze_layout_components(graph: _GraphData) -> tuple[_LayoutComponent, ...
         virtual_node_ids = tuple(
             sorted(node_id for node_id in component_node_ids if graph.nodes[node_id].is_virtual)
         )
-        visible_graph = _build_visible_graph(graph, component_node_ids=component_node_ids)
+        visible_graph = _visible_graph_for_component(
+            graph,
+            component_graph,
+            component_node_ids=component_node_ids,
+        )
         trimmed_visible_graph, trimmed_leaf_parents = _trim_visible_leaf_nodes(
             graph,
             visible_graph,
         )
-        proxy_visible_graph = _build_proxy_visible_graph(
+        proxy_visible_graph = _proxy_visible_graph_for_component(
             graph,
+            component_graph,
             component_node_ids=component_node_ids,
+            visible_graph=visible_graph,
         )
         anchor_graph = _select_anchor_graph(
             component_graph=component_graph,
@@ -104,37 +110,42 @@ def _build_contraction_graph(graph: _GraphData) -> nx.Graph:
     return nx_graph
 
 
-def _build_visible_graph(
+def _visible_graph_for_component(
     graph: _GraphData,
+    component_graph: nx.Graph,
     *,
     component_node_ids: tuple[int, ...],
 ) -> nx.Graph:
+    """Visible-only induced subgraph of contractions, using only *component_graph* edges."""
     visible_node_ids = [
         node_id for node_id in component_node_ids if not graph.nodes[node_id].is_virtual
     ]
     nx_graph = nx.Graph()
     nx_graph.add_nodes_from(visible_node_ids)
-    for record in _iter_contractions(graph):
-        left_id, right_id = record.node_ids
-        if left_id not in nx_graph or right_id not in nx_graph:
-            continue
-        nx_graph.add_edge(left_id, right_id)
+    for left_id, right_id in component_graph.edges():
+        if left_id in nx_graph and right_id in nx_graph:
+            nx_graph.add_edge(left_id, right_id)
     return nx_graph
 
 
-def _build_proxy_visible_graph(
+def _proxy_visible_graph_for_component(
     graph: _GraphData,
+    component_graph: nx.Graph,
     *,
     component_node_ids: tuple[int, ...],
+    visible_graph: nx.Graph,
 ) -> nx.Graph:
-    proxy_graph = _build_visible_graph(graph, component_node_ids=component_node_ids)
-    contraction_graph = _build_contraction_graph(graph).subgraph(component_node_ids)
+    """Augment *visible_graph* with proxy edges via virtual hubs.
+
+    Does not rescan all contractions in the full graph.
+    """
+    proxy_graph = visible_graph.copy()
     for node_id in component_node_ids:
         if not graph.nodes[node_id].is_virtual:
             continue
         visible_neighbors = sorted(
             neighbor_id
-            for neighbor_id in contraction_graph.neighbors(node_id)
+            for neighbor_id in component_graph.neighbors(node_id)
             if not graph.nodes[neighbor_id].is_virtual
         )
         for left_id, right_id in combinations(visible_neighbors, 2):

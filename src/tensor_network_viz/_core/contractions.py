@@ -1,7 +1,8 @@
-"""Shared helpers for contraction edges used by layout and drawing."""
+"""Shared helpers for contraction edges used in layout and drawing."""
 
 from __future__ import annotations
 
+import weakref
 from collections import Counter
 from dataclasses import dataclass
 
@@ -31,13 +32,25 @@ class _ContractionGroups:
     offsets: dict[int, tuple[int, int]]
 
 
+@dataclass(frozen=True)
+class _ContractionDerived:
+    """Cached contraction lists and groupings for one :class:`_GraphData` instance."""
+
+    records: tuple[_ContractionRecord, ...]
+    weights: dict[ContractionNodeIds, int]
+    groups: _ContractionGroups
+
+
+_contraction_derived_by_id: dict[int, _ContractionDerived] = {}
+
+
 def _offset_sign_from_axis_name(axis_name: str | None) -> int:
     if not axis_name:
         return 0
     return _AXIS_OFFSET_SIGN.get(axis_name.lower().strip(), 0)
 
 
-def _iter_contractions(graph: _GraphData) -> tuple[_ContractionRecord, ...]:
+def _build_contraction_records(graph: _GraphData) -> tuple[_ContractionRecord, ...]:
     records: list[_ContractionRecord] = []
     for edge in graph.edges:
         if edge.kind != "contraction":
@@ -54,21 +67,19 @@ def _iter_contractions(graph: _GraphData) -> tuple[_ContractionRecord, ...]:
     return tuple(records)
 
 
-def _contraction_weights(graph: _GraphData) -> dict[ContractionNodeIds, int]:
-    return dict(Counter(record.key for record in _iter_contractions(graph)))
-
-
-def _group_contractions(graph: _GraphData) -> _ContractionGroups:
+def _group_contractions_from_records(
+    records: tuple[_ContractionRecord, ...],
+) -> _ContractionGroups:
     grouped_records: dict[ContractionNodeIds, list[_ContractionRecord]] = {}
-    for record in _iter_contractions(graph):
+    for record in records:
         grouped_records.setdefault(record.key, []).append(record)
 
     groups: dict[ContractionNodeIds, tuple[_ContractionRecord, ...]] = {}
     offsets: dict[int, tuple[int, int]] = {}
-    for key, records in grouped_records.items():
+    for key, group_records in grouped_records.items():
         ordered_records = tuple(
             sorted(
-                records,
+                group_records,
                 key=lambda record: _offset_sign_from_axis_name(record.endpoints[0].axis_name),
             )
         )
@@ -78,3 +89,34 @@ def _group_contractions(graph: _GraphData) -> _ContractionGroups:
             offsets[id(record.edge)] = (offset_index, group_size)
 
     return _ContractionGroups(groups=groups, offsets=offsets)
+
+
+def _contraction_derived(graph: _GraphData) -> _ContractionDerived:
+    key = id(graph)
+    cached = _contraction_derived_by_id.get(key)
+    if cached is not None:
+        return cached
+    records = _build_contraction_records(graph)
+    weights = dict(Counter(record.key for record in records))
+    groups = _group_contractions_from_records(records)
+    derived = _ContractionDerived(records=records, weights=weights, groups=groups)
+    _contraction_derived_by_id[key] = derived
+
+    def _evict() -> None:
+        _contraction_derived_by_id.pop(key, None)
+
+    weakref.finalize(graph, _evict)
+    return derived
+
+
+def _iter_contractions(graph: _GraphData) -> tuple[_ContractionRecord, ...]:
+    return _contraction_derived(graph).records
+
+
+def _contraction_weights(graph: _GraphData) -> dict[ContractionNodeIds, int]:
+    """Multiplicity counts per unordered contraction node pair (read-only dict; do not mutate)."""
+    return _contraction_derived(graph).weights
+
+
+def _group_contractions(graph: _GraphData) -> _ContractionGroups:
+    return _contraction_derived(graph).groups

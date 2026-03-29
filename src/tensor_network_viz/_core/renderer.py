@@ -15,15 +15,18 @@ from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from ..config import PlotConfig
 from ._draw_common import _draw_graph
-from .contractions import _group_contractions
+from .contractions import _ContractionGroups, _group_contractions, _iter_contractions
+from .draw.constants import _CURVE_NEAR_PAIR_REF, _CURVE_OFFSET_FACTOR
 from .graph import _GraphData
 from .graph_cache import _get_or_build_graph
 from .layout import (
     NodePositions,
     _compute_axis_directions,
     _compute_layout,
+    _compute_layout_from_components,
     _normalize_positions,
 )
+from .layout_structure import _analyze_layout_components, _LayoutComponent
 
 RenderedAxes: TypeAlias = Axes | Axes3D
 _Dimensions = Literal[2, 3]
@@ -118,12 +121,10 @@ def _compute_scale(n_nodes: int) -> float:
 def _min_contraction_edge_length(graph: _GraphData, positions: NodePositions) -> float | None:
     """Shortest center–center distance among non-degenerate contraction edges, or None."""
     best: float | None = None
-    for edge in graph.edges:
-        if edge.kind != "contraction":
+    for record in _iter_contractions(graph):
+        a_id, b_id = record.node_ids
+        if a_id == b_id:
             continue
-        if len(edge.node_ids) != 2:
-            continue
-        a_id, b_id = edge.node_ids
         if a_id not in positions or b_id not in positions:
             continue
         delta = np.asarray(positions[a_id], dtype=float) - np.asarray(positions[b_id], dtype=float)
@@ -159,11 +160,23 @@ def _visible_tensor_coords(positions: NodePositions, graph: _GraphData) -> np.nd
     return np.stack([positions[node_id] for node_id in visible_ids])
 
 
+_NN_MEDIAN_MAX_POINTS: int = 256
+
+
 def _median_nearest_neighbor_distance(coords: np.ndarray) -> float:
-    """Median nearest-neighbor distance; 1.0 when there is at most one point."""
+    """Median nearest-neighbor distance; 1.0 when there is at most one point.
+
+    For more than ``_NN_MEDIAN_MAX_POINTS`` points, uses a fixed-seed subsample so cost stays
+    bounded while preserving the extent heuristic behavior.
+    """
     count = int(coords.shape[0])
     if count < 2:
         return 1.0
+    if count > _NN_MEDIAN_MAX_POINTS:
+        rng = np.random.default_rng(0)
+        sel = rng.choice(count, size=_NN_MEDIAN_MAX_POINTS, replace=False)
+        coords = coords[sel]
+        count = _NN_MEDIAN_MAX_POINTS
     delta = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
     dist = np.linalg.norm(delta, axis=2)
     np.fill_diagonal(dist, np.inf)
@@ -197,6 +210,50 @@ def _resolve_draw_scale(graph: _GraphData, positions: NodePositions) -> float:
     if d_min is not None:
         return _geometric_draw_scale(d_min)
     return _heuristic_draw_scale(graph, positions)
+
+
+def _resolve_draw_scale_and_bond_curve_pad(
+    graph: _GraphData,
+    positions: NodePositions,
+    contraction_groups: _ContractionGroups,
+) -> tuple[float, float]:
+    """Single structural pass over contractions for scale, then one pass for bond bulge padding."""
+    records = _iter_contractions(graph)
+    d_min: float | None = None
+    for record in records:
+        left_id, right_id = record.node_ids
+        if left_id == right_id:
+            continue
+        delta = np.asarray(positions[right_id], dtype=float) - np.asarray(
+            positions[left_id], dtype=float
+        )
+        dist = float(np.linalg.norm(delta))
+        if dist <= 1e-12 or not math.isfinite(dist):
+            continue
+        d_min = dist if d_min is None else min(d_min, dist)
+
+    scale = (
+        _geometric_draw_scale(d_min)
+        if d_min is not None
+        else _heuristic_draw_scale(graph, positions)
+    )
+
+    best_curve = 0.0
+    for record in records:
+        left_id, right_id = record.node_ids
+        if left_id == right_id:
+            continue
+        offset_index, edge_count = contraction_groups.offsets[id(record.edge)]
+        delta = np.asarray(positions[right_id], dtype=float) - np.asarray(
+            positions[left_id], dtype=float
+        )
+        distance = max(float(np.linalg.norm(delta)), 1e-6)
+        effective_chord = float(math.hypot(distance, _CURVE_NEAR_PAIR_REF * scale))
+        raw = (
+            (offset_index - (edge_count - 1) / 2.0) * _CURVE_OFFSET_FACTOR * scale * effective_chord
+        )
+        best_curve = max(best_curve, abs(float(raw)))
+    return scale, best_curve
 
 
 def _prepare_axes(
@@ -240,16 +297,36 @@ def _resolve_positions(
     *,
     dimensions: _Dimensions,
     seed: int,
-) -> NodePositions:
+) -> tuple[NodePositions, tuple[_LayoutComponent, ...]]:
+    """Resolve positions and layout components (one structural analysis per plot)."""
     iterations = _effective_layout_iterations(config, n_nodes=len(graph.nodes))
+    components = _analyze_layout_components(graph)
+    node_ids = list(graph.nodes)
+    if len(node_ids) == 1:
+        return (
+            {node_ids[0]: np.zeros(dimensions, dtype=float)},
+            components,
+        )
     if config.positions is None:
-        return _compute_layout(graph, dimensions=dimensions, seed=seed, iterations=iterations)
-    return _apply_custom_positions(
-        graph,
-        config.positions,
-        dimensions=dimensions,
-        iterations=iterations,
-        validate=config.validate_positions,
+        return (
+            _compute_layout_from_components(
+                graph,
+                components,
+                int(dimensions),
+                seed,
+                iterations=iterations,
+            ),
+            components,
+        )
+    return (
+        _apply_custom_positions(
+            graph,
+            config.positions,
+            dimensions=dimensions,
+            iterations=iterations,
+            validate=config.validate_positions,
+        ),
+        components,
     )
 
 
@@ -271,15 +348,23 @@ def _plot_graph(
         renderer_name=renderer_name,
         dimensions=dimensions,
     )
-    positions = _resolve_positions(graph, style, dimensions=dimensions, seed=seed)
-    scale = _resolve_draw_scale(graph, positions)
+    positions, layout_components = _resolve_positions(
+        graph,
+        style,
+        dimensions=dimensions,
+        seed=seed,
+    )
     contraction_groups = _group_contractions(graph)
+    scale, bond_curve_pad = _resolve_draw_scale_and_bond_curve_pad(
+        graph, positions, contraction_groups
+    )
     directions = _compute_axis_directions(
         graph,
         positions,
         dimensions=dimensions,
         draw_scale=scale,
         contraction_groups=contraction_groups,
+        layout_components=layout_components,
     )
     _draw_graph(
         ax=resolved_ax,
@@ -292,6 +377,7 @@ def _plot_graph(
         dimensions=dimensions,
         scale=scale,
         contraction_groups=contraction_groups,
+        bond_curve_pad=bond_curve_pad,
     )
     fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
     return fig, resolved_ax

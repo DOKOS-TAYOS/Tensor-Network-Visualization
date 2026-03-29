@@ -65,10 +65,16 @@ def _view_outset_margin_data_units(
     p: _DrawScaleParams,
     scale: float,
     contraction_groups: _ContractionGroups,
+    *,
+    bond_curve_pad: float | None = None,
 ) -> float:
     """Absolute data-units padding so disks, stubs, curved bonds, loops, and
     labels stay in frame."""
-    curve = _max_perpendicular_bond_curve_offset(graph, positions, contraction_groups, scale)
+    curve = (
+        float(bond_curve_pad)
+        if bond_curve_pad is not None
+        else _max_perpendicular_bond_curve_offset(graph, positions, contraction_groups, scale)
+    )
     m = float(p.r + p.stub + curve)
     if any(edge.kind == "self" for edge in graph.edges):
         m = max(m, _self_loop_spatial_extent(p))

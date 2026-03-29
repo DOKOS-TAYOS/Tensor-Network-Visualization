@@ -54,6 +54,7 @@ def _draw_graph(
     dimensions: Literal[2, 3],
     scale: float = 1.0,
     contraction_groups: _ContractionGroups | None = None,
+    bond_curve_pad: float | None = None,
 ) -> None:
     _disconnect_tensor_network_hover(ax.figure)
     ax.cla()
@@ -87,7 +88,12 @@ def _draw_graph(
     )
     pre_coords = _stack_visible_tensor_coords(graph, positions)
     view_margin = _view_outset_margin_data_units(
-        graph, positions, params, scale, contraction_groups
+        graph,
+        positions,
+        params,
+        scale,
+        contraction_groups,
+        bond_curve_pad=bond_curve_pad,
     )
     _apply_axis_limits_with_outset(ax, pre_coords, view_margin=view_margin, dimensions=dimensions)
 

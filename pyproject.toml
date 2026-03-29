@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tensor-network-visualization"
-version = "1.4.0"
+version = "1.4.1"
 description = "Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced PyTorch/NumPy einsum tensor networks."
 authors = [{ name = "Alejandro Mata Ali" }]
 readme = "README.md"
@@ -61,6 +61,8 @@ select = ["E", "F", "I", "B", "UP", "C4", "SIM", "RUF100"]
 [tool.ruff.lint.per-file-ignores]
 # Examples set sys.path before importing local demo_cli (importlib-safe).
 "examples/**/*.py" = ["E402"]
+# Repo-root bench helpers insert ``src`` on sys.path before third-party imports.
+"scripts/**/*.py" = ["E402"]
 # Draw/layout splits mirror the old monolith: submodule star-import of tuning constants.
 "src/tensor_network_viz/_core/draw/*.py" = ["F403", "F405"]
 "src/tensor_network_viz/_core/layout/body.py" = ["F403", "F405"]
