@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `show_tensor_network` package export: `TYPE_CHECKING` import preserves lazy runtime import while exposing the real signature, annotations, and docstring to IDEs.
 
 ### Changed
+- Tensor label metrics: LRU cache on ``_textpath_width_pts`` (text + fontsize); optional fast 3D tensor-disk pixel radius via ``PlotConfig.approximate_3d_tensor_disk_px`` (default True) using nominal px/data-unit from axis spans; expanded ``refine_tensor_labels`` docs on cost.
 - Refactor of the `_core` module into tiny pieces.
 - Removed unused code.
 - Changed the drawing ordering, to improve the visualization when parts of the tensor network are in the same place.

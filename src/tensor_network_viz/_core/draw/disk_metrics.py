@@ -10,6 +10,14 @@ from mpl_toolkits.mplot3d import proj3d
 from .fonts_and_scale import _DrawScaleParams
 
 
+def _tensor_disk_radius_px_3d_nominal(ax: Any, p: _DrawScaleParams) -> float:
+    """Pixels per data unit from axis spans only (no per-point projection); ``r`` in data units."""
+    from .viewport_geometry import _nominal_figure_px_per_data_unit_3d
+
+    k = _nominal_figure_px_per_data_unit_3d(ax)
+    return float(max(float(p.r) * k, 1e-9))
+
+
 def _display_disk_radius_px_2d(ax: Axes, center: np.ndarray, r_data: float) -> float:
     """Pixel radius for horizontal *r_data* at *center* (equal-aspect 2D)."""
     c = np.asarray(center[:2], dtype=float)
@@ -61,4 +69,5 @@ __all__ = [
     "_display_disk_radius_px_2d",
     "_display_disk_radius_px_3d",
     "_tensor_disk_radius_px",
+    "_tensor_disk_radius_px_3d_nominal",
 ]

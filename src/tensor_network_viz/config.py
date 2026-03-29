@@ -43,8 +43,13 @@ class PlotConfig:
         validate_positions: If True, warn when custom positions have unknown keys or
             wrong dimension count for the view.
         refine_tensor_labels: If True, run post-draw passes that shrink tensor names so
-            they fit the node marker in 2D or 3D (uses extra canvas draws). Set False for
-            faster plots when visual polish is less important.
+            they fit the node marker in 2D or 3D. Each pass calls ``fig.canvas.draw()`` and
+            measures text bounding boxes — often a large share of end-to-end plot time on dense
+            figures. Set False for much faster plots when slight overflow of long names is
+            acceptable (first-pass TextPath sizing still applies).
+        approximate_3d_tensor_disk_px: If True (default), tensor label disk radius in pixels
+            uses a single nominal scale from axis spans (cheap). If False, uses per-node
+            projection (slower, marginally more accurate under 3D perspective).
         hover_labels: If True, tensor names and bond index labels are hidden until the pointer
             hovers over a node or edge (2D: hit-testing in axes space; 3D: projected screen
             distance). Use an interactive Matplotlib window.
@@ -77,6 +82,7 @@ class PlotConfig:
     positions: dict[int, tuple[float, ...]] | None = None
     validate_positions: bool = False
     refine_tensor_labels: bool = True
+    approximate_3d_tensor_disk_px: bool = True
     hover_labels: bool = False
 
 

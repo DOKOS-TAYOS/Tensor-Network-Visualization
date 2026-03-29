@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import math
 from contextlib import suppress
 from dataclasses import dataclass
@@ -22,13 +23,23 @@ def _figure_size_sqrt_ratio(fig: Figure) -> float:
     return float(math.sqrt(min_px / _FIGURE_MIN_PX_REF))
 
 
-def _textpath_width_pts(text: str, *, fontsize_pt: float) -> float:
-    """Horizontal advance of *text* from Matplotlib TextPath at *fontsize_pt* (points)."""
+_TEXTPATH_WIDTH_CACHE_MAX: int = 8192
+
+
+@functools.lru_cache(maxsize=_TEXTPATH_WIDTH_CACHE_MAX)
+def _textpath_width_pts_cached(text: str, fontsize_pt_key: float) -> float:
+    """Cached TextPath width; *fontsize_pt_key* should be ``round(fontsize_pt, 6)``."""
     if not text.strip():
         return 0.0
-    fp = FontProperties(size=float(fontsize_pt))
+    fp = FontProperties(size=float(fontsize_pt_key))
     tp = TextPath((0.0, 0.0), text, prop=fp)
     return float(tp.get_extents().width)
+
+
+def _textpath_width_pts(text: str, *, fontsize_pt: float) -> float:
+    """Horizontal advance of *text* from Matplotlib TextPath at *fontsize_pt* (points)."""
+    key = round(float(fontsize_pt), 6)
+    return float(_textpath_width_pts_cached(text, key))
 
 
 def _figure_relative_font_scale(fig: Figure, label_count: int) -> float:
@@ -167,4 +178,5 @@ __all__ = [
     "_on_2d_limits_changed",
     "_register_2d_zoom_font_scaling",
     "_textpath_width_pts",
+    "_textpath_width_pts_cached",
 ]

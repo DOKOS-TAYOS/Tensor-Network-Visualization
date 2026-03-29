@@ -15,6 +15,7 @@ from ..layout import (
     NodePositions,
 )
 from .constants import *
+from .disk_metrics import _tensor_disk_radius_px_3d_nominal
 from .edges import _draw_edges, _draw_edges_2d_layered
 from .fonts_and_scale import (
     _draw_scale_params,
@@ -181,6 +182,9 @@ def _draw_graph(
             p=params,
         )
     plotter.style_axes(coords, view_margin=view_margin)
+    tensor_disk_radius_px_3d: float | None = None
+    if dimensions == 3 and config.approximate_3d_tensor_disk_px:
+        tensor_disk_radius_px_3d = _tensor_disk_radius_px_3d_nominal(ax, params)
     _draw_labels(
         plotter=plotter,
         ax=ax,
@@ -193,9 +197,15 @@ def _draw_graph(
         tensor_hover_by_node=tensor_hover_map,
         visible_draw_order=visible_order if use_2d_layers else None,
         tensor_label_zorder_by_node=tensor_z_by_node,
+        tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
     )
     if config.refine_tensor_labels:
-        _refit_tensor_labels_to_disks(ax=ax, p=params, dimensions=dimensions)
+        _refit_tensor_labels_to_disks(
+            ax=ax,
+            p=params,
+            dimensions=dimensions,
+            tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
+        )
     if dimensions == 2:
         _register_2d_zoom_font_scaling(cast(Axes, ax))
     if config.hover_labels and (show_tensor_labels or show_index_labels):
@@ -225,6 +235,7 @@ def _draw_graph(
                 edge_hover=list(hover_edge_list or ()),
                 line_width_px_hint=float(params.lw),
                 p=params,
+                tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
             )
 
 

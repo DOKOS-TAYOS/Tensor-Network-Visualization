@@ -87,6 +87,7 @@ def _draw_labels(
     tensor_hover_by_node: dict[int, tuple[str, float]] | None = None,
     visible_draw_order: list[int] | None = None,
     tensor_label_zorder_by_node: dict[int, float] | None = None,
+    tensor_disk_radius_px_3d: float | None = None,
 ) -> None:
     if show_tensor_labels:
         fig = ax.figure
@@ -100,7 +101,10 @@ def _draw_labels(
             if node is None or node.is_virtual:
                 continue
             pos = positions[node_id]
-            r_px = _tensor_disk_radius_px(ax, pos, p, dimensions)
+            if tensor_disk_radius_px_3d is not None and dimensions == 3:
+                r_px = float(tensor_disk_radius_px_3d)
+            else:
+                r_px = _tensor_disk_radius_px(ax, pos, p, dimensions)
             display_name = format_tensor_node_label(node.name)
             fs = _tensor_label_fontsize_to_fit(
                 text=display_name,
@@ -146,6 +150,7 @@ def _refit_tensor_labels_to_disks(
     ax: Any,
     p: _DrawScaleParams,
     dimensions: Literal[2, 3],
+    tensor_disk_radius_px_3d: float | None = None,
 ) -> None:
     """Shrink tensor tags using true rendered bboxes so names stay inside disks."""
     fig = ax.figure
@@ -161,7 +166,10 @@ def _refit_tensor_labels_to_disks(
         tightened = False
         for t in labels:
             anchor = _tensor_label_data_anchor(t, dimensions=dimensions)
-            r_px = _tensor_disk_radius_px(ax, anchor, p, dimensions)
+            if tensor_disk_radius_px_3d is not None and dimensions == 3:
+                r_px = float(tensor_disk_radius_px_3d)
+            else:
+                r_px = _tensor_disk_radius_px(ax, anchor, p, dimensions)
             allow = 2.0 * max(r_px, 1e-9) * _TENSOR_LABEL_INSIDE_FILL
             bb = t.get_window_extent(renderer=renderer)
             diag = float(math.hypot(float(bb.width), float(bb.height)))

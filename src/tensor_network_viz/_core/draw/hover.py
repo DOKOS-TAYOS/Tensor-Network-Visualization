@@ -145,6 +145,7 @@ def _register_3d_hover_labels(
     edge_hover: list[tuple[np.ndarray, str]],
     line_width_px_hint: float,
     p: _DrawScaleParams,
+    tensor_disk_radius_px_3d: float | None = None,
 ) -> None:
     """Show tensor / bond labels in a figure-space tooltip while the pointer hovers (3D)."""
     _disconnect_tensor_network_hover(fig)
@@ -198,7 +199,10 @@ def _register_3d_hover_labels(
                     c3 = np.zeros(3, dtype=float)
                     c3[: c.size] = c
                     c = c3
-                rpx = _tensor_disk_radius_px(ax, c, p, 3)
+                if tensor_disk_radius_px_3d is not None:
+                    rpx = float(tensor_disk_radius_px_3d)
+                else:
+                    rpx = _tensor_disk_radius_px(ax, c, p, 3)
                 M = ax.get_proj()
                 xs, ys, _zs = proj3d.proj_transform(float(c[0]), float(c[1]), float(c[2]), M)
                 pt = np.asarray(ax.transData.transform((xs, ys)), dtype=float).ravel()
