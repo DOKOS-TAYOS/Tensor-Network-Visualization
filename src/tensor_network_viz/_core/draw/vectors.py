@@ -26,20 +26,8 @@ def _bond_perpendicular_unoriented(
     return _perpendicular_3d(direction) if dimensions == 3 else _perpendicular_2d(direction)
 
 
-def _signed_bond_perpendicular(
-    delta: np.ndarray,
-    dimensions: Literal[2, 3],
-) -> np.ndarray:
-    perpendicular = _bond_perpendicular_unoriented(delta, dimensions)
-    perpendicular = perpendicular / np.linalg.norm(perpendicular)
-    if (dimensions == 2 and perpendicular[1] < 0) or (dimensions == 3 and perpendicular[2] < 0):
-        perpendicular = -perpendicular
-    return perpendicular
-
-
 __all__ = [
     "_bond_perpendicular_unoriented",
     "_perpendicular_2d",
     "_perpendicular_3d",
-    "_signed_bond_perpendicular",
 ]

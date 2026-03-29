@@ -603,12 +603,11 @@ Each backend builds `_GraphData`:
 ### Drawing
 
 [**`renderer.py`**](../src/tensor_network_viz/_core/renderer.py) resolves `PlotConfig`, positions,
-scale, and calls [**`_draw_common._draw_graph`**](../src/tensor_network_viz/_core/_draw_common.py).
-Frontends: **`draw_2d.py`**, **`draw_3d.py`**.
+scale, and calls [**`_draw_graph`**](../src/tensor_network_viz/_core/draw/graph_pipeline.py) (re-exported from [**`_draw_common.py`**](../src/tensor_network_viz/_core/_draw_common.py)).
 
 ### Layout implementation
 
-[**`layout.py`**](../src/tensor_network_viz/_core/layout.py) together with
+The [**`layout` package**](../src/tensor_network_viz/_core/layout/__init__.py) together with
 [**`layout_structure.py`**](../src/tensor_network_viz/_core/layout_structure.py) implements
 structure detection, planar attempts, force layout, and 3D layering heuristics.
 

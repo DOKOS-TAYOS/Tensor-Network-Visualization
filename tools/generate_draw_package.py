@@ -252,7 +252,6 @@ def main() -> None:
             "_bond_perpendicular_unoriented",
             "_perpendicular_2d",
             "_perpendicular_3d",
-            "_signed_bond_perpendicular",
         ]
         """
         ),
