@@ -315,6 +315,7 @@ def main() -> None:
             "_PlotAdapter",
             "_graph_edge_degree",
             "_make_plotter",
+            "_node_edge_degrees",
             "_visible_degree_one_mask",
         ]
         """

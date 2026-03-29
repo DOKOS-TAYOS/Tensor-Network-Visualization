@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed unused code.
 - Changed the drawing ordering, to improve the visualization when parts of the tensor network are in the same place.
 - Plot pipeline computes ``_group_contractions`` once per figure, shared between 2D axis-direction planning (bond segments) and drawing.
+- Precomputed ``_node_edge_degrees`` per draw: degree-1 node styling and masks are O(|E|+|V|) instead of O(|V|·|E|); single visible-node order reused for labels and hover.
 
 ## [1.4.0] — 2026-03-28
 

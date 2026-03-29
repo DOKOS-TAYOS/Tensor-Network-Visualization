@@ -28,7 +28,7 @@ from .hover import (
     _register_3d_hover_labels,
 )
 from .labels_misc import _estimate_drawn_label_count
-from .plotter import _graph_edge_degree, _make_plotter
+from .plotter import _make_plotter, _node_edge_degrees
 from .tensors import (
     _draw_labels,
     _draw_nodes,
@@ -92,6 +92,7 @@ def _draw_graph(
     _apply_axis_limits_with_outset(ax, pre_coords, view_margin=view_margin, dimensions=dimensions)
 
     visible_order = _visible_node_ids_in_graph_order(graph)
+    node_degrees = _node_edge_degrees(graph)
     tensor_z_by_node: dict[int, float] | None = None
     use_2d_layers = dimensions == 2 and bool(visible_order)
     if use_2d_layers:
@@ -124,7 +125,7 @@ def _draw_graph(
         for i, nid in enumerate(visible_order):
             zdisk = float(_ZORDER_LAYER_BASE + i * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_DISK)
             coord = np.asarray(positions[nid], dtype=float)
-            deg_one = _graph_edge_degree(graph, nid) == 1
+            deg_one = node_degrees.get(int(nid), 0) == 1
             draw_one(
                 coord,
                 config=config,
@@ -156,6 +157,8 @@ def _draw_graph(
             positions=positions,
             config=config,
             p=params,
+            visible_node_ids=visible_order,
+            node_degrees=node_degrees,
         )
     else:
         _draw_edges(
@@ -180,6 +183,8 @@ def _draw_graph(
             positions=positions,
             config=config,
             p=params,
+            visible_node_ids=visible_order,
+            node_degrees=node_degrees,
         )
     plotter.style_axes(coords, view_margin=view_margin)
     tensor_disk_radius_px_3d: float | None = None
@@ -195,7 +200,7 @@ def _draw_graph(
         p=params,
         dimensions=dimensions,
         tensor_hover_by_node=tensor_hover_map,
-        visible_draw_order=visible_order if use_2d_layers else None,
+        visible_draw_order=visible_order,
         tensor_label_zorder_by_node=tensor_z_by_node,
         tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
     )
@@ -209,7 +214,7 @@ def _draw_graph(
     if dimensions == 2:
         _register_2d_zoom_font_scaling(cast(Axes, ax))
     if config.hover_labels and (show_tensor_labels or show_index_labels):
-        vis_ids = _visible_node_ids_in_graph_order(graph)
+        vis_ids = visible_order
         if dimensions == 2:
             node_colls = getattr(plotter, "_node_disk_collections", None)
             node_coll = (

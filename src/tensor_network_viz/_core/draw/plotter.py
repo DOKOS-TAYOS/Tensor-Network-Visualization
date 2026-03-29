@@ -22,14 +22,35 @@ from .viewport_geometry import (
 )
 
 
+def _node_edge_degrees(graph: _GraphData) -> dict[int, int]:
+    """Incident edge count per node (contractions, dangling, self-loops); one pass over ``edges``."""
+    counts: dict[int, int] = {}
+    for edge in graph.edges:
+        for nid in edge.node_ids:
+            counts[int(nid)] = counts.get(int(nid), 0) + 1
+    return counts
+
+
 def _graph_edge_degree(graph: _GraphData, node_id: int) -> int:
     """Number of graph edges incident on *node_id* (contractions, dangling stubs, self-loops)."""
-    return sum(1 for edge in graph.edges for nid in edge.node_ids if nid == node_id)
+    target = int(node_id)
+    c = 0
+    for edge in graph.edges:
+        for nid in edge.node_ids:
+            if int(nid) == target:
+                c += 1
+    return c
 
 
-def _visible_degree_one_mask(graph: _GraphData, visible_node_ids: list[int]) -> np.ndarray:
+def _visible_degree_one_mask(
+    graph: _GraphData,
+    visible_node_ids: list[int],
+    *,
+    node_degrees: dict[int, int] | None = None,
+) -> np.ndarray:
     """True when a visible tensor has total graph degree 1."""
-    return np.array([_graph_edge_degree(graph, nid) == 1 for nid in visible_node_ids], dtype=bool)
+    d = node_degrees if node_degrees is not None else _node_edge_degrees(graph)
+    return np.array([d.get(int(nid), 0) == 1 for nid in visible_node_ids], dtype=bool)
 
 
 class _PlotAdapter(Protocol):
@@ -258,5 +279,6 @@ __all__ = [
     "_PlotAdapter",
     "_graph_edge_degree",
     "_make_plotter",
+    "_node_edge_degrees",
     "_visible_degree_one_mask",
 ]
