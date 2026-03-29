@@ -561,7 +561,7 @@ def _draw_edges_2d_layered(
     p: _DrawScaleParams,
     ax: Any,
 ) -> None:
-    """Enqueue 2D bond/dangling edges with per-node z-order; caller must ``flush_edge_collections`` once."""
+    """Enqueue 2D edges with per-node z-order; caller must ``flush_edge_collections`` once."""
     by_node: dict[int, list[_EdgeData]] = defaultdict(list)
     for edge in graph.edges:
         for node_id in edge.node_ids:

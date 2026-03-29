@@ -9,7 +9,7 @@ import numpy as np
 
 from ...config import PlotConfig
 from ..axis_directions import _AXIS_DIR_2D, _AXIS_DIR_3D
-from ..contractions import _group_contractions, _iter_contractions
+from ..contractions import _ContractionGroups, _group_contractions, _iter_contractions
 from ..curves import _quadratic_curve
 from ..graph import _GraphData
 from ..layout_structure import (
@@ -590,9 +590,14 @@ def _planar_contraction_bond_segments_2d(
     positions: NodePositions,
     *,
     scale: float = 1.0,
+    contraction_groups: _ContractionGroups | None = None,
 ) -> list[tuple[int, int, np.ndarray, np.ndarray]]:
     """Short segments along each contraction's rendered 2D bond (for stub–bond crossing tests)."""
-    groups = _group_contractions(graph)
+    groups = (
+        contraction_groups
+        if contraction_groups is not None
+        else _group_contractions(graph)
+    )
     out: list[tuple[int, int, np.ndarray, np.ndarray]] = []
     for record in _iter_contractions(graph):
         left_id, right_id = record.node_ids
@@ -667,6 +672,7 @@ def _compute_axis_directions(
     dimensions: int,
     *,
     draw_scale: float = 1.0,
+    contraction_groups: _ContractionGroups | None = None,
 ) -> AxisDirections:
     directions: AxisDirections = {}
     for record in _iter_contractions(graph):
@@ -681,7 +687,13 @@ def _compute_axis_directions(
         directions[(right_id, right_endpoint.axis_index)] = -toward_right
 
     if dimensions == 2:
-        _compute_free_directions_2d(graph, positions, directions, draw_scale=draw_scale)
+        _compute_free_directions_2d(
+            graph,
+            positions,
+            directions,
+            draw_scale=draw_scale,
+            contraction_groups=contraction_groups,
+        )
     else:
         _compute_free_directions_3d(graph, positions, directions, draw_scale=draw_scale)
 
@@ -694,6 +706,7 @@ def _compute_free_directions_2d(
     directions: AxisDirections,
     *,
     draw_scale: float = 1.0,
+    contraction_groups: _ContractionGroups | None = None,
 ) -> None:
     node_ids = list(positions)
     angles = np.linspace(0.0, 2.0 * math.pi, _FREE_DIR_SAMPLES_2D, endpoint=False)
@@ -713,7 +726,12 @@ def _compute_free_directions_2d(
         neighbor_midpoints[right_id].append(midpoint)
 
     assigned_stub_segments: list[tuple[np.ndarray, np.ndarray]] = []
-    bond_segments = _planar_contraction_bond_segments_2d(graph, positions, scale=draw_scale)
+    bond_segments = _planar_contraction_bond_segments_2d(
+        graph,
+        positions,
+        scale=draw_scale,
+        contraction_groups=contraction_groups,
+    )
 
     for node_id in sorted(graph.nodes.keys()):
         node = graph.nodes[node_id]

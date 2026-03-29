@@ -15,6 +15,7 @@ from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from ..config import PlotConfig
 from ._draw_common import _draw_graph
+from .contractions import _group_contractions
 from .graph import _GraphData
 from .graph_cache import _get_or_build_graph
 from .layout import (
@@ -272,7 +273,14 @@ def _plot_graph(
     )
     positions = _resolve_positions(graph, style, dimensions=dimensions, seed=seed)
     scale = _resolve_draw_scale(graph, positions)
-    directions = _compute_axis_directions(graph, positions, dimensions=dimensions, draw_scale=scale)
+    contraction_groups = _group_contractions(graph)
+    directions = _compute_axis_directions(
+        graph,
+        positions,
+        dimensions=dimensions,
+        draw_scale=scale,
+        contraction_groups=contraction_groups,
+    )
     _draw_graph(
         ax=resolved_ax,
         graph=graph,
@@ -283,6 +291,7 @@ def _plot_graph(
         config=style,
         dimensions=dimensions,
         scale=scale,
+        contraction_groups=contraction_groups,
     )
     fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
     return fig, resolved_ax

@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactor of the `_core` module into tiny pieces.
 - Removed unused code.
 - Changed the drawing ordering, to improve the visualization when parts of the tensor network are in the same place.
+- Plot pipeline computes ``_group_contractions`` once per figure, shared between 2D axis-direction planning (bond segments) and drawing.
 
 ## [1.4.0] — 2026-03-28
 

@@ -4,9 +4,10 @@
 ``show_tensor_network`` runs on the same object stay within a few percent (e.g. ~2.93s / ~2.90s
 before and after graph caching for a chain of 32 tensors, Agg, ``refine_tensor_labels=False``).
 
-**Extraction:** the normalized graph is cached per network object; ``test_quimb_graph_cache_second_lookup_is_cheap`` asserts a second ``_get_or_build_graph`` hit is much cheaper than a cold Quimb
-build (large chain). Set ``TNV_SHOW_FLOW_TIMING=1`` to print first/second full-flow seconds during
-pytest.
+**Extraction:** the normalized graph is cached per network object;
+``test_quimb_graph_cache_second_lookup_is_cheap`` asserts a second ``_get_or_build_graph`` hit is
+much cheaper than a cold Quimb build (large chain). Set ``TNV_SHOW_FLOW_TIMING=1`` to print
+first/second full-flow seconds during pytest.
 """
 
 from __future__ import annotations
@@ -81,9 +82,13 @@ def _quimb_linear_chain_network(n: int) -> object:
     tensors: list[object] = []
     for i in range(n):
         if i == 0:
-            tensors.append(qtn.Tensor(data=np.ones((2, 3)), inds=(f"i{i}", f"b{i}"), tags={f"T{i}"}))
+            tensors.append(
+                qtn.Tensor(data=np.ones((2, 3)), inds=(f"i{i}", f"b{i}"), tags={f"T{i}"})
+            )
         elif i == n - 1:
-            tensors.append(qtn.Tensor(data=np.ones((3, 2)), inds=(f"b{i-1}", f"o{i}"), tags={f"T{i}"}))
+            tensors.append(
+                qtn.Tensor(data=np.ones((3, 2)), inds=(f"b{i-1}", f"o{i}"), tags={f"T{i}"})
+            )
         else:
             tensors.append(
                 qtn.Tensor(

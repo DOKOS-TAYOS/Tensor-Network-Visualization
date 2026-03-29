@@ -1,14 +1,20 @@
-"""Reuse normalized graphs across repeated draws of the same network object (preview + export, 2D + 3D)."""
+"""Reuse normalized graphs across repeated draws of the same network object.
+
+Covers preview + export and 2D + 3D.
+"""
 
 from __future__ import annotations
 
+import contextlib
 import weakref
 from collections.abc import Callable
 from typing import Any
 
 from .graph import _GraphData
 
-_graph_weak_cache: weakref.WeakKeyDictionary[Any, dict[int, _GraphData]] = weakref.WeakKeyDictionary()
+_graph_weak_cache: weakref.WeakKeyDictionary[Any, dict[int, _GraphData]] = (
+    weakref.WeakKeyDictionary()
+)
 
 # On objects without weak-key support (e.g. plain list), fall back to an instance attribute dict.
 _CACHE_ATTR: str = "_tensor_network_viz_graph_cache_by_builder"
@@ -85,10 +91,8 @@ def clear_tensor_network_graph_cache(
     else:
         attr_bucket.pop(b_id, None)
     if not attr_bucket:
-        try:
+        with contextlib.suppress(AttributeError):
             delattr(network, _CACHE_ATTR)
-        except AttributeError:
-            pass
 
 
 __all__ = [

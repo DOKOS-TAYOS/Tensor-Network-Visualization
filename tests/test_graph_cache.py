@@ -22,7 +22,7 @@ def test_get_or_build_graph_reuses_instance() -> None:
 
     def build(_: object) -> _GraphData:
         calls.append(1)
-        return _GraphData(nodes={0: _make_node("a", ())}, edges=tuple())
+        return _GraphData(nodes={0: _make_node("a", ())}, edges=())
 
     g1 = _get_or_build_graph(nw, build)
     g2 = _get_or_build_graph(nw, build)
@@ -36,7 +36,7 @@ def test_clear_tensor_network_graph_cache_forces_rebuild() -> None:
 
     def build(_: object) -> _GraphData:
         calls.append(1)
-        return _GraphData(nodes={0: _make_node("a", ())}, edges=tuple())
+        return _GraphData(nodes={0: _make_node("a", ())}, edges=())
 
     g1 = _get_or_build_graph(nw, build)
     clear_tensor_network_graph_cache(nw)
@@ -52,11 +52,11 @@ def test_builder_identity_partitions_cache() -> None:
 
     def build_a(_: object) -> _GraphData:
         calls_a.append(1)
-        return _GraphData(nodes={0: _make_node("a", ())}, edges=tuple())
+        return _GraphData(nodes={0: _make_node("a", ())}, edges=())
 
     def build_b(_: object) -> _GraphData:
         calls_b.append(1)
-        return _GraphData(nodes={1: _make_node("b", ("i",))}, edges=tuple())
+        return _GraphData(nodes={1: _make_node("b", ("i",))}, edges=())
 
     ga = _get_or_build_graph(nw, build_a)
     gb = _get_or_build_graph(nw, build_b)

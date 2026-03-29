@@ -6,7 +6,7 @@ import numpy as np
 from matplotlib.axes import Axes
 
 from ...config import PlotConfig
-from ..contractions import _group_contractions
+from ..contractions import _ContractionGroups, _group_contractions
 from ..graph import (
     _GraphData,
 )
@@ -52,10 +52,12 @@ def _draw_graph(
     config: PlotConfig,
     dimensions: Literal[2, 3],
     scale: float = 1.0,
+    contraction_groups: _ContractionGroups | None = None,
 ) -> None:
     _disconnect_tensor_network_hover(ax.figure)
     ax.cla()
-    contraction_groups = _group_contractions(graph)
+    if contraction_groups is None:
+        contraction_groups = _group_contractions(graph)
     label_slots = _estimate_drawn_label_count(
         graph,
         show_tensor_labels=show_tensor_labels,
@@ -111,7 +113,7 @@ def _draw_graph(
         flush = getattr(plotter, "flush_edge_collections", None)
         if callable(flush):
             flush()
-        draw_one = getattr(plotter, "draw_tensor_node")
+        draw_one = plotter.draw_tensor_node
         tensor_z_by_node = {
             nid: float(
                 _ZORDER_LAYER_BASE + i * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_TENSOR_NAME
