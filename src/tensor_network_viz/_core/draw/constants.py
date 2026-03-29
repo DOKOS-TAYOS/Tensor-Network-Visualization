@@ -41,9 +41,19 @@ _EDGE_INDEX_LABEL_ALONG_FRAC: float = 0.3
 # Physical dangling legs (2D): inset from **open tip** — smaller ⇒ closer to the free end.
 _PHYS_DANGLING_2D_FRAC_FROM_TIP: float = 0.07
 # Draw order: bonds < node disks < edge index labels < tensor names (on top).
+# Legacy flat 3D / pre-layered 2D stacking.
 _ZORDER_NODE_DISK: int = 3
 _ZORDER_EDGE_INDEX_LABEL: int = 5
 _ZORDER_TENSOR_NAME: int = 8
+# 2D layered draw: per visible node i (in graph order), z = base + i * stride + offset.
+# Stride >= 4 keeps bond/label/disk of node i below the next node's bonds.
+_ZORDER_LAYER_BASE: float = 10.0
+_ZORDER_LAYER_STRIDE: float = 4.0
+_ZORDER_LAYER_BOND: float = 0.0
+_ZORDER_LAYER_DANGLING: float = 1.0
+_ZORDER_LAYER_DISK: float = 2.0
+_ZORDER_LAYER_EDGE_INDEX: float = 2.5
+_ZORDER_LAYER_TENSOR_NAME: float = 3.25
 _EDGE_INDEX_LABEL_GID: str = "tnv_edge_index"
 _TENSOR_LABEL_GID: str = "tnv_tensor"
 # TextPath under-estimates the final Text bbox; scale diagonal for "fits inside disk" checks.
@@ -113,6 +123,13 @@ __all__ = [
     "_UNIT_NODE_TRIS",
     "_ZOOM_FONT_CLAMP",
     "_ZORDER_EDGE_INDEX_LABEL",
+    "_ZORDER_LAYER_BASE",
+    "_ZORDER_LAYER_BOND",
+    "_ZORDER_LAYER_DANGLING",
+    "_ZORDER_LAYER_DISK",
+    "_ZORDER_LAYER_EDGE_INDEX",
+    "_ZORDER_LAYER_STRIDE",
+    "_ZORDER_LAYER_TENSOR_NAME",
     "_ZORDER_NODE_DISK",
     "_ZORDER_TENSOR_NAME",
 ]

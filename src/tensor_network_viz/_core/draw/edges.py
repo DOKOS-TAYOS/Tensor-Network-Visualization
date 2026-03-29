@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -53,6 +54,17 @@ from .viewport_geometry import (
     _polyline_arc_length_total,
 )
 
+_ZORDER_FLAT_BOND_LINE: float = 1.0
+_ZORDER_FLAT_DANGLE_SELF_LINE: float = 2.0
+
+
+def _edge_stable_bond_sort_key(edge: _EdgeData) -> tuple[str, tuple[int, ...], int]:
+    return (edge.kind, edge.node_ids, id(edge))
+
+
+def _edge_stable_dangling_sort_key(edge: _EdgeData) -> tuple[tuple[int, ...], int]:
+    return (edge.node_ids, id(edge))
+
 
 def _curved_edge_points(
     *,
@@ -90,6 +102,7 @@ def _plot_contraction_index_captions(
     dimensions: Literal[2, 3],
     ax: Any,
     scale: float,
+    zorder_label: float | None = None,
 ) -> None:
     ep_l, ep_r = _require_contraction_endpoints(edge)
     cap_l: str | None = _endpoint_index_caption(ep_l, edge, graph)
@@ -135,6 +148,7 @@ def _plot_contraction_index_captions(
             fontsize=fs,
             stub_kind="bond",
             bbox_pad=p.index_bbox_pad,
+            zorder=zorder_label,
         )
         if dimensions == 2:
             t_curve_2d = np.asarray(t_fwd[:2], dtype=float)
@@ -196,6 +210,8 @@ def _draw_dangling_edge(
     p: _DrawScaleParams,
     ax: Any,
     scale: float,
+    zorder_line: float | None = None,
+    zorder_label: float | None = None,
 ) -> None:
     endpoint = edge.endpoints[0]
     direction = directions[(endpoint.node_id, endpoint.axis_index)]
@@ -210,7 +226,10 @@ def _draw_dangling_edge(
     else:
         start = center + direction * p.r
         end = start + direction * p.stub
-    plotter.plot_line(start, end, color=config.dangling_edge_color, linewidth=p.lw, zorder=2)
+    zl = (
+        float(_ZORDER_FLAT_DANGLE_SELF_LINE) if zorder_line is None else float(zorder_line)
+    )
+    plotter.plot_line(start, end, color=config.dangling_edge_color, linewidth=p.lw, zorder=zl)
     if show_index_labels and edge.label:
         hover_ht = getattr(plotter, "_hover_edge_targets", None)
         if config.hover_labels and hover_ht is not None:
@@ -249,6 +268,7 @@ def _draw_dangling_edge(
             fontsize=fs_d,
             stub_kind="dangling",
             bbox_pad=p.index_bbox_pad,
+            zorder=zorder_label,
         )
         stub_seg = np.stack([np.asarray(start, dtype=float), np.asarray(end, dtype=float)], axis=0)
         Ls = _polyline_arc_length_total(stub_seg)
@@ -313,6 +333,8 @@ def _draw_self_loop_edge(
     p: _DrawScaleParams,
     ax: Any,
     scale: float,
+    zorder_line: float | None = None,
+    zorder_label: float | None = None,
 ) -> None:
     endpoint_a, endpoint_b = _require_self_endpoints(edge)
     direction_a = directions[(endpoint_a.node_id, endpoint_a.axis_index)]
@@ -348,7 +370,10 @@ def _draw_self_loop_edge(
             height=p.ellipse_h,
         )
         label_offset_dir = binormal * p.ellipse_w
-    plotter.plot_curve(curve, color=config.bond_edge_color, linewidth=p.lw, zorder=2)
+    z_loop = (
+        float(_ZORDER_FLAT_DANGLE_SELF_LINE) if zorder_line is None else float(zorder_line)
+    )
+    plotter.plot_curve(curve, color=config.bond_edge_color, linewidth=p.lw, zorder=z_loop)
     if show_index_labels:
         hover_ht = getattr(plotter, "_hover_edge_targets", None)
         if config.hover_labels and hover_ht is not None:
@@ -423,7 +448,9 @@ def _draw_self_loop_edge(
                 is_physical=False,
                 peer_captions_for_width=peer_loop_width,
             )
-            tk_a = _edge_index_text_kwargs(config, fontsize=fs_a, bbox_pad=p.index_bbox_pad)
+            tk_a = _edge_index_text_kwargs(
+                config, fontsize=fs_a, bbox_pad=p.index_bbox_pad, zorder=zorder_label
+            )
             tk_a = {
                 **tk_a,
                 **_edge_index_along_bond_text_kw(
@@ -445,7 +472,9 @@ def _draw_self_loop_edge(
                 is_physical=False,
                 peer_captions_for_width=peer_loop_width,
             )
-            tk_b = _edge_index_text_kwargs(config, fontsize=fs_b, bbox_pad=p.index_bbox_pad)
+            tk_b = _edge_index_text_kwargs(
+                config, fontsize=fs_b, bbox_pad=p.index_bbox_pad, zorder=zorder_label
+            )
             tk_b = {
                 **tk_b,
                 **_edge_index_along_bond_text_kw(
@@ -472,6 +501,8 @@ def _draw_contraction_edge(
     dimensions: Literal[2, 3],
     p: _DrawScaleParams,
     ax: Any,
+    zorder_line: float | None = None,
+    zorder_label: float | None = None,
 ) -> None:
     left_id, right_id = edge.node_ids
     offset_index, edge_count = contraction_groups.offsets[id(edge)]
@@ -487,7 +518,8 @@ def _draw_contraction_edge(
         dimensions=dimensions,
         scale=scale,
     )
-    plotter.plot_curve(curve, color=config.bond_edge_color, linewidth=p.lw, zorder=1)
+    zc = float(_ZORDER_FLAT_BOND_LINE) if zorder_line is None else float(zorder_line)
+    plotter.plot_curve(curve, color=config.bond_edge_color, linewidth=p.lw, zorder=zc)
     if show_index_labels:
         hover_ht = getattr(plotter, "_hover_edge_targets", None)
         if config.hover_labels and hover_ht is not None:
@@ -511,7 +543,93 @@ def _draw_contraction_edge(
                 dimensions=dimensions,
                 ax=ax,
                 scale=scale,
+                zorder_label=zorder_label,
             )
+
+
+def _draw_edges_2d_layered(
+    *,
+    plotter: _PlotAdapter,
+    graph: _GraphData,
+    positions: NodePositions,
+    directions: AxisDirections,
+    visible_order: list[int],
+    contraction_groups: _ContractionGroups,
+    show_index_labels: bool,
+    config: PlotConfig,
+    scale: float,
+    p: _DrawScaleParams,
+    ax: Any,
+) -> None:
+    """Enqueue 2D bond/dangling edges with per-node z-order; caller must ``flush_edge_collections`` once."""
+    by_node: dict[int, list[_EdgeData]] = defaultdict(list)
+    for edge in graph.edges:
+        for node_id in edge.node_ids:
+            by_node[node_id].append(edge)
+    drawn: set[int] = set()
+    for i, nid in enumerate(visible_order):
+        zb = _ZORDER_LAYER_BASE + i * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_BOND
+        zd = _ZORDER_LAYER_BASE + i * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_DANGLING
+        zidx = _ZORDER_LAYER_BASE + i * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_EDGE_INDEX
+        incident = [e for e in by_node.get(nid, ()) if id(e) not in drawn]
+        bonds = sorted(
+            [e for e in incident if e.kind != "dangling"],
+            key=_edge_stable_bond_sort_key,
+        )
+        dangles = sorted(
+            [e for e in incident if e.kind == "dangling"],
+            key=_edge_stable_dangling_sort_key,
+        )
+        for edge in bonds:
+            if edge.kind == "self":
+                _draw_self_loop_edge(
+                    plotter=plotter,
+                    edge=edge,
+                    graph=graph,
+                    positions=positions,
+                    directions=directions,
+                    show_index_labels=show_index_labels,
+                    config=config,
+                    dimensions=2,
+                    p=p,
+                    ax=ax,
+                    scale=scale,
+                    zorder_line=zb,
+                    zorder_label=zidx,
+                )
+            else:
+                _draw_contraction_edge(
+                    plotter=plotter,
+                    edge=edge,
+                    graph=graph,
+                    positions=positions,
+                    contraction_groups=contraction_groups,
+                    show_index_labels=show_index_labels,
+                    config=config,
+                    scale=scale,
+                    dimensions=2,
+                    p=p,
+                    ax=ax,
+                    zorder_line=zb,
+                    zorder_label=zidx,
+                )
+            drawn.add(id(edge))
+        for edge in dangles:
+            _draw_dangling_edge(
+                plotter=plotter,
+                edge=edge,
+                positions=positions,
+                directions=directions,
+                show_index_labels=show_index_labels,
+                config=config,
+                dimensions=2,
+                p=p,
+                ax=ax,
+                scale=scale,
+                zorder_line=zd,
+                zorder_label=zidx,
+            )
+            drawn.add(id(edge))
 
 
 def _draw_edges(
@@ -577,6 +695,7 @@ __all__ = [
     "_draw_contraction_edge",
     "_draw_dangling_edge",
     "_draw_edges",
+    "_draw_edges_2d_layered",
     "_draw_self_loop_edge",
     "_plot_contraction_index_captions",
 ]

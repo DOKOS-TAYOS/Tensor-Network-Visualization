@@ -30,6 +30,7 @@ def _edge_index_text_kwargs(
     fontsize: float,
     stub_kind: Literal["bond", "dangling"] = "bond",
     bbox_pad: float = 0.18,
+    zorder: float | None = None,
 ) -> dict[str, Any]:
     """Matplotlib kwargs for index labels (semi-transparent, tinted bbox)."""
     if stub_kind == "dangling":
@@ -45,10 +46,11 @@ def _edge_index_text_kwargs(
     else:
         alpha_fill = 0.74
     facecolor: tuple[float, float, float, float] = (rgb[0], rgb[1], rgb[2], alpha_fill)
+    z = float(_ZORDER_EDGE_INDEX_LABEL) if zorder is None else float(zorder)
     return {
         "color": config.label_color,
         "fontsize": fontsize,
-        "zorder": _ZORDER_EDGE_INDEX_LABEL,
+        "zorder": z,
         "gid": _EDGE_INDEX_LABEL_GID,
         "ha": "center",
         "va": "center",

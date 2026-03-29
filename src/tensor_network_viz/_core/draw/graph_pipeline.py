@@ -15,7 +15,7 @@ from ..layout import (
     NodePositions,
 )
 from .constants import *
-from .edges import _draw_edges
+from .edges import _draw_edges, _draw_edges_2d_layered
 from .fonts_and_scale import (
     _draw_scale_params,
     _figure_relative_font_scale,
@@ -27,8 +27,13 @@ from .hover import (
     _register_3d_hover_labels,
 )
 from .labels_misc import _estimate_drawn_label_count
-from .plotter import _make_plotter
-from .tensors import _draw_labels, _draw_nodes, _refit_tensor_labels_to_disks
+from .plotter import _graph_edge_degree, _make_plotter
+from .tensors import (
+    _draw_labels,
+    _draw_nodes,
+    _refit_tensor_labels_to_disks,
+    _visible_node_ids_in_graph_order,
+)
 from .viewport_geometry import (
     _apply_axis_limits_with_outset,
     _stack_visible_tensor_coords,
@@ -83,30 +88,96 @@ def _draw_graph(
     )
     _apply_axis_limits_with_outset(ax, pre_coords, view_margin=view_margin, dimensions=dimensions)
 
-    _draw_edges(
-        plotter=plotter,
-        graph=graph,
-        positions=positions,
-        directions=directions,
-        contraction_groups=contraction_groups,
-        show_index_labels=show_index_labels,
-        config=config,
-        scale=scale,
-        dimensions=dimensions,
-        p=params,
-        ax=ax,
-    )
-    if dimensions == 2:
+    visible_order = _visible_node_ids_in_graph_order(graph)
+    tensor_z_by_node: dict[int, float] | None = None
+    use_2d_layers = dimensions == 2 and bool(visible_order)
+    if use_2d_layers:
+        clear_nodes = getattr(plotter, "clear_node_disk_collections", None)
+        if callable(clear_nodes):
+            clear_nodes()
+        _draw_edges_2d_layered(
+            plotter=plotter,
+            graph=graph,
+            positions=positions,
+            directions=directions,
+            visible_order=visible_order,
+            contraction_groups=contraction_groups,
+            show_index_labels=show_index_labels,
+            config=config,
+            scale=scale,
+            p=params,
+            ax=ax,
+        )
         flush = getattr(plotter, "flush_edge_collections", None)
         if callable(flush):
             flush()
-    coords = _draw_nodes(
-        plotter=plotter,
-        graph=graph,
-        positions=positions,
-        config=config,
-        p=params,
-    )
+        draw_one = getattr(plotter, "draw_tensor_node")
+        tensor_z_by_node = {
+            nid: float(
+                _ZORDER_LAYER_BASE + i * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_TENSOR_NAME
+            )
+            for i, nid in enumerate(visible_order)
+        }
+        for i, nid in enumerate(visible_order):
+            zdisk = float(_ZORDER_LAYER_BASE + i * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_DISK)
+            coord = np.asarray(positions[nid], dtype=float)
+            deg_one = _graph_edge_degree(graph, nid) == 1
+            draw_one(
+                coord,
+                config=config,
+                p=params,
+                degree_one=deg_one,
+                zorder=zdisk,
+            )
+        coords = np.stack([np.asarray(positions[nid], dtype=float) for nid in visible_order])
+    elif dimensions == 2:
+        _draw_edges(
+            plotter=plotter,
+            graph=graph,
+            positions=positions,
+            directions=directions,
+            contraction_groups=contraction_groups,
+            show_index_labels=show_index_labels,
+            config=config,
+            scale=scale,
+            dimensions=2,
+            p=params,
+            ax=ax,
+        )
+        flush = getattr(plotter, "flush_edge_collections", None)
+        if callable(flush):
+            flush()
+        coords = _draw_nodes(
+            plotter=plotter,
+            graph=graph,
+            positions=positions,
+            config=config,
+            p=params,
+        )
+    else:
+        _draw_edges(
+            plotter=plotter,
+            graph=graph,
+            positions=positions,
+            directions=directions,
+            contraction_groups=contraction_groups,
+            show_index_labels=show_index_labels,
+            config=config,
+            scale=scale,
+            dimensions=dimensions,
+            p=params,
+            ax=ax,
+        )
+        flush = getattr(plotter, "flush_edge_collections", None)
+        if callable(flush):
+            flush()
+        coords = _draw_nodes(
+            plotter=plotter,
+            graph=graph,
+            positions=positions,
+            config=config,
+            p=params,
+        )
     plotter.style_axes(coords, view_margin=view_margin)
     _draw_labels(
         plotter=plotter,
@@ -118,15 +189,22 @@ def _draw_graph(
         p=params,
         dimensions=dimensions,
         tensor_hover_by_node=tensor_hover_map,
+        visible_draw_order=visible_order if use_2d_layers else None,
+        tensor_label_zorder_by_node=tensor_z_by_node,
     )
     if config.refine_tensor_labels:
         _refit_tensor_labels_to_disks(ax=ax, p=params, dimensions=dimensions)
     if dimensions == 2:
         _register_2d_zoom_font_scaling(cast(Axes, ax))
     if config.hover_labels and (show_tensor_labels or show_index_labels):
-        vis_ids = [node_id for node_id, node in graph.nodes.items() if not node.is_virtual]
+        vis_ids = _visible_node_ids_in_graph_order(graph)
         if dimensions == 2:
-            node_coll = getattr(plotter, "_node_disk_collection", None)
+            node_colls = getattr(plotter, "_node_disk_collections", None)
+            node_coll = (
+                node_colls
+                if (isinstance(node_colls, list) and len(node_colls) > 0)
+                else getattr(plotter, "_node_disk_collection", None)
+            )
             _register_2d_hover_labels(
                 cast(Axes, ax),
                 node_patch_coll=node_coll if show_tensor_labels else None,

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Refactor of the `_core` module into tiny pieces.
 - Removed unused code.
+- Changed the drawing ordering, to improve the visualization when parts of the tensor network are in the same place.
 
 ## [1.4.0] — 2026-03-28
 

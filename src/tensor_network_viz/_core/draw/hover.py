@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from contextlib import suppress
 from typing import Any
 
@@ -31,7 +32,7 @@ def _disconnect_tensor_network_hover(fig: Figure) -> None:
 def _register_2d_hover_labels(
     ax: Axes,
     *,
-    node_patch_coll: PatchCollection | None,
+    node_patch_coll: PatchCollection | Sequence[PatchCollection] | None,
     visible_node_ids: list[int],
     tensor_hover: dict[int, tuple[str, float]],
     edge_hover: list[tuple[np.ndarray, str]],
@@ -78,16 +79,28 @@ def _register_2d_hover_labels(
         fs_hint = 10.0
 
         if tensor_hover and node_patch_coll is not None:
-            hit, props = node_patch_coll.contains(event)
-            if hit:
-                inds = props.get("ind")
-                if inds is not None and len(inds):
-                    k = int(inds[0])
-                    if 0 <= k < len(visible_node_ids):
-                        nid = visible_node_ids[k]
+            if isinstance(node_patch_coll, PatchCollection):
+                hit, props = node_patch_coll.contains(event)
+                if hit:
+                    inds = props.get("ind")
+                    if inds is not None and len(inds):
+                        k = int(inds[0])
+                        if 0 <= k < len(visible_node_ids):
+                            nid = visible_node_ids[k]
+                            pair = tensor_hover.get(nid)
+                            if pair:
+                                label, fs_hint = pair[0], float(pair[1])
+            else:
+                for coll_idx, coll in enumerate(node_patch_coll):
+                    hit, props = coll.contains(event)
+                    if not hit:
+                        continue
+                    if coll_idx < len(visible_node_ids):
+                        nid = visible_node_ids[coll_idx]
                         pair = tensor_hover.get(nid)
                         if pair:
                             label, fs_hint = pair[0], float(pair[1])
+                    break
 
         if label is None and edge_hover:
             best = math.inf

@@ -50,6 +50,11 @@ def _tensor_label_fontsize_to_fit(
     return float(max(lo, min(hi, max_fs)))
 
 
+def _visible_node_ids_in_graph_order(graph: _GraphData) -> list[int]:
+    """Visible tensors in ``graph.nodes`` dict order (same draw / layout semantics as before)."""
+    return [node_id for node_id, node in graph.nodes.items() if not node.is_virtual]
+
+
 def _draw_nodes(
     *,
     plotter: _PlotAdapter,
@@ -58,7 +63,7 @@ def _draw_nodes(
     config: PlotConfig,
     p: _DrawScaleParams,
 ) -> np.ndarray:
-    visible_node_ids = [node_id for node_id, node in graph.nodes.items() if not node.is_virtual]
+    visible_node_ids = _visible_node_ids_in_graph_order(graph)
     if visible_node_ids:
         coords = np.stack(
             [np.asarray(positions[node_id], dtype=float) for node_id in visible_node_ids]
@@ -80,11 +85,19 @@ def _draw_labels(
     p: _DrawScaleParams,
     dimensions: Literal[2, 3],
     tensor_hover_by_node: dict[int, tuple[str, float]] | None = None,
+    visible_draw_order: list[int] | None = None,
+    tensor_label_zorder_by_node: dict[int, float] | None = None,
 ) -> None:
     if show_tensor_labels:
         fig = ax.figure
-        for node_id, node in graph.nodes.items():
-            if node.is_virtual:
+        ordered_ids: list[int]
+        if visible_draw_order is not None:
+            ordered_ids = list(visible_draw_order)
+        else:
+            ordered_ids = _visible_node_ids_in_graph_order(graph)
+        for node_id in ordered_ids:
+            node = graph.nodes.get(node_id)
+            if node is None or node.is_virtual:
                 continue
             pos = positions[node_id]
             r_px = _tensor_disk_radius_px(ax, pos, p, dimensions)
@@ -101,6 +114,10 @@ def _draw_labels(
             if tensor_hover_by_node is not None:
                 tensor_hover_by_node[node_id] = (display_name, float(fs))
                 continue
+            if tensor_label_zorder_by_node is None:
+                z_lbl = float(_ZORDER_TENSOR_NAME)
+            else:
+                z_lbl = float(tensor_label_zorder_by_node.get(node_id, _ZORDER_TENSOR_NAME))
             plotter.plot_text(
                 pos,
                 display_name,
@@ -108,7 +125,7 @@ def _draw_labels(
                 ha="center",
                 va="center",
                 fontsize=fs,
-                zorder=_ZORDER_TENSOR_NAME,
+                zorder=z_lbl,
                 gid=_TENSOR_LABEL_GID,
             )
 
@@ -166,4 +183,5 @@ __all__ = [
     "_tensor_label_data_anchor",
     "_tensor_label_fontsize_to_fit",
     "_textpath_diagonal_points_ref10",
+    "_visible_node_ids_in_graph_order",
 ]

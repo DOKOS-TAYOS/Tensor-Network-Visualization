@@ -60,7 +60,13 @@ def _make_plotter(
     if dimensions == 2:
 
         class _2DPlotter:
-            __slots__ = ("_ax", "_edge_segments", "_hover_edge_targets", "_node_disk_collection")
+            __slots__ = (
+                "_ax",
+                "_edge_segments",
+                "_hover_edge_targets",
+                "_node_disk_collection",
+                "_node_disk_collections",
+            )
 
             def __init__(
                 self,
@@ -68,15 +74,20 @@ def _make_plotter(
                 hover_edges: list[tuple[np.ndarray, str]] | None,
             ) -> None:
                 self._ax = ax_2d
-                self._edge_segments: list[tuple[int, str, float, np.ndarray]] = []
+                self._edge_segments: list[tuple[float, str, float, np.ndarray]] = []
                 self._hover_edge_targets = hover_edges
                 self._node_disk_collection: PatchCollection | None = None
+                self._node_disk_collections: list[PatchCollection] = []
+
+            def clear_node_disk_collections(self) -> None:
+                self._node_disk_collections.clear()
+                self._node_disk_collection = None
 
             def flush_edge_collections(self) -> None:
                 """Batch buffered edges into a few LineCollections (call after all edges drawn)."""
                 if not self._edge_segments:
                     return
-                groups: dict[tuple[int, str, float], list[np.ndarray]] = defaultdict(list)
+                groups: dict[tuple[float, str, float], list[np.ndarray]] = defaultdict(list)
                 for z, color, lw, seg in self._edge_segments:
                     groups[(z, color, lw)].append(seg)
                 ax_ = self._ax
@@ -94,7 +105,7 @@ def _make_plotter(
 
             def plot_line(self, start: np.ndarray, end: np.ndarray, **kwargs: Any) -> None:
                 _apply_edge_line_style(kwargs)
-                z = int(kwargs.get("zorder", 1))
+                z = float(kwargs.get("zorder", 1))
                 color = str(kwargs.get("color", "#000000"))
                 lw = float(kwargs.get("linewidth", 1.0))
                 seg = np.array(
@@ -105,7 +116,7 @@ def _make_plotter(
 
             def plot_curve(self, curve: np.ndarray, **kwargs: Any) -> None:
                 _apply_edge_line_style(kwargs)
-                z = int(kwargs.get("zorder", 1))
+                z = float(kwargs.get("zorder", 1))
                 color = str(kwargs.get("color", "#000000"))
                 lw = float(kwargs.get("linewidth", 1.0))
                 seg = np.asarray(curve[:, :2], dtype=float, order="C")
@@ -114,6 +125,31 @@ def _make_plotter(
             def plot_text(self, pos: np.ndarray, text: str, **kwargs: Any) -> None:
                 _apply_text_no_clip(kwargs)
                 self._ax.text(pos[0], pos[1], text, **kwargs)
+
+            def draw_tensor_node(
+                self,
+                coord: np.ndarray,
+                *,
+                config: PlotConfig,
+                p: _DrawScaleParams,
+                degree_one: bool,
+                zorder: float,
+            ) -> None:
+                patch = Circle((float(coord[0]), float(coord[1])), radius=p.r)
+                fc = config.node_color_degree_one if degree_one else config.node_color
+                ec = (
+                    config.node_edge_color_degree_one if degree_one else config.node_edge_color
+                )
+                coll = PatchCollection(
+                    [patch],
+                    facecolors=[fc],
+                    edgecolors=[ec],
+                    linewidths=float(p.lw),
+                    zorder=zorder,
+                    match_original=False,
+                )
+                self._ax.add_collection(coll)
+                self._node_disk_collections.append(coll)
 
             def draw_tensor_nodes(
                 self,
@@ -146,6 +182,7 @@ def _make_plotter(
                 )
                 self._ax.add_collection(coll)
                 self._node_disk_collection = coll
+                self._node_disk_collections = [coll]
 
             def style_axes(self, coords: np.ndarray, *, view_margin: float) -> None:
                 _apply_axis_limits_with_outset(
