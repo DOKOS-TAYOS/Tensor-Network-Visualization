@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `py.typed` marker (PEP 561) so type checkers treat the installed package as typed.
+- Normalized graph caching when redrawing the **same** network object (preview + export, 2D then 3D, etc.); `clear_tensor_network_graph_cache` invalidates after in-place edits.
+- Quimb graph builder: single pass over tags/inds (fewer redundant string conversions) when sorting tensors and building nodes.
 
 ### Fixed
 

@@ -58,6 +58,11 @@ def show_tensor_network(
             "tensor-network-visualization[jupyter]"`` and ``%matplotlib widget``
             for interactive figures). Otherwise ``plt.show()`` is used.
 
+    Note:
+        Repeated calls with the **same** ``network`` instance reuse the normalized
+        graph structure until the object is collected or you call
+        ``clear_tensor_network_graph_cache(network)`` after in-place changes.
+
     Returns:
         Tuple of (Figure, Axes) for further customization.
 

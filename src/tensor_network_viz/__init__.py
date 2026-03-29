@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Any
 
 from .config import EngineName, PlotConfig, ViewName
+from ._core.graph_cache import clear_tensor_network_graph_cache
 from .einsum_module.trace import EinsumTrace, einsum, pair_tensor
 
 if TYPE_CHECKING:
@@ -18,6 +19,7 @@ __all__ = [
     "EinsumTrace",
     "PlotConfig",
     "ViewName",
+    "clear_tensor_network_graph_cache",
     "einsum",
     "pair_tensor",
     "show_tensor_network",

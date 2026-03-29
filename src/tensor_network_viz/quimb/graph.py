@@ -17,46 +17,56 @@ from .._core.graph_utils import (
 )
 
 
-def _sortable_tensor_key(tensor: Any) -> tuple[Any, ...]:
+def _quimb_tensor_parsed(tensor: Any) -> tuple[tuple[Any, ...], tuple[str, ...], str | None]:
+    """Single pass over tags/inds: sort key, axis name tuple, display name or None for T{{idx}}."""
     tags = getattr(tensor, "tags", ())
-    inds = getattr(tensor, "inds", ())
+    inds_raw = getattr(tensor, "inds", ())
     try:
-        normalized_tags = tuple(sorted(_stringify(tag) for tag in tags))
+        tag_strs = [_stringify(tag) for tag in tags]
+        normalized_tags = tuple(sorted(tag_strs))
     except TypeError:
+        tag_strs = []
         normalized_tags = ()
     try:
-        normalized_inds = tuple(_stringify(ind) for ind in inds)
+        ind_strings = tuple(_stringify(ind) for ind in inds_raw)
     except TypeError:
-        normalized_inds = ()
-
-    return (
+        ind_strings = ()
+    sort_key = (
         type(tensor).__module__,
         type(tensor).__qualname__,
         normalized_tags,
-        normalized_inds,
+        ind_strings,
     )
+    non_empty_tags = sorted(s for s in tag_strs if s)
+    if non_empty_tags:
+        return sort_key, ind_strings, ":".join(non_empty_tags)
+    return sort_key, ind_strings, None
+
+
+def _tensors_sorted_with_meta(
+    network: Any,
+) -> tuple[list[Any], list[tuple[tuple[str, ...], str | None]]]:
+    """Unique tensors, stable-sorted like the former ``_sortable_tensor_key``, one parse each."""
+    tensor_refs = _extract_unique_items(
+        network,
+        attr_sources=("tensors",),
+        sort_key=None,
+        backend_name="Quimb",
+        type_name="tensors",
+    )
+    if not tensor_refs:
+        return [], []
+    parsed = [_quimb_tensor_parsed(t) for t in tensor_refs]
+    order = sorted(range(len(tensor_refs)), key=lambda i: parsed[i][0])
+    ordered_tensors = [tensor_refs[i] for i in order]
+    meta = [(parsed[i][1], parsed[i][2]) for i in order]
+    return ordered_tensors, meta
 
 
 def _get_network_tensors(network: Any) -> list[Any]:
     """Extract Quimb tensors from a TensorNetwork or iterable tensor collection."""
-    return _extract_unique_items(
-        network,
-        attr_sources=("tensors",),
-        sort_key=_sortable_tensor_key,
-        backend_name="Quimb",
-        type_name="tensors",
-    )
-
-
-def _tensor_display_name(tensor: Any, fallback_index: int) -> str:
-    tags = getattr(tensor, "tags", ())
-    try:
-        normalized_tags = sorted(_stringify(tag) for tag in tags if _stringify(tag))
-    except TypeError:
-        normalized_tags = []
-    if normalized_tags:
-        return ":".join(normalized_tags)
-    return f"T{fallback_index}"
+    tensors, _ = _tensors_sorted_with_meta(network)
+    return tensors
 
 
 def _build_hyperedge_hub(
@@ -74,7 +84,7 @@ def _build_hyperedge_hub(
 
 
 def _build_graph(network: Any) -> _GraphData:
-    tensor_refs = _get_network_tensors(network)
+    tensor_refs, meta = _tensors_sorted_with_meta(network)
     if not tensor_refs:
         raise ValueError("The tensor network does not expose any tensors to visualize.")
 
@@ -82,10 +92,11 @@ def _build_graph(network: Any) -> _GraphData:
     index_endpoints: dict[str, list[_EdgeEndpoint]] = {}
 
     for tensor_index, tensor in enumerate(tensor_refs):
-        inds = tuple(_stringify(ind) for ind in getattr(tensor, "inds", ()))
+        inds, name_opt = meta[tensor_index]
+        display_name = name_opt if name_opt is not None else f"T{tensor_index}"
         node_id = id(tensor)
         nodes[node_id] = _make_node(
-            name=_tensor_display_name(tensor, tensor_index),
+            name=display_name,
             axes_names=inds,
         )
 

@@ -16,6 +16,7 @@ from mpl_toolkits.mplot3d.axes3d import Axes3D
 from ..config import PlotConfig
 from ._draw_common import _draw_graph
 from .graph import _GraphData
+from .graph_cache import _get_or_build_graph
 from .layout import (
     NodePositions,
     _compute_axis_directions,
@@ -308,7 +309,7 @@ def _make_plot_functions(
         show_index_labels: bool | None = None,
         seed: int = 0,
     ) -> tuple[Figure | SubFigure, Axes]:
-        graph = build_graph_fn(network)
+        graph = _get_or_build_graph(network, build_graph_fn)
         fig, resolved_ax = _plot_graph(
             graph,
             dimensions=2,
@@ -330,7 +331,7 @@ def _make_plot_functions(
         show_index_labels: bool | None = None,
         seed: int = 0,
     ) -> tuple[Figure | SubFigure, Axes3D]:
-        graph = build_graph_fn(network)
+        graph = _get_or_build_graph(network, build_graph_fn)
         fig, resolved_ax = _plot_graph(
             graph,
             dimensions=3,
