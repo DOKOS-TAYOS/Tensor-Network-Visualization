@@ -12,7 +12,10 @@ import numpy as np
 from .contractions import _iter_contractions
 from .graph import _GraphData
 
-StructureKind = Literal["chain", "grid", "tree", "planar", "generic"]
+StructureKind = Literal["chain", "grid", "grid3d", "tree", "planar", "generic"]
+
+# Skew in 2D projection (i,j,k) → layout xy so sites with same (i,j) and different k stay separated.
+_GRID3D_PROJECTION_K: float = 0.4
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,7 @@ class _LayoutComponent:
     structure_kind: StructureKind
     chain_order: tuple[int, ...]
     grid_mapping: dict[int, tuple[int, int]] | None
+    grid3d_mapping: dict[int, tuple[int, int, int]] | None
     tree_root: int | None
 
 
@@ -61,7 +65,9 @@ def _analyze_layout_components(graph: _GraphData) -> tuple[_LayoutComponent, ...
             ),
             proxy_visible_graph=proxy_visible_graph,
         )
-        structure_kind, chain_order, grid_mapping, tree_root = _classify_anchor_graph(anchor_graph)
+        structure_kind, chain_order, grid_mapping, grid3d_mapping, tree_root = (
+            _classify_anchor_graph(anchor_graph)
+        )
         components.append(
             _LayoutComponent(
                 node_ids=tuple(sorted(component_node_ids)),
@@ -76,6 +82,7 @@ def _analyze_layout_components(graph: _GraphData) -> tuple[_LayoutComponent, ...
                 structure_kind=structure_kind,
                 chain_order=chain_order,
                 grid_mapping=grid_mapping,
+                grid3d_mapping=grid3d_mapping,
                 tree_root=tree_root,
             )
         )
@@ -199,23 +206,33 @@ def _sorted_connected_components(nx_graph: nx.Graph) -> list[tuple[int, ...]]:
 
 def _classify_anchor_graph(
     anchor_graph: nx.Graph,
-) -> tuple[StructureKind, tuple[int, ...], dict[int, tuple[int, int]] | None, int | None]:
+) -> tuple[
+    StructureKind,
+    tuple[int, ...],
+    dict[int, tuple[int, int]] | None,
+    dict[int, tuple[int, int, int]] | None,
+    int | None,
+]:
     chain_order = _detect_chain(anchor_graph)
     if chain_order is not None:
-        return "chain", chain_order, None, None
+        return "chain", chain_order, None, None, None
 
     grid_mapping = _detect_grid(anchor_graph)
     if grid_mapping is not None:
-        return "grid", (), grid_mapping, None
+        return "grid", (), grid_mapping, None, None
+
+    grid3d_mapping = _detect_grid_3d(anchor_graph)
+    if grid3d_mapping is not None:
+        return "grid3d", (), None, grid3d_mapping, None
 
     if anchor_graph.number_of_nodes() > 0 and nx.is_tree(anchor_graph):
-        return "tree", (), None, _tree_root(anchor_graph)
+        return "tree", (), None, None, _tree_root(anchor_graph)
 
     is_planar, _ = nx.check_planarity(anchor_graph)
     if anchor_graph.number_of_nodes() > 0 and is_planar:
-        return "planar", (), None, None
+        return "planar", (), None, None, None
 
-    return "generic", (), None, None
+    return "generic", (), None, None, None
 
 
 def _specialized_anchor_positions(component: _LayoutComponent) -> dict[int, np.ndarray]:
@@ -225,6 +242,8 @@ def _specialized_anchor_positions(component: _LayoutComponent) -> dict[int, np.n
         return _layout_chain(component.chain_order)
     if component.structure_kind == "grid" and component.grid_mapping is not None:
         return _layout_grid(component.grid_mapping)
+    if component.structure_kind == "grid3d" and component.grid3d_mapping is not None:
+        return _layout_grid3d_projection_2d(component.grid3d_mapping)
     if component.structure_kind == "tree" and component.tree_root is not None:
         return _layout_tree(component.anchor_graph, component.tree_root)
     if component.structure_kind == "planar":
@@ -305,6 +324,59 @@ def _layout_grid(grid_mapping: dict[int, tuple[int, int]]) -> dict[int, np.ndarr
     return {
         node_id: np.array([float(col), float(row)], dtype=float)
         for node_id, (col, row) in grid_mapping.items()
+    }
+
+
+def _expected_edges_3d_grid(lx: int, ly: int, lz: int) -> int:
+    return (lx - 1) * ly * lz + lx * (ly - 1) * lz + lx * ly * (lz - 1)
+
+
+def _detect_grid_3d(nx_graph: nx.Graph) -> dict[int, tuple[int, int, int]] | None:
+    """If *nx_graph* is a 3D rectangular grid (all factors >= 1), return node → (i,j,k)."""
+    n = nx_graph.number_of_nodes()
+    if n <= 1 or not nx.is_connected(nx_graph):
+        return None
+    m = nx_graph.number_of_edges()
+    best_mn = -1
+    best_shape: tuple[int, int, int] = (-1, -1, -1)
+    best_mapping: dict[int, tuple[int, int, int]] | None = None
+
+    for lx in range(1, n + 1):
+        if n % lx != 0:
+            continue
+        rest = n // lx
+        for ly in range(1, rest + 1):
+            if rest % ly != 0:
+                continue
+            lz = rest // ly
+            if _expected_edges_3d_grid(lx, ly, lz) != m:
+                continue
+            template = nx.grid_graph((lx, ly, lz))
+            mapping = nx.vf2pp_isomorphism(nx_graph, template)
+            if mapping is None:
+                continue
+            mn = min(lx, ly, lz)
+            shape = (lx, ly, lz)
+            if mn > best_mn or (mn == best_mn and shape > best_shape):
+                best_mn = mn
+                best_shape = shape
+                best_mapping = {
+                    int(node_id): (int(a), int(b), int(c)) for node_id, (a, b, c) in mapping.items()
+                }
+
+    return best_mapping
+
+
+def _layout_grid3d_projection_2d(
+    grid3d_mapping: dict[int, tuple[int, int, int]],
+) -> dict[int, np.ndarray]:
+    alpha = _GRID3D_PROJECTION_K
+    return {
+        node_id: np.array(
+            [float(i) + alpha * float(k), float(j) + alpha * float(k)],
+            dtype=float,
+        )
+        for node_id, (i, j, k) in grid3d_mapping.items()
     }
 
 

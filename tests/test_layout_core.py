@@ -168,6 +168,65 @@ def test_resolve_draw_scale_heuristic_when_no_contraction_edges() -> None:
     assert lo <= s <= hi
 
 
+def _build_3d_grid_graph(lx: int, ly: int, lz: int) -> _GraphData:
+    """3D nearest-neighbor cubic lattice; same bond topology as cubic PEPS (no physical legs)."""
+
+    def node_index(i: int, j: int, k: int) -> int:
+        return i * ly * lz + j * lz + k
+
+    nodes = {}
+    edge_specs: list[tuple[int, int, str, str]] = []
+
+    for i in range(lx):
+        for j in range(ly):
+            for k in range(lz):
+                axes_names: list[str] = []
+                if i > 0:
+                    axes_names.append("xm")
+                if i < lx - 1:
+                    axes_names.append("xp")
+                if j > 0:
+                    axes_names.append("ym")
+                if j < ly - 1:
+                    axes_names.append("yp")
+                if k > 0:
+                    axes_names.append("zm")
+                if k < lz - 1:
+                    axes_names.append("zp")
+                nid = node_index(i, j, k)
+                nodes[nid] = _make_node(f"P{i}_{j}_{k}", tuple(axes_names))
+
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+
+    for i in range(lx):
+        for j in range(ly):
+            for k in range(lz):
+                nid = node_index(i, j, k)
+                if i < lx - 1:
+                    rid = node_index(i + 1, j, k)
+                    edge_specs.append((nid, rid, "xp", "xm"))
+                if j < ly - 1:
+                    rid = node_index(i, j + 1, k)
+                    edge_specs.append((nid, rid, "yp", "ym"))
+                if k < lz - 1:
+                    rid = node_index(i, j, k + 1)
+                    edge_specs.append((nid, rid, "zp", "zm"))
+
+    edges = [
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][left_name], left_name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][right_name], right_name),
+            name=f"{left_id}_{right_id}",
+            label=None,
+        )
+        for left_id, right_id, left_name, right_name in edge_specs
+    ]
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
 def _build_grid_graph(rows: int, cols: int) -> _GraphData:
     nodes = {}
     edge_specs: list[tuple[int, int, str, str]] = []
@@ -552,6 +611,32 @@ def test_compute_layout_grid_2d_places_nodes_on_regular_lattice() -> None:
         abs(y_values[1] - y_values[0]),
         rel_tol=1e-6,
     )
+
+
+def test_compute_layout_3d_grid_spans_three_axes() -> None:
+    graph = _build_3d_grid_graph(2, 2, 2)
+
+    positions = _compute_layout(graph, dimensions=3, seed=0)
+    coords = np.stack([positions[node_id] for node_id in sorted(graph.nodes)])
+
+    assert float(coords[:, 0].std()) > 1e-6
+    assert float(coords[:, 1].std()) > 1e-6
+    assert float(coords[:, 2].std()) > 1e-6
+
+
+def test_compute_layout_3d_grid_uniform_nearest_neighbor_spacing() -> None:
+    graph = _build_3d_grid_graph(2, 3, 2)
+
+    positions = _compute_layout(graph, dimensions=3, seed=0)
+    lengths: list[float] = []
+    for edge in graph.edges:
+        left_ep, right_ep = edge.endpoints
+        delta = positions[left_ep.node_id] - positions[right_ep.node_id]
+        lengths.append(float(np.linalg.norm(delta)))
+
+    assert lengths
+    mean_len = float(np.mean(lengths))
+    assert all(math.isclose(L, mean_len, rel_tol=1e-5, abs_tol=1e-8) for L in lengths)
 
 
 def test_compute_layout_planar_cycle_3d_stays_on_single_plane() -> None:

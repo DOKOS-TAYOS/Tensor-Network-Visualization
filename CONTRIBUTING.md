@@ -51,6 +51,72 @@ With the project venv (Windows):
 
 Add tests for new features or bug fixes. All tests must pass before opening a PR.
 
+### Optional: manual example smoke checks
+
+Automated tests do not open interactive Matplotlib windows. After **`pytest`** passes, you can sanity-check **layout and drawing** by running the examples below from the **repository root** (with **`pip install -e ".[dev]"`** or the matching optional extras). Run **one command at a time** (each line is a separate invocation).
+
+**2D (default labels):**
+
+```bash
+python examples/tensorkrowch_demo.py mps 2d
+python examples/tensorkrowch_demo.py disconnected 2d
+python examples/tensornetwork_demo.py weird 2d
+python examples/mera_tree_demo.py 2d
+python examples/cubic_peps_demo.py 2d
+python examples/quimb_demo.py hyper 2d
+python examples/tenpy_demo.py imps 2d
+python examples/tenpy_demo.py impo 2d
+python examples/einsum_demo.py peps 2d
+python examples/tn_tsp.py -n 4 --view 2d
+```
+
+**2D with `--hover-labels`** (interactive window only):
+
+```bash
+python examples/tensorkrowch_demo.py mps 2d --hover-labels
+python examples/tensorkrowch_demo.py disconnected 2d --hover-labels
+python examples/tensornetwork_demo.py weird 2d --hover-labels
+python examples/mera_tree_demo.py 2d --hover-labels
+python examples/cubic_peps_demo.py 2d --hover-labels
+python examples/quimb_demo.py hyper 2d --hover-labels
+python examples/tenpy_demo.py imps 2d --hover-labels
+python examples/tenpy_demo.py impo 2d --hover-labels
+python examples/einsum_demo.py peps 2d --hover-labels
+python examples/tn_tsp.py -n 4 --view 2d --hover-labels
+```
+
+**3D (default labels):**
+
+```bash
+python examples/tensorkrowch_demo.py mps 3d
+python examples/tensorkrowch_demo.py weird 3d
+python examples/tensorkrowch_demo.py disconnected 3d
+python examples/mera_tree_demo.py 3d --mera-log2 5 --tree-depth 4
+python examples/cubic_peps_demo.py 3d --lx 3 --ly 3 --lz 4
+python examples/quimb_demo.py hyper 3d
+python examples/tenpy_demo.py imps 3d
+python examples/tenpy_demo.py impo 3d
+python examples/einsum_demo.py peps 3d
+python examples/tn_tsp.py -n 5 --view 3d
+```
+
+**3D with `--hover-labels`** (interactive window only):
+
+```bash
+python examples/tensorkrowch_demo.py mps 3d --hover-labels
+python examples/tensorkrowch_demo.py weird 3d --hover-labels
+python examples/tensorkrowch_demo.py disconnected 3d --hover-labels
+python examples/mera_tree_demo.py 3d --mera-log2 5 --tree-depth 4 --hover-labels
+python examples/cubic_peps_demo.py 3d --lx 3 --ly 3 --lz 4 --hover-labels
+python examples/quimb_demo.py hyper 3d --hover-labels
+python examples/tenpy_demo.py imps 3d --hover-labels
+python examples/tenpy_demo.py impo 3d --hover-labels
+python examples/einsum_demo.py peps 3d --hover-labels
+python examples/tn_tsp.py -n 5 --view 3d --hover-labels
+```
+
+See **`examples/README.md`** for per-script options and dependencies.
+
 ## Lint and Type Checks
 
 **Ruff** (lint and format):

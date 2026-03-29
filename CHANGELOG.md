@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `show_tensor_network` package export: `TYPE_CHECKING` import preserves lazy runtime import while exposing the real signature, annotations, and docstring to IDEs.
 
+### Changed
+- Refactor of the `_core` module into tiny pieces.
+
 ## [1.4.0] — 2026-03-28
 
 ### Added

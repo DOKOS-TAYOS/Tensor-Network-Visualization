@@ -168,8 +168,12 @@ def _lift_component_layout_3d(
         node_id: np.array([coords[0], coords[1], 0.0], dtype=float)
         for node_id, coords in positions_2d.items()
     }
+    if component.structure_kind == "grid3d" and component.grid3d_mapping is not None:
+        for node_id, (i, j, k) in component.grid3d_mapping.items():
+            positions[node_id] = np.array([float(i), float(j), float(k)], dtype=float)
     _place_trimmed_leaf_nodes_3d(component, positions)
-    _promote_3d_layers(graph, component, positions)
+    if component.structure_kind != "grid3d" or component.grid3d_mapping is None:
+        _promote_3d_layers(graph, component, positions)
     return positions
 
 

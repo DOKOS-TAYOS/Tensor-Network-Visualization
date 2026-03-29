@@ -149,6 +149,9 @@ other scripts.
 
 ## Run-all cheat sheet
 
+For a **short pre-PR smoke checklist** (2D / 3D, default labels vs `--hover-labels`), see
+[CONTRIBUTING.md](../CONTRIBUTING.md#optional-manual-example-smoke-checks).
+
 ```bash
 python examples/tensorkrowch_demo.py mps 2d
 python examples/tensorkrowch_demo.py mps 3d
