@@ -71,9 +71,7 @@ def _draw_nodes(
         coords = np.stack(
             [np.asarray(positions[node_id], dtype=float) for node_id in visible_node_ids]
         )
-        deg1 = _visible_degree_one_mask(
-            graph, visible_node_ids, node_degrees=node_degrees
-        )
+        deg1 = _visible_degree_one_mask(graph, visible_node_ids, node_degrees=node_degrees)
         plotter.draw_tensor_nodes(coords, config=config, p=p, degree_one_mask=deg1)
         return coords
     return _stack_visible_tensor_coords(graph, positions)

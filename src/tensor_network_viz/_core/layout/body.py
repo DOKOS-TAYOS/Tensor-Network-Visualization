@@ -593,11 +593,7 @@ def _planar_contraction_bond_segments_2d(
     contraction_groups: _ContractionGroups | None = None,
 ) -> list[tuple[int, int, np.ndarray, np.ndarray]]:
     """Short segments along each contraction's rendered 2D bond (for stub–bond crossing tests)."""
-    groups = (
-        contraction_groups
-        if contraction_groups is not None
-        else _group_contractions(graph)
-    )
+    groups = contraction_groups if contraction_groups is not None else _group_contractions(graph)
     out: list[tuple[int, int, np.ndarray, np.ndarray]] = []
     for record in _iter_contractions(graph):
         left_id, right_id = record.node_ids

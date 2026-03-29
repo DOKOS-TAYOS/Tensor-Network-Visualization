@@ -9,19 +9,18 @@ from __future__ import annotations
 import time
 
 import numpy as np
-import pytest
 
+from tensor_network_viz._core.draw.plotter import (
+    _graph_edge_degree,
+    _node_edge_degrees,
+    _visible_degree_one_mask,
+)
 from tensor_network_viz._core.graph import (
     _EdgeData,
     _EdgeEndpoint,
     _GraphData,
     _make_contraction_edge,
     _make_node,
-)
-from tensor_network_viz._core.draw.plotter import (
-    _graph_edge_degree,
-    _node_edge_degrees,
-    _visible_degree_one_mask,
 )
 
 

@@ -23,7 +23,10 @@ from .viewport_geometry import (
 
 
 def _node_edge_degrees(graph: _GraphData) -> dict[int, int]:
-    """Incident edge count per node (contractions, dangling, self-loops); one pass over ``edges``."""
+    """Incident edge count per node (contractions, dangling, self-loops).
+
+    One pass over ``graph.edges``.
+    """
     counts: dict[int, int] = {}
     for edge in graph.edges:
         for nid in edge.node_ids:
@@ -158,9 +161,7 @@ def _make_plotter(
             ) -> None:
                 patch = Circle((float(coord[0]), float(coord[1])), radius=p.r)
                 fc = config.node_color_degree_one if degree_one else config.node_color
-                ec = (
-                    config.node_edge_color_degree_one if degree_one else config.node_edge_color
-                )
+                ec = config.node_edge_color_degree_one if degree_one else config.node_edge_color
                 coll = PatchCollection(
                     [patch],
                     facecolors=[fc],

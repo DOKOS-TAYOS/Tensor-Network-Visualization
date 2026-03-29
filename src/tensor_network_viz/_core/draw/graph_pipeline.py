@@ -117,9 +117,7 @@ def _draw_graph(
             flush()
         draw_one = plotter.draw_tensor_node
         tensor_z_by_node = {
-            nid: float(
-                _ZORDER_LAYER_BASE + i * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_TENSOR_NAME
-            )
+            nid: float(_ZORDER_LAYER_BASE + i * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_TENSOR_NAME)
             for i, nid in enumerate(visible_order)
         }
         for i, nid in enumerate(visible_order):

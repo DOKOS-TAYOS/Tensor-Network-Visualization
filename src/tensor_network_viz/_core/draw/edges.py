@@ -226,9 +226,7 @@ def _draw_dangling_edge(
     else:
         start = center + direction * p.r
         end = start + direction * p.stub
-    zl = (
-        float(_ZORDER_FLAT_DANGLE_SELF_LINE) if zorder_line is None else float(zorder_line)
-    )
+    zl = float(_ZORDER_FLAT_DANGLE_SELF_LINE) if zorder_line is None else float(zorder_line)
     plotter.plot_line(start, end, color=config.dangling_edge_color, linewidth=p.lw, zorder=zl)
     if show_index_labels and edge.label:
         hover_ht = getattr(plotter, "_hover_edge_targets", None)
@@ -370,9 +368,7 @@ def _draw_self_loop_edge(
             height=p.ellipse_h,
         )
         label_offset_dir = binormal * p.ellipse_w
-    z_loop = (
-        float(_ZORDER_FLAT_DANGLE_SELF_LINE) if zorder_line is None else float(zorder_line)
-    )
+    z_loop = float(_ZORDER_FLAT_DANGLE_SELF_LINE) if zorder_line is None else float(zorder_line)
     plotter.plot_curve(curve, color=config.bond_edge_color, linewidth=p.lw, zorder=z_loop)
     if show_index_labels:
         hover_ht = getattr(plotter, "_hover_edge_targets", None)

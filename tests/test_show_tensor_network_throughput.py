@@ -38,13 +38,13 @@ def quimb_chain_network() -> object:
                 )
             elif i == n - 1:
                 tensors.append(
-                    qtn.Tensor(data=np.ones((3, 2)), inds=(f"b{i-1}", f"o{i}"), tags={f"T{i}"})
+                    qtn.Tensor(data=np.ones((3, 2)), inds=(f"b{i - 1}", f"o{i}"), tags={f"T{i}"})
                 )
             else:
                 tensors.append(
                     qtn.Tensor(
                         data=np.ones((3, 3, 3)),
-                        inds=(f"b{i-1}", f"b{i}", f"aux{i}"),
+                        inds=(f"b{i - 1}", f"b{i}", f"aux{i}"),
                         tags={f"T{i}"},
                     )
                 )
@@ -87,13 +87,13 @@ def _quimb_linear_chain_network(n: int) -> object:
             )
         elif i == n - 1:
             tensors.append(
-                qtn.Tensor(data=np.ones((3, 2)), inds=(f"b{i-1}", f"o{i}"), tags={f"T{i}"})
+                qtn.Tensor(data=np.ones((3, 2)), inds=(f"b{i - 1}", f"o{i}"), tags={f"T{i}"})
             )
         else:
             tensors.append(
                 qtn.Tensor(
                     data=np.ones((3, 3, 3)),
-                    inds=(f"b{i-1}", f"b{i}", f"aux{i}"),
+                    inds=(f"b{i - 1}", f"b{i}", f"aux{i}"),
                     tags={f"T{i}"},
                 )
             )
