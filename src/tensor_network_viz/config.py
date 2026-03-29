@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar, Literal, TypeAlias
 
-EngineName: TypeAlias = Literal["tensorkrowch", "tensornetwork", "quimb", "tenpy", "einsum"]
+from ._engine_specs import EngineName
+
 ViewName: TypeAlias = Literal["2d", "3d"]
 
 
@@ -77,3 +78,6 @@ class PlotConfig:
     validate_positions: bool = False
     refine_tensor_labels: bool = True
     hover_labels: bool = False
+
+
+__all__ = ["EngineName", "PlotConfig", "ViewName"]

@@ -1,50 +1,27 @@
-"""Layout computation for tensor network graphs."""
+"""Layout orchestration (components, axis directions, stubs)."""
 
 from __future__ import annotations
 
 import math
 from collections.abc import Iterable
-from typing import TypeAlias
 
 import numpy as np
 
-from ..config import PlotConfig
-from .axis_directions import _AXIS_DIR_2D, _AXIS_DIR_3D
-from .contractions import _contraction_weights, _group_contractions, _iter_contractions
-from .curves import _quadratic_curve
-from .graph import _GraphData
-from .layout_structure import (
+from ...config import PlotConfig
+from ..axis_directions import _AXIS_DIR_2D, _AXIS_DIR_3D
+from ..contractions import _group_contractions, _iter_contractions
+from ..curves import _quadratic_curve
+from ..graph import _GraphData
+from ..layout_structure import (
     _analyze_layout_components,
     _component_orthogonal_basis,
     _LayoutComponent,
     _leaf_nodes,
     _specialized_anchor_positions,
 )
-
-Vector: TypeAlias = np.ndarray
-NodePositions: TypeAlias = dict[int, Vector]
-AxisDirections: TypeAlias = dict[tuple[int, int], Vector]
-
-_LAYOUT_TARGET_NORM: float = 1.6
-_FORCE_LAYOUT_K: float = 1.6
-_FORCE_LAYOUT_COOLING_FACTOR: float = 0.985
-_FREE_DIR_OVERLAP_THRESHOLD: float = 0.7
-_FREE_DIR_SAMPLES_2D: int = 72
-# Dangling-stub segment in layout units (rim → tip), for 2D crossing checks vs `_draw_*` scale.
-_STUB_LAYOUT_R0: float = 0.06
-# Keep (R1 − R0) * draw_scale ≈ ``PlotConfig.DEFAULT_STUB_LENGTH * draw_scale`` (rim → tip).
-_STUB_LAYOUT_R1: float = 0.22
-_STUB_TIP_NODE_CLEAR: float = 0.26
-_STUB_TIP_TIP_CLEAR: float = 0.26
-_STUB_ORIGIN_PAIR_CLEAR: float = 0.12
-_STUB_PARALLEL_DOT: float = 0.92
-# Keep in sync with `_draw_common._CURVE_OFFSET_FACTOR` (stub–bond clash vs drawn bonds).
-_LAYOUT_BOND_CURVE_OFFSET_FACTOR: float = 0.15
-_LAYOUT_BOND_CURVE_NEAR_PAIR_REF: float = 0.28
-_LAYOUT_BOND_CURVE_SAMPLES: int = 24
-_COMPONENT_GAP: float = 1.4
-_LAYER_SPACING: float = 0.55
-_LAYER_SEQUENCE: tuple[int, ...] = (0, 1, -1, 2, -2, 3, -3)
+from .force_directed import _compute_force_layout
+from .parameters import *
+from .types import AxisDirections, NodePositions, Vector
 
 
 def _is_dangling_leg_axis(graph: _GraphData, node_id: int, axis_index: int) -> bool:
@@ -229,146 +206,6 @@ def _pack_component_positions(
         cursor_x += max(max_x - min_x, 0.8) + _COMPONENT_GAP
 
     return packed
-
-
-def _compute_force_layout(
-    graph: _GraphData,
-    *,
-    node_ids: list[int],
-    dimensions: int,
-    seed: int,
-    iterations: int,
-    fixed_positions: NodePositions | None = None,
-) -> NodePositions:
-    positions = _initial_positions(node_ids, dimensions=dimensions, seed=seed)
-    index_by_node = {node_id: index for index, node_id in enumerate(node_ids)}
-    pair_weights = _pair_weights_for_node_ids(graph, node_ids=node_ids)
-    fixed_mask = np.zeros(len(node_ids), dtype=bool)
-    fixed_array = np.zeros_like(positions)
-
-    if fixed_positions:
-        fixed_centroid = np.mean(np.stack(list(fixed_positions.values())), axis=0)
-        for node_id, fixed_position in fixed_positions.items():
-            if node_id not in index_by_node:
-                continue
-            index = index_by_node[node_id]
-            fixed_mask[index] = True
-            fixed_array[index] = fixed_position
-            positions[index] = fixed_position
-        for node_id in node_ids:
-            index = index_by_node[node_id]
-            if fixed_mask[index]:
-                continue
-            positions[index] = fixed_centroid + (positions[index] * 0.35)
-
-    temperature = 0.12
-    for _ in range(iterations):
-        displacement = _repulsion_displacement(positions, k=_FORCE_LAYOUT_K)
-        _apply_attraction_forces(
-            displacement,
-            positions,
-            index_by_node=index_by_node,
-            pair_weights=pair_weights,
-            k=_FORCE_LAYOUT_K,
-        )
-        if fixed_positions:
-            displacement[fixed_mask] = 0.0
-        _apply_force_step(
-            positions,
-            displacement,
-            temperature=temperature,
-            fixed_mask=fixed_mask if fixed_positions else None,
-            fixed_positions=fixed_array if fixed_positions else None,
-        )
-        temperature *= _FORCE_LAYOUT_COOLING_FACTOR
-
-    return {node_id: positions[index].copy() for index, node_id in enumerate(node_ids)}
-
-
-def _pair_weights_for_node_ids(
-    graph: _GraphData,
-    *,
-    node_ids: list[int],
-) -> dict[tuple[int, int], int]:
-    node_id_set = set(node_ids)
-    return {
-        pair: weight
-        for pair, weight in _contraction_weights(graph).items()
-        if pair[0] in node_id_set and pair[1] in node_id_set
-    }
-
-
-def _repulsion_displacement(positions: np.ndarray, *, k: float) -> np.ndarray:
-    deltas = positions[:, None, :] - positions[None, :, :]
-    distances = np.linalg.norm(deltas, axis=2)
-    np.fill_diagonal(distances, 1.0)
-    directions = deltas / np.maximum(distances[..., None], 1e-6)
-    repulsion = (k * k / np.maximum(distances, 1e-6) ** 2)[..., None] * directions
-    return repulsion.sum(axis=1)
-
-
-def _apply_attraction_forces(
-    displacement: np.ndarray,
-    positions: np.ndarray,
-    *,
-    index_by_node: dict[int, int],
-    pair_weights: dict[tuple[int, int], int],
-    k: float,
-) -> None:
-    for (left_id, right_id), weight in pair_weights.items():
-        left_index = index_by_node[left_id]
-        right_index = index_by_node[right_id]
-        delta = positions[right_index] - positions[left_index]
-        distance = max(float(np.linalg.norm(delta)), 1e-6)
-        direction = delta / distance
-        attraction = weight * distance * distance / k * direction
-        displacement[left_index] += attraction
-        displacement[right_index] -= attraction
-
-
-def _apply_force_step(
-    positions: np.ndarray,
-    displacement: np.ndarray,
-    *,
-    temperature: float,
-    fixed_mask: np.ndarray | None = None,
-    fixed_positions: np.ndarray | None = None,
-) -> None:
-    norms = np.linalg.norm(displacement, axis=1, keepdims=True)
-    step = displacement / np.maximum(norms, 1e-6) * temperature
-    if fixed_mask is None or fixed_positions is None:
-        positions += step
-        positions -= positions.mean(axis=0, keepdims=True)
-        max_norm = np.linalg.norm(positions, axis=1).max()
-        if max_norm > _LAYOUT_TARGET_NORM:
-            positions /= max_norm / _LAYOUT_TARGET_NORM
-        return
-
-    movable_mask = ~fixed_mask
-    positions[movable_mask] += step[movable_mask]
-    positions[fixed_mask] = fixed_positions[fixed_mask]
-
-
-def _initial_positions(node_ids: list[int], dimensions: int, seed: int) -> Vector:
-    count = len(node_ids)
-    rng = np.random.default_rng(seed)
-
-    if dimensions == 2:
-        angles = np.linspace(0.0, 2.0 * math.pi, count, endpoint=False)
-        positions = np.column_stack((np.cos(angles), np.sin(angles)))
-    else:
-        golden_angle = math.pi * (3.0 - math.sqrt(5.0))
-        indices = np.arange(count, dtype=float)
-        denom = max(count - 1, 1)
-        y = 1.0 - (2.0 * indices) / denom
-        radius = np.sqrt(np.maximum(0.0, 1.0 - y * y))
-        theta = golden_angle * indices
-        positions = np.column_stack(
-            (np.cos(theta) * radius, y, np.sin(theta) * radius),
-        ).astype(float)
-
-    positions += rng.normal(loc=0.0, scale=0.03, size=positions.shape)
-    return positions
 
 
 def _snap_virtual_nodes_to_barycenters(
@@ -1176,3 +1013,44 @@ def _orthogonal_unit(vector: Vector) -> Vector:
         reference = np.array([0.0, 1.0, 0.0], dtype=float)
     orthogonal = np.cross(vector, reference)
     return orthogonal / np.linalg.norm(orthogonal)
+
+
+__all__ = [
+    "_best_attachment_position_2d",
+    "_best_attachment_position_3d",
+    "_bond_perpendicular_unoriented_2d",
+    "_center_positions",
+    "_choose_promotable_node",
+    "_component_main_axis_2d",
+    "_compute_axis_directions",
+    "_compute_component_layout_2d",
+    "_compute_free_directions_2d",
+    "_compute_free_directions_3d",
+    "_compute_layout",
+    "_direction_conflicts_2d",
+    "_direction_conflicts_3d",
+    "_direction_from_axis_name",
+    "_direction_has_space",
+    "_dangling_stub_segment_2d",
+    "_dangling_stub_segment_3d",
+    "_is_dangling_leg_axis",
+    "_layout_quadratic_bond_polyline_2d",
+    "_lift_component_layout_3d",
+    "_next_layer",
+    "_node_overlaps_component",
+    "_normalize_2d",
+    "_normalize_positions",
+    "_orthogonal_unit",
+    "_pack_component_positions",
+    "_place_trimmed_leaf_nodes_2d",
+    "_place_trimmed_leaf_nodes_3d",
+    "_planar_contraction_bond_segments_2d",
+    "_point_segment_distance_2d",
+    "_promote_3d_layers",
+    "_segment_hits_existing_geometry_2d",
+    "_segment_point_min_distance_sq_2d",
+    "_segment_point_min_distance_sq_3d",
+    "_segments_cross_2d",
+    "_snap_virtual_nodes_to_barycenters",
+    "_used_axis_directions",
+]

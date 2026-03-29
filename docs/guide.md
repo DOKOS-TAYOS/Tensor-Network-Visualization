@@ -414,6 +414,14 @@ iterations = int(min(220, max(45, 14 * sqrt(n))))
 
 If you set **`layout_iterations`** to an **int**, that value is used exactly.
 
+### Dense graphs and large node counts
+
+When the pipeline falls back to **force-directed** layout and the graph has more than about **72**
+nodes, pairwise repulsion uses **sampled** pairs instead of every \(O(n^2)\) interaction so the step
+cost stays closer to \(O(n)\)–\(O(n \log n)\) in practice. Results are still stochastic (use
+**`seed`**). Very dense graphs can remain expensive from attraction and iteration count; supplying
+**`positions`** or lowering **`layout_iterations`** remains the main lever for speed.
+
 ### Draw scale and node size
 
 With default **`node_radius`**, the renderer targets node **radius ≈ 0.3 × d_min** where **`d_min`**

@@ -56,8 +56,11 @@ src = ["src", "tests"]
 exclude = [".venv", ".tmp", ".tmp_venv_*", ".pip_tmp", ".pytest_cache", ".ruff_cache", "pytest-cache-files-*", "tn_tsp.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "C4", "SIM"]
+select = ["E", "F", "I", "B", "UP", "C4", "SIM", "RUF100"]
 
 [tool.ruff.lint.per-file-ignores]
 # Examples set sys.path before importing local demo_cli (importlib-safe).
 "examples/**/*.py" = ["E402"]
+# Draw/layout splits mirror the old monolith: submodule star-import of tuning constants.
+"src/tensor_network_viz/_core/draw/*.py" = ["F403", "F405"]
+"src/tensor_network_viz/_core/layout/body.py" = ["F403", "F405"]

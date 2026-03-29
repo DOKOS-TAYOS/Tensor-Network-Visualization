@@ -314,7 +314,7 @@ Expect `quimb_mps.png` and all tests passing.
 | `ValueError: Unsupported tensor network engine` / `view` | Use only listed `engine` / `view` literals (see above). |
 | Blank or double figure in Jupyter | Assign `fig, ax = show_tensor_network(...)`; avoid bare tuple as last line; try `%matplotlib widget` or inline. |
 | Hover labels do nothing | Requires interactive backend and `show` path that runs a GUI or widget event loop; not for `--no-show` PNG only. |
-| Huge graphs are slow | `PlotConfig(refine_tensor_labels=False)`; optionally set `layout_iterations` explicitly. |
+| Huge graphs are slow | `PlotConfig(refine_tensor_labels=False)`; lower `layout_iterations` or pass `positions`. Force layout samples repulsion when node count is large (about 72+; see [guide](docs/guide.md#layout-and-draw-scale)). |
 
 **Full troubleshooting:** [docs/guide.md — Troubleshooting](docs/guide.md#troubleshooting).
 
