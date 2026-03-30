@@ -17,22 +17,20 @@ For larger changes, open an issue first to discuss scope and approach.
 ## Development Setup
 
 1. Clone and enter the repository:
-   ```bash
+  ```bash
    git clone https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization.git
    cd Tensor-Network-Visualization
-   ```
-
+  ```
 2. Create and activate a virtual environment:
-   ```bash
+  ```bash
    python -m venv .venv
-   ```
-   - Windows: `.\.venv\Scripts\Activate.ps1` or `.\.venv\Scripts\activate.bat`
-   - Linux/macOS: `source .venv/bin/activate`
-
+  ```
+  - Windows: `.\.venv\Scripts\Activate.ps1` or `.\.venv\Scripts\activate.bat`
+  - Linux/macOS: `source .venv/bin/activate`
 3. Install in editable mode with dev dependencies:
-   ```bash
+  ```bash
    pip install -e ".[dev]"
-   ```
+  ```
    This installs pytest, ruff, pyright, and the optional backends (tensorkrowch, tensornetwork, quimb, physics-tenpy) required for the full test suite.
 
 ## Running Tests
@@ -53,7 +51,7 @@ Add tests for new features or bug fixes. All tests must pass before opening a PR
 
 ### Optional: manual example smoke checks
 
-Automated tests do not open interactive Matplotlib windows. After **`pytest`** passes, you can sanity-check **layout and drawing** by running the examples below from the **repository root** (with **`pip install -e ".[dev]"`** or the matching optional extras). Run **one command at a time** (each line is a separate invocation).
+Automated tests do not open interactive Matplotlib windows. After `**pytest**` passes, you can sanity-check **layout and drawing** by running the examples below from the **repository root** (with `**pip install -e ".[dev]"`** or the matching optional extras). Run **one command at a time** (each line is a separate invocation).
 
 **2D (default labels):**
 
@@ -67,6 +65,9 @@ python examples/quimb_demo.py hyper 2d
 python examples/tenpy_demo.py imps 2d
 python examples/tenpy_demo.py impo 2d
 python examples/einsum_demo.py peps 2d
+python examples/einsum_general.py ellipsis 2d
+python examples/einsum_general.py batch 2d
+python examples/einsum_general.py mps_short 2d
 python examples/tn_tsp.py -n 4 --view 2d
 ```
 
@@ -82,6 +83,9 @@ python examples/quimb_demo.py hyper 2d --hover-labels
 python examples/tenpy_demo.py imps 2d --hover-labels
 python examples/tenpy_demo.py impo 2d --hover-labels
 python examples/einsum_demo.py peps 2d --hover-labels
+python examples/einsum_general.py ellipsis 2d --hover-labels
+python examples/einsum_general.py batch 2d --hover-labels
+python examples/einsum_general.py trace 2d --hover-labels
 python examples/tn_tsp.py -n 4 --view 2d --hover-labels
 ```
 
@@ -97,6 +101,9 @@ python examples/quimb_demo.py hyper 3d
 python examples/tenpy_demo.py imps 3d
 python examples/tenpy_demo.py impo 3d
 python examples/einsum_demo.py peps 3d
+python examples/einsum_general.py ellipsis 3d
+python examples/einsum_general.py batch 3d
+python examples/einsum_general.py trace 3d
 python examples/tn_tsp.py -n 5 --view 3d
 ```
 
@@ -112,10 +119,12 @@ python examples/quimb_demo.py hyper 3d --hover-labels
 python examples/tenpy_demo.py imps 3d --hover-labels
 python examples/tenpy_demo.py impo 3d --hover-labels
 python examples/einsum_demo.py peps 3d --hover-labels
+python examples/einsum_general.py ellipsis 3d --hover-labels
+python examples/einsum_general.py mps_short 3d --hover-labels
 python examples/tn_tsp.py -n 5 --view 3d --hover-labels
 ```
 
-See **`examples/README.md`** for per-script options and dependencies.
+Install **`tensor-network-visualization[einsum]`** (PyTorch) for `einsum_demo.py` and `einsum_general.py` contractions. See `**examples/README.md**` for per-script options and dependencies.
 
 ## Lint and Type Checks
 
@@ -171,16 +180,12 @@ Keep PRs focused. For larger work, split into smaller PRs or discuss in an issue
 Adding a new engine (e.g. a new tensor-network library) requires:
 
 1. **Adapter module** under `src/tensor_network_viz/<engine>/`:
-   - `graph.py` — convert backend-native objects to `_GraphData` (see `_core/graph.py`)
-   - `renderer.py` — implement `plot_<engine>_network_2d` and `plot_<engine>_network_3d` using the shared `_core` drawing layer
-   - `__init__.py` — export the two plot functions
-
+  - `graph.py` — convert backend-native objects to `_GraphData` (see `_core/graph.py`)
+  - `renderer.py` — implement `plot_<engine>_network_2d` and `plot_<engine>_network_3d` using the shared `_core` drawing layer
+  - `__init__.py` — export the two plot functions
 2. **Registration** in `config.py` (add to `EngineName`) and `_registry.py` (add to `_ENGINE_CONFIG`).
-
 3. **Optional dependency** in `pyproject.toml` under `[project.optional-dependencies]`.
-
 4. **Tests** in `tests/test_integration_<engine>.py` and optional `tests/test_<engine>_backend.py`.
-
 5. **Example script** in `examples/<engine>_demo.py` and an entry in `examples/README.md`.
 
 Open an issue to discuss the backend and its API before implementing.
@@ -199,9 +204,10 @@ Open an issue to discuss the backend and its API before implementing.
 
 Before opening a pull request, confirm:
 
-- [ ] `ruff check .` and `ruff format .` pass
-- [ ] `pyright` passes
-- [ ] `pytest` passes
-- [ ] New code has type hints and tests where appropriate
-- [ ] Documentation and examples are updated if behavior changed
-- [ ] PR description explains the change and links related issues
+- `ruff check .` and `ruff format .` pass
+- `pyright` passes
+- `pytest` passes
+- New code has type hints and tests where appropriate
+- Documentation and examples are updated if behavior changed
+- PR description explains the change and links related issues
+

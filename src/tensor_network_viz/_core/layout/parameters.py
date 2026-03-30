@@ -23,6 +23,9 @@ _COMPONENT_GAP: float = 1.4
 # Minimum spacing (layout units) between virtual hyperedge hubs that share the same tensor neighbors
 # (otherwise they collapse to the same barycenter).
 _VIRTUAL_HUB_MIN_SEPARATION: float = 0.38
+# Perpendicular displacement (layout units) so a virtual hub leaves the tensor–tensor chord when
+# that pair also has a direct contraction (e.g. matmul axis alongside a batch hyperedge).
+_VIRTUAL_HUB_CHORD_CLEARANCE: float = 0.24
 _LAYER_SPACING: float = 0.55
 _LAYER_SEQUENCE: tuple[int, ...] = (0, 1, -1, 2, -2, 3, -3)
 
@@ -33,6 +36,7 @@ __all__ = [
     "_FREE_DIR_OVERLAP_THRESHOLD",
     "_FREE_DIR_SAMPLES_2D",
     "_LAYER_SEQUENCE",
+    "_VIRTUAL_HUB_CHORD_CLEARANCE",
     "_VIRTUAL_HUB_MIN_SEPARATION",
     "_LAYER_SPACING",
     "_LAYOUT_BOND_CURVE_NEAR_PAIR_REF",

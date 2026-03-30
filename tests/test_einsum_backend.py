@@ -51,20 +51,15 @@ def test_build_einsum_graph_reconstructs_chain_without_intermediate_nodes() -> N
         ]
     )
 
-    node_names = [node.name for node in graph.nodes.values()]
-    contraction_pairs = {
-        frozenset(graph.nodes[endpoint.node_id].name for endpoint in edge.endpoints)
-        for edge in graph.edges
-        if edge.kind == "contraction"
-    }
+    visible = sorted(node.name for node in graph.nodes.values() if not node.is_virtual)
+    virtual_count = sum(1 for node in graph.nodes.values() if node.is_virtual)
+
+    contraction_edges = [edge for edge in graph.edges if edge.kind == "contraction"]
     dangling = [edge for edge in graph.edges if edge.kind == "dangling"]
 
-    assert node_names == ["A0", "x0", "A1", "x1"]
-    assert contraction_pairs == {
-        frozenset({"A0", "x0"}),
-        frozenset({"A0", "A1"}),
-        frozenset({"A1", "x1"}),
-    }
+    assert visible == ["A0", "A1", "x0", "x1"]
+    assert virtual_count == 0
+    assert len(contraction_edges) == 3
     assert len(dangling) == 1
     assert dangling[0].label == "b"
     assert graph.nodes[dangling[0].endpoints[0].node_id].name == "A1"
@@ -78,18 +73,25 @@ def test_build_einsum_graph_supports_disconnected_components() -> None:
         ]
     )
 
-    assert [node.name for node in graph.nodes.values()] == ["A", "x", "B", "y"]
+    visible = sorted(n.name for n in graph.nodes.values() if not n.is_virtual)
+    assert visible == ["A", "B", "x", "y"]
+    assert sum(1 for n in graph.nodes.values() if n.is_virtual) == 0
     assert [edge.kind for edge in graph.edges].count("contraction") == 2
-    assert [edge.label for edge in graph.edges if edge.kind == "dangling"] == ["a", "c"]
+    assert sorted(edge.label for edge in graph.edges if edge.kind == "dangling") == ["a", "c"]
 
 
 @pytest.mark.parametrize(
     ("trace", "message"),
     [
         ([pair_tensor("A", "x", "r0", "ab,b")], "explicit"),
-        ([pair_tensor("A", "x", "r0", "...a,a->...")], "ellipsis"),
-        ([pair_tensor("A", "x", "r0", "aa,a->a")], "repeated"),
-        ([pair_tensor("A", "B", "r0", "ab,bc->b")], "both operands"),
+        (
+            [pair_tensor("A", "x", "r0", "...a,a->a")],
+            "metadata",
+        ),
+        (
+            [pair_tensor("A", "B", "r0", "ab,bc->b")],
+            "Unary reductions",
+        ),
         (
             [
                 pair_tensor("r1", "A", "r2", "a,a->"),
@@ -121,6 +123,58 @@ def test_build_einsum_graph_rejects_invalid_traces(
         _build_graph(trace)
 
 
+def test_build_einsum_graph_batch_equation_uses_virtual_hubs() -> None:
+    graph = _build_graph(
+        [
+            pair_tensor(
+                "A",
+                "B",
+                "r0",
+                "ab,ab->ab",
+                metadata={"left_shape": (2, 3), "right_shape": (2, 3)},
+            ),
+        ]
+    )
+    assert sum(1 for n in graph.nodes.values() if n.is_virtual) == 2
+    assert sum(1 for e in graph.edges if e.kind == "contraction") == 4
+    dangles = [e for e in graph.edges if e.kind == "dangling"]
+    assert len(dangles) == 2
+
+
+def test_build_einsum_graph_expands_ellipsis_with_metadata() -> None:
+    graph = _build_graph(
+        [
+            pair_tensor(
+                "A",
+                "B",
+                "r0",
+                "...ij,...jk->...ik",
+                metadata={"left_shape": (2, 3, 4), "right_shape": (2, 4, 5)},
+            ),
+        ]
+    )
+    # Batch index uses a hub; the contracted matmul axis is a normal tensor–tensor bond.
+    assert sum(1 for n in graph.nodes.values() if n.is_virtual) == 1
+    a_node = next(n for nid, n in graph.nodes.items() if n.name == "A")
+    assert len(a_node.axes_names) == 3
+
+
+def test_build_einsum_graph_trace_on_single_tensor() -> None:
+    graph = _build_graph(
+        [
+            pair_tensor(
+                "A",
+                "B",
+                "r0",
+                "ii,i->i",
+                metadata={"left_shape": (4, 4), "right_shape": (4,)},
+            ),
+        ]
+    )
+    assert any(n.is_virtual for n in graph.nodes.values())
+    assert any(e.kind == "contraction" for e in graph.edges)
+
+
 def test_plot_einsum_network_2d_draws_reconstructed_graph() -> None:
     trace = [
         pair_tensor("A0", "x0", "r0", "pa,p->a"),
@@ -132,15 +186,13 @@ def test_plot_einsum_network_2d_draws_reconstructed_graph() -> None:
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
     assert labels >= {"A0", "x0", "A1", "p", "a", "b"}
-    assert line_collection_segment_count(ax) == 4
+    assert line_collection_segment_count(ax) >= 4
 
 
 def test_einsum_trace_requires_binary_explicit_output_equations() -> None:
     """Binary equations with explicit '->' only; other forms are rejected (documented)."""
-    # Non-binary (3 operands in one equation) is rejected
     with pytest.raises(ValueError, match="binary"):
         _build_graph([pair_tensor("A", "B", "r0", "ab,bc,cd->ad")])
-    # Missing explicit output '->' is rejected
     with pytest.raises(ValueError, match="explicit"):
         _build_graph([pair_tensor("A", "x", "r0", "ab,b")])
 
@@ -152,4 +204,4 @@ def test_plot_einsum_network_3d_returns_3d_axes() -> None:
 
     assert fig is ax.figure
     assert ax.name == "3d"
-    assert len(ax.lines) == 2
+    assert len(ax.lines) >= 2

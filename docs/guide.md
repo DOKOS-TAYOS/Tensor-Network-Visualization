@@ -476,6 +476,7 @@ The [`examples/`](../examples/) directory includes:
 | `quimb_demo.py` | Hyper-index demo, tensor lists. |
 | `tenpy_demo.py` | Finite + infinite MPS/MPO. |
 | `einsum_demo.py` | Auto vs manual trace. |
+| `einsum_general.py` | Ellipsis, batch hyperedges, traces, short MPS (auto-trace). |
 | `tn_tsp.py` | TensorKrowch TSP construction. |
 
 Command catalog: [`examples/README.md`](../examples/README.md).
@@ -484,19 +485,23 @@ Command catalog: [`examples/README.md`](../examples/README.md).
 
 ## Limitations
 
-### `einsum` tracing (MVP rules)
+### `einsum` tracing
 
-The tracer enforces a **binary**, explicit-output subset of `einsum`:
+The traced helper enforces a **binary**, explicit-output `einsum` string on each recorded step:
 
-- Exactly **two** operands per traced call.
-- **`->`** required in the string.
-- No **`...`** ellipsis.
-- **Alphabetic** labels only; no repeats inside an operand or the output spec.
-- Output labels cannot appear on **both** operands simultaneously (current MVP restriction).
-- No unary reductions in the traced wrapper; no `out=`.
+- Exactly **two** operands per traced call; **`->`** required; no `out=`.
+- **Validation** uses NumPy’s `einsum` on the operand **shapes** (same rules as NumPy/PyTorch for
+  duplicates, ellipsis, broadcasting batch indices, etc.).
+- **`...`** is supported: ranks are taken from the tensors, and the graph builder expands ellipsis
+  to explicit labels when rendering (metadata stores `left_shape` / `right_shape` per step).
+- **Visualization:** indices that appear **twice or more** on the LHS of the equation are merged at
+  **virtual hub** nodes (hyperedge spokes), including batch indices carried to the output. See
+  [`examples/einsum_general.py`](../examples/einsum_general.py).
+- **Graph build** still rejects **unary index disappearance** (an index appears on only one operand,
+  not in the output, and is summed away) so the fundamental network stays well-formed for the
+  current layout code.
 
-These rules apply to **`tensor_network_viz.einsum`** with tracing, not to arbitrary NumPy/PyTorch
-`einsum` without `trace=`.
+Without `trace=`, `tensor_network_viz.einsum` is a thin wrapper and does not enforce tracing rules.
 
 ### Subgraphs
 

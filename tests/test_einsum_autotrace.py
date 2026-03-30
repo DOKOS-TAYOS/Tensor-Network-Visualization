@@ -120,7 +120,8 @@ def test_einsum_trace_does_not_mutate_when_backend_call_fails() -> None:
     a0 = torch.ones((3, 2))
     x0 = torch.ones((4,))
 
-    with pytest.raises(RuntimeError):
+    # Shape mismatch is rejected by NumPy validation before the backend runs.
+    with pytest.raises(ValueError, match="Invalid einsum equation"):
         tv.einsum("pa,p->a", a0, x0, trace=trace)
     assert len(trace) == 0
 

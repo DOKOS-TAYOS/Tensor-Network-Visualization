@@ -175,6 +175,7 @@ def _compute_component_layout_2d(
 
     _snap_virtual_nodes_to_barycenters(component, positions)
     _spread_colocated_virtual_hubs_2d(component, positions)
+    _offset_virtual_hubs_off_direct_tensor_chords_2d(graph, component, positions)
     _place_trimmed_leaf_nodes_2d(component, positions)
     return _center_positions(positions, node_ids=node_ids)
 
@@ -284,6 +285,51 @@ def _spread_colocated_virtual_hubs_2d(
             pos = np.asarray(positions[vid], dtype=float).copy()
             pos[:2] = base[:2] + perp * spacing * float(off)
             positions[vid] = pos
+
+
+def _tensor_tensor_contraction_pairs(graph: _GraphData) -> set[frozenset[int]]:
+    """Unordered pairs of *visible* nodes linked by a direct contraction edge (no hyperedge hub)."""
+    pairs: set[frozenset[int]] = set()
+    for edge in graph.edges:
+        if edge.kind != "contraction":
+            continue
+        if len(edge.node_ids) != 2:
+            continue
+        a, b = int(edge.node_ids[0]), int(edge.node_ids[1])
+        if graph.nodes[a].is_virtual or graph.nodes[b].is_virtual:
+            continue
+        pairs.add(frozenset((a, b)))
+    return pairs
+
+
+def _offset_virtual_hubs_off_direct_tensor_chords_2d(
+    graph: _GraphData,
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> None:
+    """Nudge hyperedge hubs off the UV segment when U and V are also joined by another bond."""
+    direct_pairs = _tensor_tensor_contraction_pairs(graph)
+    graph_nx = component.contraction_graph
+    margin = float(_VIRTUAL_HUB_CHORD_CLEARANCE)
+    for vid in component.virtual_node_ids:
+        nbrs_f = frozenset(graph_nx.neighbors(vid))
+        if len(nbrs_f) != 2:
+            continue
+        pair = frozenset(nbrs_f)
+        if pair not in direct_pairs:
+            continue
+        a, b = sorted(nbrs_f)
+        p0 = np.asarray(positions[a], dtype=float).reshape(-1)[:2]
+        p1 = np.asarray(positions[b], dtype=float).reshape(-1)[:2]
+        chord = p1 - p0
+        chord_len = float(np.linalg.norm(chord))
+        if chord_len > 1e-9:
+            perp = np.array([-chord[1], chord[0]], dtype=float) / chord_len
+        else:
+            perp = np.array([0.0, 1.0], dtype=float)
+        pos = np.asarray(positions[vid], dtype=float).copy()
+        pos[:2] = pos[:2] + perp * margin
+        positions[vid] = pos
 
 
 def _place_trimmed_leaf_nodes_2d(
@@ -1134,6 +1180,7 @@ __all__ = [
     "_node_overlaps_component",
     "_normalize_2d",
     "_normalize_positions",
+    "_offset_virtual_hubs_off_direct_tensor_chords_2d",
     "_orthogonal_unit",
     "_pack_component_positions",
     "_place_trimmed_leaf_nodes_2d",

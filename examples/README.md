@@ -132,6 +132,22 @@ python examples/einsum_demo.py mps 2d --save einsum.png --no-show
 
 Install **`tensor-network-visualization[einsum]`** (PyTorch) if you execute contractions in the demo.
 
+## `einsum_general.py`
+
+Ellipsis (batched matmul), batch Hadamard-style bonds (`ab,ab->ab`), diagonal/trace-style equations
+(`ii,i->i`), and a short MPS-style chain. Uses the same **auto-trace** workflow as `einsum_demo.py`
+(`EinsumTrace` + `tensor_network_viz.einsum`). The renderer expands `...` using ranks stored in
+each `pair_tensor`’s metadata and draws repeated / output-carrying indices as **virtual hub**
+nodes in [`einsum_module/graph.py`](../src/tensor_network_viz/einsum_module/graph.py).
+
+```bash
+python examples/einsum_general.py ellipsis 2d
+python examples/einsum_general.py batch 3d
+python examples/einsum_general.py trace 2d
+python examples/einsum_general.py mps_short 2d
+python examples/einsum_general.py ellipsis 2d --save einsum_general.png --no-show
+```
+
 ## `tn_tsp.py`
 
 TensorKrowch TSP tensor network (larger than toy demos).

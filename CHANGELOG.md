@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Einsum backend (`einsum_module`):** richer traced-equation support for the built graph: ellipsis (`...`) expanded with NumPy-validated shapes; repeated indices and batch-style outputs (`ab,ab->ab`, traces, etc.) via **virtual hyperedge hubs**; pairwise summation indices between two tensors stay **single bonds** (no hub). Public helper **`parse_equation_for_shapes`** on the einsum submodule. Example script **`examples/einsum_general.py`** (ellipsis batch matmul, Hadamard batch, `ii,i->i`-style trace, short MPS chain). Documentation updates in **`docs/guide.md`** and **`examples/README.md`**.
+- **Layout:** virtual hyperedge hubs that share the same tensor neighbors are **spread** perpendicular to the bond between those tensors; hubs sitting on a tensor–tensor chord while a **direct** contraction also links that pair are **offset** so batch hyperedges do not overlap matmul-style bonds (e.g. ellipsis + `j`).
+
+### Fixed
+
+- **2D draw:** dangling legs incident only on **virtual** nodes were skipped by the layered edge pass; they are now drawn in a follow-up pass. Dangling stubs from virtual hubs anchor at the **node center** (not the tensor rim) in 2D, matching 3D.
+- **Einsum graph:** open indices on batch/hyper hubs use the **equation letter** for labels (no `__out`-style suffix on dangling legs).
+
 ## [1.4.1] — 2026-03-29
 
 ### Added

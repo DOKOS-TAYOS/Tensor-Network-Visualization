@@ -278,6 +278,33 @@ def test_einsum_demo_saves_figure_without_showing(
     assert output_path.exists()
 
 
+def test_einsum_general_saves_figure_without_showing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "einsum-general.png"
+    module = _load_example_module(
+        Path("examples/einsum_general.py"),
+        "einsum_general_test",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "einsum_general.py",
+            "ellipsis",
+            "2d",
+            "--save",
+            str(output_path),
+            "--no-show",
+        ],
+    )
+
+    module.main()
+
+    assert output_path.exists()
+
+
 def test_einsum_demo_manual_mode_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

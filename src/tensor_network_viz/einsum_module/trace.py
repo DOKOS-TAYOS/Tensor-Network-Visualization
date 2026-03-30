@@ -6,7 +6,7 @@ from collections.abc import Iterable, Iterator
 from typing import Any
 
 from .._core.graph_utils import _is_unordered_collection
-from ._backend import _load_backend_einsum
+from ._backend import _load_backend_einsum, _shape_tuple
 from ._equation import _parse_equation
 from ._trace_state import _TraceState
 from ._trace_types import _PreparedCall, pair_tensor
@@ -93,7 +93,11 @@ def einsum(
     if len(operands) != 2:
         raise ValueError("Traced einsum currently supports exactly 2 operands.")
 
-    _parse_equation(expression)
+    left_shape = _shape_tuple(operands[0])
+    right_shape = _shape_tuple(operands[1])
+    if left_shape is None or right_shape is None:
+        raise TypeError("Traced einsum operands must expose shape information.")
+    _parse_equation(expression, left_shape=left_shape, right_shape=right_shape)
     prepared = trace._prepare_call(expression, operands[0], operands[1], backend=backend_name)
     result = backend_fn(expression, *operands, **kwargs)
     trace._commit_call(prepared, result)
