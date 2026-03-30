@@ -114,13 +114,17 @@ python examples/quimb_demo.py mps 2d --from-list --save quimb.png --no-show
 
 ## `tenpy_demo.py`
 
-Finite and infinite TeNPy structures.
+Finite / infinite MPS/MPO, **PurificationMPS**, **UniformMPS**, and an **excitation** chain with the
+same duck-typed API as **MomentumMPS** (`get_X` + `uMPS_GS`).
 
 ```bash
 python examples/tenpy_demo.py mps 2d
 python examples/tenpy_demo.py mpo 3d --save tenpy.png --no-show
 python examples/tenpy_demo.py imps 2d
 python examples/tenpy_demo.py impo 3d --save tenpy-infinite.png --no-show
+python examples/tenpy_demo.py purification 2d
+python examples/tenpy_demo.py uniform 3d
+python examples/tenpy_demo.py excitation 2d --save tenpy-excitation.png --no-show
 ```
 
 ## `einsum_demo.py`
@@ -217,6 +221,12 @@ python examples/tenpy_demo.py imps 2d
 python examples/tenpy_demo.py imps 3d
 python examples/tenpy_demo.py impo 2d
 python examples/tenpy_demo.py impo 3d
+python examples/tenpy_demo.py purification 2d
+python examples/tenpy_demo.py purification 3d
+python examples/tenpy_demo.py uniform 2d
+python examples/tenpy_demo.py uniform 3d
+python examples/tenpy_demo.py excitation 2d
+python examples/tenpy_demo.py excitation 3d
 python examples/einsum_demo.py mps 2d
 python examples/einsum_demo.py mps 3d
 python examples/einsum_demo.py mps 2d --mode manual

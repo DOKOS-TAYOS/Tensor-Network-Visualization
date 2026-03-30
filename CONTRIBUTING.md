@@ -83,6 +83,9 @@ python examples/tenpy_demo.py impo 2d
 python examples/tenpy_demo.py imps 2d
 python examples/tenpy_demo.py mpo 2d
 python examples/tenpy_demo.py mps 2d
+python examples/tenpy_demo.py purification 2d
+python examples/tenpy_demo.py uniform 2d
+python examples/tenpy_demo.py excitation 2d
 python examples/einsum_demo.py disconnected 2d
 python examples/einsum_demo.py mps 2d
 python examples/einsum_demo.py peps 2d
@@ -124,6 +127,9 @@ python examples/tenpy_demo.py impo 2d --hover-labels
 python examples/tenpy_demo.py imps 2d --hover-labels
 python examples/tenpy_demo.py mpo 2d --hover-labels
 python examples/tenpy_demo.py mps 2d --hover-labels
+python examples/tenpy_demo.py purification 2d --hover-labels
+python examples/tenpy_demo.py uniform 2d --hover-labels
+python examples/tenpy_demo.py excitation 2d --hover-labels
 python examples/einsum_demo.py disconnected 2d --hover-labels
 python examples/einsum_demo.py mps 2d --hover-labels
 python examples/einsum_demo.py peps 2d --hover-labels
@@ -165,6 +171,9 @@ python examples/tenpy_demo.py impo 3d
 python examples/tenpy_demo.py imps 3d
 python examples/tenpy_demo.py mpo 3d
 python examples/tenpy_demo.py mps 3d
+python examples/tenpy_demo.py purification 3d
+python examples/tenpy_demo.py uniform 3d
+python examples/tenpy_demo.py excitation 3d
 python examples/einsum_demo.py disconnected 3d
 python examples/einsum_demo.py mps 3d
 python examples/einsum_demo.py peps 3d
@@ -206,6 +215,9 @@ python examples/tenpy_demo.py impo 3d --hover-labels
 python examples/tenpy_demo.py imps 3d --hover-labels
 python examples/tenpy_demo.py mpo 3d --hover-labels
 python examples/tenpy_demo.py mps 3d --hover-labels
+python examples/tenpy_demo.py purification 3d --hover-labels
+python examples/tenpy_demo.py uniform 3d --hover-labels
+python examples/tenpy_demo.py excitation 3d --hover-labels
 python examples/einsum_demo.py disconnected 3d --hover-labels
 python examples/einsum_demo.py mps 3d --hover-labels
 python examples/einsum_demo.py peps 3d --hover-labels

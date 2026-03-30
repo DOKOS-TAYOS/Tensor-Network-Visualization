@@ -67,6 +67,12 @@ call :run examples\tenpy_demo.py imps 2d
 call :run examples\tenpy_demo.py imps 3d
 call :run examples\tenpy_demo.py impo 2d
 call :run examples\tenpy_demo.py impo 3d
+call :run examples\tenpy_demo.py purification 2d
+call :run examples\tenpy_demo.py purification 3d
+call :run examples\tenpy_demo.py uniform 2d
+call :run examples\tenpy_demo.py uniform 3d
+call :run examples\tenpy_demo.py excitation 2d
+call :run examples\tenpy_demo.py excitation 3d
 
 call :run examples\einsum_demo.py mps 2d
 call :run examples\einsum_demo.py mps 3d

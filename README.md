@@ -274,7 +274,7 @@ against operand ranks.)
 | tensorkrowch | Network with `nodes` / `leaf_nodes`, or iterable of nodes |
 | tensornetwork | Iterable of `tensornetwork.Node` |
 | quimb | `TensorNetwork` or iterable of `Tensor` |
-| tenpy | Finite/segment/infinite `MPS`, finite/infinite `MPO` |
+| tenpy | `MPS` (incl. `PurificationMPS`, `UniformMPS`), `MPO`, and `MomentumMPS`-like (`get_X` + `uMPS_GS`); not PEPS |
 | einsum | `EinsumTrace` or ordered iterable of `pair_tensor` (supports ellipsis / hyperedges in the normalized graph) |
 
 Details, subgraph behavior, and Quimb hyperindex hubs are in **[docs/guide.md](docs/guide.md)**.
@@ -291,7 +291,7 @@ Runnable demos live under **`examples/`**. From the repo root with the right ext
 | `mera_tree_demo.py` | Large MERA + binary TTN stress test. |
 | `cubic_peps_demo.py` | 3D cubic PEPS lattice. |
 | `quimb_demo.py` | Includes hyper-index example; `--from-list`. |
-| `tenpy_demo.py` | Finite and infinite MPS/MPO. |
+| `tenpy_demo.py` | MPS/MPO, purification, uniform, excitation chain (duck-typed like `MomentumMPS`). |
 | `einsum_demo.py` | Auto trace vs manual `pair_tensor`. |
 | `einsum_general.py` | Ellipsis, batch hubs, multi-step fusion, traces, short MPS (auto-trace). |
 | `tn_tsp.py` | Larger TensorKrowch TSP construction. |

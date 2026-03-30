@@ -14,19 +14,21 @@ from .._core.graph import (
 )
 from .._core.graph_utils import _stringify
 
+_SUPPORTED_NETWORKS_HINT: str = (
+    "Expected a TeNPy tensor chain: MPS or subclasses (e.g. PurificationMPS, UniformMPS), "
+    "MPO, or MomentumMPS-like objects (callable get_X and attribute uMPS_GS)."
+)
 
-def _is_supported_tenpy_network(network: Any) -> bool:
-    return hasattr(network, "L") and hasattr(network, "finite") and hasattr(network, "bc")
 
-
-def _boundary_mode(network: Any) -> str:
-    if not _is_supported_tenpy_network(network):
-        raise TypeError("Input must be a TeNPy MPS or MPO network.")
-
-    boundary_condition = _stringify(getattr(network, "bc", None)).lower()
+def _boundary_mode_from_geometry(geometry: Any) -> str:
+    if not hasattr(geometry, "bc") or not hasattr(geometry, "finite"):
+        raise TypeError(
+            "TeNPy network geometry must expose boundary metadata via attributes 'bc' and 'finite'."
+        )
+    boundary_condition = _stringify(getattr(geometry, "bc", None)).lower()
     if boundary_condition in {"finite", "segment"}:
         return "open"
-    if boundary_condition == "infinite" and not bool(network.finite):
+    if boundary_condition == "infinite" and not bool(geometry.finite):
         return "periodic"
     raise ValueError("TeNPy visualization supports finite, segment, and infinite networks.")
 
@@ -115,7 +117,7 @@ def _build_chain_edges(
 
 
 def _build_mps_graph(network: Any) -> _GraphData:
-    boundary_mode = _boundary_mode(network)
+    boundary_mode = _boundary_mode_from_geometry(network)
     nodes, labels_by_node = _build_nodes(
         int(network.L),
         tensor_at=lambda index: network.get_B(index, form=None),
@@ -132,7 +134,7 @@ def _build_mps_graph(network: Any) -> _GraphData:
 
 
 def _build_mpo_graph(network: Any) -> _GraphData:
-    boundary_mode = _boundary_mode(network)
+    boundary_mode = _boundary_mode_from_geometry(network)
     nodes, labels_by_node = _build_nodes(
         int(network.L),
         tensor_at=network.get_W,
@@ -148,9 +150,36 @@ def _build_mpo_graph(network: Any) -> _GraphData:
     return _GraphData(nodes=nodes, edges=tuple(edges))
 
 
+def _build_momentum_mps_graph(network: Any) -> _GraphData:
+    geometry = network.uMPS_GS
+    boundary_mode = _boundary_mode_from_geometry(geometry)
+    length = int(geometry.L)
+    nodes, labels_by_node = _build_nodes(
+        length,
+        tensor_at=lambda index: network.get_X(index),
+        node_prefix="X",
+    )
+    edges = _build_chain_edges(
+        length=length,
+        labels_by_node=labels_by_node,
+        left_leg="vL",
+        right_leg="vR",
+        boundary_mode=boundary_mode,
+    )
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
+def _is_momentum_mps_like(network: Any) -> bool:
+    return callable(getattr(network, "get_X", None)) and hasattr(network, "uMPS_GS")
+
+
 def _build_graph(network: Any) -> _GraphData:
-    if hasattr(network, "get_B"):
-        return _build_mps_graph(network)
-    if hasattr(network, "get_W"):
+    if callable(getattr(network, "get_W", None)):
         return _build_mpo_graph(network)
-    raise TypeError("Input must be a TeNPy MPS or MPO network.")
+    if _is_momentum_mps_like(network):
+        return _build_momentum_mps_graph(network)
+    if callable(getattr(network, "get_B", None)):
+        return _build_mps_graph(network)
+    raise TypeError(
+        f"Unsupported TeNPy input: {type(network).__name__!r}. {_SUPPORTED_NETWORKS_HINT}"
+    )

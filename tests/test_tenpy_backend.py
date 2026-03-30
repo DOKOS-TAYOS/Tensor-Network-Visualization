@@ -2,6 +2,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+from typing import Any
+
 import matplotlib.pyplot as plt
 import pytest
 
@@ -167,3 +169,73 @@ def test_plot_tenpy_network_3d_rejects_2d_axis() -> None:
         plot_tenpy_network_3d(_build_finite_mps(length=2), ax=ax)
 
     plt.close(fig)
+
+
+def _build_purification_mps(length: int = 3):
+    from tenpy.networks.purification_mps import PurificationMPS
+    from tenpy.networks.site import SpinHalfSite
+
+    sites = [SpinHalfSite() for _ in range(length)]
+    return PurificationMPS.from_infiniteT(sites, bc="finite")
+
+
+def _build_uniform_mps_from_imps(length: int = 3):
+    from tenpy.networks.uniform_mps import UniformMPS
+
+    return UniformMPS.from_MPS(_build_infinite_mps(length=length))
+
+
+class _MomentumLikeForGraph:
+    """Minimal stand-in for ``MomentumMPS`` (duck typing) without calling its ``__init__``."""
+
+    def __init__(self, uMPS_GS: Any) -> None:
+        self.uMPS_GS = uMPS_GS
+
+    def get_X(self, i: int, copy: bool = False) -> Any:
+        return self.uMPS_GS.get_AR(i, copy=copy)
+
+
+def test_build_tenpy_graph_accepts_purification_mps() -> None:
+    graph = _build_tenpy_graph(_build_purification_mps(length=3))
+
+    assert [node.name for node in graph.nodes.values()] == ["B0", "B1", "B2"]
+    dangling = {edge.label for edge in graph.edges if edge.kind == "dangling"}
+    assert {"p", "q"} <= dangling
+
+
+def test_build_tenpy_graph_accepts_uniform_mps() -> None:
+    graph = _build_tenpy_graph(_build_uniform_mps_from_imps(length=3))
+
+    assert [node.name for node in graph.nodes.values()] == ["B0", "B1", "B2"]
+    contraction_pairs = [edge.node_ids for edge in graph.edges if edge.kind == "contraction"]
+    assert contraction_pairs == [(0, 1), (1, 2), (2, 0)]
+
+
+def test_build_tenpy_graph_accepts_momentum_like_chain() -> None:
+    u = _build_uniform_mps_from_imps(length=3)
+    graph = _build_tenpy_graph(_MomentumLikeForGraph(u))
+
+    assert [node.name for node in graph.nodes.values()] == ["X0", "X1", "X2"]
+    contraction_pairs = [edge.node_ids for edge in graph.edges if edge.kind == "contraction"]
+    assert contraction_pairs == [(0, 1), (1, 2), (2, 0)]
+
+
+def test_build_tenpy_graph_real_momentum_mps_if_constructible() -> None:
+    from tenpy.networks.momentum_mps import MomentumMPS
+
+    u = _build_uniform_mps_from_imps(length=2)
+    try:
+        Xs = [u.get_AR(i, copy=True) * 0 for i in range(u.L)]
+        mom = MomentumMPS(Xs, u, 0.0)
+    except AttributeError as exc:
+        if "find_common_type" in str(exc):
+            pytest.skip("MomentumMPS incompatible with installed NumPy (find_common_type removed).")
+        raise
+    graph = _build_tenpy_graph(mom)
+    assert [node.name for node in graph.nodes.values()] == ["X0", "X1"]
+    assert {edge.kind for edge in graph.edges} >= {"contraction", "dangling"}
+
+
+def test_build_tenpy_graph_rejects_unknown_type() -> None:
+    with pytest.raises(TypeError, match="Unsupported TeNPy input"):
+        _build_tenpy_graph(object())

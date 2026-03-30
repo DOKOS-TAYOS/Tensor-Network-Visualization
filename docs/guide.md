@@ -263,9 +263,15 @@ from tensor_network_viz.einsum_module import plot_einsum_network_2d, plot_einsum
 
 ### TeNPy
 
-- Finite, segment, or infinite **`tenpy.networks.mps.MPS`**.
+- Finite, segment, or infinite **`tenpy.networks.mps.MPS`** (including **`PurificationMPS`** and
+  **`UniformMPS`**, which share the **`get_B`** chain API).
 - Finite or infinite **`tenpy.networks.mpo.MPO`**.
-- Infinite structures render as one **periodic unit cell**.
+- **Momentum-style excitations:** objects with **`get_X(i)`** and **`uMPS_GS`** (same surface as
+  **`MomentumMPS`**); periodicity follows **`uMPS_GS.bc`** / **`finite`**.
+- **Not in scope:** TeNPy does not ship a stable **PEPS** class in **`tenpy.networks`**; models,
+  environments, and transfer matrices are not auto-wrapped.
+
+Infinite structures render as one **periodic unit cell**.
 
 ### `einsum`
 
@@ -488,7 +494,7 @@ The [`examples/`](../examples/) directory includes:
 | `mera_tree_demo.py` | Deep / wide MERA + TTN stress test. |
 | `cubic_peps_demo.py` | Cubic PEPS (3D-friendly). |
 | `quimb_demo.py` | Hyper-index demo, tensor lists. |
-| `tenpy_demo.py` | Finite + infinite MPS/MPO. |
+| `tenpy_demo.py` | MPS/MPO, purification, uniform, excitation (`MomentumMPS`-like API). |
 | `einsum_demo.py` | Auto vs manual trace. |
 | `einsum_general.py` | Ellipsis, batch hyperedges, traces, short MPS (auto-trace). |
 | `tn_tsp.py` | TensorKrowch TSP construction. |
