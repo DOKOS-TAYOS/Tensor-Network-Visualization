@@ -208,14 +208,14 @@ Numeric fields with **`None`** use the corresponding `DEFAULT_*` on the class (s
 
 | Field | Default | Role |
 |-------|---------|------|
-| `node_color` | `"#E8E8E8"` | Tensor node fill. |
-| `node_edge_color` | `"#2D3748"` | Tensor node outline. |
-| `node_color_degree_one` | `"#E8D6D6"` | Fill for tensors with total graph degree 1. |
-| `node_edge_color_degree_one` | `"#4A3436"` | Outline for degree-1 tensors. |
-| `tensor_label_color` | `"#1A202C"` | Tensor name text. |
-| `label_color` | `"#0C1319"` | Index / bond label text. |
-| `bond_edge_color` | `"#00008B"` | Contraction edges. |
-| `dangling_edge_color` | `"#8B0000"` | Dangling (open) legs. |
+| `node_color` | `"#E8EEF5"` | Tensor node fill. |
+| `node_edge_color` | `"#1E293B"` | Tensor node outline. |
+| `node_color_degree_one` | `"#FEE2E2"` | Fill for tensors with total graph degree 1. |
+| `node_edge_color_degree_one` | `"#7F1D1D"` | Outline for degree-1 tensors. |
+| `tensor_label_color` | `"#0F172A"` | Tensor name text. |
+| `label_color` | `"#334155"` | Index / bond label text. |
+| `bond_edge_color` | `"#0369A1"` | Contraction edges. |
+| `dangling_edge_color` | `"#BE123C"` | Dangling (open) legs. |
 | `figsize` | `(8, 6)` | `inches`; `None` uses Matplotlib fallback `(14, 10)` when the renderer creates a new figure. |
 | `show_tensor_labels` | `True` | Draw tensor names on nodes. |
 | `show_index_labels` | `True` | Draw axis names on bonds / stubs. |

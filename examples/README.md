@@ -27,9 +27,10 @@ python examples/quimb_demo.py mps 2d
 
 Swap `.[quimb]` for `.[tensorkrowch]`, `.[tensornetwork]`, `.[tenpy]`, `.[einsum]`, etc.
 
-Shared CLI helpers live in [`demo_cli.py`](demo_cli.py): **`add_hover_labels_argument`** adds
-`--hover-labels`, and **`demo_plot_config(args)`** returns **`None`** or **`PlotConfig(hover_labels=True)`**
-for the `config=` argument to **`show_tensor_network`**.
+Shared helpers in [`demo_cli.py`](demo_cli.py): **`add_hover_labels_argument`** (`--hover-labels`),
+**`add_compact_argument`** (`--compact` = smaller figure, default line widths and auto layout iterations), **`apply_demo_caption`**
+for titles/subtitles, and **`demo_plot_config(args)`** which merges hover/compact into a **showcase**
+`PlotConfig` (slightly larger canvas, thicker lines, more layout iterations) unless `--compact` is set.
 
 ## Interactive labels (`--hover-labels`)
 
@@ -60,19 +61,23 @@ fig, ax = show_tensor_network(
 
 ```bash
 python examples/tensorkrowch_demo.py mps 2d
+python examples/tensorkrowch_demo.py ladder 3d
 python examples/tensorkrowch_demo.py weird 3d
 python examples/tensorkrowch_demo.py disconnected 2d
 python examples/tensorkrowch_demo.py mps 2d --from-list
+python examples/tensorkrowch_demo.py mps 2d --save mps.png --no-show
 ```
 
-Covers `mps`, `mpo`, `peps`, `weird`, `disconnected`; full network vs **subset** via `--from-list`.
+Covers `mps`, `mpo`, `peps`, `ladder`, `weird`, `disconnected`; full network vs **subset** via `--from-list`.
 
 ## `tensornetwork_demo.py`
 
 ```bash
 python examples/tensornetwork_demo.py mps 2d
+python examples/tensornetwork_demo.py ladder 2d
 python examples/tensornetwork_demo.py weird 3d
 python examples/tensornetwork_demo.py disconnected 2d
+python examples/tensornetwork_demo.py peps 2d --compact
 python examples/tensornetwork_demo.py mps 2d --save mps.png --no-show
 ```
 
@@ -143,6 +148,7 @@ nodes in [`einsum_module/graph.py`](../src/tensor_network_viz/einsum_module/grap
 ```bash
 python examples/einsum_general.py ellipsis 2d
 python examples/einsum_general.py batch 3d
+python examples/einsum_general.py nway 2d
 python examples/einsum_general.py trace 2d
 python examples/einsum_general.py mps_short 2d
 python examples/einsum_general.py ellipsis 2d --save einsum_general.png --no-show

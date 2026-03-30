@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import matplotlib
 import matplotlib.pyplot as plt
 import torch
 import tensorkrowch as tk
@@ -28,7 +29,12 @@ except ImportError:
 _EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(_EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES_DIR))
-from demo_cli import add_hover_labels_argument, demo_plot_config
+from demo_cli import (
+    add_compact_argument,
+    add_hover_labels_argument,
+    apply_demo_caption,
+    demo_plot_config,
+)
 
 
 def generate_superposition_layer(tn: tk.TensorNetwork, n_nodes: int) -> list[tk.Node]:
@@ -283,14 +289,17 @@ def random_distance_matrix(n: int, seed: int | None = None) -> torch.Tensor:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="TSP tensor network visualization (step 0, before contraction).",
+        description=(
+            "TSP via tensor networks — full layer stack at step 0 (before contraction). "
+            "Showcases dense, application-sized graphs on TensorKrowch."
+        ),
     )
     parser.add_argument(
         "-n",
         "--cities",
         type=int,
-        default=4,
-        help="Number of cities (default: 4). Use small values (4–6) for readable plots.",
+        default=5,
+        help="Number of cities (default: 5). Use 4–6 for readable screenshots.",
     )
     parser.add_argument(
         "--view",
@@ -298,12 +307,27 @@ def parse_args() -> argparse.Namespace:
         default="2d",
         help="Visualization mode (default: 2d).",
     )
+    parser.add_argument(
+        "--save",
+        type=Path,
+        help="Save the rendered figure to this path.",
+    )
+    parser.add_argument(
+        "--no-show",
+        action="store_true",
+        help="Do not open an interactive Matplotlib window.",
+    )
     add_hover_labels_argument(parser)
+    add_compact_argument(parser)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.no_show or args.save is not None:
+        matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
     n_cities = args.cities
     tau = 1.0
     n_layers: int | None = None  # All restriction layers
@@ -318,14 +342,29 @@ def main() -> None:
     print(f"TSP tensor network: {len(network_view.nodes)} nodes (automatic layout)")
     print(f"Instance: {n_cities} cities, tau={tau}, view={args.view}")
 
-    fig, ax = show_tensor_network(
+    fig, _ax = show_tensor_network(
         network_view,
         engine="tensorkrowch",
         view=args.view,
         config=demo_plot_config(args),
         show=False,
     )
-    fig.suptitle(f"TSP Tensor Network ({n_cities} cities, step 0)", fontsize=16)
+    apply_demo_caption(
+        fig,
+        title=f"TSP tensor network · {n_cities} cities · step 0 · {args.view.upper()}",
+        subtitle=(
+            "Superposition, evolution MPOs, per-city restriction layers, and trace vectors — "
+            "real research topology rendered with the same helper as small didactic graphs."
+        ),
+        footer="Inspired by TN formulations of TSP; see module docstring for reference",
+    )
+    if args.save is not None:
+        args.save.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(args.save, bbox_inches="tight")
+        print(f"Saved figure to: {args.save}")
+    if args.no_show:
+        plt.close(fig)
+        return
     plt.show()
 
 

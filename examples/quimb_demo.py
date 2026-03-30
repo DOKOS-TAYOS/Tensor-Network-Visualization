@@ -19,27 +19,26 @@ except ImportError:
 _EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(_EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES_DIR))
-from demo_cli import add_hover_labels_argument, demo_plot_config
+from demo_cli import (
+    add_compact_argument,
+    add_hover_labels_argument,
+    apply_demo_caption,
+    demo_plot_config,
+)
 
 DESCRIPTION = """\
-Small demo for the Quimb backend.
+Quimb (quimb.tensor): ``TensorNetwork`` objects or raw tensor lists — same renderer as other engines.
 
-It builds one example Quimb tensor network and shows it with the selected view.
 Available network examples:
-  - hyper
-  - mps
-  - mpo
-  - peps
-  - weird
-  - disconnected
+  - hyper      (single hub — star / multi-body index)
+  - mps, mpo, peps, ladder (structured 1D / 2D / coupled chains)
+  - weird, disconnected
 
 Examples:
   python examples/quimb_demo.py mps 2d
-  python examples/quimb_demo.py hyper 2d
-  python examples/quimb_demo.py weird 3d
-  python examples/quimb_demo.py disconnected 2d
-  python examples/quimb_demo.py mps 2d --from-list --save quimb.png --no-show
-  python examples/quimb_demo.py mps 2d --hover-labels
+  python examples/quimb_demo.py ladder 3d
+  python examples/quimb_demo.py hyper 2d --from-list --save quimb.png --no-show
+  python examples/quimb_demo.py peps 2d --hover-labels
 """
 
 
@@ -48,7 +47,7 @@ def _make_tensor(name: str, inds: tuple[str, ...]) -> qtn.Tensor:
     return qtn.Tensor(data=np.ones(shape, dtype=float), inds=inds, tags={name})
 
 
-def build_mps_example(length: int = 5) -> qtn.TensorNetwork:
+def build_mps_example(length: int = 11) -> qtn.TensorNetwork:
     tensors: list[qtn.Tensor] = []
     for index in range(length):
         inds = []
@@ -70,7 +69,7 @@ def build_hyper_example() -> qtn.TensorNetwork:
     return qtn.TensorNetwork(tensors)
 
 
-def build_mpo_example(length: int = 4) -> qtn.TensorNetwork:
+def build_mpo_example(length: int = 7) -> qtn.TensorNetwork:
     tensors: list[qtn.Tensor] = []
     for index in range(length):
         inds = []
@@ -83,7 +82,7 @@ def build_mpo_example(length: int = 4) -> qtn.TensorNetwork:
     return qtn.TensorNetwork(tensors)
 
 
-def build_peps_example(rows: int = 2, cols: int = 3) -> qtn.TensorNetwork:
+def build_peps_example(rows: int = 4, cols: int = 5) -> qtn.TensorNetwork:
     tensors: list[qtn.Tensor] = []
     for row in range(rows):
         for col in range(cols):
@@ -98,6 +97,26 @@ def build_peps_example(rows: int = 2, cols: int = 3) -> qtn.TensorNetwork:
             if row < rows - 1:
                 inds.append(f"v_{row}_{col}")
             tensors.append(_make_tensor(f"P{row}{col}", tuple(inds)))
+    return qtn.TensorNetwork(tensors)
+
+
+def build_ladder_example(length: int = 8) -> qtn.TensorNetwork:
+    """Two MPS-like chains with shared rung indices (Quimb connects matching ``inds`` names)."""
+    if length < 2:
+        raise ValueError("ladder length must be >= 2")
+    tensors: list[qtn.Tensor] = []
+    for i in range(length):
+        if i == 0:
+            t_inds = (f"phys_t{i}", f"t_{i}_{i + 1}", f"rung_{i}")
+            b_inds = (f"phys_b{i}", f"b_{i}_{i + 1}", f"rung_{i}")
+        elif i == length - 1:
+            t_inds = (f"t_{i - 1}_{i}", f"phys_t{i}", f"rung_{i}")
+            b_inds = (f"b_{i - 1}_{i}", f"phys_b{i}", f"rung_{i}")
+        else:
+            t_inds = (f"t_{i - 1}_{i}", f"phys_t{i}", f"t_{i}_{i + 1}", f"rung_{i}")
+            b_inds = (f"b_{i - 1}_{i}", f"phys_b{i}", f"b_{i}_{i + 1}", f"rung_{i}")
+        tensors.append(_make_tensor(f"T{i}", t_inds))
+        tensors.append(_make_tensor(f"B{i}", b_inds))
     return qtn.TensorNetwork(tensors)
 
 
@@ -129,10 +148,22 @@ def build_disconnected_example() -> qtn.TensorNetwork:
 BUILDERS = {
     "disconnected": build_disconnected_example,
     "hyper": build_hyper_example,
+    "ladder": build_ladder_example,
     "mps": build_mps_example,
     "mpo": build_mpo_example,
     "peps": build_peps_example,
     "weird": build_weird_example,
+}
+
+
+QUIMB_TAGLINES: dict[str, str] = {
+    "hyper": "Star topology — one multi-body index shared by three tensors.",
+    "mps": "1D tensor train / MPS — nearest-neighbor bonds from consistent index naming.",
+    "mpo": "Operator string — up/down legs plus bond dimensions.",
+    "peps": "2D PEPS — bulk horizontal/vertical indices auto-contract in the network.",
+    "ladder": "Two coupled chains — rungs reuse the same index label on both rails.",
+    "weird": "Irregular graph — layout falls back to force-directed placement.",
+    "disconnected": "Multiple components — visual separation without manual coordinates.",
 }
 
 
@@ -167,6 +198,7 @@ def parse_args() -> argparse.Namespace:
         help="Render without opening an interactive Matplotlib window.",
     )
     add_hover_labels_argument(parser)
+    add_compact_argument(parser)
     return parser.parse_args()
 
 
@@ -192,7 +224,12 @@ def main() -> None:
         config=demo_plot_config(args),
         show=False,
     )
-    fig.suptitle(f"{args.network.upper()} ({args.view.upper()})", fontsize=16)
+    apply_demo_caption(
+        fig,
+        title=f"Quimb · {args.network.upper()} · {args.view.upper()}",
+        subtitle=QUIMB_TAGLINES.get(args.network),
+        footer="Pass TensorNetwork or list[qtn.Tensor] — engine='quimb'",
+    )
     if args.save is not None:
         args.save.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(args.save, bbox_inches="tight")

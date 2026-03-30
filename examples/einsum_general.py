@@ -28,6 +28,7 @@ Examples::
 
   python examples/einsum_general.py ellipsis 2d
   python examples/einsum_general.py batch 3d
+  python examples/einsum_general.py nway 3d
   python examples/einsum_general.py trace 2d
   python examples/einsum_general.py mps_short 2d --save einsum_general.png --no-show
 """
@@ -51,9 +52,14 @@ except ImportError:
 _EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(_EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES_DIR))
-from demo_cli import add_hover_labels_argument, demo_plot_config
+from demo_cli import (
+    add_compact_argument,
+    add_hover_labels_argument,
+    apply_demo_caption,
+    demo_plot_config,
+)
 
-ExampleName = Literal["ellipsis", "batch", "trace", "mps_short"]
+ExampleName = Literal["ellipsis", "batch", "nway", "trace", "mps_short"]
 
 
 def build_ellipsis_example() -> EinsumTrace:
@@ -75,6 +81,20 @@ def build_batch_example() -> EinsumTrace:
     trace.bind("U", a)
     trace.bind("V", b)
     _ = einsum("ab,ab->ab", a, b, trace=trace, backend="torch")
+    return trace
+
+
+def build_nway_example() -> EinsumTrace:
+    """Three tensors merged via **two** traced binary einsums (only pairwise ops are traced today)."""
+    trace = EinsumTrace()
+    t = torch.ones((3, 4, 5))
+    u = torch.ones((3, 4, 6))
+    v = torch.ones((5, 6, 7))
+    trace.bind("T", t)
+    trace.bind("U", u)
+    trace.bind("V", v)
+    r1 = einsum("abc,abd->cd", t, u, trace=trace, backend="torch")
+    _ = einsum("cd,cde->e", r1, v, trace=trace, backend="torch")
     return trace
 
 
@@ -109,8 +129,18 @@ def build_mps_short_example() -> EinsumTrace:
 BUILDERS: dict[ExampleName, Callable[[], EinsumTrace]] = {
     "ellipsis": build_ellipsis_example,
     "batch": build_batch_example,
+    "nway": build_nway_example,
     "trace": build_trace_example,
     "mps_short": build_mps_short_example,
+}
+
+
+GENERAL_TAGLINES: dict[str, str] = {
+    "ellipsis": "Ellipsis + batch matmul — internal ranks expanded from tensor shapes.",
+    "batch": "Elementwise / broadcasting hub — kept indices merge at hyperedges.",
+    "nway": "Two-step fusion of three operands — shared batch legs in step one, contraction into a vector in step two.",
+    "trace": "Diagonal-style selective trace — same-tensor legs and vector masking.",
+    "mps_short": "Two-site MPS matvec — minimal chain showing traced intermediates.",
 }
 
 
@@ -140,6 +170,7 @@ def parse_args() -> argparse.Namespace:
         help="Render without opening an interactive Matplotlib window.",
     )
     add_hover_labels_argument(parser)
+    add_compact_argument(parser)
     return parser.parse_args()
 
 
@@ -159,7 +190,12 @@ def main() -> None:
         config=demo_plot_config(args),
         show=False,
     )
-    fig.suptitle(f"einsum_general: {args.example} ({args.view.upper()})", fontsize=14)
+    apply_demo_caption(
+        fig,
+        title=f"General einsum · {args.example} · {args.view.upper()}",
+        subtitle=GENERAL_TAGLINES.get(args.example),
+        footer="Virtual hubs encode traces, batches, and multi-use edges — see module docstring",
+    )
     if args.save is not None:
         args.save.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(args.save, bbox_inches="tight")

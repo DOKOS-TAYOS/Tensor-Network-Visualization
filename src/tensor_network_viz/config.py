@@ -62,14 +62,14 @@ class PlotConfig:
     DEFAULT_LINE_WIDTH_3D: ClassVar[float] = 0.75
     DEFAULT_LAYOUT_ITERATIONS: ClassVar[int] = 220
 
-    node_color: str = "#E8E8E8"
-    node_edge_color: str = "#2D3748"
-    node_color_degree_one: str = "#E8D6D6"
-    node_edge_color_degree_one: str = "#4A3436"
-    tensor_label_color: str = "#1A202C"
-    label_color: str = "#0C1319"
-    bond_edge_color: str = "#00008B"
-    dangling_edge_color: str = "#8B0000"
+    node_color: str = "#E8EEF5"
+    node_edge_color: str = "#1E293B"
+    node_color_degree_one: str = "#FEE2E2"
+    node_edge_color_degree_one: str = "#7F1D1D"
+    tensor_label_color: str = "#0F172A"
+    label_color: str = "#334155"
+    bond_edge_color: str = "#0369A1"
+    dangling_edge_color: str = "#BE123C"
     figsize: tuple[float, float] | None = (8, 6)
     show_tensor_labels: bool = True
     show_index_labels: bool = True

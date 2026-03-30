@@ -51,80 +51,175 @@ Add tests for new features or bug fixes. All tests must pass before opening a PR
 
 ### Optional: manual example smoke checks
 
-Automated tests do not open interactive Matplotlib windows. After `**pytest**` passes, you can sanity-check **layout and drawing** by running the examples below from the **repository root** (with `**pip install -e ".[dev]"`** or the matching optional extras). Run **one command at a time** (each line is a separate invocation).
+Automated tests do not open interactive Matplotlib windows. After **`pytest`** passes, sanity-check **layout and drawing** by running the examples below from the **repository root** (with **`pip install -e ".[dev]"`** or the matching optional extras). Run **one command at a time** (each line is a separate invocation).
+
+For **headless** runs use **`--no-show`** / **`--save`** where supported. **`--hover-labels`** only does something in a **real interactive** Matplotlib session (or **`%matplotlib widget`** in Jupyter).
+
+Install **`tensor-network-visualization[einsum]`** (PyTorch) for **`einsum_demo.py`** and **`einsum_general.py`**. See **`examples/README.md`** for more flags (`--from-list`, `--compact`, grid sizes, etc.).
 
 **2D (default labels):**
 
 ```bash
-python examples/tensorkrowch_demo.py mps 2d
 python examples/tensorkrowch_demo.py disconnected 2d
+python examples/tensorkrowch_demo.py ladder 2d
+python examples/tensorkrowch_demo.py mps 2d
+python examples/tensorkrowch_demo.py mpo 2d
+python examples/tensorkrowch_demo.py peps 2d
+python examples/tensorkrowch_demo.py weird 2d
+python examples/tensornetwork_demo.py disconnected 2d
+python examples/tensornetwork_demo.py ladder 2d
+python examples/tensornetwork_demo.py mps 2d
+python examples/tensornetwork_demo.py mpo 2d
+python examples/tensornetwork_demo.py peps 2d
 python examples/tensornetwork_demo.py weird 2d
+python examples/quimb_demo.py disconnected 2d
+python examples/quimb_demo.py hyper 2d
+python examples/quimb_demo.py ladder 2d
+python examples/quimb_demo.py mps 2d
+python examples/quimb_demo.py mpo 2d
+python examples/quimb_demo.py peps 2d
+python examples/quimb_demo.py weird 2d
+python examples/tenpy_demo.py impo 2d
+python examples/tenpy_demo.py imps 2d
+python examples/tenpy_demo.py mpo 2d
+python examples/tenpy_demo.py mps 2d
+python examples/einsum_demo.py disconnected 2d
+python examples/einsum_demo.py mps 2d
+python examples/einsum_demo.py peps 2d
+python examples/einsum_demo.py mps 2d --mode manual
+python examples/einsum_demo.py peps 2d --mode manual
+python examples/einsum_general.py batch 2d
+python examples/einsum_general.py ellipsis 2d
+python examples/einsum_general.py mps_short 2d
+python examples/einsum_general.py nway 2d
+python examples/einsum_general.py trace 2d
 python examples/mera_tree_demo.py 2d
 python examples/cubic_peps_demo.py 2d
-python examples/quimb_demo.py hyper 2d
-python examples/tenpy_demo.py imps 2d
-python examples/tenpy_demo.py impo 2d
-python examples/einsum_demo.py peps 2d
-python examples/einsum_general.py ellipsis 2d
-python examples/einsum_general.py batch 2d
-python examples/einsum_general.py mps_short 2d
 python examples/tn_tsp.py -n 4 --view 2d
 ```
 
 **2D with `--hover-labels`** (interactive window only):
 
 ```bash
-python examples/tensorkrowch_demo.py mps 2d --hover-labels
 python examples/tensorkrowch_demo.py disconnected 2d --hover-labels
+python examples/tensorkrowch_demo.py ladder 2d --hover-labels
+python examples/tensorkrowch_demo.py mps 2d --hover-labels
+python examples/tensorkrowch_demo.py mpo 2d --hover-labels
+python examples/tensorkrowch_demo.py peps 2d --hover-labels
+python examples/tensorkrowch_demo.py weird 2d --hover-labels
+python examples/tensornetwork_demo.py disconnected 2d --hover-labels
+python examples/tensornetwork_demo.py ladder 2d --hover-labels
+python examples/tensornetwork_demo.py mps 2d --hover-labels
+python examples/tensornetwork_demo.py mpo 2d --hover-labels
+python examples/tensornetwork_demo.py peps 2d --hover-labels
 python examples/tensornetwork_demo.py weird 2d --hover-labels
+python examples/quimb_demo.py disconnected 2d --hover-labels
+python examples/quimb_demo.py hyper 2d --hover-labels
+python examples/quimb_demo.py ladder 2d --hover-labels
+python examples/quimb_demo.py mps 2d --hover-labels
+python examples/quimb_demo.py mpo 2d --hover-labels
+python examples/quimb_demo.py peps 2d --hover-labels
+python examples/quimb_demo.py weird 2d --hover-labels
+python examples/tenpy_demo.py impo 2d --hover-labels
+python examples/tenpy_demo.py imps 2d --hover-labels
+python examples/tenpy_demo.py mpo 2d --hover-labels
+python examples/tenpy_demo.py mps 2d --hover-labels
+python examples/einsum_demo.py disconnected 2d --hover-labels
+python examples/einsum_demo.py mps 2d --hover-labels
+python examples/einsum_demo.py peps 2d --hover-labels
+python examples/einsum_demo.py mps 2d --mode manual --hover-labels
+python examples/einsum_demo.py peps 2d --mode manual --hover-labels
+python examples/einsum_general.py batch 2d --hover-labels
+python examples/einsum_general.py ellipsis 2d --hover-labels
+python examples/einsum_general.py mps_short 2d --hover-labels
+python examples/einsum_general.py nway 2d --hover-labels
+python examples/einsum_general.py trace 2d --hover-labels
 python examples/mera_tree_demo.py 2d --hover-labels
 python examples/cubic_peps_demo.py 2d --hover-labels
-python examples/quimb_demo.py hyper 2d --hover-labels
-python examples/tenpy_demo.py imps 2d --hover-labels
-python examples/tenpy_demo.py impo 2d --hover-labels
-python examples/einsum_demo.py peps 2d --hover-labels
-python examples/einsum_general.py ellipsis 2d --hover-labels
-python examples/einsum_general.py batch 2d --hover-labels
-python examples/einsum_general.py trace 2d --hover-labels
 python examples/tn_tsp.py -n 4 --view 2d --hover-labels
 ```
 
 **3D (default labels):**
 
 ```bash
-python examples/tensorkrowch_demo.py mps 3d
-python examples/tensorkrowch_demo.py weird 3d
 python examples/tensorkrowch_demo.py disconnected 3d
+python examples/tensorkrowch_demo.py ladder 3d
+python examples/tensorkrowch_demo.py mps 3d
+python examples/tensorkrowch_demo.py mpo 3d
+python examples/tensorkrowch_demo.py peps 3d
+python examples/tensorkrowch_demo.py weird 3d
+python examples/tensornetwork_demo.py disconnected 3d
+python examples/tensornetwork_demo.py ladder 3d
+python examples/tensornetwork_demo.py mps 3d
+python examples/tensornetwork_demo.py mpo 3d
+python examples/tensornetwork_demo.py peps 3d
+python examples/tensornetwork_demo.py weird 3d
+python examples/quimb_demo.py disconnected 3d
+python examples/quimb_demo.py hyper 3d
+python examples/quimb_demo.py ladder 3d
+python examples/quimb_demo.py mps 3d
+python examples/quimb_demo.py mpo 3d
+python examples/quimb_demo.py peps 3d
+python examples/quimb_demo.py weird 3d
+python examples/tenpy_demo.py impo 3d
+python examples/tenpy_demo.py imps 3d
+python examples/tenpy_demo.py mpo 3d
+python examples/tenpy_demo.py mps 3d
+python examples/einsum_demo.py disconnected 3d
+python examples/einsum_demo.py mps 3d
+python examples/einsum_demo.py peps 3d
+python examples/einsum_demo.py mps 3d --mode manual
+python examples/einsum_demo.py peps 3d --mode manual
+python examples/einsum_general.py batch 3d
+python examples/einsum_general.py ellipsis 3d
+python examples/einsum_general.py mps_short 3d
+python examples/einsum_general.py nway 3d
+python examples/einsum_general.py trace 3d
 python examples/mera_tree_demo.py 3d --mera-log2 5 --tree-depth 4
 python examples/cubic_peps_demo.py 3d --lx 3 --ly 3 --lz 4
-python examples/quimb_demo.py hyper 3d
-python examples/tenpy_demo.py imps 3d
-python examples/tenpy_demo.py impo 3d
-python examples/einsum_demo.py peps 3d
-python examples/einsum_general.py ellipsis 3d
-python examples/einsum_general.py batch 3d
-python examples/einsum_general.py trace 3d
 python examples/tn_tsp.py -n 5 --view 3d
 ```
 
 **3D with `--hover-labels`** (interactive window only):
 
 ```bash
-python examples/tensorkrowch_demo.py mps 3d --hover-labels
-python examples/tensorkrowch_demo.py weird 3d --hover-labels
 python examples/tensorkrowch_demo.py disconnected 3d --hover-labels
-python examples/mera_tree_demo.py 3d --mera-log2 5 --tree-depth 4 --hover-labels
-python examples/cubic_peps_demo.py 3d --lx 3 --ly 3 --lz 4 --hover-labels
+python examples/tensorkrowch_demo.py ladder 3d --hover-labels
+python examples/tensorkrowch_demo.py mps 3d --hover-labels
+python examples/tensorkrowch_demo.py mpo 3d --hover-labels
+python examples/tensorkrowch_demo.py peps 3d --hover-labels
+python examples/tensorkrowch_demo.py weird 3d --hover-labels
+python examples/tensornetwork_demo.py disconnected 3d --hover-labels
+python examples/tensornetwork_demo.py ladder 3d --hover-labels
+python examples/tensornetwork_demo.py mps 3d --hover-labels
+python examples/tensornetwork_demo.py mpo 3d --hover-labels
+python examples/tensornetwork_demo.py peps 3d --hover-labels
+python examples/tensornetwork_demo.py weird 3d --hover-labels
+python examples/quimb_demo.py disconnected 3d --hover-labels
 python examples/quimb_demo.py hyper 3d --hover-labels
-python examples/tenpy_demo.py imps 3d --hover-labels
+python examples/quimb_demo.py ladder 3d --hover-labels
+python examples/quimb_demo.py mps 3d --hover-labels
+python examples/quimb_demo.py mpo 3d --hover-labels
+python examples/quimb_demo.py peps 3d --hover-labels
+python examples/quimb_demo.py weird 3d --hover-labels
 python examples/tenpy_demo.py impo 3d --hover-labels
+python examples/tenpy_demo.py imps 3d --hover-labels
+python examples/tenpy_demo.py mpo 3d --hover-labels
+python examples/tenpy_demo.py mps 3d --hover-labels
+python examples/einsum_demo.py disconnected 3d --hover-labels
+python examples/einsum_demo.py mps 3d --hover-labels
 python examples/einsum_demo.py peps 3d --hover-labels
+python examples/einsum_demo.py mps 3d --mode manual --hover-labels
+python examples/einsum_demo.py peps 3d --mode manual --hover-labels
+python examples/einsum_general.py batch 3d --hover-labels
 python examples/einsum_general.py ellipsis 3d --hover-labels
 python examples/einsum_general.py mps_short 3d --hover-labels
+python examples/einsum_general.py nway 3d --hover-labels
+python examples/einsum_general.py trace 3d --hover-labels
+python examples/mera_tree_demo.py 3d --mera-log2 5 --tree-depth 4 --hover-labels
+python examples/cubic_peps_demo.py 3d --lx 3 --ly 3 --lz 4 --hover-labels
 python examples/tn_tsp.py -n 5 --view 3d --hover-labels
 ```
-
-Install **`tensor-network-visualization[einsum]`** (PyTorch) for `einsum_demo.py` and `einsum_general.py` contractions. See `**examples/README.md**` for per-script options and dependencies.
 
 ## Lint and Type Checks
 

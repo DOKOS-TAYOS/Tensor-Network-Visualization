@@ -311,14 +311,14 @@ Frozen dataclass in [`src/tensor_network_viz/config.py`](../src/tensor_network_v
 
 | Field | Default | Meaning |
 |-------|---------|---------|
-| `node_color` | `"#E8E8E8"` | Node fill. |
-| `node_edge_color` | `"#2D3748"` | Node outline. |
-| `node_color_degree_one` | `"#E8D6D6"` | Fill when tensor has total degree 1. |
-| `node_edge_color_degree_one` | `"#4A3436"` | Outline for degree 1. |
-| `tensor_label_color` | `"#1A202C"` | Tensor name color. |
-| `label_color` | `"#0C1319"` | Index label color. |
-| `bond_edge_color` | `"#00008B"` | Contraction bonds. |
-| `dangling_edge_color` | `"#8B0000"` | Open legs. |
+| `node_color` | `"#E8EEF5"` | Node fill. |
+| `node_edge_color` | `"#1E293B"` | Node outline. |
+| `node_color_degree_one` | `"#FEE2E2"` | Fill when tensor has total degree 1. |
+| `node_edge_color_degree_one` | `"#7F1D1D"` | Outline for degree 1. |
+| `tensor_label_color` | `"#0F172A"` | Tensor name color. |
+| `label_color` | `"#334155"` | Index label color. |
+| `bond_edge_color` | `"#0369A1"` | Contraction bonds. |
+| `dangling_edge_color` | `"#BE123C"` | Open legs. |
 | `figsize` | `(8, 6)` | Inches; if `None` and the renderer **creates** a figure, fallback **`(14, 10)`**. |
 | `show_tensor_labels` | `True` | Draw tensor names. |
 | `show_index_labels` | `True` | Draw index names. |

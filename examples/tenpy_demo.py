@@ -18,27 +18,29 @@ except ImportError:
 _EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(_EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES_DIR))
-from demo_cli import add_hover_labels_argument, demo_plot_config
+from demo_cli import (
+    add_compact_argument,
+    add_hover_labels_argument,
+    apply_demo_caption,
+    demo_plot_config,
+)
 
 DESCRIPTION = """\
-Small demo for the TeNPy backend.
+TeNPy: visualize real ``MPS`` / ``MPO`` objects (finite and infinite BC) with the same Matplotlib path.
 
-It builds one example TeNPy network and shows it with the selected view.
 Available network examples:
-  - impo
-  - imps
-  - mps
-  - mpo
+  - mps, mpo (finite TFI-chain Hamiltonian / product states)
+  - imps, impo (infinite MPS/MPO from TeNPy’s constructors)
 
 Examples:
   python examples/tenpy_demo.py mps 2d
+  python examples/tenpy_demo.py mpo 3d
   python examples/tenpy_demo.py imps 2d --save tenpy-imps.png --no-show
-  python examples/tenpy_demo.py mpo 3d --save tenpy.png --no-show
   python examples/tenpy_demo.py mps 2d --hover-labels
 """
 
 
-def build_mps_example(length: int = 5):
+def build_mps_example(length: int = 11):
     from tenpy.networks.mps import MPS
     from tenpy.networks.site import SpinHalfSite
 
@@ -49,7 +51,7 @@ def build_mps_example(length: int = 5):
         return MPS.from_product_state(sites, states, bc="finite")
 
 
-def build_mpo_example(length: int = 4):
+def build_mpo_example(length: int = 8):
     from tenpy.models.tf_ising import TFIChain
 
     model = TFIChain({"L": length, "J": 1.0, "g": 1.0, "bc_MPS": "finite"})
@@ -81,6 +83,13 @@ BUILDERS = {
     "mpo": build_mpo_example,
 }
 
+TENPY_TAGLINES: dict[str, str] = {
+    "mps": "Finite MPS from product state — sites, legs, and charges mapped into one graph.",
+    "mpo": "Exact H_MPO for TFI chain — dense-ish bond structure made readable by layout.",
+    "imps": "Infinite MPS (iMPS) unit cell — periodic boundaries as a compact ring-like motif.",
+    "impo": "Infinite MPO Hamiltonian — same API as finite, different boundary semantics.",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -108,6 +117,7 @@ def parse_args() -> argparse.Namespace:
         help="Render without opening an interactive Matplotlib window.",
     )
     add_hover_labels_argument(parser)
+    add_compact_argument(parser)
     return parser.parse_args()
 
 
@@ -129,7 +139,12 @@ def main() -> None:
         config=demo_plot_config(args),
         show=False,
     )
-    fig.suptitle(f"{args.network.upper()} ({args.view.upper()})", fontsize=16)
+    apply_demo_caption(
+        fig,
+        title=f"TeNPy · {args.network.upper()} · {args.view.upper()}",
+        subtitle=TENPY_TAGLINES.get(args.network),
+        footer="engine='tenpy' — drop-in diagrams for DMRG / TEBD workflows",
+    )
     if args.save is not None:
         args.save.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(args.save, bbox_inches="tight")

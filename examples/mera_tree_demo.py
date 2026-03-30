@@ -18,7 +18,12 @@ except ImportError:
 _EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(_EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES_DIR))
-from demo_cli import add_hover_labels_argument, demo_plot_config
+from demo_cli import (
+    add_compact_argument,
+    add_hover_labels_argument,
+    apply_demo_caption,
+    demo_plot_config,
+)
 
 DESCRIPTION = """\
 Large topology demo: a binary MERA stack merged at the top into a hierarchical binary tensor tree
@@ -164,6 +169,7 @@ def parse_args() -> argparse.Namespace:
         help="Render without opening an interactive Matplotlib window.",
     )
     add_hover_labels_argument(parser)
+    add_compact_argument(parser)
     return parser.parse_args()
 
 
@@ -190,9 +196,14 @@ def main() -> None:
         config=demo_plot_config(args),
         show=False,
     )
-    fig.suptitle(
-        f"MERA (2^{args.mera_log2} sites) + TTN (depth {args.tree_depth}) — {args.view.upper()}",
-        fontsize=14,
+    apply_demo_caption(
+        fig,
+        title=f"MERA + hierarchical TTN · {args.view.upper()}",
+        subtitle=(
+            f"Binary MERA over 2^{args.mera_log2} = {n_phys} sites; TTN depth {args.tree_depth} "
+            f"(≈{n_leaf} leaf tensors); {len(nodes)} total nodes — stress-test for layout + 3D"
+        ),
+        footer="tensor_network_viz normalizes topology; no manual coordinates required",
     )
     if args.save is not None:
         args.save.parent.mkdir(parents=True, exist_ok=True)

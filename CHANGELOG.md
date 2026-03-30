@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Einsum backend (`einsum_module`):** richer traced-equation support for the built graph: ellipsis (`...`) expanded with NumPy-validated shapes; repeated indices and batch-style outputs (`ab,ab->ab`, traces, etc.) via **virtual hyperedge hubs**; pairwise summation indices between two tensors stay **single bonds** (no hub). Public helper **`parse_equation_for_shapes`** on the einsum submodule. Example script **`examples/einsum_general.py`** (ellipsis batch matmul, Hadamard batch, `ii,i->i`-style trace, short MPS chain). Documentation updates in **`docs/guide.md`** and **`examples/README.md`**.
 - **Layout:** virtual hyperedge hubs that share the same tensor neighbors are **spread** perpendicular to the bond between those tensors; hubs sitting on a tensor–tensor chord while a **direct** contraction also links that pair are **offset** so batch hyperedges do not overlap matmul-style bonds (e.g. ellipsis + `j`).
 
+### Changed
+
+- **`PlotConfig`:** default plot colors match the previous **showcase** demo palette (slate nodes, sky bonds, rose dangling legs).
+- **Examples:** shared **showcase** styling (moderate ``figsize``, thicker lines, extra layout iterations), subtitles that explain what each demo stresses, **`ladder`** topology for TensorNetwork / Quimb / TensorKrowch, larger default MPS/MPO/PEPS sizes, **`--compact`** uses library defaults on a smaller figure, **`einsum_general.py`** addition **`nway`** (three tensors via two traced binary steps), **`tensorkrowch_demo`**: **`--save` / `--no-show`**, cubic PEPS defaults **4×4×4**, TSP demo captions + save path.
+
 ### Fixed
 
 - **2D draw:** dangling legs incident only on **virtual** nodes were skipped by the layered edge pass; they are now drawn in a follow-up pass. Dangling stubs from virtual hubs anchor at the **node center** (not the tensor rim) in 2D, matching 3D.

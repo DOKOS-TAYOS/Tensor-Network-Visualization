@@ -19,23 +19,29 @@ except ImportError:
 _EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(_EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES_DIR))
-from demo_cli import add_hover_labels_argument, demo_plot_config
+from demo_cli import (
+    add_compact_argument,
+    add_hover_labels_argument,
+    apply_demo_caption,
+    demo_plot_config,
+)
 
 DESCRIPTION = """\
-Small demo for the TensorNetwork backend.
+TensorNetwork backend: same API for chains, grids, ladders, irregular graphs, and disconnected pieces.
+Defaults favor readable, medium-sized networks (use --compact for quick runs).
 
-It builds one example TensorNetwork node collection and shows it with the selected view.
 Available network examples:
-  - mps
-  - mpo
-  - peps
-  - weird
-  - disconnected
+  - mps        (long 1D chain with physical legs)
+  - mpo        (operator string: down/up + bonds)
+  - peps       (2D grid)
+  - ladder     (two coupled chains + rungs; “double rail” topology)
+  - weird      (non-planar-style mix; stress-tests layout)
+  - disconnected (two components at once)
 
 Examples:
   python examples/tensornetwork_demo.py mps 2d
-  python examples/tensornetwork_demo.py weird 3d
-  python examples/tensornetwork_demo.py disconnected 2d
+  python examples/tensornetwork_demo.py ladder 3d
+  python examples/tensornetwork_demo.py peps 2d --compact
   python examples/tensornetwork_demo.py mps 2d --save mps.png --no-show
   python examples/tensornetwork_demo.py mps 2d --hover-labels
 """
@@ -47,7 +53,7 @@ def _make_node(name: str, axis_names: tuple[str, ...]) -> tn.Node:
     return tn.Node(np.ones(shape, dtype=float), name=name, axis_names=axis_names)
 
 
-def build_mps_example(length: int = 5) -> list[tn.Node]:
+def build_mps_example(length: int = 11) -> list[tn.Node]:
     # Build a simple 1D chain where each tensor has one physical leg and bond legs to neighbors.
     nodes: list[tn.Node] = []
 
@@ -67,7 +73,7 @@ def build_mps_example(length: int = 5) -> list[tn.Node]:
     return nodes
 
 
-def build_mpo_example(length: int = 4) -> list[tn.Node]:
+def build_mpo_example(length: int = 7) -> list[tn.Node]:
     # Build a 1D operator network: each tensor has input/output physical legs plus bond legs.
     nodes: list[tn.Node] = []
 
@@ -87,7 +93,7 @@ def build_mpo_example(length: int = 4) -> list[tn.Node]:
     return nodes
 
 
-def build_peps_example(rows: int = 2, cols: int = 3) -> list[tn.Node]:
+def build_peps_example(rows: int = 4, cols: int = 5) -> list[tn.Node]:
     # Build a small 2D grid with horizontal and vertical bonds plus one physical leg per tensor.
     grid: list[list[tn.Node]] = []
 
@@ -117,6 +123,33 @@ def build_peps_example(rows: int = 2, cols: int = 3) -> list[tn.Node]:
                 grid[row][col]["down"] ^ grid[row + 1][col]["up"]
 
     return [node for row_nodes in grid for node in row_nodes]
+
+
+def build_ladder_example(length: int = 8) -> list[tn.Node]:
+    """Two parallel MPS-like chains with vertical rungs (ladder / double-track topology)."""
+    if length < 2:
+        raise ValueError("ladder length must be >= 2")
+    top: list[tn.Node] = []
+    bot: list[tn.Node] = []
+
+    for i in range(length):
+        if i == 0:
+            top.append(_make_node(f"T{i}", ("phys", "right", "down")))
+            bot.append(_make_node(f"B{i}", ("phys", "right", "up")))
+        elif i == length - 1:
+            top.append(_make_node(f"T{i}", ("left", "phys", "down")))
+            bot.append(_make_node(f"B{i}", ("left", "phys", "up")))
+        else:
+            top.append(_make_node(f"T{i}", ("left", "phys", "right", "down")))
+            bot.append(_make_node(f"B{i}", ("left", "phys", "right", "up")))
+
+    for i in range(length - 1):
+        top[i]["right"] ^ top[i + 1]["left"]
+        bot[i]["right"] ^ bot[i + 1]["left"]
+    for i in range(length):
+        top[i]["down"] ^ bot[i]["up"]
+
+    return top + bot
 
 
 def build_weird_example() -> list[tn.Node]:
@@ -158,6 +191,7 @@ def build_disconnected_example() -> list[tn.Node]:
 
 BUILDERS = {
     "disconnected": build_disconnected_example,
+    "ladder": build_ladder_example,
     "mps": build_mps_example,
     "mpo": build_mpo_example,
     "peps": build_peps_example,
@@ -191,7 +225,18 @@ def parse_args() -> argparse.Namespace:
         help="Render without opening an interactive Matplotlib window.",
     )
     add_hover_labels_argument(parser)
+    add_compact_argument(parser)
     return parser.parse_args()
+
+
+TAGLINES: dict[str, str] = {
+    "mps": "Matrix product state — automatic 1D chain layout; bond and physical legs labeled.",
+    "mpo": "Matrix product operator — two physical legs per site plus virtual bonds.",
+    "peps": "Projected entangled pair state on a 2D grid — planar embedding when possible.",
+    "ladder": "Coupled chains — shows multi-row topology and vertical contractions.",
+    "weird": "Ad hoc connectivity — force-directed layout for non-grid graphs.",
+    "disconnected": "Two subgraphs in one figure — components laid out separately.",
+}
 
 
 def main() -> None:
@@ -213,7 +258,12 @@ def main() -> None:
         config=demo_plot_config(args),
         show=False,
     )
-    fig.suptitle(f"{args.network.upper()} ({args.view.upper()})", fontsize=16)
+    apply_demo_caption(
+        fig,
+        title=f"TensorNetwork · {args.network.upper()} · {args.view.upper()}",
+        subtitle=TAGLINES.get(args.network),
+        footer="tensor_network_viz.show_tensor_network — one dispatcher for every backend",
+    )
     if args.save is not None:
         args.save.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(args.save, bbox_inches="tight")

@@ -18,7 +18,12 @@ except ImportError:
 _EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(_EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES_DIR))
-from demo_cli import add_hover_labels_argument, demo_plot_config
+from demo_cli import (
+    add_compact_argument,
+    add_hover_labels_argument,
+    apply_demo_caption,
+    demo_plot_config,
+)
 
 DESCRIPTION = """\
 3D tensor network topology: cubic PEPS (a PEPS on an Lx * Ly * Lz grid). Each bulk tensor has a
@@ -104,14 +109,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--lx",
         type=int,
-        default=3,
-        help="Grid extent in x (default: 3).",
+        default=4,
+        help="Grid extent in x (default: 4).",
     )
     parser.add_argument(
         "--ly",
         type=int,
-        default=3,
-        help="Grid extent in y (default: 3).",
+        default=4,
+        help="Grid extent in y (default: 4).",
     )
     parser.add_argument(
         "--lz",
@@ -130,6 +135,7 @@ def parse_args() -> argparse.Namespace:
         help="Render without opening an interactive Matplotlib window.",
     )
     add_hover_labels_argument(parser)
+    add_compact_argument(parser)
     return parser.parse_args()
 
 
@@ -153,9 +159,14 @@ def main() -> None:
         config=demo_plot_config(args),
         show=False,
     )
-    fig.suptitle(
-        f"Cubic PEPS {args.lx}x{args.ly}x{args.lz} ({args.view.upper()})",
-        fontsize=14,
+    apply_demo_caption(
+        fig,
+        title=f"3D cubic PEPS · {args.lx}×{args.ly}×{args.lz} · {args.view.upper()}",
+        subtitle=(
+            "Bulk tensors with up to six face bonds — try 3D view to separate layers along the "
+            "depth axis (automatic layout)."
+        ),
+        footer="Engine tensornetwork — same API for 2D projection or full 3D scene",
     )
     if args.save is not None:
         args.save.parent.mkdir(parents=True, exist_ok=True)

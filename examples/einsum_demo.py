@@ -18,30 +18,31 @@ except ImportError:
 _EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(_EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES_DIR))
-from demo_cli import add_hover_labels_argument, demo_plot_config
+from demo_cli import (
+    add_compact_argument,
+    add_hover_labels_argument,
+    apply_demo_caption,
+    demo_plot_config,
+)
 
 TraceMode = Literal["auto", "manual"]
 TraceInput = EinsumTrace | list[pair_tensor]
 
 DESCRIPTION = """\
-Small demo for traced binary torch.einsum contractions.
+Traced ``einsum``: every intermediate contraction becomes a node — debug complex formulas like a TN.
 
-It can build the same tensor network through either:
-  - EinsumTrace plus tensor_network_viz.einsum(...)
-  - explicit pair_tensor entries plus torch.einsum(...)
+Modes:
+  - **auto** — ``EinsumTrace`` + ``tensor_network_viz.einsum`` (records shapes for ``...``)
+  - **manual** — ``pair_tensor`` list + ``torch.einsum`` (same graph reconstruction)
 
-Both modes render the reconstructed underlying tensor network.
 Available examples:
-  - disconnected
-  - mps
-  - peps
+  - mps, peps, disconnected
 
 Examples:
   python examples/einsum_demo.py mps 2d
-  python examples/einsum_demo.py mps 2d --mode manual
   python examples/einsum_demo.py peps 3d
-  python examples/einsum_demo.py disconnected 3d
-  python examples/einsum_demo.py mps 2d --save einsum.png --no-show
+  python examples/einsum_demo.py mps 2d --mode manual
+  python examples/einsum_demo.py peps 2d --save einsum.png --no-show
   python examples/einsum_demo.py mps 2d --hover-labels
 """
 
@@ -224,6 +225,7 @@ def parse_args() -> argparse.Namespace:
         help="Render without opening an interactive Matplotlib window.",
     )
     add_hover_labels_argument(parser)
+    add_compact_argument(parser)
     return parser.parse_args()
 
 
@@ -251,7 +253,17 @@ def main() -> None:
         config=demo_plot_config(args),
         show=False,
     )
-    fig.suptitle(f"{args.network.upper()} ({args.view.upper()}, {args.mode.upper()})", fontsize=16)
+    taglines = {
+        "mps": "Sequential MPS contraction — each matvec is an edge in the trace graph.",
+        "peps": "Small PEPS contraction sweep — hyperedges from shared multi-indices.",
+        "disconnected": "Independent subgraphs — one trace can represent several merged networks.",
+    }
+    apply_demo_caption(
+        fig,
+        title=f"Traced einsum · {args.network.upper()} · {args.view.upper()} · {args.mode.upper()}",
+        subtitle=taglines.get(args.network),
+        footer="engine='einsum' — pair_tensor + optional metadata mirrors PyTorch execution",
+    )
     if args.save is not None:
         args.save.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(args.save, bbox_inches="tight")
