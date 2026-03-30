@@ -85,7 +85,7 @@ def build_batch_example() -> EinsumTrace:
 
 
 def build_nway_example() -> EinsumTrace:
-    """Three tensors merged via **two** traced binary einsums (only pairwise ops are traced today)."""
+    """Three tensors merged via two traced binary einsums (pairwise tracing only)."""
     trace = EinsumTrace()
     t = torch.ones((3, 4, 5))
     u = torch.ones((3, 4, 6))
@@ -138,7 +138,10 @@ BUILDERS: dict[ExampleName, Callable[[], EinsumTrace]] = {
 GENERAL_TAGLINES: dict[str, str] = {
     "ellipsis": "Ellipsis + batch matmul — internal ranks expanded from tensor shapes.",
     "batch": "Elementwise / broadcasting hub — kept indices merge at hyperedges.",
-    "nway": "Two-step fusion of three operands — shared batch legs in step one, contraction into a vector in step two.",
+    "nway": (
+        "Two-step fusion of three operands — shared batch legs in step one, "
+        "contraction into a vector in step two."
+    ),
     "trace": "Diagonal-style selective trace — same-tensor legs and vector masking.",
     "mps_short": "Two-site MPS matvec — minimal chain showing traced intermediates.",
 }

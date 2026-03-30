@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import replace
+
 from matplotlib.figure import Figure
 
 from tensor_network_viz import PlotConfig
@@ -24,7 +25,10 @@ def add_compact_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--compact",
         action="store_true",
-        help="Smaller figure and lighter layout work (default line widths / layout iterations; faster CI or quick checks).",
+        help=(
+            "Smaller figure and lighter layout work (default line widths / layout iterations; "
+            "faster CI or quick checks)."
+        ),
     )
 
 

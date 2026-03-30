@@ -27,7 +27,8 @@ from demo_cli import (
 )
 
 DESCRIPTION = """\
-TensorNetwork backend: same API for chains, grids, ladders, irregular graphs, and disconnected pieces.
+TensorNetwork backend: same API for chains, grids, ladders, irregular graphs, \
+and disconnected pieces.
 Defaults favor readable, medium-sized networks (use --compact for quick runs).
 
 Available network examples:

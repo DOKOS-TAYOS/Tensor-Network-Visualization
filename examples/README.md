@@ -225,6 +225,16 @@ python examples/einsum_demo.py peps 2d
 python examples/einsum_demo.py peps 3d
 python examples/einsum_demo.py disconnected 2d
 python examples/einsum_demo.py disconnected 3d
+python examples/einsum_general.py batch 2d
+python examples/einsum_general.py batch 3d
+python examples/einsum_general.py ellipsis 2d
+python examples/einsum_general.py ellipsis 3d
+python examples/einsum_general.py mps_short 2d
+python examples/einsum_general.py mps_short 3d
+python examples/einsum_general.py nway 2d
+python examples/einsum_general.py nway 3d
+python examples/einsum_general.py trace 2d
+python examples/einsum_general.py trace 3d
 python examples/tn_tsp.py -n 4 --view 2d
 python examples/tn_tsp.py -n 4 --view 3d
 python examples/tn_tsp.py -n 5 --view 2d

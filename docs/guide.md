@@ -298,8 +298,22 @@ trace = [
 fig, ax = show_tensor_network(trace, engine="einsum", view="2d", show=False)
 ```
 
+**Manual traces with ellipsis:** each `pair_tensor(..., metadata=...)` should include
+**`left_shape`** and **`right_shape`** (tuple of ints) when the equation contains **`...`**, so the
+graph builder can expand indices. Auto-traced calls record these automatically.
+
+**Optional API:** `from tensor_network_viz.einsum_module import parse_equation_for_shapes` expands
+and validates a binary subscript string against two operand ranks (same rules as NumPy `einsum`).
+
 The diagram shows the **underlying** tensor network, not every intermediate result tensor. Trace
 order must match contraction order.
+
+**Drawing and layout:** ordinary pairwise contractions (one occurrence per operand, index not in the
+output) are **single bonds** between tensors. Indices repeated on the left or carried to the output
+are merged at **virtual hub** nodes (like Quimb hyperedges). The shared layout pass **spreads** hub
+nodes that share the same tensor neighbors, and **offsets** a hub off the chord between two tensors
+when those tensors also have a **direct** contraction (e.g. batch ellipsis hyperedge alongside a
+matmul leg) so bonds do not coincide visually.
 
 <a id="toc-plotconfig"></a>
 
@@ -494,9 +508,10 @@ The traced helper enforces a **binary**, explicit-output `einsum` string on each
   duplicates, ellipsis, broadcasting batch indices, etc.).
 - **`...`** is supported: ranks are taken from the tensors, and the graph builder expands ellipsis
   to explicit labels when rendering (metadata stores `left_shape` / `right_shape` per step).
-- **Visualization:** indices that appear **twice or more** on the LHS of the equation are merged at
-  **virtual hub** nodes (hyperedge spokes), including batch indices carried to the output. See
-  [`examples/einsum_general.py`](../examples/einsum_general.py).
+- **Visualization:** indices that appear **twice or more** on the LHS of the equation, or appear in
+  the **output** while touching more than one leg, use **virtual hub** nodes (hyperedge spokes).
+  A **single** pairwise summation (one letter per operand, not in the output) is a **direct bond**
+  (no hub). See [`examples/einsum_general.py`](../examples/einsum_general.py).
 - **Graph build** still rejects **unary index disappearance** (an index appears on only one operand,
   not in the output, and is summed away) so the fundamental network stays well-formed for the
   current layout code.
@@ -584,7 +599,9 @@ Keys must match **normalized** node ids. Wrong **`id(...)`** → coords skipped 
 ### Public surface
 
 Root package [**`__init__.py`**](../src/tensor_network_viz/__init__.py): `show_tensor_network`,
-`PlotConfig`, `EngineName`, `ViewName`, `EinsumTrace`, `einsum`, `pair_tensor`.
+`PlotConfig`, `EngineName`, `ViewName`, `EinsumTrace`, `einsum`, `pair_tensor`. The
+[**`einsum_module`**](../src/tensor_network_viz/einsum_module/__init__.py) also exports
+`parse_equation_for_shapes`, `plot_einsum_network_2d`, and `plot_einsum_network_3d`.
 
 ### Engine registry
 
@@ -614,7 +631,10 @@ scale, and calls [**`_draw_graph`**](../src/tensor_network_viz/_core/draw/graph_
 
 The [**`layout` package**](../src/tensor_network_viz/_core/layout/__init__.py) together with
 [**`layout_structure.py`**](../src/tensor_network_viz/_core/layout_structure.py) implements
-structure detection, planar attempts, force layout, and 3D layering heuristics.
+structure detection, planar attempts, force layout, and 3D layering heuristics. Virtual (hyperedge)
+hubs: **barycenter snap** to neighbors, then **perpendicular spread** when several hubs share the same
+neighbor set, then **chord clearance** when a hub would sit on a tensor–tensor segment that also
+carries a direct contraction edge.
 
 <a id="toc-development-notes"></a>
 

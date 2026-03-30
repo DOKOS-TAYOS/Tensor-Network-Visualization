@@ -27,7 +27,8 @@ from demo_cli import (
 )
 
 DESCRIPTION = """\
-Quimb (quimb.tensor): ``TensorNetwork`` objects or raw tensor lists — same renderer as other engines.
+Quimb (quimb.tensor): ``TensorNetwork`` objects or raw tensor lists — \
+same renderer as other engines.
 
 Available network examples:
   - hyper      (single hub — star / multi-body index)

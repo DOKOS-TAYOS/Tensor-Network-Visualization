@@ -26,7 +26,8 @@ from demo_cli import (
 )
 
 DESCRIPTION = """\
-TeNPy: visualize real ``MPS`` / ``MPO`` objects (finite and infinite BC) with the same Matplotlib path.
+TeNPy: visualize real ``MPS`` / ``MPO`` objects (finite and infinite BC) \
+with the same Matplotlib path.
 
 Available network examples:
   - mps, mpo (finite TFI-chain Hamiltonian / product states)
