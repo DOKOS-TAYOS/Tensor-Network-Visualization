@@ -20,6 +20,9 @@ _LAYOUT_BOND_CURVE_OFFSET_FACTOR: float = 0.15
 _LAYOUT_BOND_CURVE_NEAR_PAIR_REF: float = 0.28
 _LAYOUT_BOND_CURVE_SAMPLES: int = 24
 _COMPONENT_GAP: float = 1.4
+# Minimum spacing (layout units) between virtual hyperedge hubs that share the same tensor neighbors
+# (otherwise they collapse to the same barycenter).
+_VIRTUAL_HUB_MIN_SEPARATION: float = 0.38
 _LAYER_SPACING: float = 0.55
 _LAYER_SEQUENCE: tuple[int, ...] = (0, 1, -1, 2, -2, 3, -3)
 
@@ -30,6 +33,7 @@ __all__ = [
     "_FREE_DIR_OVERLAP_THRESHOLD",
     "_FREE_DIR_SAMPLES_2D",
     "_LAYER_SEQUENCE",
+    "_VIRTUAL_HUB_MIN_SEPARATION",
     "_LAYER_SPACING",
     "_LAYOUT_BOND_CURVE_NEAR_PAIR_REF",
     "_LAYOUT_BOND_CURVE_OFFSET_FACTOR",

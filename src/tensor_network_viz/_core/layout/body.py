@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from collections.abc import Iterable
 
 import numpy as np
@@ -173,6 +174,7 @@ def _compute_component_layout_2d(
         )
 
     _snap_virtual_nodes_to_barycenters(component, positions)
+    _spread_colocated_virtual_hubs_2d(component, positions)
     _place_trimmed_leaf_nodes_2d(component, positions)
     return _center_positions(positions, node_ids=node_ids)
 
@@ -242,6 +244,46 @@ def _snap_virtual_nodes_to_barycenters(
             np.stack([positions[neighbor_id] for neighbor_id in neighbors]),
             axis=0,
         )
+
+
+def _spread_colocated_virtual_hubs_2d(
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> None:
+    """Separate virtual hubs that share the same visible neighbors (identical barycenters)."""
+    groups: defaultdict[frozenset[int], list[int]] = defaultdict(list)
+    graph_nx = component.contraction_graph
+    for vid in component.virtual_node_ids:
+        groups[frozenset(graph_nx.neighbors(vid))].append(vid)
+
+    spacing = float(_VIRTUAL_HUB_MIN_SEPARATION)
+    for neighbor_set, vids in groups.items():
+        if len(vids) < 2:
+            continue
+        neighbors = sorted(neighbor_set, key=lambda nid: float(positions[nid][0]))
+        base = np.mean(
+            np.stack([positions[nid] for nid in neighbors]),
+            axis=0,
+        )
+        if len(neighbors) >= 2:
+            p0 = np.asarray(positions[neighbors[0]], dtype=float).reshape(-1)[:2]
+            p1 = np.asarray(positions[neighbors[-1]], dtype=float).reshape(-1)[:2]
+            chord = p1 - p0
+            chord_len = float(np.linalg.norm(chord))
+            if chord_len > 1e-9:
+                perp = np.array([-chord[1], chord[0]], dtype=float) / chord_len
+            else:
+                perp = np.array([0.0, 1.0], dtype=float)
+        else:
+            perp = np.array([0.0, 1.0], dtype=float)
+
+        vids_sorted = sorted(vids)
+        n_v = len(vids_sorted)
+        offsets = np.linspace(-0.5 * (n_v - 1), 0.5 * (n_v - 1), n_v)
+        for vid, off in zip(vids_sorted, offsets, strict=True):
+            pos = np.asarray(positions[vid], dtype=float).copy()
+            pos[:2] = base[:2] + perp * spacing * float(off)
+            positions[vid] = pos
 
 
 def _place_trimmed_leaf_nodes_2d(
@@ -1104,5 +1146,6 @@ __all__ = [
     "_segment_point_min_distance_sq_3d",
     "_segments_cross_2d",
     "_snap_virtual_nodes_to_barycenters",
+    "_spread_colocated_virtual_hubs_2d",
     "_used_axis_directions",
 ]
