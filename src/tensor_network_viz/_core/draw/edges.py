@@ -202,6 +202,7 @@ def _draw_dangling_edge(
     *,
     plotter: _PlotAdapter,
     edge: _EdgeData,
+    graph: _GraphData,
     positions: NodePositions,
     directions: AxisDirections,
     show_index_labels: bool,
@@ -216,11 +217,10 @@ def _draw_dangling_edge(
     endpoint = edge.endpoints[0]
     direction = directions[(endpoint.node_id, endpoint.axis_index)]
     center = positions[endpoint.node_id]
-    # 2D: Circle radius is in data units, so the stub starts on the rim.
-    # 3D: scatter marker size is in points^2; zoom changes apparent size in data
-    # units while p.r does not, so rim-based starts look detached. Match bonds
-    # (center–center) by anchoring at the node center and extending r + stub.
-    if dimensions == 3:
+    # 2D tensors: stub starts on the circle rim (radius in data units).
+    # 3D and 2D virtual (hyperedge) hubs: anchor at the node center like bonds (center–center).
+    use_center_anchor = dimensions == 3 or graph.nodes[endpoint.node_id].is_virtual
+    if use_center_anchor:
         start = center
         end = center + direction * (p.r + p.stub)
     else:
@@ -614,6 +614,7 @@ def _draw_edges_2d_layered(
             _draw_dangling_edge(
                 plotter=plotter,
                 edge=edge,
+                graph=graph,
                 positions=positions,
                 directions=directions,
                 show_index_labels=show_index_labels,
@@ -626,6 +627,35 @@ def _draw_edges_2d_layered(
                 zorder_label=zidx,
             )
             drawn.add(id(edge))
+
+    # Dangling legs on virtual (e.g. hyperedge hub) nodes never appear in *visible_order*, so they
+    # were skipped above; draw them once using the top tensor layer z-order.
+    if visible_order:
+        last_i = len(visible_order) - 1
+        z_orphan_line = _ZORDER_LAYER_BASE + last_i * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_DANGLING
+        z_orphan_idx = _ZORDER_LAYER_BASE + last_i * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_EDGE_INDEX
+    else:
+        z_orphan_line = _ZORDER_LAYER_BASE + _ZORDER_LAYER_DANGLING
+        z_orphan_idx = _ZORDER_LAYER_BASE + _ZORDER_LAYER_EDGE_INDEX
+    for edge in graph.edges:
+        if edge.kind != "dangling" or id(edge) in drawn:
+            continue
+        _draw_dangling_edge(
+            plotter=plotter,
+            edge=edge,
+            graph=graph,
+            positions=positions,
+            directions=directions,
+            show_index_labels=show_index_labels,
+            config=config,
+            dimensions=2,
+            p=p,
+            ax=ax,
+            scale=scale,
+            zorder_line=z_orphan_line,
+            zorder_label=z_orphan_idx,
+        )
+        drawn.add(id(edge))
 
 
 def _draw_edges(
@@ -647,6 +677,7 @@ def _draw_edges(
             _draw_dangling_edge(
                 plotter=plotter,
                 edge=edge,
+                graph=graph,
                 positions=positions,
                 directions=directions,
                 show_index_labels=show_index_labels,
