@@ -8,9 +8,17 @@ import pytest
 
 from tensor_network_viz import EinsumTrace, pair_tensor
 
-pytest.importorskip("quimb")
-pytest.importorskip("tenpy")
-torch = pytest.importorskip("torch")
+
+def _require_quimb() -> None:
+    pytest.importorskip("quimb.tensor")
+
+
+def _require_tenpy() -> None:
+    pytest.importorskip("tenpy")
+
+
+def _require_torch() -> None:
+    pytest.importorskip("torch")
 
 
 def _load_example_module(path: Path, module_name: str):
@@ -130,6 +138,7 @@ def test_total_tests_bat_wraps_examples_with_auto_close() -> None:
 def test_quimb_demo_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _require_quimb()
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "quimb-demo.png"
@@ -159,6 +168,7 @@ def test_quimb_demo_saves_figure_without_showing(
 def test_quimb_demo_hyper_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _require_quimb()
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "quimb-hyper-demo.png"
@@ -187,6 +197,7 @@ def test_quimb_demo_hyper_saves_figure_without_showing(
 def test_tenpy_demo_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _require_tenpy()
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "tenpy-demo.png"
@@ -215,6 +226,7 @@ def test_tenpy_demo_saves_figure_without_showing(
 def test_tenpy_explicit_tn_demo_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _require_tenpy()
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "tenpy-explicit-tn.png"
@@ -243,6 +255,7 @@ def test_tenpy_explicit_tn_demo_saves_figure_without_showing(
 def test_tenpy_infinite_mps_demo_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _require_tenpy()
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "tenpy-imps-demo.png"
@@ -271,6 +284,7 @@ def test_tenpy_infinite_mps_demo_saves_figure_without_showing(
 def test_tenpy_infinite_mpo_demo_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _require_tenpy()
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "tenpy-impo-demo.png"
@@ -299,6 +313,7 @@ def test_tenpy_infinite_mpo_demo_saves_figure_without_showing(
 def test_einsum_demo_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _require_torch()
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "einsum-demo.png"
@@ -330,6 +345,7 @@ def test_einsum_general_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    _require_torch()
     output_path = tmp_path / "einsum-general.png"
     module = _load_example_module(
         Path("examples/einsum_general.py"),
@@ -356,6 +372,7 @@ def test_einsum_general_saves_figure_without_showing(
 def test_einsum_demo_manual_mode_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _require_torch()
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "einsum-demo-manual.png"
@@ -384,6 +401,7 @@ def test_einsum_demo_manual_mode_saves_figure_without_showing(
 
 
 def test_einsum_demo_builders_support_auto_and_manual_modes() -> None:
+    _require_torch()
     module = _load_example_module(
         Path("examples/einsum_demo.py"),
         "einsum_demo_builders_test",
@@ -409,6 +427,7 @@ def test_einsum_demo_builders_support_auto_and_manual_modes() -> None:
 def test_einsum_peps_demo_saves_figure_without_showing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _require_torch()
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "einsum-peps-demo.png"

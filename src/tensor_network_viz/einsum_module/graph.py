@@ -86,8 +86,7 @@ def _build_graph(trace_input: Any) -> _GraphData:
     # Full physical lineage per tensor (contraction scheme uses running union across steps).
     physical_contributors: dict[str, frozenset[int]] = {}
 
-    n_steps = len(trace)
-    for step_index, step in enumerate(trace):
+    for step in trace:
         operand_names = _trace_step_operand_names(step)
         if len(set(operand_names)) != len(operand_names):
             raise ValueError("Einsum traces require distinct tensor names for all operands.")

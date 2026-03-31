@@ -39,10 +39,12 @@ def _repulsion_displacement(
 ) -> np.ndarray:
     """Repulsion between nodes; full O(n²) when n is modest, sampled pairs when n is large."""
     n = int(positions.shape[0])
+    displacement: np.ndarray
     if out is None:
-        out = np.zeros_like(positions)
+        displacement = np.zeros_like(positions)
     else:
         out.fill(0.0)
+        displacement = out
 
     if n <= _REPULSION_DENSE_NODE_CAP:
         deltas = positions[:, None, :] - positions[None, :, :]
@@ -50,8 +52,8 @@ def _repulsion_displacement(
         np.fill_diagonal(distances, 1.0)
         directions = deltas / np.maximum(distances[..., None], 1e-6)
         repulsion = (k * k / np.maximum(distances, 1e-6) ** 2)[..., None] * directions
-        out[:] = repulsion.sum(axis=1)
-        return out
+        displacement[:] = repulsion.sum(axis=1)
+        return displacement
 
     m_sample = min(n - 1, max(_REPULSION_SAMPLE_MIN, int(_REPULSION_SAMPLE_LINEAR * math.sqrt(n))))
     for i in range(n):
@@ -65,8 +67,8 @@ def _repulsion_displacement(
             delta = positions[i] - positions[j]
             dist = max(float(np.linalg.norm(delta)), 1e-6)
             direction = delta / dist
-            out[i] += (k * k / (dist * dist)) * direction
-    return out
+            displacement[i] += (k * k / (dist * dist)) * direction
+    return displacement
 
 
 def _accumulate_attraction_forces(

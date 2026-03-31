@@ -59,8 +59,8 @@ class PlotConfig:
             Default is 0 (no fill); borders remain visible via ``contraction_scheme_edge_alpha``.
         contraction_scheme_edge_alpha: Stroke alpha for scheme borders; None chooses a visible edge
             (stronger when the fill is fully transparent).
-        contraction_scheme_linewidth: Border line width for 2D rounded scheme rectangles (data units, scaled
-            like bond lines); None uses a thin default.
+        contraction_scheme_linewidth: Border line width for 2D rounded scheme rectangles
+            (data units, scaled like bond lines); None uses a thin default.
         contraction_scheme_colors: Optional cycle of face colors (hex/named); None uses a built-in
             categorical palette.
         contraction_scheme_by_name: Optional override: each inner tuple is one step, tensor names

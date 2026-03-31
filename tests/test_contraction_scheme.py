@@ -73,14 +73,14 @@ def test_resolve_contraction_scheme_by_name_maps_steps() -> None:
             0: _make_node("A", ("i",)),
             1: _make_node("B", ("i",)),
         },
-        edges=tuple(),
+        edges=(),
     )
     resolved = _resolve_contraction_scheme_by_name(graph, (("A", "B"),))
     assert resolved == (frozenset({0, 1}),)
 
 
 def test_resolve_contraction_scheme_by_name_unknown_raises() -> None:
-    graph = _GraphData(nodes={0: _make_node("A", ("i",))}, edges=tuple())
+    graph = _GraphData(nodes={0: _make_node("A", ("i",))}, edges=())
     with pytest.raises(ValueError, match="unknown tensor name"):
         _resolve_contraction_scheme_by_name(graph, (("A", "missing"),))
 
@@ -91,7 +91,7 @@ def test_resolve_contraction_scheme_by_name_duplicate_name_raises() -> None:
             0: _make_node("A", ("i",)),
             1: _make_node("A", ("j",)),
         },
-        edges=tuple(),
+        edges=(),
     )
     with pytest.raises(ValueError, match="duplicate"):
         _resolve_contraction_scheme_by_name(graph, (("A",),))

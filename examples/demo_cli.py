@@ -113,7 +113,10 @@ def optional_backend_contraction_scheme_by_name(
     network: str,
     engine: str,
 ) -> tuple[tuple[str, ...], ...] | None:
-    """Illustrative ``contraction_scheme_by_name`` for non-einsum demos (tensor names must match)."""
+    """Illustrative ``contraction_scheme_by_name`` for non-einsum demos.
+
+    Tensor names must match the ones created by the demo builder.
+    """
     if engine == "einsum":
         return None
     if network == "disconnected" and engine in ("tensorkrowch", "tensornetwork", "quimb"):

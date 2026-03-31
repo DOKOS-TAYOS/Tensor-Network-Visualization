@@ -46,7 +46,14 @@ and **`plot_*_network_3d`** — thin wrappers around the same core renderer (see
 
 ### PyPI
 
-Install the base package plus the extra for each backend you need:
+Install the base package:
+
+```bash
+python -m pip install tensor-network-visualization
+```
+
+Base runtime dependencies are `numpy`, `matplotlib`, and `networkx`. Add the extra for each
+backend you need:
 
 ```bash
 python -m pip install "tensor-network-visualization[tensorkrowch]"

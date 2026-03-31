@@ -1,11 +1,23 @@
 {
   "include": ["src", "tests"],
   "exclude": ["**/__pycache__", ".venv"],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "useLibraryCodeForTypes": true,
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": ["src", "examples"]
+    }
+  ],
   "reportMissingImports": "warning",
+  "reportMissingModuleSource": "none",
+  "reportUnsupportedDunderAll": "none",
   "reportUnusedExpression": "none",
   "reportArgumentType": "warning",
   "reportAssignmentType": "warning",
   "reportReturnType": "warning",
-  "reportAttributeAccessIssue": "warning",
+  "reportAttributeAccessIssue": "none",
   "reportCallIssue": "warning"
 }

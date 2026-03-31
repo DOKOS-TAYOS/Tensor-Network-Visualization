@@ -31,10 +31,11 @@ PyPI package name: `tensor-network-visualization`. Import module: `tensor_networ
 python -m pip install tensor-network-visualization
 ```
 
-Depends on `matplotlib` and `networkx` only. You can **build and render** rich **`einsum`** graphs
-from ordered **`pair_tensor`** / **`einsum_trace_step`** entries (ellipsis and repeated indices need
-shapes in metadata); **`tensor-network-visualization[einsum]`** (PyTorch) is only needed to
-**execute** `tensor_network_viz.einsum(..., trace=...)` and record those rows automatically.
+Base runtime dependencies are `numpy`, `matplotlib`, and `networkx` only. You can **build and
+render** rich **`einsum`** graphs from ordered **`pair_tensor`** / **`einsum_trace_step`** entries
+(ellipsis and repeated indices need shapes in metadata); **`tensor-network-visualization[einsum]`**
+(PyTorch) is only needed to **execute** `tensor_network_viz.einsum(..., trace=...)` and record
+those rows automatically.
 
 ### Optional backends (extras)
 
