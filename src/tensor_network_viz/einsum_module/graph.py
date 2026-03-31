@@ -82,7 +82,8 @@ def _build_graph(trace_input: Any) -> _GraphData:
     all_result_names = {_step_result_name(s) for s in trace}
     next_virtual_id = -1
     contraction_scheme: list[frozenset[int]] = []
-    # Full physical lineage per tensor (for the final step’s global highlight).
+    accumulated_scheme_nodes: set[int] = set()
+    # Full physical lineage per tensor (contraction scheme uses running union across steps).
     physical_contributors: dict[str, frozenset[int]] = {}
 
     n_steps = len(trace)
@@ -124,22 +125,11 @@ def _build_graph(trace_input: Any) -> _GraphData:
                 )
             )
 
-        if step_index == n_steps - 1:
-            step_physical_last: set[int] = set()
-            for name in operand_names:
-                step_physical_last.update(physical_contributors[name])
-            contraction_scheme.append(frozenset(step_physical_last))
-        elif _trace_step_needs_peps_lineage_union(operand_names):
-            # PEPS-style sweep: keep environment tensors (x**) in lineage when contracting with P**
-            # or when applying the next local x** (MPS uses x0/x1 without P and stays on immediate).
-            step_peps: set[int] = set()
-            for name in operand_names:
-                step_peps.update(physical_contributors[name])
-            contraction_scheme.append(frozenset(step_peps))
-        else:
-            contraction_scheme.append(
-                _participant_ids_for_contraction_step(operand_origins, nodes)
-            )
+        step_lineage: set[int] = set()
+        for name in operand_names:
+            step_lineage.update(physical_contributors[name])
+        accumulated_scheme_nodes |= step_lineage
+        contraction_scheme.append(frozenset(accumulated_scheme_nodes))
 
         by_label: dict[str, list[_AxisOrigin]] = {}
         for i, axes in enumerate(parsed.operand_axes):
@@ -238,47 +228,6 @@ def _build_graph(trace_input: Any) -> _GraphData:
         edges=tuple(edges),
         contraction_steps=tuple(contraction_scheme),
     )
-
-
-def _trace_step_has_peps_plaquette_operand(operand_names: tuple[str, ...]) -> bool:
-    """True if a plaquette-like tensor name (``P`` + digits, e.g. ``P00``, ``P01``) is an operand."""
-    for n in operand_names:
-        if len(n) < 2 or n[0] != "P":
-            continue
-        if any(ch.isdigit() for ch in n[1:]):
-            return True
-    return False
-
-
-def _trace_step_has_peps_environment_operand(operand_names: tuple[str, ...]) -> bool:
-    """True if an operand looks like PEPS row/col env vectors (``x`` + digits, e.g. ``x00``)."""
-    for n in operand_names:
-        if len(n) < 2 or n[0].lower() != "x":
-            continue
-        if any(ch.isdigit() for ch in n[1:]):
-            return True
-    return False
-
-
-def _trace_step_needs_peps_lineage_union(operand_names: tuple[str, ...]) -> bool:
-    return _trace_step_has_peps_plaquette_operand(
-        operand_names
-    ) or _trace_step_has_peps_environment_operand(operand_names)
-
-
-def _participant_ids_for_contraction_step(
-    operand_origins: list[tuple[_AxisOrigin, ...]],
-    nodes: dict[int, Any],
-) -> frozenset[int]:
-    """Non-virtual node ids appearing on operand axes for this einsum only (immediate footprint)."""
-    all_ids: set[int] = set()
-    for origins in operand_origins:
-        for origin in origins:
-            all_ids.add(origin.node_id)
-    non_virtual = {nid for nid in all_ids if not nodes[nid].is_virtual}
-    if non_virtual:
-        return frozenset(non_virtual)
-    return frozenset(all_ids)
 
 
 def _step_result_name(step: pair_tensor | einsum_trace_step) -> str:

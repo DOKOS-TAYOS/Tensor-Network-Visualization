@@ -55,11 +55,11 @@ class PlotConfig:
             distance). Use an interactive Matplotlib window.
         show_contraction_scheme: If True, draw colored highlights for each contraction step (from
             ``graph.contraction_steps`` or ``contraction_scheme_by_name``).
-        contraction_scheme_alpha: Fill alpha for scheme rectangles (2D) / edge alpha baseline (3D);
-            default is fully opaque (1.0).
-        contraction_scheme_edge_alpha: Stroke alpha for scheme borders; None derives a slightly
-            higher value from the fill alpha.
-        contraction_scheme_linewidth: Border line width for 2D rounded boxes (data units, scaled
+        contraction_scheme_alpha: Fill alpha for scheme rectangles (2D); 3D uses edge color only.
+            Default is 0 (no fill); borders remain visible via ``contraction_scheme_edge_alpha``.
+        contraction_scheme_edge_alpha: Stroke alpha for scheme borders; None chooses a visible edge
+            (stronger when the fill is fully transparent).
+        contraction_scheme_linewidth: Border line width for 2D rounded scheme rectangles (data units, scaled
             like bond lines); None uses a thin default.
         contraction_scheme_colors: Optional cycle of face colors (hex/named); None uses a built-in
             categorical palette.
@@ -99,7 +99,7 @@ class PlotConfig:
     approximate_3d_tensor_disk_px: bool = True
     hover_labels: bool = False
     show_contraction_scheme: bool = False
-    contraction_scheme_alpha: float = 1.0
+    contraction_scheme_alpha: float = 0.0
     contraction_scheme_edge_alpha: float | None = None
     contraction_scheme_linewidth: float | None = None
     contraction_scheme_colors: tuple[str, ...] | None = None

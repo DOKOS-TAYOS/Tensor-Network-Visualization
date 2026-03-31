@@ -1,4 +1,4 @@
-"""Semi-transparent highlights for ordered contraction steps."""
+"""Colored hull outlines for ordered contraction steps (optional translucent fill)."""
 
 from __future__ import annotations
 
@@ -29,11 +29,10 @@ _DEFAULT_SCHEME_COLORS: tuple[str, ...] = (
 
 _CONTRACTION_SCHEME_GID: str = "tnv_contraction_scheme"
 _CONTRACTION_SCHEME_LABEL_GID: str = "tnv_contraction_scheme_label"
-# FancyBboxPatch ``round`` style pad (fraction of box size; not a point radius). Using
-# ``BoxStyle(..., rounding_size=…)`` in points blows up the patch bbox vs data width/height.
+# FancyBboxPatch ``round`` style pad (fraction of box size; not a point radius).
 _CONTRACTION_SCHEME_ROUND_PAD: float = 0.022
-# Step-index label size (points).
-_CONTRACTION_SCHEME_LABEL_FONTSIZE_PT: float = 6.75
+# Extra padding per step so nested / growing regions read clearly without numeric labels.
+_CONTRACTION_SCHEME_STEP_PAD_FRAC: float = 0.11
 
 
 def _effective_contraction_steps(
@@ -73,6 +72,11 @@ def _strict_subset_padding_bonus(
         if sj < si:
             return float(p.r) * 0.14
     return 0.0
+
+
+def _step_index_padding_bonus(step_index: int, p: _DrawScaleParams) -> float:
+    """Monotone pad growth with contraction order (larger effective tensors → roomier hull)."""
+    return float(step_index) * float(p.r) * _CONTRACTION_SCHEME_STEP_PAD_FRAC
 
 
 def _coords_for_step(
@@ -121,11 +125,12 @@ def _draw_contraction_scheme(
     base_pad = _padding_data_units(p)
     fill_a = float(np.clip(config.contraction_scheme_alpha, 0.0, 1.0))
     edge_a_raw = config.contraction_scheme_edge_alpha
-    edge_a = (
-        float(np.clip(edge_a_raw, 0.0, 1.0))
-        if edge_a_raw is not None
-        else float(np.clip(fill_a + 0.35, 0.0, 1.0))
-    )
+    if edge_a_raw is not None:
+        edge_a = float(np.clip(edge_a_raw, 0.0, 1.0))
+    elif fill_a < 1e-3:
+        edge_a = 0.88
+    else:
+        edge_a = float(np.clip(fill_a + 0.35, 0.0, 1.0))
     lw_attr = config.contraction_scheme_linewidth
     lw = (
         float(lw_attr) * scale
@@ -138,11 +143,14 @@ def _draw_contraction_scheme(
         pts = _coords_for_step(graph, positions, node_ids, dimensions)
         if pts is None or pts.shape[0] == 0:
             continue
-        pad = base_pad + _strict_subset_padding_bonus(i, steps, p)
+        pad = (
+            base_pad
+            + _strict_subset_padding_bonus(i, steps, p)
+            + _step_index_padding_bonus(i, p)
+        )
         fill_rgba = _scheme_color_rgba(i, config=config, alpha=fill_a)
         edge_rgba = _scheme_color_rgba(i, config=config, alpha=edge_a)
         z_patch = _ZORDER_CONTRACTION_SCHEME + 0.001 * float(draw_rank)
-        step_label = str(i + 1)
 
         if dimensions == 2:
             xmin = float(np.min(pts[:, 0]) - pad)
@@ -164,20 +172,6 @@ def _draw_contraction_scheme(
                 gid=_CONTRACTION_SCHEME_GID,
             )
             ax.add_patch(fancy)
-            label_off = float(max(pad * 0.22, min(w, h) * 0.04))
-            ax.text(
-                xmin + label_off,
-                ymax - label_off,
-                step_label,
-                fontsize=_CONTRACTION_SCHEME_LABEL_FONTSIZE_PT,
-                ha="left",
-                va="top",
-                color=edge_rgba[:3],
-                alpha=float(min(1.0, edge_a + 0.15)),
-                zorder=z_patch + 0.0003,
-                gid=_CONTRACTION_SCHEME_LABEL_GID,
-                clip_on=True,
-            )
         else:
             xmin = float(np.min(pts[:, 0]) - pad)
             xmax = float(np.max(pts[:, 0]) + pad)
@@ -197,21 +191,6 @@ def _draw_contraction_scheme(
                 alpha=float(edge_a),
                 linewidth=lw,
                 zorder_base=z_patch,
-            )
-            label_off = float(max(pad * 0.22, (xmax - xmin) * 0.04))
-            ax.text(
-                xmin + label_off,
-                ymax - label_off,
-                zmax - label_off,
-                step_label,
-                fontsize=_CONTRACTION_SCHEME_LABEL_FONTSIZE_PT,
-                ha="left",
-                va="top",
-                color=edge_rgba[:3],
-                alpha=float(min(1.0, edge_a + 0.15)),
-                zorder=z_patch + 0.0003,
-                gid=_CONTRACTION_SCHEME_LABEL_GID,
-                clip_on=True,
             )
 
 

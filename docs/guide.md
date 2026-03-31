@@ -341,18 +341,19 @@ matmul leg) so bonds do not coincide visually. Hubs that attach to **only one** 
 barycenter snap; in **2D** they receive an extra **perpendicular offset** from the tensor, while
 **3D** already separates overlapping hub/tensor pairs via **layer promotion** along the z axis.
 
-**Contraction scheme (execution order):** For the **einsum** engine, **`contraction_steps`** uses two
-rules: **non-final** trace steps take the **immediate** operand footprint (non-virtual nodes that
-carry an operand’s axes in that call — tensors not touched by that `einsum` are excluded). The
-**last** step uses the **full transitive lineage** of every operand (entire physical network in
-one box). Example (sequential MPS-style trace): first box **A0∪x0**; second **A0∪A1** (intermediate
-**r0** still lives on **A0**, so **x0** is not in that step); third **all tensors**. Parallel
-**A–B** / **C–D** then merge: first two boxes stay disjoint; the final step wraps **A∪B∪C∪D**. When a
-step’s set **strictly contains** an earlier step’s set, a **small** extra pad separates nested
-boxes. Default fill is **opaque** (**`contraction_scheme_alpha`** = 1). Enable with
-**`PlotConfig(show_contraction_scheme=True)`**; **2D** rounded boxes; **later** steps drawn **under**
-earlier ones; corner labels **`1`**, **`2`**, …; **3D** wireframes + labels. Other engines:
-**`contraction_scheme_by_name`** (mirror these rules yourself if needed).
+**Contraction scheme (execution order):** For the **einsum** engine, **`contraction_steps`** is a
+**running union** of physical lineages along the trace: each step adds the operands’ lineages to
+what was already grouped, so every new hull is a **superset** of the previous (cumulative contraction
+of the network so far). Example (MPS-style trace): early boxes grow as **A0∪x0**, then **A0∪x0∪A1**,
+then **all tensors**. Parallel **A–B** then **C–D** then merge: the second pair’s hull includes **A∪B∪C∪D**
+before the final merge. Highlights are **border-only** by default (**`contraction_scheme_alpha`** =
+**0**); use a small fill alpha if you want a tint. **Nested** sets get a little extra pad, and each
+step adds a small **order-dependent** pad so larger effective tensors read as larger hulls. Enable
+with **`PlotConfig(show_contraction_scheme=True)`**; **2D** rounded **`FancyBboxPatch`** around the
+axis-aligned bounding box of the tensors in that step (not per-tensor tight hulls); **later** steps
+drawn **under** earlier ones; **3D** wireframes (no fill). Other engines: **`contraction_scheme_by_name`**
+(each step should list the tensors you want in that hull; end with the full network if you want one
+global region).
 
 <a id="toc-plotconfig"></a>
 
@@ -386,8 +387,8 @@ Frozen dataclass in [`src/tensor_network_viz/config.py`](../src/tensor_network_v
 | `refine_tensor_labels` | `True` | Extra draw passes to shrink tensor names so they fit the node marker (2D or 3D). |
 | `hover_labels` | `False` | Show labels on hover (interactive). |
 | `show_contraction_scheme` | `False` | Highlight contraction steps (einsum auto or **`contraction_scheme_by_name`**). |
-| `contraction_scheme_alpha` | `1.0` | Fill alpha (2D); 3D uses edge alpha from this and **`contraction_scheme_edge_alpha`**. |
-| `contraction_scheme_edge_alpha` | `None` | Border alpha; default is a bit higher than fill. |
+| `contraction_scheme_alpha` | `0.0` | Fill alpha (2D); default is no fill (edges only). |
+| `contraction_scheme_edge_alpha` | `None` | Border alpha; **None** picks a visible stroke (independent of fill when fill is 0). |
 | `contraction_scheme_linewidth` | `None` | → **`DEFAULT_CONTRACTION_SCHEME_LINEWIDTH`** (scaled like other strokes). |
 | `contraction_scheme_colors` | `None` | Cycle of colors; built-in categorical palette if unset. |
 | `contraction_scheme_by_name` | `None` | Override schedule: per step, tuple of **`node.name`** strings for non-virtual tensors. |
@@ -450,7 +451,7 @@ fig, ax = show_tensor_network(
     view="2d",
     config=PlotConfig(
         show_contraction_scheme=True,
-        contraction_scheme_by_name=(("A", "B"), ("C",)),
+        contraction_scheme_by_name=(("A", "B"), ("A", "B", "C")),
     ),
     show=False,
 )

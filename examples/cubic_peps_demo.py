@@ -23,6 +23,7 @@ from demo_cli import (
     add_contraction_scheme_argument,
     add_hover_labels_argument,
     apply_demo_caption,
+    cubic_peps_tensor_names,
     finalize_demo_plot_config,
 )
 
@@ -160,7 +161,10 @@ def main() -> None:
         engine="tensornetwork",
         view=args.view,
         config=finalize_demo_plot_config(
-            args, network="cubic_peps", engine="tensornetwork"
+            args,
+            network="cubic_peps",
+            engine="tensornetwork",
+            scheme_tensor_names=cubic_peps_tensor_names(args.lx, args.ly, args.lz),
         ),
         show=False,
     )

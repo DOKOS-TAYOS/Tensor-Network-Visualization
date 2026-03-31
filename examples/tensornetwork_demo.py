@@ -24,6 +24,7 @@ from demo_cli import (
     add_contraction_scheme_argument,
     add_hover_labels_argument,
     apply_demo_caption,
+    demo_scheme_tensor_names_for_network,
     finalize_demo_plot_config,
 )
 
@@ -260,7 +261,10 @@ def main() -> None:
         engine="tensornetwork",
         view=args.view,
         config=finalize_demo_plot_config(
-            args, network=args.network, engine="tensornetwork"
+            args,
+            network=args.network,
+            engine="tensornetwork",
+            scheme_tensor_names=demo_scheme_tensor_names_for_network(args.network),
         ),
         show=False,
     )

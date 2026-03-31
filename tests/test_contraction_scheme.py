@@ -29,8 +29,8 @@ def test_einsum_graph_records_contraction_steps_chain() -> None:
     assert graph.contraction_steps is not None
     assert len(graph.contraction_steps) == 3
     assert graph.contraction_steps[0] == frozenset({0, 1})
-    # Non-final steps: immediate operand footprint (r0 lives on A0; A1 is new).
-    assert graph.contraction_steps[1] == frozenset({0, 2})
+    # Running union: second step includes A0/x0 lineage plus A1.
+    assert graph.contraction_steps[1] == frozenset({0, 1, 2})
     assert graph.contraction_steps[2] == frozenset({0, 1, 2, 3})
     for step in graph.contraction_steps:
         assert len(step) >= 1
@@ -62,7 +62,7 @@ def test_einsum_contraction_steps_parallel_branches_then_merge() -> None:
     graph = _build_graph(trace)
     assert graph.contraction_steps == (
         frozenset({0, 1}),
-        frozenset({2, 3}),
+        frozenset({0, 1, 2, 3}),
         frozenset({0, 1, 2, 3}),
     )
 
@@ -115,8 +115,7 @@ def test_plot_graph_draws_scheme_patches_2d() -> None:
     assert len(patches) == 2
     assert all(isinstance(p, FancyBboxPatch) for p in patches)
     labels = [t for t in ax.texts if t.get_gid() == "tnv_contraction_scheme_label"]
-    assert len(labels) == 2
-    assert {t.get_text() for t in labels} == {"1", "2"}
+    assert labels == []
     assert fig is not None
 
 
@@ -139,5 +138,4 @@ def test_plot_graph_scheme_override_by_name() -> None:
     assert len(patches) == 1
     assert isinstance(patches[0], FancyBboxPatch)
     labels = [t for t in ax.texts if t.get_gid() == "tnv_contraction_scheme_label"]
-    assert len(labels) == 1
-    assert labels[0].get_text() == "1"
+    assert labels == []

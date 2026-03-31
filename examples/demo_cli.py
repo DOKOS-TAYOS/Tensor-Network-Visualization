@@ -53,6 +53,48 @@ def showcase_plot_config() -> PlotConfig:
     )
 
 
+def mps_demo_tensor_names(length: int = 11) -> tuple[str, ...]:
+    """Tensor names in chain order for MPS demos (matches ``A{i}`` in example builders)."""
+    return tuple(f"A{i}" for i in range(length))
+
+
+def mpo_demo_tensor_names(length: int = 7) -> tuple[str, ...]:
+    """Tensor names in chain order for MPO demos (matches ``W{i}`` in example builders)."""
+    return tuple(f"W{i}" for i in range(length))
+
+
+def peps_demo_tensor_names(rows: int = 4, cols: int = 5) -> tuple[str, ...]:
+    """Row-major PEPS site names (matches ``P{row}{col}`` in example builders)."""
+    return tuple(f"P{row}{col}" for row in range(rows) for col in range(cols))
+
+
+def cubic_peps_tensor_names(lx: int, ly: int, lz: int) -> tuple[str, ...]:
+    """Lexicographic grid order (matches ``build_cubic_peps``: x, then y, then z)."""
+    if min(lx, ly, lz) < 1:
+        raise ValueError("lx, ly, lz must be >= 1")
+    return tuple(f"P{i}_{j}_{k}" for i in range(lx) for j in range(ly) for k in range(lz))
+
+
+def cumulative_prefix_contraction_scheme(names: tuple[str, ...]) -> tuple[tuple[str, ...], ...]:
+    """Growing hull steps: (a,b), (a,b,c), … so the last step includes every tensor."""
+    if not names:
+        return ()
+    if len(names) == 1:
+        return (names,)
+    return tuple(tuple(names[:k]) for k in range(2, len(names) + 1))
+
+
+def demo_scheme_tensor_names_for_network(network: str) -> tuple[str, ...] | None:
+    """Full tensor name lists for structured demos (MPS/MPO/PEPS with default builder sizes)."""
+    if network == "mps":
+        return mps_demo_tensor_names()
+    if network == "mpo":
+        return mpo_demo_tensor_names()
+    if network == "peps":
+        return peps_demo_tensor_names()
+    return None
+
+
 def demo_plot_config(args: argparse.Namespace) -> PlotConfig:
     hover = getattr(args, "hover_labels", False)
     compact = getattr(args, "compact", False)
@@ -74,34 +116,13 @@ def optional_backend_contraction_scheme_by_name(
     """Illustrative ``contraction_scheme_by_name`` for non-einsum demos (tensor names must match)."""
     if engine == "einsum":
         return None
-    if network == "mps" and engine in ("tensorkrowch", "tensornetwork", "quimb"):
-        return (
-            ("A0", "A1"),
-            ("A1", "A2"),
-            ("A0", "A1", "A2"),
-        )
-    if network == "mpo" and engine in ("tensorkrowch", "tensornetwork", "quimb"):
-        return (
-            ("W0", "W1"),
-            ("W1", "W2"),
-            ("W0", "W1", "W2"),
-        )
-    if network == "peps" and engine in ("tensorkrowch", "tensornetwork", "quimb"):
-        return (
-            ("P00", "P01"),
-            ("P10", "P11"),
-            ("P00", "P01", "P10", "P11"),
-        )
     if network == "disconnected" and engine in ("tensorkrowch", "tensornetwork", "quimb"):
-        return (("A", "B"), ("C", "D", "E"))
+        return (
+            ("A", "B"),
+            ("A", "B", "C", "D", "E"),
+        )
     if network == "hyper" and engine == "quimb":
         return (("A", "B", "C"),)
-    if network == "cubic_peps" and engine == "tensornetwork":
-        return (
-            ("P0_0_0", "P1_0_0"),
-            ("P0_0_1", "P1_0_1"),
-            ("P0_0_0", "P1_0_0", "P0_0_1", "P1_0_1"),
-        )
     if network == "chain" and engine == "tenpy_explicit":
         return (
             ("T0", "T1"),
@@ -118,6 +139,7 @@ def finalize_demo_plot_config(
     *,
     network: str | None,
     engine: str,
+    scheme_tensor_names: tuple[str, ...] | None = None,
 ) -> PlotConfig:
     """Merge hover/compact/scheme flags; attach manual contraction groups for supported backends."""
     cfg = demo_plot_config(args)
@@ -125,6 +147,11 @@ def finalize_demo_plot_config(
         return cfg
     if engine == "einsum":
         return cfg
+    if scheme_tensor_names is not None:
+        return replace(
+            cfg,
+            contraction_scheme_by_name=cumulative_prefix_contraction_scheme(scheme_tensor_names),
+        )
     manual = optional_backend_contraction_scheme_by_name(network=network or "", engine=engine)
     if manual is not None:
         return replace(cfg, contraction_scheme_by_name=manual)
