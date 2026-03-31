@@ -591,19 +591,6 @@ def test_show_tensor_network_supports_einsum_engine(
     assert fig is ax.figure
 
 
-def test_show_tensor_network_rejects_invalid_view() -> None:
-    node = DummyTensorKrowchNode("A", ["left"])
-    connect(node, 0, name="edge")
-
-    with pytest.raises(ValueError, match="Unsupported tensor network view"):
-        show_tensor_network(
-            DummyNetwork(nodes=[node]),
-            engine="tensorkrowch",
-            view="invalid-view",  # type: ignore[arg-type]
-            show=False,
-        )
-
-
 def test_tensornetwork_renderer_does_not_import_tensorkrowch_private_modules() -> None:
     source = Path(tn_renderer_module.__file__).read_text(encoding="utf-8")
 

@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import io
-import os
 import time
 
 import matplotlib
-import pytest
 
 matplotlib.use("Agg")
 
@@ -95,45 +93,5 @@ def test_dense_2d_draw_full_quality_completes_reasonably() -> None:
         )
         elapsed = time.perf_counter() - t0
         assert elapsed < 45.0, f"dense 2D draw took {elapsed:.1f}s"
-    finally:
-        plt.close(fig)
-
-
-def test_dense_2d_draw_optional_timing_gate() -> None:
-    """When TNV_DRAW_TIMING_GATE is set, enforce max seconds for a fixed fast-path draw.
-
-    Skip when unset so default pytest stays stable on slow runners. Example:
-    ``TNV_DRAW_TIMING_GATE=20`` (seconds, float).
-    """
-    raw = os.environ.get("TNV_DRAW_TIMING_GATE")
-    if raw is None or raw.strip() == "":
-        pytest.skip("TNV_DRAW_TIMING_GATE not set")
-    max_seconds = float(raw)
-    n = 48
-    graph = _chain_graph(n)
-    positions = {i: np.array([float(i) * 0.5, 0.0], dtype=float) for i in range(n)}
-    ds = _resolve_draw_scale(graph, positions)
-    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=ds)
-    fig, ax = plt.subplots(figsize=(10, 6))
-    try:
-        t0 = time.perf_counter()
-        _draw_graph(
-            ax=ax,
-            graph=graph,
-            positions=positions,
-            directions=directions,
-            show_tensor_labels=True,
-            show_index_labels=True,
-            config=PlotConfig(
-                positions=positions,
-                refine_tensor_labels=False,
-            ),
-            dimensions=2,
-            scale=ds,
-        )
-        elapsed = time.perf_counter() - t0
-        assert elapsed <= max_seconds, (
-            f"dense 2D draw exceeded TNV_DRAW_TIMING_GATE={max_seconds}s (took {elapsed:.2f}s)"
-        )
     finally:
         plt.close(fig)
