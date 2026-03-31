@@ -7,6 +7,7 @@ from matplotlib.axes import Axes
 
 from ...config import PlotConfig
 from ...contraction_viewer import attach_playback_to_tensor_network_figure
+from ...einsum_module.contraction_cost import format_contraction_step_tooltip
 from ..contractions import _ContractionGroups, _group_contractions
 from ..graph import (
     _GraphData,
@@ -16,7 +17,11 @@ from ..layout import (
     NodePositions,
 )
 from .constants import *
-from .contraction_scheme import _draw_contraction_scheme, _effective_contraction_steps
+from .contraction_scheme import (
+    _contraction_step_metrics_for_draw,
+    _draw_contraction_scheme,
+    _effective_contraction_steps,
+)
 from .disk_metrics import _tensor_disk_radius_px_3d_nominal
 from .edges import _draw_edges, _draw_edges_2d_layered
 from .fonts_and_scale import (
@@ -106,14 +111,19 @@ def _draw_graph(
         )
 
     # Contraction highlights first (under bonds, nodes, and labels).
+    per_step_artists: list[Any | None] | None = None
+    scheme_steps_eff: tuple[frozenset[int], ...] | None = None
+    scheme_aabb: (
+        list[tuple[float, float, float, float, float, float] | None] | None
+    ) = None
     if config.show_contraction_scheme:
-        scheme_steps = _effective_contraction_steps(graph, config)
-        if scheme_steps:
-            per_step_artists = _draw_contraction_scheme(
+        scheme_steps_eff = _effective_contraction_steps(graph, config)
+        if scheme_steps_eff:
+            per_step_artists, scheme_aabb = _draw_contraction_scheme(
                 ax=ax,
                 graph=graph,
                 positions=positions,
-                steps=scheme_steps,
+                steps=scheme_steps_eff,
                 config=config,
                 dimensions=dimensions,
                 scale=scale,
@@ -256,7 +266,42 @@ def _draw_graph(
         )
     if dimensions == 2:
         _register_2d_zoom_font_scaling(cast(Axes, ax))
-    if config.hover_labels and (show_tensor_labels or show_index_labels):
+
+    metrics_row = (
+        _contraction_step_metrics_for_draw(graph, scheme_steps_eff)
+        if scheme_steps_eff
+        else None
+    )
+    scheme_patches_2d: list[tuple[Any, str]] = []
+    scheme_aabbs_3d: list[
+        tuple[tuple[float, float, float, float, float, float], str, Any]
+    ] = []
+    if (
+        config.contraction_scheme_cost_hover
+        and metrics_row is not None
+        and per_step_artists is not None
+        and scheme_aabb is not None
+    ):
+        for i, art in enumerate(per_step_artists):
+            if i >= len(metrics_row):
+                break
+            m = metrics_row[i]
+            if m is None or art is None:
+                continue
+            txt = format_contraction_step_tooltip(m)
+            if dimensions == 2:
+                scheme_patches_2d.append((art, txt))
+            else:
+                box = scheme_aabb[i] if i < len(scheme_aabb) else None
+                if box is None:
+                    continue
+                scheme_aabbs_3d.append((box, txt, art))
+
+    want_label_hover = config.hover_labels and (
+        show_tensor_labels or show_index_labels
+    )
+    want_scheme_hover = bool(scheme_patches_2d) or bool(scheme_aabbs_3d)
+    if want_label_hover or want_scheme_hover:
         vis_ids = visible_order
         if dimensions == 2:
             node_colls = getattr(plotter, "_node_disk_collections", None)
@@ -265,6 +310,8 @@ def _draw_graph(
                 if (isinstance(node_colls, list) and len(node_colls) > 0)
                 else getattr(plotter, "_node_disk_collection", None)
             )
+            if not want_label_hover:
+                node_coll = None
             _register_2d_hover_labels(
                 cast(Axes, ax),
                 node_patch_coll=node_coll if show_tensor_labels else None,
@@ -272,6 +319,7 @@ def _draw_graph(
                 tensor_hover=tensor_hover_map or {},
                 edge_hover=list(hover_edge_list or ()),
                 line_width_px_hint=float(params.lw),
+                scheme_hover_patches=scheme_patches_2d,
             )
         else:
             _register_3d_hover_labels(
@@ -284,6 +332,7 @@ def _draw_graph(
                 line_width_px_hint=float(params.lw),
                 p=params,
                 tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
+                scheme_hover_aabbs=scheme_aabbs_3d,
             )
 
 

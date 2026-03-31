@@ -21,6 +21,47 @@ from .pick_distance import (
 from .tensors import _tensor_disk_radius_px
 
 
+def _display_point_in_projected_aabb(
+    ax: Any,
+    bounds: tuple[float, float, float, float, float, float],
+    x_pix: float,
+    y_pix: float,
+    margin_px: float,
+) -> bool:
+    """True if pointer (figure pixels) lies in the screen-space bounding box of a 3D AABB."""
+    xmin, xmax, ymin, ymax, zmin, zmax = bounds
+    corners = np.array(
+        [
+            [xmin, ymin, zmin],
+            [xmax, ymin, zmin],
+            [xmax, ymax, zmin],
+            [xmin, ymax, zmin],
+            [xmin, ymin, zmax],
+            [xmax, ymin, zmax],
+            [xmax, ymax, zmax],
+            [xmin, ymax, zmax],
+        ],
+        dtype=float,
+    )
+    M = ax.get_proj()
+    xs_disp: list[float] = []
+    ys_disp: list[float] = []
+    for row in corners:
+        xp, yp, _zp = proj3d.proj_transform(
+            float(row[0]),
+            float(row[1]),
+            float(row[2]),
+            M,
+        )
+        pt = np.asarray(ax.transData.transform((xp, yp)), dtype=float).ravel()
+        xs_disp.append(float(pt[0]))
+        ys_disp.append(float(pt[1]))
+    x0, x1 = min(xs_disp), max(xs_disp)
+    y0, y1 = min(ys_disp), max(ys_disp)
+    m = float(margin_px)
+    return (x0 - m <= x_pix <= x1 + m) and (y0 - m <= y_pix <= y1 + m)
+
+
 def _disconnect_tensor_network_hover(fig: Figure) -> None:
     cid = getattr(fig, "_tensor_network_viz_hover_cid", None)
     if cid is not None:
@@ -37,12 +78,14 @@ def _register_2d_hover_labels(
     tensor_hover: dict[int, tuple[str, float]],
     edge_hover: list[tuple[np.ndarray, str]],
     line_width_px_hint: float,
+    scheme_hover_patches: Sequence[tuple[Any, str]] | None = None,
 ) -> None:
     """Show tensor / bond labels in a tooltip while the pointer hovers (2D axes)."""
     fig = ax.figure
     _disconnect_tensor_network_hover(fig)
 
-    if not tensor_hover and not edge_hover:
+    scheme_entries = tuple(scheme_hover_patches or ())
+    if not tensor_hover and not edge_hover and not scheme_entries:
         return
 
     pick_r = max(_HOVER_EDGE_PICK_RADIUS_PX, float(line_width_px_hint) * 2.0)
@@ -116,6 +159,23 @@ def _register_2d_hover_labels(
                 label = best_txt
                 fs_hint = 9.0
 
+        if label is None and scheme_entries:
+            for patch, txt in scheme_entries:
+                vis = getattr(patch, "get_visible", None)
+                if callable(vis) and not vis():
+                    continue
+                contains_fn = getattr(patch, "contains", None)
+                if not callable(contains_fn):
+                    continue
+                try:
+                    hit, _props = contains_fn(event)
+                except (NotImplementedError, TypeError, ValueError):
+                    continue
+                if hit:
+                    label = txt
+                    fs_hint = 8.0
+                    break
+
         if not label:
             ann.set_visible(False)
             fig.canvas.draw_idle()
@@ -128,7 +188,7 @@ def _register_2d_hover_labels(
 
         ann.xy = (float(event.xdata), float(event.ydata))
         ann.set_text(label)
-        ann.set_fontsize(max(7.5, min(14.0, fs_hint)))
+        ann.set_fontsize(max(7.0, min(14.0, fs_hint)))
         ann.set_visible(True)
         fig.canvas.draw_idle()
 
@@ -146,11 +206,14 @@ def _register_3d_hover_labels(
     line_width_px_hint: float,
     p: _DrawScaleParams,
     tensor_disk_radius_px_3d: float | None = None,
+    scheme_hover_aabbs: Sequence[tuple[tuple[float, float, float, float, float, float], str, Any]]
+    | None = None,
 ) -> None:
     """Show tensor / bond labels in a figure-space tooltip while the pointer hovers (3D)."""
     _disconnect_tensor_network_hover(fig)
 
-    if not tensor_hover and not edge_hover:
+    scheme_3d = tuple(scheme_hover_aabbs or ())
+    if not tensor_hover and not edge_hover and not scheme_3d:
         return
 
     pick_r = max(_HOVER_EDGE_PICK_RADIUS_PX, float(line_width_px_hint) * 2.0)
@@ -229,6 +292,17 @@ def _register_3d_hover_labels(
                 label = best_txt
                 fs_hint = 9.0
 
+        if label is None and scheme_3d:
+            for bounds, txt, artist in scheme_3d:
+                if artist is not None:
+                    vis = getattr(artist, "get_visible", None)
+                    if callable(vis) and not vis():
+                        continue
+                if _display_point_in_projected_aabb(ax, bounds, x_d, y_d, pick_r):
+                    label = txt
+                    fs_hint = 8.0
+                    break
+
         if not label:
             ann.set_visible(False)
             fig.canvas.draw_idle()
@@ -236,7 +310,7 @@ def _register_3d_hover_labels(
 
         ann.xy = (x_d, y_d)
         ann.set_text(label)
-        ann.set_fontsize(max(7.5, min(14.0, fs_hint)))
+        ann.set_fontsize(max(7.0, min(14.0, fs_hint)))
         ann.set_visible(True)
         fig.canvas.draw_idle()
 

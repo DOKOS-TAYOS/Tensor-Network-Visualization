@@ -36,6 +36,16 @@ class _EdgeData:
 
 
 @dataclass(frozen=True)
+class _ContractionStepMetrics:
+    """Naive dense cost for one einsum trace step (see ``einsum_module.contraction_cost``)."""
+
+    label_dims: tuple[tuple[str, int], ...]
+    multiplicative_cost: int
+    flop_mac: int
+    equation_snippet: str | None = None
+
+
+@dataclass(frozen=True)
 class _GraphData:
     nodes: dict[int, _NodeData]
     edges: tuple[_EdgeData, ...]
@@ -43,6 +53,9 @@ class _GraphData:
     #: operand footprint on the graph; the **last** step uses the full transitive lineage of all
     #: operands (whole network). See einsum ``graph._build_graph``.
     contraction_steps: tuple[frozenset[int], ...] | None = None
+    #: Same length as ``contraction_steps`` when both are set: per-step naive dense metrics from
+    #: the einsum parse (None entries allowed if a step has no drawable hull).
+    contraction_step_metrics: tuple[_ContractionStepMetrics | None, ...] | None = None
 
 
 def _make_node(

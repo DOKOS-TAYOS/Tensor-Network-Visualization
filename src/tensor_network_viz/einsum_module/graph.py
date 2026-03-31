@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core.graph import (
+    _ContractionStepMetrics,
     _EdgeEndpoint,
     _GraphData,
     _make_contraction_edge,
     _make_dangling_edge,
     _make_node,
 )
+from .contraction_cost import metrics_for_parsed_step
 from ._equation import _binary_operand_specs_before_arrow, parse_einsum_equation
 from .trace import _normalize_trace, einsum_trace_step, pair_tensor
 
@@ -85,6 +87,7 @@ def _build_graph(trace_input: Any) -> _GraphData:
     accumulated_scheme_nodes: set[int] = set()
     # Full physical lineage per tensor (contraction scheme uses running union across steps).
     physical_contributors: dict[str, frozenset[int]] = {}
+    step_metrics_list: list[_ContractionStepMetrics] = []
 
     for step in trace:
         operand_names = _trace_step_operand_names(step)
@@ -102,6 +105,13 @@ def _build_graph(trace_input: Any) -> _GraphData:
         )
         eq_str = _equation_string(step)
         parsed = parse_einsum_equation(eq_str, shapes)
+        step_metrics_list.append(
+            metrics_for_parsed_step(
+                parsed,
+                shapes,
+                equation_snippet=eq_str.replace(" ", ""),
+            )
+        )
 
         res_name = _step_result_name(step)
         if res_name in node_ids_by_name or res_name in produced_names:
@@ -226,6 +236,7 @@ def _build_graph(trace_input: Any) -> _GraphData:
         nodes=nodes,
         edges=tuple(edges),
         contraction_steps=tuple(contraction_scheme),
+        contraction_step_metrics=tuple(step_metrics_list),
     )
 
 

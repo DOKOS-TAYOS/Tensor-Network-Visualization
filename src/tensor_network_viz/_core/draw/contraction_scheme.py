@@ -10,7 +10,7 @@ from matplotlib.patches import FancyBboxPatch
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 from ...config import PlotConfig
-from ..graph import _GraphData, _resolve_contraction_scheme_by_name
+from ..graph import _ContractionStepMetrics, _GraphData, _resolve_contraction_scheme_by_name
 from ..layout import NodePositions
 from .constants import _ZORDER_CONTRACTION_SCHEME
 from .fonts_and_scale import _DrawScaleParams
@@ -43,6 +43,22 @@ def _effective_contraction_steps(
     if config.contraction_scheme_by_name is not None:
         return _resolve_contraction_scheme_by_name(graph, config.contraction_scheme_by_name)
     return graph.contraction_steps
+
+
+def _contraction_step_metrics_for_draw(
+    graph: _GraphData,
+    scheme_steps: tuple[frozenset[int], ...],
+) -> tuple[_ContractionStepMetrics | None, ...] | None:
+    """Return einsum step metrics only when *scheme_steps* matches ``graph.contraction_steps``."""
+    metrics = graph.contraction_step_metrics
+    base = graph.contraction_steps
+    if metrics is None or base is None:
+        return None
+    if len(metrics) != len(scheme_steps) or len(base) != len(scheme_steps):
+        return None
+    if base != scheme_steps:
+        return None
+    return metrics
 
 
 def _scheme_color_rgba(
@@ -174,12 +190,16 @@ def _draw_contraction_scheme(
     dimensions: Literal[2, 3],
     scale: float,
     p: _DrawScaleParams,
-) -> list[Any | None]:
-    """Draw per-step hulls; return one entry per ``steps`` index.
+) -> tuple[list[Any | None], list[tuple[float, float, float, float, float, float] | None]]:
+    """Draw per-step hulls; return artists and (for 3D) axis-aligned bounds per step index.
 
-    ``None`` means that step has no hull.
+    ``None`` artist means that step has no hull. Bounds entries are ``None`` in 2D; in 3D they are
+    ``(xmin, xmax, ymin, ymax, zmin, zmax)`` in data coordinates for hover hit-testing.
     """
     per_step: list[Any | None] = [None] * len(steps)
+    aabb_per_step: list[tuple[float, float, float, float, float, float] | None] = [None] * len(
+        steps
+    )
     base_pad = _padding_data_units(p)
     fill_a = float(np.clip(config.contraction_scheme_alpha, 0.0, 1.0))
     edge_a_raw = config.contraction_scheme_edge_alpha
@@ -234,6 +254,7 @@ def _draw_contraction_scheme(
             ymax = float(np.max(pts[:, 1]) + pad)
             zmin = float(np.min(pts[:, 2]) - pad)
             zmax = float(np.max(pts[:, 2]) + pad)
+            aabb_per_step[i] = (xmin, xmax, ymin, ymax, zmin, zmax)
             lc = _scheme_box_3d_line_collection(
                 xmin,
                 xmax,
@@ -249,12 +270,13 @@ def _draw_contraction_scheme(
             ax.add_collection3d(lc)
             per_step[i] = lc
 
-    return per_step
+    return per_step, aabb_per_step
 
 
 __all__ = [
     "_CONTRACTION_SCHEME_GID",
     "_CONTRACTION_SCHEME_LABEL_GID",
+    "_contraction_step_metrics_for_draw",
     "_draw_contraction_scheme",
     "_effective_contraction_steps",
 ]
