@@ -5,26 +5,29 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from typing import Any
 
+import numpy as np
+
 from .._core.graph_utils import _is_unordered_collection
 from ._backend import _load_backend_einsum, _shape_tuple
-from ._equation import _parse_equation
+from ._equation import nary_equation_canonical_string, parse_einsum_equation
 from ._trace_state import _TraceState
-from ._trace_types import _PreparedCall, pair_tensor
+from ._trace_types import _PreparedCall, einsum_trace_step, pair_tensor
 
 __all__ = [
     "EinsumTrace",
     "einsum",
+    "einsum_trace_step",
     "pair_tensor",
 ]
 
 
 class EinsumTrace:
-    """Stateful trace for automatically recorded binary einsum contractions."""
+    """Stateful trace for automatically recorded einsum contractions (any arity)."""
 
     def __init__(self) -> None:
         self._state = _TraceState()
 
-    def __iter__(self) -> Iterator[pair_tensor]:
+    def __iter__(self) -> Iterator[pair_tensor | einsum_trace_step]:
         return iter(self._state.pairs)
 
     def __len__(self) -> int:
@@ -36,37 +39,44 @@ class EinsumTrace:
     def _prepare_call(
         self,
         expression: str,
-        left: Any,
-        right: Any,
+        operands: tuple[Any, ...],
         *,
         backend: str,
     ) -> _PreparedCall:
-        return self._state.prepare_call(expression, left, right, backend=backend)
+        return self._state.prepare_call(expression, operands, backend=backend)
 
     def _commit_call(self, prepared: _PreparedCall, result: Any) -> None:
         self._state.commit_call(prepared, result)
 
 
-def _normalize_trace(trace: Any) -> list[pair_tensor]:
+def _normalize_trace(trace: Any) -> list[pair_tensor | einsum_trace_step]:
     if isinstance(trace, (str, bytes, bytearray)):
-        raise TypeError("Einsum traces must be an ordered iterable of pair_tensor objects.")
+        raise TypeError(
+            "Einsum traces must be an ordered iterable of pair_tensor or einsum_trace_step objects."
+        )
     if _is_unordered_collection(trace):
         raise TypeError(
             "Einsum traces must preserve order; unordered collections are not supported."
         )
     if isinstance(trace, dict):
-        raise TypeError("Einsum traces must be an ordered iterable of pair_tensor objects.")
+        raise TypeError(
+            "Einsum traces must be an ordered iterable of pair_tensor or einsum_trace_step objects."
+        )
     if not isinstance(trace, Iterable):
-        raise TypeError("Einsum traces must be an ordered iterable of pair_tensor objects.")
+        raise TypeError(
+            "Einsum traces must be an ordered iterable of pair_tensor or einsum_trace_step objects."
+        )
 
     try:
         items = list(trace)
     except TypeError as exc:
         raise TypeError("Einsum traces must be iterable.") from exc
     if not items:
-        raise ValueError("The einsum trace does not contain any pair_tensor entries.")
-    if not all(isinstance(item, pair_tensor) for item in items):
-        raise TypeError("Einsum trace entries must be pair_tensor instances.")
+        raise ValueError("The einsum trace does not contain any trace entries.")
+    if not all(isinstance(item, (pair_tensor, einsum_trace_step)) for item in items):
+        raise TypeError(
+            "Einsum trace entries must be pair_tensor or einsum_trace_step instances."
+        )
     return items
 
 
@@ -86,19 +96,55 @@ def einsum(
 
     if not isinstance(trace, EinsumTrace):
         raise TypeError("trace must be an EinsumTrace instance.")
-    if "out" in kwargs:
-        raise ValueError("Traced einsum does not support out= because it breaks result tracking.")
     if not isinstance(expression, str):
         raise TypeError("Traced einsum requires a string equation.")
-    if len(operands) != 2:
-        raise ValueError("Traced einsum currently supports exactly 2 operands.")
+    if len(operands) < 1:
+        raise ValueError("Traced einsum requires at least one operand.")
 
-    left_shape = _shape_tuple(operands[0])
-    right_shape = _shape_tuple(operands[1])
-    if left_shape is None or right_shape is None:
-        raise TypeError("Traced einsum operands must expose shape information.")
-    _parse_equation(expression, left_shape=left_shape, right_shape=right_shape)
-    prepared = trace._prepare_call(expression, operands[0], operands[1], backend=backend_name)
-    result = backend_fn(expression, *operands, **kwargs)
+    operand_shapes_list: list[tuple[int, ...]] = []
+    for op in operands:
+        sh = _shape_tuple(op)
+        if sh is None:
+            raise TypeError("Traced einsum operands must expose shape information.")
+        operand_shapes_list.append(sh)
+    operand_shapes = tuple(operand_shapes_list)
+
+    out_kw = kwargs.get("out")
+    if out_kw is not None and trace._state.tensor_is_tracked(out_kw):
+        raise ValueError(
+            "Traced einsum does not support out= pointing to a tensor already on this trace "
+            "(in-place into a traced tensor is unsupported)."
+        )
+
+    parsed = parse_einsum_equation(expression, operand_shapes)
+    canonical_eq = nary_equation_canonical_string(parsed)
+
+    if out_kw is not None:
+        out_shape = _shape_tuple(out_kw)
+        if out_shape is None:
+            raise TypeError("out= tensor must expose a shape.")
+        zs = tuple(np.zeros(s, dtype=np.float64) for s in operand_shapes)
+        eq_np = expression.replace(" ", "")
+        try:
+            expected_shape = np.einsum(eq_np, *zs, optimize=True).shape
+        except Exception as exc:
+            raise ValueError(f"Invalid einsum equation {eq_np!r} for operand shapes.") from exc
+        if tuple(out_shape) != expected_shape:
+            raise ValueError(
+                f"out= shape {out_shape} does not match einsum result shape {expected_shape}."
+            )
+
+    prepared = trace._prepare_call(canonical_eq, operands, backend=backend_name)
+    if backend_name == "torch" and "out" in kwargs:
+        out_tensor = kwargs["out"]
+        sub_kwargs = {k: v for k, v in kwargs.items() if k != "out"}
+        try:
+            result = backend_fn(expression, *operands, **kwargs)
+        except TypeError:
+            tmp = backend_fn(expression, *operands, **sub_kwargs)
+            out_tensor.copy_(tmp)
+            result = out_tensor
+    else:
+        result = backend_fn(expression, *operands, **kwargs)
     trace._commit_call(prepared, result)
     return result

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 from .._core.graph import (
     _EdgeEndpoint,
@@ -12,8 +12,8 @@ from .._core.graph import (
     _make_dangling_edge,
     _make_node,
 )
-from ._equation import _split_raw_equation, parse_equation_for_shapes
-from .trace import _normalize_trace, pair_tensor
+from ._equation import _binary_operand_specs_before_arrow, parse_einsum_equation
+from .trace import _normalize_trace, einsum_trace_step, pair_tensor
 
 
 @dataclass(frozen=True)
@@ -23,40 +23,53 @@ class _AxisOrigin:
     axis_name: str
 
 
-def _operand_shape_for_pair(
+def _trace_step_operand_names(step: pair_tensor | einsum_trace_step) -> tuple[str, ...]:
+    if isinstance(step, pair_tensor):
+        return (step.left_name, step.right_name)
+    return step.operand_names
+
+
+def _equation_string(step: pair_tensor | einsum_trace_step) -> str:
+    if isinstance(step, pair_tensor):
+        return str(step)
+    return step.equation
+
+
+def _operand_shape_for_step(
     tensor_name: str,
-    pair: pair_tensor,
+    step: pair_tensor | einsum_trace_step,
     *,
     live_tensors: dict[str, tuple[_AxisOrigin, ...]],
-    side: Literal["left", "right"],
+    operand_index: int,
 ) -> tuple[int, ...]:
     if tensor_name in live_tensors:
         n = len(live_tensors[tensor_name])
         return (1,) * n
-    md = pair.metadata or {}
-    key = "left_shape" if side == "left" else "right_shape"
-    raw = md.get(key)
-    if raw is not None:
+    md = step.metadata or {}
+    raw_list = md.get("operand_shapes")
+    if raw_list is not None:
+        raw = raw_list[operand_index]
         return tuple(int(dim) for dim in raw)
-    eq = pair.equation.replace(" ", "")
+    if isinstance(step, pair_tensor):
+        key = "left_shape" if operand_index == 0 else "right_shape"
+        raw = md.get(key)
+        if raw is not None:
+            return tuple(int(dim) for dim in raw)
+    eq = _equation_string(step).replace(" ", "")
     if "..." in eq:
+        side = "left_shape" if operand_index == 0 else "right_shape"
         raise ValueError(
-            f"pair_tensor for operand {tensor_name!r} needs metadata[{key!r}] "
+            f"pair_tensor for operand {tensor_name!r} needs metadata[{side!r}] "
             "when the equation contains ellipsis."
         )
-    left_raw, right_raw, _ = _split_raw_equation(eq)
-    spec = left_raw if side == "left" else right_raw
+    operands_part = eq.split("->", 1)[0] if "->" in eq else eq
+    specs = operands_part.split(",")
+    if len(specs) == 2 and operand_index < 2:
+        left_raw, right_raw = _binary_operand_specs_before_arrow(eq)
+        spec = left_raw if operand_index == 0 else right_raw
+    else:
+        spec = specs[operand_index]
     return (1,) * len(spec)
-
-
-def _axes_grouped(
-    axes: tuple[str, ...],
-    origins: tuple[_AxisOrigin, ...],
-) -> dict[str, list[_AxisOrigin]]:
-    by: dict[str, list[_AxisOrigin]] = {}
-    for axis_name, origin in zip(axes, origins, strict=True):
-        by.setdefault(axis_name, []).append(origin)
-    return by
 
 
 def _build_graph(trace_input: Any) -> _GraphData:
@@ -66,78 +79,68 @@ def _build_graph(trace_input: Any) -> _GraphData:
     live_tensors: dict[str, tuple[_AxisOrigin, ...]] = {}
     edges: list[Any] = []
     produced_names: set[str] = set()
-    all_result_names = {pair.result_name for pair in trace}
+    all_result_names = {_step_result_name(s) for s in trace}
     next_virtual_id = -1
 
-    for pair in trace:
-        if pair.left_name == pair.right_name:
-            raise ValueError(
-                "Binary einsum traces require distinct tensor names for both operands."
+    for step in trace:
+        operand_names = _trace_step_operand_names(step)
+        if len(set(operand_names)) != len(operand_names):
+            raise ValueError("Einsum traces require distinct tensor names for all operands.")
+
+        shapes = tuple(
+            _operand_shape_for_step(
+                operand_names[i],
+                step,
+                live_tensors=live_tensors,
+                operand_index=i,
+            )
+            for i in range(len(operand_names))
+        )
+        eq_str = _equation_string(step)
+        parsed = parse_einsum_equation(eq_str, shapes)
+
+        res_name = _step_result_name(step)
+        if res_name in node_ids_by_name or res_name in produced_names:
+            raise ValueError(f"Result name {res_name!r} must be new for each trace step.")
+        if res_name in set(operand_names):
+            raise ValueError(f"Result name {res_name!r} must be new (not an operand name).")
+
+        operand_origins: list[tuple[_AxisOrigin, ...]] = []
+        for i, name in enumerate(operand_names):
+            operand_origins.append(
+                _consume_or_create_tensor(
+                    name,
+                    parsed.operand_axes[i],
+                    nodes=nodes,
+                    node_ids_by_name=node_ids_by_name,
+                    live_tensors=live_tensors,
+                    produced_names=produced_names,
+                    all_result_names=all_result_names,
+                )
             )
 
-        left_shape = _operand_shape_for_pair(
-            pair.left_name,
-            pair,
-            live_tensors=live_tensors,
-            side="left",
-        )
-        right_shape = _operand_shape_for_pair(
-            pair.right_name,
-            pair,
-            live_tensors=live_tensors,
-            side="right",
-        )
-        parsed = parse_equation_for_shapes(pair.equation, left_shape, right_shape)
+        by_label: dict[str, list[_AxisOrigin]] = {}
+        for i, axes in enumerate(parsed.operand_axes):
+            for axis_name, origin in zip(axes, operand_origins[i], strict=True):
+                by_label.setdefault(axis_name, []).append(origin)
 
-        if pair.result_name in node_ids_by_name or pair.result_name in produced_names:
-            raise ValueError(f"Result name {pair.result_name!r} must be new for each pair_tensor.")
-        if pair.result_name in {pair.left_name, pair.right_name}:
-            raise ValueError(f"Result name {pair.result_name!r} must be new for each pair_tensor.")
-
-        left_origins = _consume_or_create_tensor(
-            pair.left_name,
-            parsed.left_axes,
-            nodes=nodes,
-            node_ids_by_name=node_ids_by_name,
-            live_tensors=live_tensors,
-            produced_names=produced_names,
-            all_result_names=all_result_names,
-        )
-        right_origins = _consume_or_create_tensor(
-            pair.right_name,
-            parsed.right_axes,
-            nodes=nodes,
-            node_ids_by_name=node_ids_by_name,
-            live_tensors=live_tensors,
-            produced_names=produced_names,
-            all_result_names=all_result_names,
-        )
-
-        left_by_label = _axes_grouped(parsed.left_axes, left_origins)
-        right_by_label = _axes_grouped(parsed.right_axes, right_origins)
         output_set = set(parsed.output_axes)
-
-        operand_labels = set(left_by_label) | set(right_by_label)
         hub_output_registry: dict[str, _AxisOrigin] = {}
 
-        for label in sorted(operand_labels):
-            lhs = list(left_by_label.get(label, []))
-            rhs_list = list(right_by_label.get(label, []))
-            lhs_all = lhs + rhs_list
+        for label in sorted(by_label):
+            lhs_all = list(by_label[label])
             n = len(lhs_all)
             if n == 0:
                 continue
             if n == 1 and label not in output_set:
-                side = pair.left_name if lhs else pair.right_name
                 raise ValueError(
                     "Unary reductions are not supported in einsum traces: "
-                    f"{label!r} from {side!r} disappears."
+                    f"{label!r} disappears (no corresponding output index)."
                 )
             if n == 1:
                 continue
 
             in_output = label in output_set
-            # Normal pairwise contraction: one leg per operand, summation index (not in output).
             if n == 2 and not in_output:
                 origin_a, origin_b = lhs_all[0], lhs_all[1]
                 if origin_a.node_id != origin_b.node_id:
@@ -153,7 +156,6 @@ def _build_graph(trace_input: Any) -> _GraphData:
             n_tensor_legs = n
             axis_names = tuple(f"{label}__branch_{k}" for k in range(n_tensor_legs))
             if in_output:
-                # Open leg uses the equation index letter (no "__out" suffix).
                 axis_names = axis_names + (label,)
 
             hub_id = next_virtual_id
@@ -184,16 +186,15 @@ def _build_graph(trace_input: Any) -> _GraphData:
                 out_origin = _AxisOrigin(node_id=hub_id, axis_index=out_idx, axis_name=label)
                 hub_output_registry[label] = out_origin
 
-        live_tensors[pair.result_name] = tuple(
+        live_tensors[res_name] = tuple(
             _origin_for_output_label(
                 label,
                 hub_output_registry=hub_output_registry,
-                left_by_label=left_by_label,
-                right_by_label=right_by_label,
+                by_label=by_label,
             )
             for label in parsed.output_axes
         )
-        produced_names.add(pair.result_name)
+        produced_names.add(res_name)
 
     for origins in live_tensors.values():
         for origin in origins:
@@ -209,18 +210,21 @@ def _build_graph(trace_input: Any) -> _GraphData:
     return _GraphData(nodes=nodes, edges=tuple(edges))
 
 
+def _step_result_name(step: pair_tensor | einsum_trace_step) -> str:
+    return step.result_name
+
+
 def _origin_for_output_label(
     label: str,
     *,
     hub_output_registry: dict[str, _AxisOrigin],
-    left_by_label: dict[str, list[_AxisOrigin]],
-    right_by_label: dict[str, list[_AxisOrigin]],
+    by_label: dict[str, list[_AxisOrigin]],
 ) -> _AxisOrigin:
     if label in hub_output_registry:
         return hub_output_registry[label]
-    lhs = left_by_label.get(label, []) + right_by_label.get(label, [])
-    if len(lhs) == 1:
-        return lhs[0]
+    group = by_label.get(label, [])
+    if len(group) == 1:
+        return group[0]
     raise RuntimeError(
         f"Internal error: cannot resolve output axis {label!r} (expected hub or single occurrence)."
     )

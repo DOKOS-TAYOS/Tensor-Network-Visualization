@@ -74,6 +74,11 @@ call :run examples\tenpy_demo.py uniform 3d
 call :run examples\tenpy_demo.py excitation 2d
 call :run examples\tenpy_demo.py excitation 3d
 
+call :run examples\tenpy_explicit_tn_demo.py chain 2d
+call :run examples\tenpy_explicit_tn_demo.py chain 3d
+call :run examples\tenpy_explicit_tn_demo.py hub 2d
+call :run examples\tenpy_explicit_tn_demo.py hub 3d
+
 call :run examples\einsum_demo.py mps 2d
 call :run examples\einsum_demo.py mps 3d
 call :run examples\einsum_demo.py mps 2d --mode manual

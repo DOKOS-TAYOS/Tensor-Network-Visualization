@@ -298,7 +298,8 @@ def test_build_explicit_tn_hyperedge_hub() -> None:
 
 
 def test_tensor_network_viz_exports_tenpy_explicit() -> None:
-    from tensor_network_viz import TenPyTensorNetwork, make_tenpy_tensor_network as m
+    from tensor_network_viz import TenPyTensorNetwork
+    from tensor_network_viz import make_tenpy_tensor_network as m
 
     assert TenPyTensorNetwork.__name__ == "TenPyTensorNetwork"
     assert callable(m)

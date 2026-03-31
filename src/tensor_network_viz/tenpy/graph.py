@@ -7,10 +7,10 @@ from typing import Any
 from .._core.graph import (
     _EdgeEndpoint,
     _GraphData,
-    _NodeData,
     _make_contraction_edge,
     _make_dangling_edge,
     _make_node,
+    _NodeData,
 )
 from .._core.graph_utils import _stringify
 from .explicit import TenPyTensorNetwork

@@ -10,6 +10,16 @@ from typing import Any, Literal
 _TensorState = Literal["available", "bound", "consumed"]
 
 
+@dataclass(frozen=True)
+class einsum_trace_step:
+    """Trace entry for a unary, binary, or n-ary einsum contraction."""
+
+    operand_names: tuple[str, ...]
+    result_name: str
+    equation: str
+    metadata: Mapping[str, Any] | None = None
+
+
 class pair_tensor(str):
     """Trace entry for one binary einsum contraction."""
 
@@ -39,6 +49,10 @@ class pair_tensor(str):
     def equation(self) -> str:
         return str(self)
 
+    @property
+    def operand_names(self) -> tuple[str, ...]:
+        return (self.left_name, self.right_name)
+
 
 @dataclass(frozen=True)
 class _PreparedOperand:
@@ -58,7 +72,6 @@ class _TrackedTensor:
 @dataclass(frozen=True)
 class _PreparedCall:
     expression: str
-    left: _PreparedOperand
-    right: _PreparedOperand
+    operands: tuple[_PreparedOperand, ...]
     result_name: str
     backend: str

@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **TeNPy engine:** **`TenPyTensorNetwork`** and **`make_tenpy_tensor_network`** ([`tenpy/explicit.py`](src/tensor_network_viz/tenpy/explicit.py)) for hand-made **`npc.Array`** networks with explicit bonds; **n-way** bonds use a virtual hub. **`MPS` / `MPO` / momentum-style** inputs are built through this path internally. Root exports **`TenPyTensorNetwork`**, **`make_tenpy_tensor_network`**. Example **`examples/tenpy_explicit_tn_demo.py`** (TeNPy-only). Docs: **`docs/guide.md`**, **`README.md`**, **`examples/README.md`**, **`examples/total_tests.bat`**, tests in **`tests/test_tenpy_backend.py`** and **`tests/test_examples.py`**.
 - **Einsum backend (`einsum_module`):** richer traced-equation support for the built graph: ellipsis (`...`) expanded with NumPy-validated shapes; repeated indices and batch-style outputs (`ab,ab->ab`, traces, etc.) via **virtual hyperedge hubs**; pairwise summation indices between two tensors stay **single bonds** (no hub). Public helper **`parse_equation_for_shapes`** on the einsum submodule. Example script **`examples/einsum_general.py`** (ellipsis batch matmul, Hadamard batch, `ii,i->i`-style trace, short MPS chain). Documentation updates in **`docs/guide.md`** and **`examples/README.md`**.
+- **Traced einsum:** binary **implicit** subscripts without `->` (no `...`); optional **`out=`** (shape-checked; rejected if `out` is already on the trace); **unary** and **ternary+** traced steps via **`parse_einsum_equation`** / **`einsum_trace_step`** in the graph. PyTorch builds without `einsum(..., out=...)` fall back to **`copy_`**. Examples **`implicit_out`**, **`ternary`**, **`unary`** in **`examples/einsum_general.py`**; docs in **`README.md`**, **`CONTRIBUTING.md`**, **`docs/guide.md`**.
 - **Layout:** virtual hyperedge hubs that share the same tensor neighbors are **spread** perpendicular to the bond between those tensors; hubs sitting on a tensor–tensor chord while a **direct** contraction also links that pair are **offset** so batch hyperedges do not overlap matmul-style bonds (e.g. ellipsis + `j`).
 
 ### Changed
@@ -21,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **2D draw:** dangling legs incident only on **virtual** nodes were skipped by the layered edge pass; they are now drawn in a follow-up pass. Dangling stubs from virtual hubs anchor at the **node center** (not the tensor rim) in 2D, matching 3D.
 - **Einsum graph:** open indices on batch/hyper hubs use the **equation letter** for labels (no `__out`-style suffix on dangling legs).
+- **2D layout:** virtual hubs with **only one** physical neighbor (e.g. traced einsum **`ii->i`**) are **offset** from that tensor after the barycenter snap so the hub does not sit coincident with the disk; **3D** already separated such pairs via **z-layer** promotion. Documented in **`docs/guide.md`**.
 
 ## [1.4.1] — 2026-03-29
 

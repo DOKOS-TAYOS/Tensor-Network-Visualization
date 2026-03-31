@@ -73,6 +73,10 @@ def test_total_tests_bat_uses_root_venv_and_covers_example_matrix() -> None:
         r"call :run examples\tenpy_demo.py uniform 3d",
         r"call :run examples\tenpy_demo.py excitation 2d",
         r"call :run examples\tenpy_demo.py excitation 3d",
+        r"call :run examples\tenpy_explicit_tn_demo.py chain 2d",
+        r"call :run examples\tenpy_explicit_tn_demo.py chain 3d",
+        r"call :run examples\tenpy_explicit_tn_demo.py hub 2d",
+        r"call :run examples\tenpy_explicit_tn_demo.py hub 3d",
         r"call :run examples\einsum_demo.py mps 2d",
         r"call :run examples\einsum_demo.py mps 3d",
         r"call :run examples\einsum_demo.py mps 2d --mode manual",
@@ -196,6 +200,34 @@ def test_tenpy_demo_saves_figure_without_showing(
         [
             "tenpy_demo.py",
             "mps",
+            "2d",
+            "--save",
+            str(output_path),
+            "--no-show",
+        ],
+    )
+
+    module.main()
+
+    assert output_path.exists()
+
+
+def test_tenpy_explicit_tn_demo_saves_figure_without_showing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_dir = Path(".tmp") / "example-tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "tenpy-explicit-tn.png"
+    module = _load_example_module(
+        Path("examples/tenpy_explicit_tn_demo.py"),
+        "tenpy_explicit_tn_demo_test",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "tenpy_explicit_tn_demo.py",
+            "chain",
             "2d",
             "--save",
             str(output_path),

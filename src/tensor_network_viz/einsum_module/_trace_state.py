@@ -5,12 +5,18 @@ from __future__ import annotations
 from typing import Any
 
 from ._backend import _dtype_text, _make_weakref, _shape_tuple
-from ._trace_types import _PreparedCall, _PreparedOperand, _TrackedTensor, pair_tensor
+from ._trace_types import (
+    _PreparedCall,
+    _PreparedOperand,
+    _TrackedTensor,
+    einsum_trace_step,
+    pair_tensor,
+)
 
 
 class _TraceState:
     def __init__(self) -> None:
-        self._pairs: list[pair_tensor] = []
+        self._pairs: list[pair_tensor | einsum_trace_step] = []
         self._records: dict[int, _TrackedTensor] = {}
         self._pair_names: set[str] = set()
         self._reserved_names: set[str] = set()
@@ -18,8 +24,13 @@ class _TraceState:
         self._next_result_index = 0
 
     @property
-    def pairs(self) -> list[pair_tensor]:
+    def pairs(self) -> list[pair_tensor | einsum_trace_step]:
         return self._pairs
+
+    def tensor_is_tracked(self, tensor: Any) -> bool:
+        """True if *tensor* is already registered (bound, available, or consumed) on this trace."""
+        self._sweep_dead_records()
+        return self._find_record(tensor)[1] is not None
 
     def bind(self, name: str, tensor: Any) -> None:
         bound_name = str(name)
@@ -53,39 +64,39 @@ class _TraceState:
     def prepare_call(
         self,
         expression: str,
-        left: Any,
-        right: Any,
+        operands: tuple[Any, ...],
         *,
         backend: str,
     ) -> _PreparedCall:
-        if left is right:
+        if len(operands) < 1:
+            raise ValueError("Traced einsum requires at least one operand.")
+        if len({id(t) for t in operands}) != len(operands):
             raise ValueError("Traced einsum requires distinct operand objects.")
 
         self._sweep_dead_records()
         reserved_names = set(self._reserved_names)
-        left_operand, next_tensor_index = self._resolve_operand(
-            left,
-            self._next_tensor_index,
-            reserved_names=reserved_names,
-        )
-        right_operand, next_tensor_index = self._resolve_operand(
-            right,
-            next_tensor_index,
-            reserved_names=reserved_names,
-        )
-        if left_operand.name == right_operand.name:
+        resolved: list[_PreparedOperand] = []
+        next_tensor_index = self._next_tensor_index
+        for tensor in operands:
+            op, next_tensor_index = self._resolve_operand(
+                tensor,
+                next_tensor_index,
+                reserved_names=reserved_names,
+            )
+            resolved.append(op)
+        names = [op.name for op in resolved]
+        if len(set(names)) != len(names):
             raise ValueError("Traced einsum requires distinct operand names.")
         result_name = self._peek_name("r", self._next_result_index, reserved_names=reserved_names)
         return _PreparedCall(
             expression=expression,
-            left=left_operand,
-            right=right_operand,
+            operands=tuple(resolved),
             result_name=result_name,
             backend=backend,
         )
 
     def commit_call(self, prepared: _PreparedCall, result: Any) -> None:
-        for operand in (prepared.left, prepared.right):
+        for operand in prepared.operands:
             current = self._records.get(operand.tensor_id)
             if current is None:
                 self._set_record(
@@ -117,33 +128,50 @@ class _TraceState:
                 state="available",
             ),
         )
-        metadata = {
-            "backend": prepared.backend,
-            "left_dtype": _dtype_text(prepared.left.tensor),
-            "left_shape": _shape_tuple(prepared.left.tensor),
-            "result_dtype": _dtype_text(result),
-            "result_shape": _shape_tuple(result),
-            "right_dtype": _dtype_text(prepared.right.tensor),
-            "right_shape": _shape_tuple(prepared.right.tensor),
-        }
-        self._pairs.append(
-            pair_tensor(
-                prepared.left.name,
-                prepared.right.name,
-                prepared.result_name,
-                prepared.expression,
-                metadata=metadata,
+        n_op = len(prepared.operands)
+        if n_op == 2:
+            left, right = prepared.operands
+            metadata = {
+                "backend": prepared.backend,
+                "left_dtype": _dtype_text(left.tensor),
+                "left_shape": _shape_tuple(left.tensor),
+                "result_dtype": _dtype_text(result),
+                "result_shape": _shape_tuple(result),
+                "right_dtype": _dtype_text(right.tensor),
+                "right_shape": _shape_tuple(right.tensor),
+            }
+            self._pairs.append(
+                pair_tensor(
+                    left.name,
+                    right.name,
+                    prepared.result_name,
+                    prepared.expression,
+                    metadata=metadata,
+                )
             )
-        )
-        self._reserve_pair_names(
-            prepared.left.name,
-            prepared.right.name,
-            prepared.result_name,
-        )
+            self._reserve_pair_names(left.name, right.name, prepared.result_name)
+        else:
+            metadata = {
+                "backend": prepared.backend,
+                "operand_dtypes": tuple(_dtype_text(op.tensor) for op in prepared.operands),
+                "operand_shapes": tuple(_shape_tuple(op.tensor) for op in prepared.operands),
+                "result_dtype": _dtype_text(result),
+                "result_shape": _shape_tuple(result),
+            }
+            self._pairs.append(
+                einsum_trace_step(
+                    tuple(op.name for op in prepared.operands),
+                    prepared.result_name,
+                    prepared.expression,
+                    metadata=metadata,
+                )
+            )
+            self._reserve_pair_names(
+                *(op.name for op in prepared.operands),
+                prepared.result_name,
+            )
 
-        new_tensor_count = sum(
-            not operand.record_exists for operand in (prepared.left, prepared.right)
-        )
+        new_tensor_count = sum(not op.record_exists for op in prepared.operands)
         self._next_tensor_index += new_tensor_count
         self._next_result_index += 1
 

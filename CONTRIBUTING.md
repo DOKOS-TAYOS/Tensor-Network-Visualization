@@ -86,6 +86,7 @@ python examples/tenpy_demo.py mps 2d
 python examples/tenpy_demo.py purification 2d
 python examples/tenpy_demo.py uniform 2d
 python examples/tenpy_demo.py excitation 2d
+python examples/tenpy_explicit_tn_demo.py chain 2d
 python examples/einsum_demo.py disconnected 2d
 python examples/einsum_demo.py mps 2d
 python examples/einsum_demo.py peps 2d
@@ -96,6 +97,9 @@ python examples/einsum_general.py ellipsis 2d
 python examples/einsum_general.py mps_short 2d
 python examples/einsum_general.py nway 2d
 python examples/einsum_general.py trace 2d
+python examples/einsum_general.py implicit_out 2d
+python examples/einsum_general.py ternary 2d
+python examples/einsum_general.py unary 2d
 python examples/mera_tree_demo.py 2d
 python examples/cubic_peps_demo.py 2d
 python examples/tn_tsp.py -n 4 --view 2d
@@ -130,6 +134,7 @@ python examples/tenpy_demo.py mps 2d --hover-labels
 python examples/tenpy_demo.py purification 2d --hover-labels
 python examples/tenpy_demo.py uniform 2d --hover-labels
 python examples/tenpy_demo.py excitation 2d --hover-labels
+python examples/tenpy_explicit_tn_demo.py chain 2d --hover-labels
 python examples/einsum_demo.py disconnected 2d --hover-labels
 python examples/einsum_demo.py mps 2d --hover-labels
 python examples/einsum_demo.py peps 2d --hover-labels
@@ -140,6 +145,9 @@ python examples/einsum_general.py ellipsis 2d --hover-labels
 python examples/einsum_general.py mps_short 2d --hover-labels
 python examples/einsum_general.py nway 2d --hover-labels
 python examples/einsum_general.py trace 2d --hover-labels
+python examples/einsum_general.py implicit_out 2d --hover-labels
+python examples/einsum_general.py ternary 2d --hover-labels
+python examples/einsum_general.py unary 2d --hover-labels
 python examples/mera_tree_demo.py 2d --hover-labels
 python examples/cubic_peps_demo.py 2d --hover-labels
 python examples/tn_tsp.py -n 4 --view 2d --hover-labels
@@ -174,6 +182,7 @@ python examples/tenpy_demo.py mps 3d
 python examples/tenpy_demo.py purification 3d
 python examples/tenpy_demo.py uniform 3d
 python examples/tenpy_demo.py excitation 3d
+python examples/tenpy_explicit_tn_demo.py chain 3d
 python examples/einsum_demo.py disconnected 3d
 python examples/einsum_demo.py mps 3d
 python examples/einsum_demo.py peps 3d
@@ -184,6 +193,9 @@ python examples/einsum_general.py ellipsis 3d
 python examples/einsum_general.py mps_short 3d
 python examples/einsum_general.py nway 3d
 python examples/einsum_general.py trace 3d
+python examples/einsum_general.py implicit_out 3d
+python examples/einsum_general.py ternary 3d
+python examples/einsum_general.py unary 3d
 python examples/mera_tree_demo.py 3d --mera-log2 5 --tree-depth 4
 python examples/cubic_peps_demo.py 3d --lx 3 --ly 3 --lz 4
 python examples/tn_tsp.py -n 5 --view 3d
@@ -218,6 +230,7 @@ python examples/tenpy_demo.py mps 3d --hover-labels
 python examples/tenpy_demo.py purification 3d --hover-labels
 python examples/tenpy_demo.py uniform 3d --hover-labels
 python examples/tenpy_demo.py excitation 3d --hover-labels
+python examples/tenpy_explicit_tn_demo.py chain 3d --hover-labels
 python examples/einsum_demo.py disconnected 3d --hover-labels
 python examples/einsum_demo.py mps 3d --hover-labels
 python examples/einsum_demo.py peps 3d --hover-labels
@@ -228,6 +241,9 @@ python examples/einsum_general.py ellipsis 3d --hover-labels
 python examples/einsum_general.py mps_short 3d --hover-labels
 python examples/einsum_general.py nway 3d --hover-labels
 python examples/einsum_general.py trace 3d --hover-labels
+python examples/einsum_general.py implicit_out 3d --hover-labels
+python examples/einsum_general.py ternary 3d --hover-labels
+python examples/einsum_general.py unary 3d --hover-labels
 python examples/mera_tree_demo.py 3d --mera-log2 5 --tree-depth 4 --hover-labels
 python examples/cubic_peps_demo.py 3d --lx 3 --ly 3 --lz 4 --hover-labels
 python examples/tn_tsp.py -n 5 --view 3d --hover-labels

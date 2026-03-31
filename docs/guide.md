@@ -105,7 +105,7 @@ There are no hidden “modes”. Use this table as the user-facing map to the AP
 | Display | `show=True` / `False` | If `True`: Jupyter **kernel** uses `IPython.display.display(fig)`; otherwise `plt.show()`. If `False`: no display call (for `savefig` / batch). |
 | Labels | `PlotConfig` + call kwargs | `show_tensor_network(..., show_tensor_labels=..., show_index_labels=...)` overrides `PlotConfig`. |
 | Hover | `PlotConfig(hover_labels=True)` | Interactive only; 2D hit-testing vs 3D projected distance. |
-| Einsum | trace vs list | `EinsumTrace` + `einsum()` or ordered `pair_tensor` list. |
+| Einsum | trace vs list | `EinsumTrace` + `einsum()`, or ordered **`pair_tensor`** / **`einsum_trace_step`** list. |
 
 <a id="toc-core-usage"></a>
 
@@ -235,7 +235,11 @@ Imports:
 from tensor_network_viz.tensorkrowch import plot_tensorkrowch_network_2d, plot_tensorkrowch_network_3d
 from tensor_network_viz.tensornetwork import plot_tensornetwork_network_2d, plot_tensornetwork_network_3d
 from tensor_network_viz.quimb import plot_quimb_network_2d, plot_quimb_network_3d
-from tensor_network_viz.tenpy import plot_tenpy_network_2d, plot_tenpy_network_3d
+from tensor_network_viz.tenpy import (
+    make_tenpy_tensor_network,
+    plot_tenpy_network_2d,
+    plot_tenpy_network_3d,
+)
 from tensor_network_viz.einsum_module import plot_einsum_network_2d, plot_einsum_network_3d
 ```
 
@@ -263,19 +267,28 @@ from tensor_network_viz.einsum_module import plot_einsum_network_2d, plot_einsum
 
 ### TeNPy
 
+- **`TenPyTensorNetwork`** / **`make_tenpy_tensor_network`:** ordered **`npc.Array`** tensors (each
+  with **`get_leg_labels()`**) plus **`bonds`**: each bond is a tuple of **two or more**
+  **`(tensor_id, leg_label)`** legs sharing one index. Binary bonds draw as ordinary edges;
+  **three or more** legs on one bond use a **virtual hub** (same idea as Quimb hyperedges). Unlisted
+  axes are **dangling**. TeNPy itself does not define this container; it lives in this package for
+  **`engine="tenpy"`** only.
 - Finite, segment, or infinite **`tenpy.networks.mps.MPS`** (including **`PurificationMPS`** and
-  **`UniformMPS`**, which share the **`get_B`** chain API).
-- Finite or infinite **`tenpy.networks.mpo.MPO`**.
+  **`UniformMPS`**, which share the **`get_B`** chain API). These are normalized internally through
+  the same explicit bond rules as a 1D chain.
+- Finite or infinite **`tenpy.networks.mpo.MPO`** (**`get_W`**).
 - **Momentum-style excitations:** objects with **`get_X(i)`** and **`uMPS_GS`** (same surface as
   **`MomentumMPS`**); periodicity follows **`uMPS_GS.bc`** / **`finite`**.
-- **Not in scope:** TeNPy does not ship a stable **PEPS** class in **`tenpy.networks`**; models,
-  environments, and transfer matrices are not auto-wrapped.
+- **Not auto-wrapped:** TeNPy does not ship a stable **PEPS** class in **`tenpy.networks`**. You can
+  still draw PEPS-like or sandwich topologies by building a **`TenPyTensorNetwork`** from **`npc.Array`**
+  tensors (e.g. from **`get_B`** / **`get_W`** on bra, MPO, ket) and explicit bonds.
 
 Infinite structures render as one **periodic unit cell**.
 
 ### `einsum`
 
-**Inputs:** `EinsumTrace`, or ordered iterable of **`pair_tensor`**.
+**Inputs:** `EinsumTrace`, or an ordered iterable of **`pair_tensor`** (binary steps) and/or
+**`einsum_trace_step`** (unary / ternary+ manual traces).
 
 **Auto tracing:**
 
@@ -308,8 +321,12 @@ fig, ax = show_tensor_network(trace, engine="einsum", view="2d", show=False)
 **`left_shape`** and **`right_shape`** (tuple of ints) when the equation contains **`...`**, so the
 graph builder can expand indices. Auto-traced calls record these automatically.
 
-**Optional API:** `from tensor_network_viz.einsum_module import parse_equation_for_shapes` expands
-and validates a binary subscript string against two operand ranks (same rules as NumPy `einsum`).
+**Optional API:** `parse_equation_for_shapes` validates a **binary** subscript string against two
+operand ranks. **`parse_einsum_equation`** generalizes that to **any arity** (same NumPy rules for
+implicit output). Manual **n-ary** traces can use **`einsum_trace_step`** with **`operand_shapes`**
+metadata; **binary** auto-traces still produce **`pair_tensor`** rows. Traced **`out=`** is allowed
+when the buffer is **not** already on the trace; **implicit** subscripts without **`->`** are
+supported for **binary** steps (ellipsis still requires **`->`**).
 
 The diagram shows the **underlying** tensor network, not every intermediate result tensor. Trace
 order must match contraction order.
@@ -319,7 +336,10 @@ output) are **single bonds** between tensors. Indices repeated on the left or ca
 are merged at **virtual hub** nodes (like Quimb hyperedges). The shared layout pass **spreads** hub
 nodes that share the same tensor neighbors, and **offsets** a hub off the chord between two tensors
 when those tensors also have a **direct** contraction (e.g. batch ellipsis hyperedge alongside a
-matmul leg) so bonds do not coincide visually.
+matmul leg) so bonds do not coincide visually. Hubs that attach to **only one** physical tensor
+(same-tensor traces such as **`ii->i`**) would otherwise sit on top of that tensor after the
+barycenter snap; in **2D** they receive an extra **perpendicular offset** from the tensor, while
+**3D** already separates overlapping hub/tensor pairs via **layer promotion** along the z axis.
 
 <a id="toc-plotconfig"></a>
 
@@ -495,8 +515,9 @@ The [`examples/`](../examples/) directory includes:
 | `cubic_peps_demo.py` | Cubic PEPS (3D-friendly). |
 | `quimb_demo.py` | Hyper-index demo, tensor lists. |
 | `tenpy_demo.py` | MPS/MPO, purification, uniform, excitation (`MomentumMPS`-like API). |
+| `tenpy_explicit_tn_demo.py` | `make_tenpy_tensor_network` + `npc.Array`: chain vs hub (TeNPy-only). |
 | `einsum_demo.py` | Auto vs manual trace. |
-| `einsum_general.py` | Ellipsis, batch hyperedges, traces, short MPS (auto-trace). |
+| `einsum_general.py` | Ellipsis, batch hyperedges, traces, short MPS, implicit/`out=`, unary, ternary (auto-trace). |
 | `tn_tsp.py` | TensorKrowch TSP construction. |
 
 Command catalog: [`examples/README.md`](../examples/README.md).
@@ -507,22 +528,27 @@ Command catalog: [`examples/README.md`](../examples/README.md).
 
 ### `einsum` tracing
 
-The traced helper enforces a **binary**, explicit-output `einsum` string on each recorded step:
+With **`trace=`**, the helper records each step and validates subscripts against operand **shapes**
+using NumPy’s `einsum` (same rules as NumPy/PyTorch for duplicates, broadcasting batch indices, etc.):
 
-- Exactly **two** operands per traced call; **`->`** required; no `out=`.
-- **Validation** uses NumPy’s `einsum` on the operand **shapes** (same rules as NumPy/PyTorch for
-  duplicates, ellipsis, broadcasting batch indices, etc.).
-- **`...`** is supported: ranks are taken from the tensors, and the graph builder expands ellipsis
-  to explicit labels when rendering (metadata stores `left_shape` / `right_shape` per step).
-- **Visualization:** indices that appear **twice or more** on the LHS of the equation, or appear in
-  the **output** while touching more than one leg, use **virtual hub** nodes (hyperedge spokes).
-  A **single** pairwise summation (one letter per operand, not in the output) is a **direct bond**
-  (no hub). See [`examples/einsum_general.py`](../examples/einsum_general.py).
-- **Graph build** still rejects **unary index disappearance** (an index appears on only one operand,
-  not in the output, and is summed away) so the fundamental network stays well-formed for the
-  current layout code.
+- **Arity:** **one**, **two**, or **more** operands per traced call. **Binary** steps are stored as
+  **`pair_tensor`**; **unary** / **ternary+** as **`einsum_trace_step`** (with **`operand_shapes`**
+  in metadata for manual lists).
+- **Explicit output:** **`->`** is required when the equation contains **`...`**. For equations
+  **without** ellipsis, **implicit** output (omitting **`->`**) is allowed; the trace stores a
+  canonical explicit string. Optional **`out=`** is supported (shape-checked; **`out`** must not
+  already be on the trace). PyTorch builds without native **`einsum(..., out=...)`** use **`copy_`**
+  into **`out`**.
+- **`...` (binary):** ranks come from the tensors; the graph expands ellipsis using metadata
+  **`left_shape`** / **`right_shape`** per step (auto-trace fills these).
+- **Visualization:** indices that appear **twice or more** on the LHS, or appear in the **output**
+  while touching more than one leg, use **virtual hub** nodes. A **single** pairwise summation (one
+  letter per operand, not in the output) is a **direct bond** (no hub). See
+  [`examples/einsum_general.py`](../examples/einsum_general.py).
+- **Graph build** rejects **unary index disappearance** (a label on only one operand, not in the
+  output, and summed away).
 
-Without `trace=`, `tensor_network_viz.einsum` is a thin wrapper and does not enforce tracing rules.
+Without **`trace=`**, `tensor_network_viz.einsum` is a thin wrapper and does not record steps.
 
 ### Subgraphs
 
@@ -582,6 +608,15 @@ Always use **`show=False`** for batch saves and **`plt.close(fig)`** when genera
 Requires an **interactive** figure with event handling. Does nothing for **`--no-show`** PNG-only
 CLI runs or **Agg** without a GUI loop.
 
+<a id="toc-einsum-unary-2d-layout"></a>
+
+### Einsum unary / same-tensor trace in 2D
+
+Equations like **`ii->i`** use a **virtual hub** attached to a **single** tensor. The layout places
+that hub **off** the tensor disk in **2D** (after barycenter snap) so the tensor and hyperedge stay
+visible. If you still see overlap, try **`view="3d"`** or increase separation indirectly via
+**`layout_iterations`** and a larger **`figsize`**.
+
 ### Slow rendering
 
 - Set **`refine_tensor_labels=False`**.
@@ -605,9 +640,10 @@ Keys must match **normalized** node ids. Wrong **`id(...)`** → coords skipped 
 ### Public surface
 
 Root package [**`__init__.py`**](../src/tensor_network_viz/__init__.py): `show_tensor_network`,
-`PlotConfig`, `EngineName`, `ViewName`, `EinsumTrace`, `einsum`, `pair_tensor`. The
-[**`einsum_module`**](../src/tensor_network_viz/einsum_module/__init__.py) also exports
-`parse_equation_for_shapes`, `plot_einsum_network_2d`, and `plot_einsum_network_3d`.
+`PlotConfig`, `EngineName`, `ViewName`, `EinsumTrace`, `einsum`, `einsum_trace_step`, `pair_tensor`.
+The [**`einsum_module`**](../src/tensor_network_viz/einsum_module/__init__.py) also exports
+`parse_einsum_equation`, `parse_equation_for_shapes`, `plot_einsum_network_2d`, and
+`plot_einsum_network_3d`.
 
 ### Engine registry
 
@@ -640,7 +676,9 @@ The [**`layout` package**](../src/tensor_network_viz/_core/layout/__init__.py) t
 structure detection, planar attempts, force layout, and 3D layering heuristics. Virtual (hyperedge)
 hubs: **barycenter snap** to neighbors, then **perpendicular spread** when several hubs share the same
 neighbor set, then **chord clearance** when a hub would sit on a tensor–tensor segment that also
-carries a direct contraction edge.
+carries a direct contraction edge. In **2D**, a hub with **only one** physical neighbor (e.g. einsum
+**`ii->i`**) is **nudged** off that tensor so it is not drawn coincident with it; **3D** overlaps are
+handled by **z-layer promotion** (`_promote_3d_layers`).
 
 <a id="toc-development-notes"></a>
 

@@ -7,10 +7,12 @@ matplotlib.use("Agg")
 from collections.abc import Generator
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 
 from plotting_helpers import line_collection_segment_count
-from tensor_network_viz import pair_tensor
+from tensor_network_viz import einsum_trace_step, pair_tensor
+from tensor_network_viz._core.layout.body import _compute_layout
 from tensor_network_viz.einsum_module import (
     plot_einsum_network_2d,
     plot_einsum_network_3d,
@@ -83,7 +85,18 @@ def test_build_einsum_graph_supports_disconnected_components() -> None:
 @pytest.mark.parametrize(
     ("trace", "message"),
     [
-        ([pair_tensor("A", "x", "r0", "ab,b")], "explicit"),
+        (
+            [
+                pair_tensor(
+                    "A",
+                    "B",
+                    "r0",
+                    "...ij,...jk",
+                    metadata={"left_shape": (2, 3, 4), "right_shape": (2, 4, 5)},
+                )
+            ],
+            "explicit output subscript",
+        ),
         (
             [pair_tensor("A", "x", "r0", "...a,a->a")],
             "metadata",
@@ -189,12 +202,59 @@ def test_plot_einsum_network_2d_draws_reconstructed_graph() -> None:
     assert line_collection_segment_count(ax) >= 4
 
 
-def test_einsum_trace_requires_binary_explicit_output_equations() -> None:
-    """Binary equations with explicit '->' only; other forms are rejected (documented)."""
-    with pytest.raises(ValueError, match="binary"):
-        _build_graph([pair_tensor("A", "B", "r0", "ab,bc,cd->ad")])
-    with pytest.raises(ValueError, match="explicit"):
-        _build_graph([pair_tensor("A", "x", "r0", "ab,b")])
+def test_einsum_trace_nary_and_implicit_binary_graph() -> None:
+    """Ternary equations build a graph; implicit binary pair_tensor is canonicalized."""
+    graph = _build_graph(
+        [
+            einsum_trace_step(
+                ("A", "B", "C"),
+                "r0",
+                "ab,bc,cd->ad",
+                metadata={
+                    "operand_shapes": ((2, 3), (3, 4), (4, 5)),
+                },
+            ),
+        ]
+    )
+    visible = sorted(n.name for n in graph.nodes.values() if not n.is_virtual)
+    assert visible == ["A", "B", "C"]
+    graph2 = _build_graph([pair_tensor("A", "x", "r0", "ab,b")])
+    assert any(n.name == "A" for n in graph2.nodes.values())
+
+
+def test_einsum_trace_unary_graph() -> None:
+    graph = _build_graph(
+        [
+            einsum_trace_step(
+                ("M",),
+                "r0",
+                "ii->i",
+                metadata={"operand_shapes": ((4, 4),)},
+            ),
+        ]
+    )
+    assert any(n.name == "M" for n in graph.nodes.values() if not n.is_virtual)
+    assert any(e.kind == "contraction" for e in graph.edges)
+
+
+def test_unary_einsum_2d_layout_offsets_virtual_hub_from_tensor() -> None:
+    """Regression: single-tensor trace hub must not sit on the physical node (2D)."""
+    graph = _build_graph(
+        [
+            einsum_trace_step(
+                ("M",),
+                "r0",
+                "ii->i",
+                metadata={"operand_shapes": ((4, 4),)},
+            ),
+        ]
+    )
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    phys_ids = [nid for nid, n in graph.nodes.items() if not n.is_virtual]
+    virt_ids = [nid for nid, n in graph.nodes.items() if n.is_virtual]
+    assert len(phys_ids) == 1 and len(virt_ids) == 1
+    d = float(np.linalg.norm(positions[phys_ids[0]] - positions[virt_ids[0]]))
+    assert d > 0.08
 
 
 def test_plot_einsum_network_3d_returns_3d_axes() -> None:

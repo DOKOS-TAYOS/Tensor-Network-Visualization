@@ -127,6 +127,17 @@ python examples/tenpy_demo.py uniform 3d
 python examples/tenpy_demo.py excitation 2d --save tenpy-excitation.png --no-show
 ```
 
+## `tenpy_explicit_tn_demo.py`
+
+Hand-made **`TenPyTensorNetwork`** / **`make_tenpy_tensor_network`**: open **chain** (binary bonds) or
+**hub** (three tensors on one index, drawn with a virtual hub). Uses **only** the **`[tenpy]`**
+extra.
+
+```bash
+python examples/tenpy_explicit_tn_demo.py chain 2d
+python examples/tenpy_explicit_tn_demo.py hub 3d --save tenpy-explicit.png --no-show
+```
+
 ## `einsum_demo.py`
 
 Auto-traced vs manual `pair_tensor` lists.
@@ -144,10 +155,13 @@ Install **`tensor-network-visualization[einsum]`** (PyTorch) if you execute cont
 ## `einsum_general.py`
 
 Ellipsis (batched matmul), batch Hadamard-style bonds (`ab,ab->ab`), diagonal/trace-style equations
-(`ii,i->i`), and a short MPS-style chain. Uses the same **auto-trace** workflow as `einsum_demo.py`
-(`EinsumTrace` + `tensor_network_viz.einsum`). The renderer expands `...` using ranks stored in
-each `pair_tensor`’s metadata and draws repeated / output-carrying indices as **virtual hub**
-nodes in [`einsum_module/graph.py`](../src/tensor_network_viz/einsum_module/graph.py).
+(`ii,i->i`), a short MPS-style chain, **implicit binary** subscripts with optional **`out=`**, and
+**single-step** **unary** / **ternary** traced einsums. Uses the same **auto-trace** workflow as
+`einsum_demo.py` (`EinsumTrace` + `tensor_network_viz.einsum`). The renderer expands `...` using
+ranks stored in **binary** `pair_tensor` metadata; **n-ary** steps are stored as **`einsum_trace_step`**
+(see [`einsum_module/trace.py`](../src/tensor_network_viz/einsum_module/trace.py)). Virtual **hub**
+nodes follow [`einsum_module/graph.py`](../src/tensor_network_viz/einsum_module/graph.py); **2D** layout
+offsets single-neighbor trace hubs (e.g. **`unary`**) off the physical tensor so the figure stays readable.
 
 ```bash
 python examples/einsum_general.py ellipsis 2d
@@ -155,6 +169,9 @@ python examples/einsum_general.py batch 3d
 python examples/einsum_general.py nway 2d
 python examples/einsum_general.py trace 2d
 python examples/einsum_general.py mps_short 2d
+python examples/einsum_general.py implicit_out 2d
+python examples/einsum_general.py ternary 3d
+python examples/einsum_general.py unary 2d
 python examples/einsum_general.py ellipsis 2d --save einsum_general.png --no-show
 ```
 
@@ -227,6 +244,10 @@ python examples/tenpy_demo.py uniform 2d
 python examples/tenpy_demo.py uniform 3d
 python examples/tenpy_demo.py excitation 2d
 python examples/tenpy_demo.py excitation 3d
+python examples/tenpy_explicit_tn_demo.py chain 2d
+python examples/tenpy_explicit_tn_demo.py chain 3d
+python examples/tenpy_explicit_tn_demo.py hub 2d
+python examples/tenpy_explicit_tn_demo.py hub 3d
 python examples/einsum_demo.py mps 2d
 python examples/einsum_demo.py mps 3d
 python examples/einsum_demo.py mps 2d --mode manual
@@ -245,6 +266,12 @@ python examples/einsum_general.py nway 2d
 python examples/einsum_general.py nway 3d
 python examples/einsum_general.py trace 2d
 python examples/einsum_general.py trace 3d
+python examples/einsum_general.py implicit_out 2d
+python examples/einsum_general.py implicit_out 3d
+python examples/einsum_general.py ternary 2d
+python examples/einsum_general.py ternary 3d
+python examples/einsum_general.py unary 2d
+python examples/einsum_general.py unary 3d
 python examples/tn_tsp.py -n 4 --view 2d
 python examples/tn_tsp.py -n 4 --view 3d
 python examples/tn_tsp.py -n 5 --view 2d

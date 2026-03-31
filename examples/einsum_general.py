@@ -15,14 +15,20 @@ How this is drawn (implementation sketch, all logic lives in ``tensor_network_vi
 3. **Open indices preserved in the output**: if such an index also appears in the output, the hub
    gains an extra axis; the logical result axis is tracked on that hub so the final ``dangling``
    legs match the surviving tensor-network bond structure without duplicating stubs.
+4. **Layout (``_core/layout``):** in **2D**, a virtual hub attached to **one** tensor only (e.g.
+   ``unary`` / ``ii->i``) is shifted off the tensor disk after the barycenter snap so it is not
+   drawn on top of the tensor; **3D** uses z-layer promotion for similar separation.
 
 **Automatic trace (recommended):** use ``EinsumTrace`` + ``tensor_network_viz.einsum`` exactly like
-``einsum_demo.py``. Each committed step stores ``left_shape`` / ``right_shape`` in
-``pair_tensor.metadata``, which the graph builder needs to expand ``...`` when visualizing.
+``einsum_demo.py``. Binary steps are stored as ``pair_tensor`` (with ``left_shape`` /
+``right_shape`` in ``metadata`` for ellipsis). Unary and ternary+ steps are stored as
+``einsum_trace_step`` with ``operand_shapes`` in ``metadata``. Implicit subscripts without ``->``
+and ``out=`` are supported for binary contractions (canonical explicit form is stored in the trace).
 
-**Manual ``pair_tensor`` lists:** for equations with ellipsis you must supply
-``metadata=dict(left_shape=..., right_shape=...)`` on each entry; otherwise the ranks cannot be
-resolved.
+**Manual traces:** for ellipsis in **binary** equations, supply
+``metadata=dict(left_shape=..., right_shape=...)`` on each ``pair_tensor``. For manual **n-ary**
+rows use ``einsum_trace_step(operand_names, result_name, equation, metadata=...)`` with
+``operand_shapes``.
 
 Examples::
 
@@ -31,6 +37,9 @@ Examples::
   python examples/einsum_general.py nway 3d
   python examples/einsum_general.py trace 2d
   python examples/einsum_general.py mps_short 2d --save einsum_general.png --no-show
+  python examples/einsum_general.py implicit_out 2d
+  python examples/einsum_general.py ternary 2d
+  python examples/einsum_general.py unary 2d
 """
 
 import argparse
@@ -59,7 +68,16 @@ from demo_cli import (
     demo_plot_config,
 )
 
-ExampleName = Literal["ellipsis", "batch", "nway", "trace", "mps_short"]
+ExampleName = Literal[
+    "ellipsis",
+    "batch",
+    "nway",
+    "trace",
+    "mps_short",
+    "implicit_out",
+    "ternary",
+    "unary",
+]
 
 
 def build_ellipsis_example() -> EinsumTrace:
@@ -84,8 +102,42 @@ def build_batch_example() -> EinsumTrace:
     return trace
 
 
+def build_implicit_out_example() -> EinsumTrace:
+    """Binary contraction without ``->`` plus pre-allocated ``out=`` (canonical ``ij,j->i``)."""
+    trace = EinsumTrace()
+    a = torch.ones((2, 3))
+    b = torch.ones((3,))
+    out = torch.empty((2,))
+    trace.bind("A", a)
+    trace.bind("b", b)
+    einsum("ij,j", a, b, trace=trace, backend="torch", out=out)
+    return trace
+
+
+def build_ternary_example() -> EinsumTrace:
+    """Single traced einsum with three operands ``ab,bc,cd->ad``."""
+    trace = EinsumTrace()
+    a = torch.ones((2, 3))
+    b = torch.ones((3, 4))
+    c = torch.ones((4, 5))
+    trace.bind("A", a)
+    trace.bind("B", b)
+    trace.bind("C", c)
+    _ = einsum("ab,bc,cd->ad", a, b, c, trace=trace, backend="torch")
+    return trace
+
+
+def build_unary_example() -> EinsumTrace:
+    """Matrix diagonal / partial trace ``ii->i`` with one operand."""
+    trace = EinsumTrace()
+    m = torch.ones((4, 4))
+    trace.bind("M", m)
+    _ = einsum("ii->i", m, trace=trace, backend="torch")
+    return trace
+
+
 def build_nway_example() -> EinsumTrace:
-    """Three tensors merged via two traced binary einsums (pairwise tracing only)."""
+    """Three tensors merged via two traced binary einsums."""
     trace = EinsumTrace()
     t = torch.ones((3, 4, 5))
     u = torch.ones((3, 4, 6))
@@ -132,6 +184,9 @@ BUILDERS: dict[ExampleName, Callable[[], EinsumTrace]] = {
     "nway": build_nway_example,
     "trace": build_trace_example,
     "mps_short": build_mps_short_example,
+    "implicit_out": build_implicit_out_example,
+    "ternary": build_ternary_example,
+    "unary": build_unary_example,
 }
 
 
@@ -144,6 +199,9 @@ GENERAL_TAGLINES: dict[str, str] = {
     ),
     "trace": "Diagonal-style selective trace — same-tensor legs and vector masking.",
     "mps_short": "Two-site MPS matvec — minimal chain showing traced intermediates.",
+    "implicit_out": "Implicit binary subscripts + torch out= — stored equation is explicit.",
+    "ternary": "One einsum trace step with three tensors (chain contraction into a matrix).",
+    "unary": "Single-operand einsum (diagonal map) — one einsum_trace_step in the trace.",
 }
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 
 import numpy as np
@@ -11,6 +12,12 @@ import numpy as np
 class _ParsedEquation:
     left_axes: tuple[str, ...]
     right_axes: tuple[str, ...]
+    output_axes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _ParsedNaryEquation:
+    operand_axes: tuple[tuple[str, ...], ...]
     output_axes: tuple[str, ...]
 
 
@@ -66,15 +73,186 @@ def _expand_operand_spec(operand_spec: str, ell_labels: tuple[str, ...]) -> str:
     return f"{explicit_before}{''.join(ell_labels)}{explicit_after}"
 
 
+def _binary_operand_specs_before_arrow(equation: str) -> tuple[str, str]:
+    """Left and right operand subscript strings (binary only), with or without ``->``."""
+    eq = equation.replace(" ", "")
+    operands_part = eq.split("->", 1)[0] if "->" in eq else eq
+    if operands_part.count(",") != 1:
+        raise ValueError("Einsum traces support only binary equations with two operands.")
+    left_raw, right_raw = operands_part.split(",")
+    return left_raw, right_raw
+
+
 def _split_raw_equation(equation: str) -> tuple[str, str, str]:
     eq = equation.replace(" ", "")
     if eq.count("->") != 1:
         raise ValueError("Einsum traces require an explicit output using '->'.")
-    operands_part, output_spec = eq.split("->")
+    operands_part, output_spec = eq.split("->", 1)
     if operands_part.count(",") != 1:
         raise ValueError("Einsum traces support only binary equations with two operands.")
     left_raw, right_raw = operands_part.split(",")
     return left_raw, right_raw, output_spec
+
+
+def _implicit_binary_output_letters(left_raw: str, right_raw: str) -> str:
+    """Output subscripts for implicit binary einsum (NumPy: non-repeated labels, sorted)."""
+    letters: list[str] = []
+    for spec in (left_raw, right_raw):
+        letters.extend(ch for ch in spec if ch.isalpha())
+    counts = Counter(letters)
+    return "".join(sorted(ch for ch, n in counts.items() if n == 1))
+
+
+def _implicit_nary_output_letters(operand_specs: tuple[str, ...]) -> str:
+    """Implicit output for n operands: labels appearing exactly once, sorted (NumPy rule)."""
+    letters: list[str] = []
+    for spec in operand_specs:
+        letters.extend(ch for ch in spec if ch.isalpha())
+    counts = Counter(letters)
+    return "".join(sorted(ch for ch, n in counts.items() if n == 1))
+
+
+def canonicalize_binary_einsum_expression(
+    expression: str,
+    *,
+    left_shape: tuple[int, ...],
+    right_shape: tuple[int, ...],
+) -> str:
+    """Return explicit ``left,right->out`` for binary *expression* (no ``...`` in input)."""
+    eq = expression.replace(" ", "")
+    if "..." in eq:
+        raise ValueError(
+            "Einsum equations with ellipsis require an explicit output subscript using '->'."
+        )
+    if "->" in eq:
+        return _validate_explicit_ranks(expression, left_shape, right_shape)
+    left_raw, right_raw = _binary_operand_specs_before_arrow(eq)
+    if len(left_raw) != len(left_shape) or len(right_raw) != len(right_shape):
+        raise ValueError(
+            "Subscripts do not match tensor ranks (counts include repeated labels per axis)."
+        )
+    out_spec = _implicit_binary_output_letters(left_raw, right_raw)
+    explicit = f"{left_raw},{right_raw}->{out_spec}"
+    zl = np.zeros(left_shape, dtype=np.float64)
+    zr = np.zeros(right_shape, dtype=np.float64)
+    try:
+        z_implicit = np.einsum(eq, zl, zr, optimize=True)
+        z_explicit = np.einsum(explicit, zl, zr, optimize=True)
+    except Exception as exc:
+        raise ValueError(f"Invalid einsum equation {eq!r} for operand shapes.") from exc
+    if z_implicit.shape != z_explicit.shape:
+        raise ValueError(
+            f"Implicit equation {eq!r} is inconsistent with inferred explicit form {explicit!r}."
+        )
+    return explicit
+
+
+def _binary_explicit_string(
+    expression: str,
+    left_shape: tuple[int, ...],
+    right_shape: tuple[int, ...],
+) -> str:
+    """Return validated explicit ``->`` equation for two operands (ellipsis allowed)."""
+    eq = expression.replace(" ", "")
+    if "..." in eq:
+        if "->" not in eq:
+            raise ValueError(
+                "Einsum equations with ellipsis require an explicit output subscript using '->'."
+            )
+        return _expand_equation_explicit(expression, left_shape=left_shape, right_shape=right_shape)
+    if "->" not in eq:
+        return canonicalize_binary_einsum_expression(
+            expression, left_shape=left_shape, right_shape=right_shape
+        )
+    return _validate_explicit_ranks(expression, left_shape, right_shape)
+
+
+def _nary_explicit_string(
+    expression: str,
+    operand_shapes: tuple[tuple[int, ...], ...],
+) -> str:
+    """Explicit ``->`` equation for unary / ternary+ (no ellipsis)."""
+    eq = expression.replace(" ", "")
+    if "..." in eq:
+        raise ValueError(
+            "Einsum traces with a single operand or more than two operands do not support "
+            "ellipsis; use an explicit subscript list with '->'."
+        )
+    n = len(operand_shapes)
+    operands_part = eq.split("->", 1)[0] if "->" in eq else eq
+    raw_ops = tuple(operands_part.split(","))
+    if len(raw_ops) != n:
+        raise ValueError(
+            f"Einsum equation has {len(raw_ops)} operand subscript group(s) "
+            f"but received {n} operands."
+        )
+    for spec, shape in zip(raw_ops, operand_shapes, strict=True):
+        if len(spec) != len(shape):
+            raise ValueError(
+                "Subscripts do not match tensor ranks (counts include repeated labels per axis)."
+            )
+    explicit = (
+        eq if "->" in eq else f"{operands_part}->{_implicit_nary_output_letters(raw_ops)}"
+    )
+    zs = tuple(np.zeros(s, dtype=np.float64) for s in operand_shapes)
+    eq_in = expression.replace(" ", "")
+    try:
+        z_implicit = np.einsum(eq_in, *zs, optimize=True)
+        z_explicit = np.einsum(explicit.replace(" ", ""), *zs, optimize=True)
+    except Exception as exc:
+        raise ValueError(f"Invalid einsum equation {eq_in!r} for operand shapes.") from exc
+    if z_implicit.shape != z_explicit.shape:
+        raise ValueError(
+            f"Implicit equation {eq_in!r} is inconsistent with inferred explicit form {explicit!r}."
+        )
+    return explicit.replace(" ", "")
+
+
+def _parse_nary_equation_explicit(explicit: str) -> _ParsedNaryEquation:
+    equation = explicit.replace(" ", "")
+    if "..." in equation:
+        raise ValueError("Internal error: expand ellipsis before n-ary explicit parse.")
+    if equation.count("->") != 1:
+        raise ValueError("Einsum traces require exactly one '->' in the explicit equation.")
+    operands_part, output_spec = equation.split("->", 1)
+    specs = operands_part.split(",")
+    operand_axes = tuple(tuple(spec) for spec in specs)
+    output_axes = tuple(output_spec)
+    for group in operand_axes:
+        for ch in group:
+            if not ch.isalpha():
+                raise ValueError(
+                    f"Unsupported einsum label {ch!r}; only single alphabetic labels are supported."
+                )
+    for ch in output_axes:
+        if not ch.isalpha():
+            raise ValueError(
+                f"Unsupported einsum label {ch!r}; only single alphabetic labels are supported."
+            )
+    return _ParsedNaryEquation(operand_axes=operand_axes, output_axes=output_axes)
+
+
+def parse_einsum_equation(
+    expression: str,
+    operand_shapes: tuple[tuple[int, ...], ...],
+) -> _ParsedNaryEquation:
+    """Validate *expression* with NumPy for any arity and return explicit per-axis label tuples."""
+    if len(operand_shapes) < 1:
+        raise ValueError("einsum requires at least one operand shape.")
+    if len(operand_shapes) == 2:
+        explicit = _binary_explicit_string(
+            expression, operand_shapes[0], operand_shapes[1]
+        )
+    else:
+        explicit = _nary_explicit_string(expression, operand_shapes)
+    return _parse_nary_equation_explicit(explicit)
+
+
+def nary_equation_canonical_string(parsed: _ParsedNaryEquation) -> str:
+    """Serialize *parsed* as a single explicit ``subscripts->out`` string."""
+    lhs = ",".join("".join(ax) for ax in parsed.operand_axes)
+    rhs = "".join(parsed.output_axes)
+    return f"{lhs}->{rhs}"
 
 
 def _expand_equation_explicit(
@@ -151,13 +329,13 @@ def parse_equation_for_shapes(
     right_shape: tuple[int, ...],
 ) -> _ParsedEquation:
     """Validate *expression* with NumPy and return explicit per-axis label tuples."""
-    eq = expression.replace(" ", "")
-    explicit = (
-        _expand_equation_explicit(expression, left_shape=left_shape, right_shape=right_shape)
-        if "..." in eq
-        else _validate_explicit_ranks(expression, left_shape, right_shape)
+    explicit = _binary_explicit_string(expression, left_shape, right_shape)
+    parsed = _parse_nary_equation_explicit(explicit)
+    return _ParsedEquation(
+        left_axes=parsed.operand_axes[0],
+        right_axes=parsed.operand_axes[1],
+        output_axes=parsed.output_axes,
     )
-    return _parse_equation_explicit(explicit)
 
 
 def _validate_explicit_ranks(

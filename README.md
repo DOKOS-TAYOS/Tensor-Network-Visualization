@@ -32,9 +32,9 @@ python -m pip install tensor-network-visualization
 ```
 
 Depends on `matplotlib` and `networkx` only. You can **build and render** rich **`einsum`** graphs
-from ordered `pair_tensor` entries (including ellipsis and repeated indices) using shapes in
-metadata; **`tensor-network-visualization[einsum]`** (PyTorch) is only needed to **execute**
-`tensor_network_viz.einsum(..., trace=...)` and record those pairs automatically.
+from ordered **`pair_tensor`** / **`einsum_trace_step`** entries (ellipsis and repeated indices need
+shapes in metadata); **`tensor-network-visualization[einsum]`** (PyTorch) is only needed to
+**execute** `tensor_network_viz.einsum(..., trace=...)` and record those rows automatically.
 
 ### Optional backends (extras)
 
@@ -44,7 +44,7 @@ metadata; **`tensor-network-visualization[einsum]`** (PyTorch) is only needed to
 | TensorNetwork  | `tensornetwork`               | `pip install "tensor-network-visualization[tensornetwork]"` |
 | Quimb          | `quimb`                       | `pip install "tensor-network-visualization[quimb]"` |
 | TeNPy          | `tenpy`                       | Resolves to PyPI package **`physics-tenpy`**. |
-| Einsum tracing | `einsum`                      | Adds **PyTorch** for auto-traced `einsum(..., trace=...)` (graph layout works from `pair_tensor` alone if shapes are in metadata). |
+| Einsum tracing | `einsum`                      | Adds **PyTorch** for auto-traced `einsum(..., trace=...)` (layout from `pair_tensor` / `einsum_trace_step` lists with metadata as needed). |
 | Jupyter widgets| `jupyter`                    | `ipympl`, widgets, JupyterLab / Notebook 7+ for interactive figures. |
 
 Combine extras, for example:
@@ -103,7 +103,7 @@ Everything below maps to real parameters—there are no hidden mode switches.
 | **Display mode** | `show=True` / `False` | If `True`: Jupyter **kernel** uses `IPython.display.display(fig)`; otherwise `plt.show()`. If `False`: neither runs—use for `savefig` / batch. |
 | **Label policy** | `PlotConfig` + overrides | Defaults: `show_tensor_labels`, `show_index_labels`. Per-call: `show_tensor_network(..., show_tensor_labels=..., show_index_labels=...)`. |
 | **Hover labels** | `PlotConfig(hover_labels=True)` | Tensor names and bond labels appear on pointer hover (2D axes hit-test; 3D screen-space distance). Needs an **interactive** Matplotlib window. |
-| **Einsum workflow** | `engine="einsum"` | **Auto:** `EinsumTrace` + `tensor_network_viz.einsum` (ellipsis, batch/traces, validated with NumPy). **Manual:** ordered `pair_tensor` (equations with `...` need `metadata` shapes per step). See **`examples/einsum_general.py`**. |
+| **Einsum workflow** | `engine="einsum"` | **Auto:** `EinsumTrace` + `einsum` (binary `pair_tensor`, unary/ternary+ `einsum_trace_step`; implicit `->`, `out=`). **Manual:** `pair_tensor` / `einsum_trace_step` (ellipsis needs `metadata` shapes). See **`examples/einsum_general.py`**. |
 
 ## Minimal examples
 
@@ -245,6 +245,7 @@ from tensor_network_viz import (
     PlotConfig,
     ViewName,
     einsum,
+    einsum_trace_step,
     pair_tensor,
     show_tensor_network,
 )
@@ -256,16 +257,20 @@ Per-backend plotters (optional; same as `show_tensor_network` internals):
 from tensor_network_viz.tensorkrowch import plot_tensorkrowch_network_2d, plot_tensorkrowch_network_3d
 from tensor_network_viz.tensornetwork import plot_tensornetwork_network_2d, plot_tensornetwork_network_3d
 from tensor_network_viz.quimb import plot_quimb_network_2d, plot_quimb_network_3d
-from tensor_network_viz.tenpy import plot_tenpy_network_2d, plot_tenpy_network_3d
+from tensor_network_viz.tenpy import (
+    make_tenpy_tensor_network,
+    plot_tenpy_network_2d,
+    plot_tenpy_network_3d,
+)
 from tensor_network_viz.einsum_module import (
+    parse_einsum_equation,
     parse_equation_for_shapes,
     plot_einsum_network_2d,
     plot_einsum_network_3d,
 )
 ```
 
-(`parse_equation_for_shapes` is optional; use it to expand and validate a binary subscript string
-against operand ranks.)
+(`parse_equation_for_shapes` — binary only; `parse_einsum_equation` — any arity, NumPy-validated.)
 
 ## Accepted inputs (summary)
 
@@ -274,8 +279,8 @@ against operand ranks.)
 | tensorkrowch | Network with `nodes` / `leaf_nodes`, or iterable of nodes |
 | tensornetwork | Iterable of `tensornetwork.Node` |
 | quimb | `TensorNetwork` or iterable of `Tensor` |
-| tenpy | `MPS` (incl. `PurificationMPS`, `UniformMPS`), `MPO`, and `MomentumMPS`-like (`get_X` + `uMPS_GS`); not PEPS |
-| einsum | `EinsumTrace` or ordered iterable of `pair_tensor` (supports ellipsis / hyperedges in the normalized graph) |
+| tenpy | `TenPyTensorNetwork` / `make_tenpy_tensor_network` (`npc.Array` + bonds); `MPS`, `MPO`, `MomentumMPS`-like; no stable TeNPy PEPS class (hand-built TN ok) |
+| einsum | `EinsumTrace` or ordered iterable of `pair_tensor` / `einsum_trace_step` (ellipsis / hyperedges in the normalized graph) |
 
 Details, subgraph behavior, and Quimb hyperindex hubs are in **[docs/guide.md](docs/guide.md)**.
 
@@ -292,8 +297,9 @@ Runnable demos live under **`examples/`**. From the repo root with the right ext
 | `cubic_peps_demo.py` | 3D cubic PEPS lattice. |
 | `quimb_demo.py` | Includes hyper-index example; `--from-list`. |
 | `tenpy_demo.py` | MPS/MPO, purification, uniform, excitation chain (duck-typed like `MomentumMPS`). |
+| `tenpy_explicit_tn_demo.py` | Explicit `TenPyTensorNetwork`: open chain or 3-way hub ([examples/README](examples/README.md)). |
 | `einsum_demo.py` | Auto trace vs manual `pair_tensor`. |
-| `einsum_general.py` | Ellipsis, batch hubs, multi-step fusion, traces, short MPS (auto-trace). |
+| `einsum_general.py` | Ellipsis, batch hubs, multi-step fusion, traces, short MPS, implicit/`out=`, unary, ternary (auto-trace). |
 | `tn_tsp.py` | Larger TensorKrowch TSP construction. |
 
 Catalog and one-liner commands: **[examples/README.md](examples/README.md)**.
@@ -304,8 +310,9 @@ Catalog and one-liner commands: **[examples/README.md](examples/README.md)**.
 - Infinite TeNPy **MPS/MPO** use one periodic unit cell.
 - The **einsum** backend visualizes the **fundamental** tensor network, not each intermediate
   contraction tensor. Pairwise summed indices are drawn as ordinary bonds; repeated or
-  output-carrying indices use **virtual hubs** (layout separates colocated hubs and avoids overlap
-  with a direct tensor–tensor bond on the same pair).
+  output-carrying indices use **virtual hubs** (layout separates colocated hubs, nudges **2D**
+  hubs that attach to **one** tensor only—e.g. **`ii->i`**—off that tensor, and offsets hubs on a
+  tensor–tensor chord when a **direct** bond also links that pair).
 - Passing a **subset** of nodes/tensors shows connections outside the subset as **dangling** legs.
 
 ## Quick verification (reviewers)
@@ -327,6 +334,7 @@ Expect `quimb_mps.png` and all tests passing.
 | Blank or double figure in Jupyter | Assign `fig, ax = show_tensor_network(...)`; avoid bare tuple as last line; try `%matplotlib widget` or inline. |
 | Hover labels do nothing | Requires interactive backend and `show` path that runs a GUI or widget event loop; not for `--no-show` PNG only. |
 | Huge graphs are slow | `PlotConfig(refine_tensor_labels=False)`; lower `layout_iterations` or pass `positions`. Force layout samples repulsion when node count is large (about 72+; see [guide](docs/guide.md#layout-and-draw-scale)). |
+| Einsum unary trace (`ii->i`) looks odd in 2D | Layout offsets the virtual hub off the tensor in 2D; try `view="3d"` or read [Einsum unary / same-tensor trace in 2D](docs/guide.md#toc-einsum-unary-2d-layout) in the guide. |
 
 **Full troubleshooting:** [docs/guide.md — Troubleshooting](docs/guide.md#troubleshooting).
 

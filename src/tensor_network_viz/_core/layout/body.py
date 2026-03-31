@@ -175,6 +175,7 @@ def _compute_component_layout_2d(
 
     _snap_virtual_nodes_to_barycenters(component, positions)
     _spread_colocated_virtual_hubs_2d(component, positions)
+    _nudge_singleton_attachment_virtual_hubs_2d(graph, component, positions)
     _offset_virtual_hubs_off_direct_tensor_chords_2d(graph, component, positions)
     _place_trimmed_leaf_nodes_2d(component, positions)
     return _center_positions(positions, node_ids=node_ids)
@@ -285,6 +286,57 @@ def _spread_colocated_virtual_hubs_2d(
             pos = np.asarray(positions[vid], dtype=float).copy()
             pos[:2] = base[:2] + perp * spacing * float(off)
             positions[vid] = pos
+
+
+def _nudge_singleton_attachment_virtual_hubs_2d(
+    graph: _GraphData,
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> None:
+    """Move virtual hubs off a lone physical neighbor when they would sit on top of it.
+
+    Same-tensor trace / diagonal hubs (e.g. einsum ``ii->i``) attach only to one visible tensor;
+    barycenter snap then coincides with that tensor. 3D uses layer promotion for separation; 2D
+    needs an explicit offset. Skips neighbor sets shared by several virtual hubs (those are
+    separated by `_spread_colocated_virtual_hubs_2d`).
+    """
+    cg = component.contraction_graph
+    by_neighbors: defaultdict[frozenset[int], list[int]] = defaultdict(list)
+    for vid in component.virtual_node_ids:
+        by_neighbors[frozenset(cg.neighbors(vid))].append(vid)
+
+    dist = float(_VIRTUAL_HUB_MIN_SEPARATION)
+    for nbr_key, vids in by_neighbors.items():
+        if len(vids) != 1:
+            continue
+        vid = vids[0]
+        nbrs = sorted(nbr_key)
+        if len(nbrs) != 1:
+            continue
+        u = nbrs[0]
+        if graph.nodes[u].is_virtual:
+            continue
+
+        p_u = np.asarray(positions[u], dtype=float).reshape(-1)
+        p_v = np.asarray(positions[vid], dtype=float).copy().reshape(-1)
+
+        vis = [nid for nid in component.visible_node_ids if not graph.nodes[nid].is_virtual]
+        if len(vis) <= 1:
+            tangent = np.array([0.0, 1.0], dtype=float)
+        else:
+            centroid = np.mean(
+                np.stack([positions[nid] for nid in vis]),
+                axis=0,
+            ).reshape(-1)[:2]
+            radial = p_u[:2] - centroid
+            rn = float(np.linalg.norm(radial))
+            if rn > 1e-9:
+                tangent = np.array([-radial[1], radial[0]], dtype=float) / rn
+            else:
+                tangent = np.array([0.0, 1.0], dtype=float)
+
+        p_v[:2] = p_u[:2] + tangent * dist
+        positions[vid] = p_v
 
 
 def _tensor_tensor_contraction_pairs(graph: _GraphData) -> set[frozenset[int]]:
@@ -1180,6 +1232,7 @@ __all__ = [
     "_node_overlaps_component",
     "_normalize_2d",
     "_normalize_positions",
+    "_nudge_singleton_attachment_virtual_hubs_2d",
     "_offset_virtual_hubs_off_direct_tensor_chords_2d",
     "_orthogonal_unit",
     "_pack_component_positions",
