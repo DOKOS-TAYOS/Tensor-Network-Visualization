@@ -31,7 +31,7 @@ Repository = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization"
 Issues = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/issues"
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "pyright", "ipython", "tensorkrowch", "tensornetwork", "quimb", "physics-tenpy"]
+dev = ["pytest", "ruff", "pyright", "ipython", "tomli>=2.0.1", "tensorkrowch", "tensornetwork", "quimb", "physics-tenpy"]
 jupyter = ["ipympl>=0.9.0", "ipywidgets>=8.0", "jupyterlab>=4.0", "notebook>=7.0"]
 tensorkrowch = ["tensorkrowch"]
 tensornetwork = ["tensornetwork"]

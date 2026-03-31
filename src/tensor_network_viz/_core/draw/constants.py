@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-# Multiedge separation; keep in sync with `_LAYOUT_BOND_CURVE_OFFSET_FACTOR` in layout.py.
+# Multiedge separation; keep in sync with
+# `_LAYOUT_BOND_CURVE_OFFSET_FACTOR` in `layout/parameters.py`.
 _CURVE_OFFSET_FACTOR: float = 0.15
 # Blends with chord length so multiedges keep visible separation when endpoints are close.
 _CURVE_NEAR_PAIR_REF: float = 0.28

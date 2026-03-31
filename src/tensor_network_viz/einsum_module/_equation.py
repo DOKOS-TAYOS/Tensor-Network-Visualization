@@ -297,28 +297,6 @@ def _expand_equation_explicit(
     return f"{left_exp},{right_exp}->{output_exp}"
 
 
-def _parse_equation_explicit(expression: str) -> _ParsedEquation:
-    equation = expression.replace(" ", "")
-    if "..." in equation:
-        raise ValueError("Internal error: expand ellipsis before explicit parse.")
-    left_raw, right_raw, output_spec = _split_raw_equation(equation)
-    left_axes = tuple(left_raw)
-    right_axes = tuple(right_raw)
-    output_axes = tuple(output_spec)
-
-    for ch in left_axes + right_axes + output_axes:
-        if not ch.isalpha():
-            raise ValueError(
-                f"Unsupported einsum label {ch!r}; only single alphabetic labels are supported."
-            )
-
-    return _ParsedEquation(
-        left_axes=left_axes,
-        right_axes=right_axes,
-        output_axes=output_axes,
-    )
-
-
 def parse_equation_for_shapes(
     expression: str,
     left_shape: tuple[int, ...],
@@ -352,12 +330,3 @@ def _validate_explicit_ranks(
     except Exception as exc:
         raise ValueError(f"Invalid einsum equation {eq!r} for operand shapes.") from exc
     return eq
-
-
-def _parse_equation(
-    expression: str,
-    *,
-    left_shape: tuple[int, ...],
-    right_shape: tuple[int, ...],
-) -> _ParsedEquation:
-    return parse_equation_for_shapes(expression, left_shape, right_shape)
