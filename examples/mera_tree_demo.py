@@ -20,9 +20,10 @@ if str(_EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES_DIR))
 from demo_cli import (
     add_compact_argument,
+    add_contraction_scheme_argument,
     add_hover_labels_argument,
     apply_demo_caption,
-    demo_plot_config,
+    finalize_demo_plot_config,
 )
 
 DESCRIPTION = """\
@@ -37,6 +38,7 @@ Examples:
   python examples/mera_tree_demo.py 3d --mera-log2 5 --tree-depth 4
   python examples/mera_tree_demo.py 2d --save mera_tree.png --no-show
   python examples/mera_tree_demo.py 2d --hover-labels
+  python examples/mera_tree_demo.py 2d --contraction-scheme
 """
 
 
@@ -169,6 +171,7 @@ def parse_args() -> argparse.Namespace:
         help="Render without opening an interactive Matplotlib window.",
     )
     add_hover_labels_argument(parser)
+    add_contraction_scheme_argument(parser)
     add_compact_argument(parser)
     return parser.parse_args()
 
@@ -193,7 +196,9 @@ def main() -> None:
         nodes,
         engine="tensornetwork",
         view=args.view,
-        config=demo_plot_config(args),
+        config=finalize_demo_plot_config(
+            args, network="mera_tree", engine="tensornetwork"
+        ),
         show=False,
     )
     apply_demo_caption(

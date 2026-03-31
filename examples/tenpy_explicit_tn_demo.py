@@ -9,6 +9,7 @@ Install: ``pip install -e ".[tenpy]"``
 Examples:
   python examples/tenpy_explicit_tn_demo.py chain 2d
   python examples/tenpy_explicit_tn_demo.py hub 3d --save explicit.png --no-show
+  python examples/tenpy_explicit_tn_demo.py chain 2d --contraction-scheme
 """
 
 from __future__ import annotations
@@ -35,9 +36,10 @@ if str(_EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES_DIR))
 from demo_cli import (
     add_compact_argument,
+    add_contraction_scheme_argument,
     add_hover_labels_argument,
     apply_demo_caption,
-    demo_plot_config,
+    finalize_demo_plot_config,
 )
 
 
@@ -105,6 +107,7 @@ def parse_args() -> argparse.Namespace:
         help="Render without opening an interactive Matplotlib window.",
     )
     add_hover_labels_argument(parser)
+    add_contraction_scheme_argument(parser)
     add_compact_argument(parser)
     return parser.parse_args()
 
@@ -124,7 +127,9 @@ def main() -> None:
         network,
         engine="tenpy",
         view=args.view,
-        config=demo_plot_config(args),
+        config=finalize_demo_plot_config(
+            args, network=args.network, engine="tenpy_explicit"
+        ),
         show=False,
     )
     apply_demo_caption(

@@ -55,6 +55,8 @@ Automated tests do not open interactive Matplotlib windows. After **`pytest`** p
 
 For **headless** runs use **`--no-show`** / **`--save`** where supported. **`--hover-labels`** only does something in a **real interactive** Matplotlib session (or **`%matplotlib widget`** in Jupyter).
 
+**`--contraction-scheme`** draws numbered highlights for contraction steps. It combines with **`--save`** / **`--no-show`**. For **`engine="einsum"`**, steps come from trace metadata (PEPS-style sweeps keep environment tensors named like **`x00`** in the same step groups as **`P00`**). For TensorNetwork / TensorKrowch / Quimb, **`examples/demo_cli.finalize_demo_plot_config`** supplies an illustrative **`contraction_scheme_by_name`** only when the demo’s network keyword matches (e.g. **`mps`**, **`mpo`**, **`peps`**, **`disconnected`**, Quimb **`hyper`**, **`cubic_peps`**, TeNPy explicit **`chain`** / **`hub`**). The flag is accepted everywhere, but **`mera_tree_demo`**, **`tn_tsp`**, native **`tenpy_demo`** examples, **`ladder`**, **`weird`**, etc. have no bundled schedule, so the overlay may not appear unless you pass a custom **`PlotConfig.contraction_scheme_by_name`**.
+
 Install **`tensor-network-visualization[einsum]`** (PyTorch) for **`einsum_demo.py`** and **`einsum_general.py`**. See **`examples/README.md`** for more flags (`--from-list`, `--compact`, grid sizes, etc.).
 
 **2D (default labels):**
@@ -87,6 +89,7 @@ python examples/tenpy_demo.py purification 2d
 python examples/tenpy_demo.py uniform 2d
 python examples/tenpy_demo.py excitation 2d
 python examples/tenpy_explicit_tn_demo.py chain 2d
+python examples/tenpy_explicit_tn_demo.py hub 2d
 python examples/einsum_demo.py disconnected 2d
 python examples/einsum_demo.py mps 2d
 python examples/einsum_demo.py peps 2d
@@ -103,6 +106,18 @@ python examples/einsum_general.py unary 2d
 python examples/mera_tree_demo.py 2d
 python examples/cubic_peps_demo.py 2d
 python examples/tn_tsp.py -n 4 --view 2d
+```
+
+**2D with `--contraction-scheme`** (representative; append to any supported demo above):
+
+```bash
+python examples/tensorkrowch_demo.py mps 2d --contraction-scheme
+python examples/tensornetwork_demo.py peps 2d --contraction-scheme
+python examples/quimb_demo.py hyper 2d --contraction-scheme
+python examples/tenpy_explicit_tn_demo.py hub 2d --contraction-scheme
+python examples/einsum_demo.py peps 2d --contraction-scheme
+python examples/einsum_general.py mps_short 2d --contraction-scheme
+python examples/cubic_peps_demo.py 2d --contraction-scheme
 ```
 
 **2D with `--hover-labels`** (interactive window only):
@@ -135,6 +150,7 @@ python examples/tenpy_demo.py purification 2d --hover-labels
 python examples/tenpy_demo.py uniform 2d --hover-labels
 python examples/tenpy_demo.py excitation 2d --hover-labels
 python examples/tenpy_explicit_tn_demo.py chain 2d --hover-labels
+python examples/tenpy_explicit_tn_demo.py hub 2d --hover-labels
 python examples/einsum_demo.py disconnected 2d --hover-labels
 python examples/einsum_demo.py mps 2d --hover-labels
 python examples/einsum_demo.py peps 2d --hover-labels
@@ -183,6 +199,7 @@ python examples/tenpy_demo.py purification 3d
 python examples/tenpy_demo.py uniform 3d
 python examples/tenpy_demo.py excitation 3d
 python examples/tenpy_explicit_tn_demo.py chain 3d
+python examples/tenpy_explicit_tn_demo.py hub 3d
 python examples/einsum_demo.py disconnected 3d
 python examples/einsum_demo.py mps 3d
 python examples/einsum_demo.py peps 3d
@@ -199,6 +216,16 @@ python examples/einsum_general.py unary 3d
 python examples/mera_tree_demo.py 3d --mera-log2 5 --tree-depth 4
 python examples/cubic_peps_demo.py 3d --lx 3 --ly 3 --lz 4
 python examples/tn_tsp.py -n 5 --view 3d
+```
+
+**3D with `--contraction-scheme`** (representative):
+
+```bash
+python examples/tensorkrowch_demo.py mps 3d --contraction-scheme
+python examples/tensornetwork_demo.py mpo 3d --contraction-scheme
+python examples/quimb_demo.py mps 3d --contraction-scheme
+python examples/cubic_peps_demo.py 3d --lx 3 --ly 3 --lz 3 --contraction-scheme
+python examples/einsum_demo.py mps 3d --contraction-scheme
 ```
 
 **3D with `--hover-labels`** (interactive window only):
@@ -231,6 +258,7 @@ python examples/tenpy_demo.py purification 3d --hover-labels
 python examples/tenpy_demo.py uniform 3d --hover-labels
 python examples/tenpy_demo.py excitation 3d --hover-labels
 python examples/tenpy_explicit_tn_demo.py chain 3d --hover-labels
+python examples/tenpy_explicit_tn_demo.py hub 3d --hover-labels
 python examples/einsum_demo.py disconnected 3d --hover-labels
 python examples/einsum_demo.py mps 3d --hover-labels
 python examples/einsum_demo.py peps 3d --hover-labels
@@ -318,7 +346,7 @@ Open an issue to discuss the backend and its API before implementing.
 - **README.md** — high-level overview, installation, modes, `show_tensor_network` / `PlotConfig`, quick troubleshooting
 - **docs/guide.md** — full manual: backends, recipes, layout/draw behavior, architecture, extended troubleshooting
 - **CHANGELOG.md** — user-facing release notes; add an entry when cutting a PyPI release
-- **examples/** — runnable scripts and **examples/README.md**; update **both** when adding CLI flags (e.g. `--hover-labels`) or new demos
+- **examples/** — runnable scripts and **examples/README.md**; update **both** when adding CLI flags (e.g. `--hover-labels`, `--contraction-scheme`) or new demos
 - **Docstrings** — document public functions with Args, Returns, and a short Example where helpful
 
 **When you change the public API or defaults**, update **README.md**, **docs/guide.md**, and any affected **examples** text so PyPI and the repo stay aligned with `_core` behavior.

@@ -103,6 +103,7 @@ Everything below maps to real parameters—there are no hidden mode switches.
 | **Display mode** | `show=True` / `False` | If `True`: Jupyter **kernel** uses `IPython.display.display(fig)`; otherwise `plt.show()`. If `False`: neither runs—use for `savefig` / batch. |
 | **Label policy** | `PlotConfig` + overrides | Defaults: `show_tensor_labels`, `show_index_labels`. Per-call: `show_tensor_network(..., show_tensor_labels=..., show_index_labels=...)`. |
 | **Hover labels** | `PlotConfig(hover_labels=True)` | Tensor names and bond labels appear on pointer hover (2D axes hit-test; 3D screen-space distance). Needs an **interactive** Matplotlib window. |
+| **Contraction scheme** | `PlotConfig(show_contraction_scheme=True)` | **Einsum:** per-step highlights from the trace. **Other engines:** set **`contraction_scheme_by_name`**. **2D:** rounded boxes, thin borders, step labels **1…n**, later steps underneath. **3D:** wireframe + labels. See **`docs/guide.md`**. |
 | **Einsum workflow** | `engine="einsum"` | **Auto:** `EinsumTrace` + `einsum` (binary `pair_tensor`, unary/ternary+ `einsum_trace_step`; implicit `->`, `out=`). **Manual:** `pair_tensor` / `einsum_trace_step` (ellipsis needs `metadata` shapes). See **`examples/einsum_general.py`**. |
 
 ## Minimal examples
@@ -313,6 +314,10 @@ Catalog and one-liner commands: **[examples/README.md](examples/README.md)**.
   output-carrying indices use **virtual hubs** (layout separates colocated hubs, nudges **2D**
   hubs that attach to **one** tensor only—e.g. **`ii->i`**—off that tensor, and offsets hubs on a
   tensor–tensor chord when a **direct** bond also links that pair).
+- Optional **`contraction_steps`** from **einsum**: **non-final** steps = immediate operand footprint
+  on the graph (excludes tensors not in that call); **last** step = full lineage over all operands;
+  **`PlotConfig`** draws rounded (**2D**) / wireframe (**3D**) highlights, labels, light nested padding,
+  and later steps underneath.
 - Passing a **subset** of nodes/tensors shows connections outside the subset as **dangling** legs.
 
 ## Quick verification (reviewers)

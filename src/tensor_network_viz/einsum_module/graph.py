@@ -81,8 +81,12 @@ def _build_graph(trace_input: Any) -> _GraphData:
     produced_names: set[str] = set()
     all_result_names = {_step_result_name(s) for s in trace}
     next_virtual_id = -1
+    contraction_scheme: list[frozenset[int]] = []
+    # Full physical lineage per tensor (for the final step’s global highlight).
+    physical_contributors: dict[str, frozenset[int]] = {}
 
-    for step in trace:
+    n_steps = len(trace)
+    for step_index, step in enumerate(trace):
         operand_names = _trace_step_operand_names(step)
         if len(set(operand_names)) != len(operand_names):
             raise ValueError("Einsum traces require distinct tensor names for all operands.")
@@ -116,7 +120,25 @@ def _build_graph(trace_input: Any) -> _GraphData:
                     live_tensors=live_tensors,
                     produced_names=produced_names,
                     all_result_names=all_result_names,
+                    physical_contributors=physical_contributors,
                 )
+            )
+
+        if step_index == n_steps - 1:
+            step_physical_last: set[int] = set()
+            for name in operand_names:
+                step_physical_last.update(physical_contributors[name])
+            contraction_scheme.append(frozenset(step_physical_last))
+        elif _trace_step_needs_peps_lineage_union(operand_names):
+            # PEPS-style sweep: keep environment tensors (x**) in lineage when contracting with P**
+            # or when applying the next local x** (MPS uses x0/x1 without P and stays on immediate).
+            step_peps: set[int] = set()
+            for name in operand_names:
+                step_peps.update(physical_contributors[name])
+            contraction_scheme.append(frozenset(step_peps))
+        else:
+            contraction_scheme.append(
+                _participant_ids_for_contraction_step(operand_origins, nodes)
             )
 
         by_label: dict[str, list[_AxisOrigin]] = {}
@@ -194,6 +216,10 @@ def _build_graph(trace_input: Any) -> _GraphData:
             )
             for label in parsed.output_axes
         )
+        merged_lineage: set[int] = set()
+        for name in operand_names:
+            merged_lineage.update(physical_contributors[name])
+        physical_contributors[res_name] = frozenset(merged_lineage)
         produced_names.add(res_name)
 
     for origins in live_tensors.values():
@@ -207,7 +233,52 @@ def _build_graph(trace_input: Any) -> _GraphData:
                 )
             )
 
-    return _GraphData(nodes=nodes, edges=tuple(edges))
+    return _GraphData(
+        nodes=nodes,
+        edges=tuple(edges),
+        contraction_steps=tuple(contraction_scheme),
+    )
+
+
+def _trace_step_has_peps_plaquette_operand(operand_names: tuple[str, ...]) -> bool:
+    """True if a plaquette-like tensor name (``P`` + digits, e.g. ``P00``, ``P01``) is an operand."""
+    for n in operand_names:
+        if len(n) < 2 or n[0] != "P":
+            continue
+        if any(ch.isdigit() for ch in n[1:]):
+            return True
+    return False
+
+
+def _trace_step_has_peps_environment_operand(operand_names: tuple[str, ...]) -> bool:
+    """True if an operand looks like PEPS row/col env vectors (``x`` + digits, e.g. ``x00``)."""
+    for n in operand_names:
+        if len(n) < 2 or n[0].lower() != "x":
+            continue
+        if any(ch.isdigit() for ch in n[1:]):
+            return True
+    return False
+
+
+def _trace_step_needs_peps_lineage_union(operand_names: tuple[str, ...]) -> bool:
+    return _trace_step_has_peps_plaquette_operand(
+        operand_names
+    ) or _trace_step_has_peps_environment_operand(operand_names)
+
+
+def _participant_ids_for_contraction_step(
+    operand_origins: list[tuple[_AxisOrigin, ...]],
+    nodes: dict[int, Any],
+) -> frozenset[int]:
+    """Non-virtual node ids appearing on operand axes for this einsum only (immediate footprint)."""
+    all_ids: set[int] = set()
+    for origins in operand_origins:
+        for origin in origins:
+            all_ids.add(origin.node_id)
+    non_virtual = {nid for nid in all_ids if not nodes[nid].is_virtual}
+    if non_virtual:
+        return frozenset(non_virtual)
+    return frozenset(all_ids)
 
 
 def _step_result_name(step: pair_tensor | einsum_trace_step) -> str:
@@ -239,6 +310,7 @@ def _consume_or_create_tensor(
     live_tensors: dict[str, tuple[_AxisOrigin, ...]],
     produced_names: set[str],
     all_result_names: set[str],
+    physical_contributors: dict[str, frozenset[int]],
 ) -> tuple[_AxisOrigin, ...]:
     if tensor_name in live_tensors:
         origins = live_tensors.pop(tensor_name)
@@ -263,6 +335,7 @@ def _consume_or_create_tensor(
         name=tensor_name,
         axes_names=axis_labels,
     )
+    physical_contributors[tensor_name] = frozenset({node_id})
     return tuple(
         _AxisOrigin(node_id=node_id, axis_index=index, axis_name=label)
         for index, label in enumerate(axis_labels)

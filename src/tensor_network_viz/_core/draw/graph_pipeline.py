@@ -15,6 +15,7 @@ from ..layout import (
     NodePositions,
 )
 from .constants import *
+from .contraction_scheme import _draw_contraction_scheme, _effective_contraction_steps
 from .disk_metrics import _tensor_disk_radius_px_3d_nominal
 from .edges import _draw_edges, _draw_edges_2d_layered
 from .fonts_and_scale import (
@@ -96,6 +97,21 @@ def _draw_graph(
         bond_curve_pad=bond_curve_pad,
     )
     _apply_axis_limits_with_outset(ax, pre_coords, view_margin=view_margin, dimensions=dimensions)
+
+    # Contraction highlights first (under bonds, nodes, and labels).
+    if config.show_contraction_scheme:
+        scheme_steps = _effective_contraction_steps(graph, config)
+        if scheme_steps:
+            _draw_contraction_scheme(
+                ax=ax,
+                graph=graph,
+                positions=positions,
+                steps=scheme_steps,
+                config=config,
+                dimensions=dimensions,
+                scale=scale,
+                p=params,
+            )
 
     visible_order = _visible_node_ids_in_graph_order(graph)
     node_degrees = _node_edge_degrees(graph)

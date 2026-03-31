@@ -40,6 +40,7 @@ Examples::
   python examples/einsum_general.py implicit_out 2d
   python examples/einsum_general.py ternary 2d
   python examples/einsum_general.py unary 2d
+  python examples/einsum_general.py mps_short 2d --contraction-scheme
 """
 
 import argparse
@@ -63,9 +64,10 @@ if str(_EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES_DIR))
 from demo_cli import (
     add_compact_argument,
+    add_contraction_scheme_argument,
     add_hover_labels_argument,
     apply_demo_caption,
-    demo_plot_config,
+    finalize_demo_plot_config,
 )
 
 ExampleName = Literal[
@@ -231,6 +233,7 @@ def parse_args() -> argparse.Namespace:
         help="Render without opening an interactive Matplotlib window.",
     )
     add_hover_labels_argument(parser)
+    add_contraction_scheme_argument(parser)
     add_compact_argument(parser)
     return parser.parse_args()
 
@@ -248,7 +251,7 @@ def main() -> None:
         trace,
         engine="einsum",
         view=args.view,
-        config=demo_plot_config(args),
+        config=finalize_demo_plot_config(args, network=args.example, engine="einsum"),
         show=False,
     )
     apply_demo_caption(

@@ -53,6 +53,19 @@ class PlotConfig:
         hover_labels: If True, tensor names and bond index labels are hidden until the pointer
             hovers over a node or edge (2D: hit-testing in axes space; 3D: projected screen
             distance). Use an interactive Matplotlib window.
+        show_contraction_scheme: If True, draw colored highlights for each contraction step (from
+            ``graph.contraction_steps`` or ``contraction_scheme_by_name``).
+        contraction_scheme_alpha: Fill alpha for scheme rectangles (2D) / edge alpha baseline (3D);
+            default is fully opaque (1.0).
+        contraction_scheme_edge_alpha: Stroke alpha for scheme borders; None derives a slightly
+            higher value from the fill alpha.
+        contraction_scheme_linewidth: Border line width for 2D rounded boxes (data units, scaled
+            like bond lines); None uses a thin default.
+        contraction_scheme_colors: Optional cycle of face colors (hex/named); None uses a built-in
+            categorical palette.
+        contraction_scheme_by_name: Optional override: each inner tuple is one step, tensor names
+            matching non-virtual ``node.name`` values. Duplicate names among visible tensors or
+            unknown names raise ``ValueError``. When set, this replaces ``graph.contraction_steps``.
     """
 
     DEFAULT_NODE_RADIUS: ClassVar[float] = 0.08
@@ -60,6 +73,7 @@ class PlotConfig:
     DEFAULT_SELF_LOOP_RADIUS: ClassVar[float] = 0.2
     DEFAULT_LINE_WIDTH_2D: ClassVar[float] = 0.85
     DEFAULT_LINE_WIDTH_3D: ClassVar[float] = 0.75
+    DEFAULT_CONTRACTION_SCHEME_LINEWIDTH: ClassVar[float] = 0.12
     DEFAULT_LAYOUT_ITERATIONS: ClassVar[int] = 220
 
     node_color: str = "#E8EEF5"
@@ -84,6 +98,12 @@ class PlotConfig:
     refine_tensor_labels: bool = True
     approximate_3d_tensor_disk_px: bool = True
     hover_labels: bool = False
+    show_contraction_scheme: bool = False
+    contraction_scheme_alpha: float = 1.0
+    contraction_scheme_edge_alpha: float | None = None
+    contraction_scheme_linewidth: float | None = None
+    contraction_scheme_colors: tuple[str, ...] | None = None
+    contraction_scheme_by_name: tuple[tuple[str, ...], ...] | None = None
 
 
 __all__ = ["EngineName", "PlotConfig", "ViewName"]

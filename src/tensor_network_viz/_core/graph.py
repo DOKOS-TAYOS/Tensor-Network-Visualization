@@ -39,6 +39,10 @@ class _EdgeData:
 class _GraphData:
     nodes: dict[int, _NodeData]
     edges: tuple[_EdgeData, ...]
+    #: Per execution step, non-virtual node ids (einsum): intermediate steps use the **immediate**
+    #: operand footprint on the graph; the **last** step uses the full transitive lineage of all
+    #: operands (whole network). See einsum ``graph._build_graph``.
+    contraction_steps: tuple[frozenset[int], ...] | None = None
 
 
 def _make_node(
@@ -148,3 +152,34 @@ def _build_edge_label(
     if kind == "dangling":
         return axis_names[0] if axis_names else edge_name
     return None
+
+
+def _resolve_contraction_scheme_by_name(
+    graph: _GraphData,
+    groups: tuple[tuple[str, ...], ...],
+) -> tuple[frozenset[int], ...]:
+    """Map per-step tensor names to node ids (non-virtual nodes only)."""
+    name_to_id: dict[str, int] = {}
+    for nid, nd in graph.nodes.items():
+        if nd.is_virtual:
+            continue
+        n = nd.name
+        if not n:
+            continue
+        if n in name_to_id:
+            raise ValueError(
+                f"contraction_scheme_by_name: duplicate non-virtual tensor name {n!r} "
+                f"(nodes {name_to_id[n]} and {nid})."
+            )
+        name_to_id[n] = nid
+    out: list[frozenset[int]] = []
+    for step in groups:
+        ids: set[int] = set()
+        for name in step:
+            if name not in name_to_id:
+                raise ValueError(
+                    f"contraction_scheme_by_name: unknown tensor name {name!r} among visible nodes."
+                )
+            ids.add(name_to_id[name])
+        out.append(frozenset(ids))
+    return tuple(out)

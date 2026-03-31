@@ -40,7 +40,8 @@ _EDGE_INDEX_LABEL_WIDTH_CALIB: float = 1.12
 _EDGE_INDEX_LABEL_ALONG_FRAC: float = 0.3
 # Physical dangling legs (2D): inset from **open tip** — smaller ⇒ closer to the free end.
 _PHYS_DANGLING_2D_FRAC_FROM_TIP: float = 0.07
-# Draw order: bonds < node disks < edge index labels < tensor names (on top).
+# Draw order: contraction scheme < bonds < node disks < edge index labels < tensor names (on top).
+_ZORDER_CONTRACTION_SCHEME: float = 0.5
 # Legacy flat 3D / pre-layered 2D stacking.
 _ZORDER_NODE_DISK: int = 3
 _ZORDER_EDGE_INDEX_LABEL: int = 5
@@ -122,6 +123,7 @@ __all__ = [
     "_TEXT_RENDER_DIAGONAL_FACTOR",
     "_UNIT_NODE_TRIS",
     "_ZOOM_FONT_CLAMP",
+    "_ZORDER_CONTRACTION_SCHEME",
     "_ZORDER_EDGE_INDEX_LABEL",
     "_ZORDER_LAYER_BASE",
     "_ZORDER_LAYER_BOND",

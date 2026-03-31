@@ -341,6 +341,19 @@ matmul leg) so bonds do not coincide visually. Hubs that attach to **only one** 
 barycenter snap; in **2D** they receive an extra **perpendicular offset** from the tensor, while
 **3D** already separates overlapping hub/tensor pairs via **layer promotion** along the z axis.
 
+**Contraction scheme (execution order):** For the **einsum** engine, **`contraction_steps`** uses two
+rules: **non-final** trace steps take the **immediate** operand footprint (non-virtual nodes that
+carry an operand’s axes in that call — tensors not touched by that `einsum` are excluded). The
+**last** step uses the **full transitive lineage** of every operand (entire physical network in
+one box). Example (sequential MPS-style trace): first box **A0∪x0**; second **A0∪A1** (intermediate
+**r0** still lives on **A0**, so **x0** is not in that step); third **all tensors**. Parallel
+**A–B** / **C–D** then merge: first two boxes stay disjoint; the final step wraps **A∪B∪C∪D**. When a
+step’s set **strictly contains** an earlier step’s set, a **small** extra pad separates nested
+boxes. Default fill is **opaque** (**`contraction_scheme_alpha`** = 1). Enable with
+**`PlotConfig(show_contraction_scheme=True)`**; **2D** rounded boxes; **later** steps drawn **under**
+earlier ones; corner labels **`1`**, **`2`**, …; **3D** wireframes + labels. Other engines:
+**`contraction_scheme_by_name`** (mirror these rules yourself if needed).
+
 <a id="toc-plotconfig"></a>
 
 ## PlotConfig
@@ -372,6 +385,12 @@ Frozen dataclass in [`src/tensor_network_viz/config.py`](../src/tensor_network_v
 | `validate_positions` | `False` | Warn on bad ids / short tuples. |
 | `refine_tensor_labels` | `True` | Extra draw passes to shrink tensor names so they fit the node marker (2D or 3D). |
 | `hover_labels` | `False` | Show labels on hover (interactive). |
+| `show_contraction_scheme` | `False` | Highlight contraction steps (einsum auto or **`contraction_scheme_by_name`**). |
+| `contraction_scheme_alpha` | `1.0` | Fill alpha (2D); 3D uses edge alpha from this and **`contraction_scheme_edge_alpha`**. |
+| `contraction_scheme_edge_alpha` | `None` | Border alpha; default is a bit higher than fill. |
+| `contraction_scheme_linewidth` | `None` | → **`DEFAULT_CONTRACTION_SCHEME_LINEWIDTH`** (scaled like other strokes). |
+| `contraction_scheme_colors` | `None` | Cycle of colors; built-in categorical palette if unset. |
+| `contraction_scheme_by_name` | `None` | Override schedule: per step, tuple of **`node.name`** strings for non-virtual tensors. |
 
 ### Recipe: publication palette
 
@@ -409,6 +428,33 @@ config = PlotConfig(figsize=(8, 6), hover_labels=True)
 ```
 
 Use with a GUI or **`%matplotlib widget`**; useless for PNG-only **`--no-show`** runs.
+
+### Recipe: contraction scheme (einsum or manual names)
+
+```python
+from tensor_network_viz import PlotConfig, show_tensor_network
+
+# Einsum trace: steps come from the trace automatically.
+fig, ax = show_tensor_network(
+    trace,
+    engine="einsum",
+    view="2d",
+    config=PlotConfig(show_contraction_scheme=True),
+    show=False,
+)
+
+# Any engine: supply steps as tensor names (must be unique among visible tensors).
+fig, ax = show_tensor_network(
+    network,
+    engine="quimb",
+    view="2d",
+    config=PlotConfig(
+        show_contraction_scheme=True,
+        contraction_scheme_by_name=(("A", "B"), ("C",)),
+    ),
+    show=False,
+)
+```
 
 ### Recipe: custom positions with validation
 

@@ -21,9 +21,10 @@ if str(_EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES_DIR))
 from demo_cli import (
     add_compact_argument,
+    add_contraction_scheme_argument,
     add_hover_labels_argument,
     apply_demo_caption,
-    demo_plot_config,
+    finalize_demo_plot_config,
 )
 
 DESCRIPTION = """\
@@ -43,6 +44,7 @@ Examples:
   python examples/tensornetwork_demo.py mps 2d
   python examples/tensornetwork_demo.py ladder 3d
   python examples/tensornetwork_demo.py peps 2d --compact
+  python examples/tensornetwork_demo.py peps 2d --contraction-scheme
   python examples/tensornetwork_demo.py mps 2d --save mps.png --no-show
   python examples/tensornetwork_demo.py mps 2d --hover-labels
 """
@@ -226,6 +228,7 @@ def parse_args() -> argparse.Namespace:
         help="Render without opening an interactive Matplotlib window.",
     )
     add_hover_labels_argument(parser)
+    add_contraction_scheme_argument(parser)
     add_compact_argument(parser)
     return parser.parse_args()
 
@@ -256,7 +259,9 @@ def main() -> None:
         nodes,
         engine="tensornetwork",
         view=args.view,
-        config=demo_plot_config(args),
+        config=finalize_demo_plot_config(
+            args, network=args.network, engine="tensornetwork"
+        ),
         show=False,
     )
     apply_demo_caption(
