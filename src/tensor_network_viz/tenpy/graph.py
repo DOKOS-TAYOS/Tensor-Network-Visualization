@@ -2,21 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any
 
 from .._core.graph import (
     _EdgeEndpoint,
     _GraphData,
+    _NodeData,
     _make_contraction_edge,
     _make_dangling_edge,
     _make_node,
 )
 from .._core.graph_utils import _stringify
+from .explicit import TenPyTensorNetwork
 
 _SUPPORTED_NETWORKS_HINT: str = (
-    "Expected a TeNPy tensor chain: MPS or subclasses (e.g. PurificationMPS, UniformMPS), "
-    "MPO, or MomentumMPS-like objects (callable get_X and attribute uMPS_GS)."
+    "Expected TenPyTensorNetwork (explicit npc.Array list + bonds), a TeNPy tensor chain: "
+    "MPO (get_W), MomentumMPS-like (get_X + uMPS_GS), or MPS-like (get_B)."
 )
 
 
@@ -46,127 +47,123 @@ def _find_leg_index(labels: tuple[str, ...], leg_name: str, *, node_name: str) -
         raise TypeError(f"Tensor {node_name!r} is missing required leg {leg_name!r}.") from exc
 
 
-def _build_nodes(
-    length: int,
+def _build_hyperedge_hub(
     *,
-    tensor_at: Callable[[int], Any],
-    node_prefix: str,
-) -> tuple[dict[int, Any], dict[int, tuple[str, ...]]]:
-    nodes: dict[int, Any] = {}
-    labels_by_node: dict[int, tuple[str, ...]] = {}
-
-    for index in range(length):
-        labels = _leg_labels(tensor_at(index))
-        labels_by_node[index] = labels
-        nodes[index] = _make_node(
-            name=f"{node_prefix}{index}",
-            axes_names=labels,
-        )
-
-    return nodes, labels_by_node
+    hub_label: str,
+    endpoints: list[_EdgeEndpoint],
+) -> _NodeData:
+    axis_names = tuple(f"{hub_label}__branch_{index}" for index in range(len(endpoints)))
+    return _make_node(
+        name="",
+        axes_names=axis_names,
+        label=hub_label or None,
+        is_virtual=True,
+    )
 
 
-def _build_chain_edges(
-    *,
+def _tensor_chain_bonds(
     length: int,
-    labels_by_node: dict[int, tuple[str, ...]],
+    boundary_mode: str,
     left_leg: str,
     right_leg: str,
-    boundary_mode: str,
-) -> list[Any]:
-    edges: list[Any] = []
-
-    neighbor_pairs = [(index, index + 1) for index in range(length - 1)]
+    names: list[str],
+) -> tuple[tuple[tuple[str, str], ...], ...]:
+    bonds: list[tuple[tuple[str, str], ...]] = []
+    for i in range(length - 1):
+        bonds.append(((names[i], right_leg), (names[i + 1], left_leg)))
     if boundary_mode == "periodic" and length > 0:
-        neighbor_pairs.append((length - 1, 0))
+        bonds.append(((names[length - 1], right_leg), (names[0], left_leg)))
+    return tuple(bonds)
 
-    for left_index, right_index in neighbor_pairs:
-        left_labels = labels_by_node[left_index]
-        right_labels = labels_by_node[right_index]
-        left_endpoint = _EdgeEndpoint(
-            node_id=left_index,
-            axis_index=_find_leg_index(left_labels, right_leg, node_name=f"{left_index}"),
-            axis_name=right_leg,
-        )
-        right_endpoint = _EdgeEndpoint(
-            node_id=right_index,
-            axis_index=_find_leg_index(right_labels, left_leg, node_name=f"{right_index}"),
-            axis_name=left_leg,
-        )
-        edges.append(_make_contraction_edge(left_endpoint, right_endpoint, name=None))
 
-    for index in range(length):
-        labels = labels_by_node[index]
+def _build_explicit_tn_graph(tn: TenPyTensorNetwork) -> _GraphData:
+    nodes: dict[int, Any] = {}
+    labels_by_node: dict[int, tuple[str, ...]] = {}
+    id_to_int: dict[str, int] = {}
+
+    for index, (tensor_id, array) in enumerate(tn.nodes):
+        tid = str(tensor_id)
+        id_to_int[tid] = index
+        labels = _leg_labels(array)
+        labels_by_node[index] = labels
+        nodes[index] = _make_node(name=tid, axes_names=labels)
+
+    used_axes: set[tuple[int, int]] = set()
+    edges: list[Any] = []
+    next_hub_id = -1
+
+    for bond_index, bond in enumerate(tn.bonds):
+        endpoints: list[_EdgeEndpoint] = []
+        for tid, leg in bond:
+            ni = id_to_int[str(tid)]
+            labels = labels_by_node[ni]
+            axis_index = _find_leg_index(labels, str(leg), node_name=str(tid))
+            used_axes.add((ni, axis_index))
+            endpoints.append(
+                _EdgeEndpoint(node_id=ni, axis_index=axis_index, axis_name=str(leg)),
+            )
+
+        bond_name = f"b{bond_index}"
+        if len(endpoints) == 2:
+            edges.append(
+                _make_contraction_edge(endpoints[0], endpoints[1], name=bond_name),
+            )
+            continue
+
+        hub_id = next_hub_id
+        next_hub_id -= 1
+        nodes[hub_id] = _build_hyperedge_hub(hub_label=bond_name, endpoints=endpoints)
+        hub_axes = nodes[hub_id].axes_names
+        for branch_index, endpoint in enumerate(endpoints):
+            hub_ep = _EdgeEndpoint(
+                node_id=hub_id,
+                axis_index=branch_index,
+                axis_name=hub_axes[branch_index],
+            )
+            edges.append(
+                _make_contraction_edge(endpoint, hub_ep, name=bond_name),
+            )
+
+    for ni, labels in labels_by_node.items():
         for axis_index, label in enumerate(labels):
-            if boundary_mode == "periodic":
-                is_internal_left = label == left_leg
-                is_internal_right = label == right_leg
-            else:
-                is_internal_left = label == left_leg and index > 0
-                is_internal_right = label == right_leg and index < length - 1
-            if is_internal_left or is_internal_right:
+            if (ni, axis_index) in used_axes:
                 continue
             endpoint = _EdgeEndpoint(
-                node_id=index,
+                node_id=ni,
                 axis_index=axis_index,
                 axis_name=label,
             )
             edges.append(_make_dangling_edge(endpoint, name=label or None, label=label or None))
 
-    return edges
+    return _GraphData(nodes=nodes, edges=tuple(edges))
 
 
 def _build_mps_graph(network: Any) -> _GraphData:
     boundary_mode = _boundary_mode_from_geometry(network)
-    nodes, labels_by_node = _build_nodes(
-        int(network.L),
-        tensor_at=lambda index: network.get_B(index, form=None),
-        node_prefix="B",
-    )
-    edges = _build_chain_edges(
-        length=int(network.L),
-        labels_by_node=labels_by_node,
-        left_leg="vL",
-        right_leg="vR",
-        boundary_mode=boundary_mode,
-    )
-    return _GraphData(nodes=nodes, edges=tuple(edges))
+    length = int(network.L)
+    names = [f"B{i}" for i in range(length)]
+    nodes = tuple((names[i], network.get_B(i, form=None)) for i in range(length))
+    bonds = _tensor_chain_bonds(length, boundary_mode, "vL", "vR", names)
+    return _build_explicit_tn_graph(TenPyTensorNetwork(nodes=nodes, bonds=bonds))
 
 
 def _build_mpo_graph(network: Any) -> _GraphData:
     boundary_mode = _boundary_mode_from_geometry(network)
-    nodes, labels_by_node = _build_nodes(
-        int(network.L),
-        tensor_at=network.get_W,
-        node_prefix="W",
-    )
-    edges = _build_chain_edges(
-        length=int(network.L),
-        labels_by_node=labels_by_node,
-        left_leg="wL",
-        right_leg="wR",
-        boundary_mode=boundary_mode,
-    )
-    return _GraphData(nodes=nodes, edges=tuple(edges))
+    length = int(network.L)
+    names = [f"W{i}" for i in range(length)]
+    nodes = tuple((names[i], network.get_W(i)) for i in range(length))
+    bonds = _tensor_chain_bonds(length, boundary_mode, "wL", "wR", names)
+    return _build_explicit_tn_graph(TenPyTensorNetwork(nodes=nodes, bonds=bonds))
 
 
 def _build_momentum_mps_graph(network: Any) -> _GraphData:
     geometry = network.uMPS_GS
     boundary_mode = _boundary_mode_from_geometry(geometry)
     length = int(geometry.L)
-    nodes, labels_by_node = _build_nodes(
-        length,
-        tensor_at=lambda index: network.get_X(index),
-        node_prefix="X",
-    )
-    edges = _build_chain_edges(
-        length=length,
-        labels_by_node=labels_by_node,
-        left_leg="vL",
-        right_leg="vR",
-        boundary_mode=boundary_mode,
-    )
-    return _GraphData(nodes=nodes, edges=tuple(edges))
+    names = [f"X{i}" for i in range(length)]
+    nodes = tuple((names[i], network.get_X(i)) for i in range(length))
+    bonds = _tensor_chain_bonds(length, boundary_mode, "vL", "vR", names)
+    return _build_explicit_tn_graph(TenPyTensorNetwork(nodes=nodes, bonds=bonds))
 
 
 def _is_momentum_mps_like(network: Any) -> bool:
@@ -174,6 +171,8 @@ def _is_momentum_mps_like(network: Any) -> bool:
 
 
 def _build_graph(network: Any) -> _GraphData:
+    if isinstance(network, TenPyTensorNetwork):
+        return _build_explicit_tn_graph(network)
     if callable(getattr(network, "get_W", None)):
         return _build_mpo_graph(network)
     if _is_momentum_mps_like(network):

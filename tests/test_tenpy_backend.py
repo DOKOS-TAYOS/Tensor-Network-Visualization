@@ -9,7 +9,11 @@ import pytest
 
 from tensor_network_viz._core.curves import _require_self_endpoints
 from tensor_network_viz._core.graph import _require_contraction_endpoints
-from tensor_network_viz.tenpy import plot_tenpy_network_2d, plot_tenpy_network_3d
+from tensor_network_viz.tenpy import (
+    make_tenpy_tensor_network,
+    plot_tenpy_network_2d,
+    plot_tenpy_network_3d,
+)
 from tensor_network_viz.tenpy.graph import _build_graph as _build_tenpy_graph
 
 tenpy = pytest.importorskip("tenpy")
@@ -239,3 +243,62 @@ def test_build_tenpy_graph_real_momentum_mps_if_constructible() -> None:
 def test_build_tenpy_graph_rejects_unknown_type() -> None:
     with pytest.raises(TypeError, match="Unsupported TeNPy input"):
         _build_tenpy_graph(object())
+
+
+def test_explicit_tn_matches_finite_mps_topology() -> None:
+    mps = _build_finite_mps(length=3)
+    ref = _build_tenpy_graph(mps)
+    tn = make_tenpy_tensor_network(
+        nodes=[(f"B{i}", mps.get_B(i, form=None)) for i in range(3)],
+        bonds=[
+            (("B0", "vR"), ("B1", "vL")),
+            (("B1", "vR"), ("B2", "vL")),
+        ],
+    )
+    got = _build_tenpy_graph(tn)
+    assert len(got.nodes) == len(ref.nodes)
+    assert len(got.edges) == len(ref.edges)
+    assert {e.kind for e in got.edges} == {e.kind for e in ref.edges}
+
+
+def test_make_tenpy_tensor_network_rejects_duplicate_leg_use() -> None:
+    import numpy as np
+    from tenpy.linalg import np_conserved as npc
+
+    leg = npc.LegCharge.from_trivial(2)
+    t0 = npc.Array.from_ndarray(np.zeros((2, 2)), [leg, leg], labels=["j", "d0"])
+    t1 = npc.Array.from_ndarray(np.zeros((2, 2)), [leg, leg], labels=["j", "d1"])
+    with pytest.raises(ValueError, match="more than one bond"):
+        make_tenpy_tensor_network(
+            nodes=[("T0", t0), ("T1", t1)],
+            bonds=[
+                (("T0", "j"), ("T1", "j")),
+                (("T0", "j"), ("T1", "j")),
+            ],
+        )
+
+
+def test_build_explicit_tn_hyperedge_hub() -> None:
+    import numpy as np
+    from tenpy.linalg import np_conserved as npc
+
+    leg = npc.LegCharge.from_trivial(2)
+    t0 = npc.Array.from_ndarray(np.zeros((2, 2)), [leg, leg], labels=["j", "d0"])
+    t1 = npc.Array.from_ndarray(np.zeros((2, 2)), [leg, leg], labels=["j", "d1"])
+    t2 = npc.Array.from_ndarray(np.zeros((2, 2)), [leg, leg], labels=["j", "d2"])
+    tn = make_tenpy_tensor_network(
+        nodes=[("T0", t0), ("T1", t1), ("T2", t2)],
+        bonds=[(("T0", "j"), ("T1", "j"), ("T2", "j"))],
+    )
+    graph = _build_tenpy_graph(tn)
+    virtual = [n for n in graph.nodes.values() if n.is_virtual]
+    assert len(virtual) == 1
+    assert sum(1 for e in graph.edges if e.kind == "contraction") == 3
+    assert sum(1 for e in graph.edges if e.kind == "dangling") == 3
+
+
+def test_tensor_network_viz_exports_tenpy_explicit() -> None:
+    from tensor_network_viz import TenPyTensorNetwork, make_tenpy_tensor_network as m
+
+    assert TenPyTensorNetwork.__name__ == "TenPyTensorNetwork"
+    assert callable(m)
