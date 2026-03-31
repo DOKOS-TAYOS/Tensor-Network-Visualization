@@ -196,9 +196,7 @@ def main() -> None:
         nodes,
         engine="tensornetwork",
         view=args.view,
-        config=finalize_demo_plot_config(
-            args, network="mera_tree", engine="tensornetwork"
-        ),
+        config=finalize_demo_plot_config(args, network="mera_tree", engine="tensornetwork"),
         show=False,
     )
     apply_demo_caption(

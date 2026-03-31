@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] — 2026-03-31
+
 ### Added
 
 - **Contraction scheme visualization:** normalized graphs from **einsum** traces carry optional **`contraction_steps`** ([`_GraphData`](src/tensor_network_viz/_core/graph.py)). **`PlotConfig(show_contraction_scheme=True)`** draws per-step highlights **under** the graph (**2D:** rounded **`FancyBboxPatch`** on each step’s bounding box; **3D:** axis-aligned wireframe box). Later steps are drawn first so earlier steps stack on top. **`contraction_scheme_by_name`** overrides or supplies a schedule for any engine. Tests in **`tests/test_contraction_scheme.py`**; docs in **`docs/guide.md`**.
@@ -59,5 +61,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[1.4.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.3.3...v1.4.0

@@ -143,11 +143,7 @@ def _draw_contraction_scheme(
         pts = _coords_for_step(graph, positions, node_ids, dimensions)
         if pts is None or pts.shape[0] == 0:
             continue
-        pad = (
-            base_pad
-            + _strict_subset_padding_bonus(i, steps, p)
-            + _step_index_padding_bonus(i, p)
-        )
+        pad = base_pad + _strict_subset_padding_bonus(i, steps, p) + _step_index_padding_bonus(i, p)
         fill_rgba = _scheme_color_rgba(i, config=config, alpha=fill_a)
         edge_rgba = _scheme_color_rgba(i, config=config, alpha=edge_a)
         z_patch = _ZORDER_CONTRACTION_SCHEME + 0.001 * float(draw_rank)

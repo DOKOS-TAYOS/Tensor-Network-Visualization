@@ -127,9 +127,7 @@ def main() -> None:
         network,
         engine="tenpy",
         view=args.view,
-        config=finalize_demo_plot_config(
-            args, network=args.network, engine="tenpy_explicit"
-        ),
+        config=finalize_demo_plot_config(args, network=args.network, engine="tenpy_explicit"),
         show=False,
     )
     apply_demo_caption(
