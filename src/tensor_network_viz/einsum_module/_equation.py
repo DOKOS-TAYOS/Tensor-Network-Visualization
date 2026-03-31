@@ -191,9 +191,7 @@ def _nary_explicit_string(
             raise ValueError(
                 "Subscripts do not match tensor ranks (counts include repeated labels per axis)."
             )
-    explicit = (
-        eq if "->" in eq else f"{operands_part}->{_implicit_nary_output_letters(raw_ops)}"
-    )
+    explicit = eq if "->" in eq else f"{operands_part}->{_implicit_nary_output_letters(raw_ops)}"
     zs = tuple(np.zeros(s, dtype=np.float64) for s in operand_shapes)
     eq_in = expression.replace(" ", "")
     try:
@@ -240,9 +238,7 @@ def parse_einsum_equation(
     if len(operand_shapes) < 1:
         raise ValueError("einsum requires at least one operand shape.")
     if len(operand_shapes) == 2:
-        explicit = _binary_explicit_string(
-            expression, operand_shapes[0], operand_shapes[1]
-        )
+        explicit = _binary_explicit_string(expression, operand_shapes[0], operand_shapes[1])
     else:
         explicit = _nary_explicit_string(expression, operand_shapes)
     return _parse_nary_equation_explicit(explicit)

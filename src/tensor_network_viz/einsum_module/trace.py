@@ -74,9 +74,7 @@ def _normalize_trace(trace: Any) -> list[pair_tensor | einsum_trace_step]:
     if not items:
         raise ValueError("The einsum trace does not contain any trace entries.")
     if not all(isinstance(item, (pair_tensor, einsum_trace_step)) for item in items):
-        raise TypeError(
-            "Einsum trace entries must be pair_tensor or einsum_trace_step instances."
-        )
+        raise TypeError("Einsum trace entries must be pair_tensor or einsum_trace_step instances.")
     return items
 
 
