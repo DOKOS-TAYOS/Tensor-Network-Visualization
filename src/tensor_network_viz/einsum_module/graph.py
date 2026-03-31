@@ -13,8 +13,8 @@ from .._core.graph import (
     _make_dangling_edge,
     _make_node,
 )
-from .contraction_cost import metrics_for_parsed_step
 from ._equation import _binary_operand_specs_before_arrow, parse_einsum_equation
+from .contraction_cost import metrics_for_parsed_step
 from .trace import _normalize_trace, einsum_trace_step, pair_tensor
 
 

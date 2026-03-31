@@ -6,8 +6,10 @@ import pytest
 
 from tensor_network_viz import pair_tensor
 from tensor_network_viz._core.draw.contraction_scheme import _contraction_step_metrics_for_draw
-from tensor_network_viz._core.graph import _GraphData, _make_node, _resolve_contraction_scheme_by_name
 from tensor_network_viz._core.draw.hover import _register_2d_hover_labels
+from tensor_network_viz._core.graph import (
+    _resolve_contraction_scheme_by_name,
+)
 from tensor_network_viz.config import PlotConfig
 from tensor_network_viz.einsum_module._equation import _ParsedNaryEquation, parse_einsum_equation
 from tensor_network_viz.einsum_module.contraction_cost import (
