@@ -7,6 +7,7 @@ from typing import Any, Literal
 import numpy as np
 from matplotlib.colors import to_rgba
 from matplotlib.patches import FancyBboxPatch
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 from ...config import PlotConfig
 from ..graph import _GraphData, _resolve_contraction_scheme_by_name
@@ -111,6 +112,58 @@ def _iter_scheme_draw_order(
     return items
 
 
+def _scheme_box_3d_line_collection(
+    xmin: float,
+    xmax: float,
+    ymin: float,
+    ymax: float,
+    zmin: float,
+    zmax: float,
+    *,
+    color: tuple[float, float, float],
+    alpha: float,
+    linewidth: float,
+    zorder_base: float,
+) -> Line3DCollection:
+    corners = np.array(
+        [
+            [xmin, ymin, zmin],
+            [xmax, ymin, zmin],
+            [xmax, ymax, zmin],
+            [xmin, ymax, zmin],
+            [xmin, ymin, zmax],
+            [xmax, ymin, zmax],
+            [xmax, ymax, zmax],
+            [xmin, ymax, zmax],
+        ],
+        dtype=float,
+    )
+    edge_pairs = (
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4),
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7),
+    )
+    segments = np.stack([corners[[a, b]] for a, b in edge_pairs], axis=0)
+    lc = Line3DCollection(
+        segments,
+        colors=color,
+        linewidths=linewidth,
+        alpha=alpha,
+    )
+    lc.set_gid(_CONTRACTION_SCHEME_GID)
+    lc.set_zorder(zorder_base)
+    return lc
+
+
 def _draw_contraction_scheme(
     *,
     ax: Any,
@@ -121,7 +174,12 @@ def _draw_contraction_scheme(
     dimensions: Literal[2, 3],
     scale: float,
     p: _DrawScaleParams,
-) -> None:
+) -> list[Any | None]:
+    """Draw per-step hulls; return one entry per ``steps`` index.
+
+    ``None`` means that step has no hull.
+    """
+    per_step: list[Any | None] = [None] * len(steps)
     base_pad = _padding_data_units(p)
     fill_a = float(np.clip(config.contraction_scheme_alpha, 0.0, 1.0))
     edge_a_raw = config.contraction_scheme_edge_alpha
@@ -168,6 +226,7 @@ def _draw_contraction_scheme(
                 gid=_CONTRACTION_SCHEME_GID,
             )
             ax.add_patch(fancy)
+            per_step[i] = fancy
         else:
             xmin = float(np.min(pts[:, 0]) - pad)
             xmax = float(np.max(pts[:, 0]) + pad)
@@ -175,8 +234,7 @@ def _draw_contraction_scheme(
             ymax = float(np.max(pts[:, 1]) + pad)
             zmin = float(np.min(pts[:, 2]) - pad)
             zmax = float(np.max(pts[:, 2]) + pad)
-            _draw_scheme_box_3d(
-                ax,
+            lc = _scheme_box_3d_line_collection(
                 xmin,
                 xmax,
                 ymin,
@@ -188,61 +246,10 @@ def _draw_contraction_scheme(
                 linewidth=lw,
                 zorder_base=z_patch,
             )
+            ax.add_collection3d(lc)
+            per_step[i] = lc
 
-
-def _draw_scheme_box_3d(
-    ax: Any,
-    xmin: float,
-    xmax: float,
-    ymin: float,
-    ymax: float,
-    zmin: float,
-    zmax: float,
-    *,
-    color: tuple[float, float, float],
-    alpha: float,
-    linewidth: float,
-    zorder_base: float,
-) -> None:
-    corners = np.array(
-        [
-            [xmin, ymin, zmin],
-            [xmax, ymin, zmin],
-            [xmax, ymax, zmin],
-            [xmin, ymax, zmin],
-            [xmin, ymin, zmax],
-            [xmax, ymin, zmax],
-            [xmax, ymax, zmax],
-            [xmin, ymax, zmax],
-        ],
-        dtype=float,
-    )
-    edge_pairs = (
-        (0, 1),
-        (1, 2),
-        (2, 3),
-        (3, 0),
-        (4, 5),
-        (5, 6),
-        (6, 7),
-        (7, 4),
-        (0, 4),
-        (1, 5),
-        (2, 6),
-        (3, 7),
-    )
-    for a, b in edge_pairs:
-        p0, p1 = corners[a], corners[b]
-        ax.plot(
-            [p0[0], p1[0]],
-            [p0[1], p1[1]],
-            [p0[2], p1[2]],
-            color=color,
-            alpha=alpha,
-            linewidth=linewidth,
-            zorder=zorder_base,
-            gid=_CONTRACTION_SCHEME_GID,
-        )
+    return per_step
 
 
 __all__ = [

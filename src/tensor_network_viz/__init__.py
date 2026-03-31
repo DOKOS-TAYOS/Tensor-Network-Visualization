@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING, Any
 
 from ._core.graph_cache import clear_tensor_network_graph_cache
 from .config import EngineName, PlotConfig, ViewName
+from .contraction_viewer import ContractionViewer2D, ContractionViewer3D
 from .einsum_module.trace import EinsumTrace, einsum, einsum_trace_step, pair_tensor
 from .tenpy.explicit import TenPyTensorNetwork, make_tenpy_tensor_network
 
@@ -16,6 +17,8 @@ else:
 
 
 __all__ = [
+    "ContractionViewer2D",
+    "ContractionViewer3D",
     "EngineName",
     "EinsumTrace",
     "PlotConfig",

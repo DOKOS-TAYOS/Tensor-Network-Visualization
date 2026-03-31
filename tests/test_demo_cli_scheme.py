@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -14,6 +15,7 @@ if str(_EXAMPLES) not in sys.path:
 from demo_cli import (  # noqa: E402
     cubic_peps_tensor_names,
     cumulative_prefix_contraction_scheme,
+    finalize_demo_plot_config,
 )
 
 
@@ -43,3 +45,42 @@ def test_cubic_peps_names_match_grid_count() -> None:
 def test_cubic_peps_invalid_grid() -> None:
     with pytest.raises(ValueError, match="must be >="):
         cubic_peps_tensor_names(0, 1, 1)
+
+
+def _demo_args(*, contraction_scheme: bool = False) -> argparse.Namespace:
+    return argparse.Namespace(
+        contraction_scheme=contraction_scheme,
+        hover_labels=False,
+        compact=False,
+    )
+
+
+def test_finalize_contraction_playback_true_for_einsum_scheme() -> None:
+    cfg = finalize_demo_plot_config(
+        _demo_args(contraction_scheme=True),
+        network="chain",
+        engine="einsum",
+    )
+    assert cfg.show_contraction_scheme is True
+    assert cfg.contraction_playback is True
+
+
+def test_finalize_contraction_playback_true_when_manual_scheme() -> None:
+    cfg = finalize_demo_plot_config(
+        _demo_args(contraction_scheme=True),
+        network="disconnected",
+        engine="quimb",
+    )
+    assert cfg.contraction_scheme_by_name is not None
+    assert cfg.contraction_playback is True
+
+
+def test_finalize_contraction_playback_false_without_step_schedule() -> None:
+    cfg = finalize_demo_plot_config(
+        _demo_args(contraction_scheme=True),
+        network="mera_tree",
+        engine="tensornetwork",
+    )
+    assert cfg.show_contraction_scheme is True
+    assert cfg.contraction_scheme_by_name is None
+    assert cfg.contraction_playback is False

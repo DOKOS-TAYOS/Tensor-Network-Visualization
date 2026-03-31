@@ -66,6 +66,10 @@ class PlotConfig:
         contraction_scheme_by_name: Optional override: each inner tuple is one step, tensor names
             matching non-virtual ``node.name`` values. Duplicate names among visible tensors or
             unknown names raise ``ValueError``. When set, this replaces ``graph.contraction_steps``.
+        contraction_playback: If True, ``show_tensor_network`` adds a Matplotlib slider and
+            Play/Pause/Reset controls on the same figure (2D widget axes only) to step through
+            contraction highlights interactively. Requires ``show_contraction_scheme=True`` and a
+            non-empty contraction step list.
     """
 
     DEFAULT_NODE_RADIUS: ClassVar[float] = 0.08
@@ -104,6 +108,7 @@ class PlotConfig:
     contraction_scheme_linewidth: float | None = None
     contraction_scheme_colors: tuple[str, ...] | None = None
     contraction_scheme_by_name: tuple[tuple[str, ...], ...] | None = None
+    contraction_playback: bool = False
 
 
 __all__ = ["EngineName", "PlotConfig", "ViewName"]

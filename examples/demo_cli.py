@@ -27,7 +27,9 @@ def add_contraction_scheme_argument(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help=(
             "Overlay contraction-step highlights. Einsum examples use steps from the trace; "
-            "other engines use an illustrative manual schedule when one is defined for this demo."
+            "other engines use an illustrative manual schedule when one is defined for this demo. "
+            "When highlights are available, also enables interactive Play/Pause/Reset stepping "
+            "(see PlotConfig.contraction_playback)."
         ),
     )
 
@@ -149,15 +151,20 @@ def finalize_demo_plot_config(
     if not getattr(args, "contraction_scheme", False):
         return cfg
     if engine == "einsum":
-        return cfg
+        return replace(cfg, contraction_playback=True)
     if scheme_tensor_names is not None:
         return replace(
             cfg,
             contraction_scheme_by_name=cumulative_prefix_contraction_scheme(scheme_tensor_names),
+            contraction_playback=True,
         )
     manual = optional_backend_contraction_scheme_by_name(network=network or "", engine=engine)
     if manual is not None:
-        return replace(cfg, contraction_scheme_by_name=manual)
+        return replace(
+            cfg,
+            contraction_scheme_by_name=manual,
+            contraction_playback=True,
+        )
     return cfg
 
 

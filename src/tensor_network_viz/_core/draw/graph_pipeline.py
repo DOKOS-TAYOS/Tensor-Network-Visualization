@@ -6,6 +6,7 @@ import numpy as np
 from matplotlib.axes import Axes
 
 from ...config import PlotConfig
+from ...contraction_viewer import attach_playback_to_tensor_network_figure
 from ..contractions import _ContractionGroups, _group_contractions
 from ..graph import (
     _GraphData,
@@ -98,11 +99,17 @@ def _draw_graph(
     )
     _apply_axis_limits_with_outset(ax, pre_coords, view_margin=view_margin, dimensions=dimensions)
 
+    if config.contraction_playback and not config.show_contraction_scheme:
+        raise ValueError(
+            "contraction_playback=True requires show_contraction_scheme=True so contraction "
+            "steps can be drawn and stepped."
+        )
+
     # Contraction highlights first (under bonds, nodes, and labels).
     if config.show_contraction_scheme:
         scheme_steps = _effective_contraction_steps(graph, config)
         if scheme_steps:
-            _draw_contraction_scheme(
+            per_step_artists = _draw_contraction_scheme(
                 ax=ax,
                 graph=graph,
                 positions=positions,
@@ -111,6 +118,22 @@ def _draw_graph(
                 dimensions=dimensions,
                 scale=scale,
                 p=params,
+            )
+            if config.contraction_playback:
+                if not any(a is not None for a in per_step_artists):
+                    raise ValueError(
+                        "contraction_playback requires at least one drawable "
+                        "contraction scheme step."
+                    )
+                attach_playback_to_tensor_network_figure(
+                    artists_by_step=per_step_artists,
+                    fig=ax.figure,
+                    ax=ax,
+                    config=config,
+                )
+        elif config.contraction_playback:
+            raise ValueError(
+                "contraction_playback requires a non-empty contraction step sequence on the graph."
             )
 
     visible_order = _visible_node_ids_in_graph_order(graph)
