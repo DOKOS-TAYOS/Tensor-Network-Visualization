@@ -108,4 +108,4 @@ def test_register_2d_hover_accepts_scheme_patches_only() -> None:
 
 
 def test_plot_config_has_cost_hover_flag() -> None:
-    assert PlotConfig().contraction_scheme_cost_hover is True
+    assert PlotConfig().contraction_scheme_cost_hover is False

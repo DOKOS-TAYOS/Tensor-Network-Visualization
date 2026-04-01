@@ -360,7 +360,10 @@ with **`PlotConfig(show_contraction_scheme=True)`**; **2D** rounded **`FancyBbox
 axis-aligned bounding box of the tensors in that step (not per-tensor tight hulls); **later** steps
 drawn **under** earlier ones; **3D** wireframes (no fill). Other engines: **`contraction_scheme_by_name`**
 (each step should list the tensors you want in that hull; end with the full network if you want one
-global region).
+global region). When a figure has usable contraction steps, it also gets Matplotlib toggles for
+**`Scheme`**, **`Playback`**, and **`Cost hover`**. If those flags start disabled in
+**`PlotConfig`**, the scheme geometry, playback viewer, and cost tooltips are built lazily on the
+first toggle that needs them, then reused for the rest of the figure lifetime.
 
 <a id="toc-plotconfig"></a>
 
@@ -399,6 +402,8 @@ Frozen dataclass in [`src/tensor_network_viz/config.py`](../src/tensor_network_v
 | `contraction_scheme_linewidth` | `None` | → **`DEFAULT_CONTRACTION_SCHEME_LINEWIDTH`** (scaled like other strokes). |
 | `contraction_scheme_colors` | `None` | Cycle of colors; built-in categorical palette if unset. |
 | `contraction_scheme_by_name` | `None` | Override schedule: per step, tuple of **`node.name`** strings for non-virtual tensors. |
+| `contraction_playback` | `False` | Start with the step slider and **Play/Pause/Reset** visible; still requires **`show_contraction_scheme=True`** in code. |
+| `contraction_scheme_cost_hover` | `False` | Show the naive dense contraction-cost tooltip when hovering a visible scheme hull. |
 
 ### Recipe: publication palette
 
@@ -463,6 +468,11 @@ fig, ax = show_tensor_network(
     show=False,
 )
 ```
+
+Compatible figures show the three figure-level toggles even if you leave these flags off in
+**`PlotConfig`**. Turning on **`Playback`** or **`Cost hover`** from the UI auto-enables
+**`Scheme`**. Turning **`Scheme`** off hides the hulls and playback widgets, but remembered child
+states are restored instantly when you turn it back on.
 
 ### Recipe: custom positions with validation
 

@@ -8,13 +8,42 @@ matplotlib.use("Agg")
 
 import numpy as np
 import pytest
+from matplotlib.backend_bases import MouseEvent
 from matplotlib.patches import FancyBboxPatch, Rectangle
-from matplotlib.widgets import Slider
+from matplotlib.widgets import Button, CheckButtons, Slider
 
 from tensor_network_viz import ContractionViewer2D, PlotConfig, pair_tensor
+from tensor_network_viz._core.graph import _GraphData, _make_node
 from tensor_network_viz._core.renderer import _plot_graph
 from tensor_network_viz.contraction_viewer import attach_playback_to_tensor_network_figure
 from tensor_network_viz.einsum_module.graph import _build_graph
+
+
+def _widget_center_event(fig: matplotlib.figure.Figure, artist: object) -> MouseEvent:
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    bbox = artist.get_window_extent(renderer)  # type: ignore[attr-defined]
+    x = float((bbox.x0 + bbox.x1) / 2.0)
+    y = float((bbox.y0 + bbox.y1) / 2.0)
+    return MouseEvent("button_press_event", fig.canvas, x, y, button=1)
+
+
+def _click_checkbutton(checkbuttons: CheckButtons, index: int) -> None:
+    event = _widget_center_event(checkbuttons.ax.figure, checkbuttons.labels[index])
+    checkbuttons._clicked(event)
+
+
+def _click_button(button: Button) -> None:
+    fig = button.ax.figure
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    bbox = button.ax.get_window_extent(renderer)
+    x = float((bbox.x0 + bbox.x1) / 2.0)
+    y = float((bbox.y0 + bbox.y1) / 2.0)
+    press = MouseEvent("button_press_event", fig.canvas, x, y, button=1)
+    release = MouseEvent("button_release_event", fig.canvas, x, y, button=1)
+    button._click(press)
+    button._release(release)
 
 
 def test_contraction_viewer_set_step_clamps_and_updates_visibility() -> None:
@@ -94,7 +123,7 @@ def test_plot_graph_contraction_playback_adds_widgets() -> None:
     assert len(fig.axes) >= 2
 
 
-def test_plot_graph_scheme_without_playback_no_extra_slider_axes() -> None:
+def test_plot_graph_scheme_without_playback_keeps_controls_but_hides_playback_widgets() -> None:
     trace = [pair_tensor("A0", "x0", "r0", "pa,p->a")]
     graph = _build_graph(trace)
     fig, ax = _plot_graph(
@@ -105,8 +134,13 @@ def test_plot_graph_scheme_without_playback_no_extra_slider_axes() -> None:
         show_index_labels=False,
         renderer_name="test_no_playback",
     )
-    assert getattr(fig, "_tensor_network_viz_contraction_viewer", None) is None
-    assert len(fig.axes) == 1
+    controls = getattr(fig, "_tensor_network_viz_contraction_controls", None)
+    assert controls is not None
+    viewer = getattr(fig, "_tensor_network_viz_contraction_viewer", None)
+    assert viewer is not None
+    assert viewer.slider is not None
+    assert not viewer.slider.ax.get_visible()
+    assert len(fig.axes) >= 2
 
 
 def test_contraction_playback_without_scheme_raises() -> None:
@@ -222,10 +256,264 @@ def test_plot_graph_contraction_playback_3d_hides_past_scheme_steps() -> None:
 
     viewer.set_step(6)
 
-    visible_steps = [
-        artist.get_visible() for artist in viewer._artists if artist is not None
-    ]
+    visible_steps = [artist.get_visible() for artist in viewer._artists if artist is not None]
     assert len(visible_steps) >= 6
     assert sum(1 for visible in visible_steps if visible) == 1
     assert viewer._artists[5] is not None
     assert viewer._artists[5].get_visible()
+
+
+def test_plot_graph_lazy_scheme_controls_render_without_initial_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.draw.graph_pipeline as graph_pipeline
+
+    trace = [
+        pair_tensor("A0", "x0", "r0", "pa,p->a"),
+        pair_tensor("r0", "A1", "r1", "a,apb->pb"),
+    ]
+    graph = _build_graph(trace)
+    calls: list[str] = []
+
+    original_steps = graph_pipeline._effective_contraction_steps
+    original_draw = graph_pipeline._draw_contraction_scheme
+    original_metrics = graph_pipeline._contraction_step_metrics_for_draw
+
+    def counting_steps(*args: object, **kwargs: object) -> object:
+        calls.append("steps")
+        return original_steps(*args, **kwargs)
+
+    def counting_draw(*args: object, **kwargs: object) -> object:
+        calls.append("draw")
+        return original_draw(*args, **kwargs)
+
+    def counting_metrics(*args: object, **kwargs: object) -> object:
+        calls.append("metrics")
+        return original_metrics(*args, **kwargs)
+
+    monkeypatch.setattr(graph_pipeline, "_effective_contraction_steps", counting_steps)
+    monkeypatch.setattr(graph_pipeline, "_draw_contraction_scheme", counting_draw)
+    monkeypatch.setattr(graph_pipeline, "_contraction_step_metrics_for_draw", counting_metrics)
+
+    fig, _ax = _plot_graph(
+        graph,
+        dimensions=2,
+        config=PlotConfig(
+            figsize=(4, 3),
+            show_contraction_scheme=False,
+            contraction_playback=False,
+            contraction_scheme_cost_hover=False,
+        ),
+        show_tensor_labels=False,
+        show_index_labels=False,
+        renderer_name="test_lazy_scheme_controls",
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_contraction_controls", None)
+    assert controls is not None
+    assert calls == []
+    assert controls._checkbuttons is not None
+    assert tuple(bool(v) for v in controls._checkbuttons.get_status()) == (False, False, False)
+
+
+def test_lazy_scheme_click_builds_bundle_once_and_playback_reuses_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.draw.graph_pipeline as graph_pipeline
+
+    trace = [
+        pair_tensor("A0", "x0", "r0", "pa,p->a"),
+        pair_tensor("r0", "A1", "r1", "a,apb->pb"),
+    ]
+    graph = _build_graph(trace)
+    counts = {"steps": 0, "draw": 0, "metrics": 0}
+
+    original_steps = graph_pipeline._effective_contraction_steps
+    original_draw = graph_pipeline._draw_contraction_scheme
+    original_metrics = graph_pipeline._contraction_step_metrics_for_draw
+
+    def counting_steps(*args: object, **kwargs: object) -> object:
+        counts["steps"] += 1
+        return original_steps(*args, **kwargs)
+
+    def counting_draw(*args: object, **kwargs: object) -> object:
+        counts["draw"] += 1
+        return original_draw(*args, **kwargs)
+
+    def counting_metrics(*args: object, **kwargs: object) -> object:
+        counts["metrics"] += 1
+        return original_metrics(*args, **kwargs)
+
+    monkeypatch.setattr(graph_pipeline, "_effective_contraction_steps", counting_steps)
+    monkeypatch.setattr(graph_pipeline, "_draw_contraction_scheme", counting_draw)
+    monkeypatch.setattr(graph_pipeline, "_contraction_step_metrics_for_draw", counting_metrics)
+
+    fig, ax = _plot_graph(
+        graph,
+        dimensions=2,
+        config=PlotConfig(
+            figsize=(4, 3),
+            show_contraction_scheme=False,
+            contraction_playback=False,
+            contraction_scheme_cost_hover=False,
+        ),
+        show_tensor_labels=False,
+        show_index_labels=False,
+        renderer_name="test_lazy_scheme_click",
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_contraction_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+
+    _click_checkbutton(controls._checkbuttons, 0)
+
+    assert counts == {"steps": 1, "draw": 1, "metrics": 1}
+    assert getattr(fig, "_tensor_network_viz_contraction_viewer", None) is not None
+
+    _click_checkbutton(controls._checkbuttons, 1)
+
+    assert counts == {"steps": 1, "draw": 1, "metrics": 1}
+    assert controls._viewer is not None
+    assert controls._viewer.slider is not None
+    assert ax.get_position().bounds[1] >= 0.22
+
+
+def test_playback_button_click_and_scheme_toggle_pause_and_hide_controls() -> None:
+    trace = [
+        pair_tensor("A0", "x0", "r0", "pa,p->a"),
+        pair_tensor("r0", "A1", "r1", "a,apb->pb"),
+    ]
+    graph = _build_graph(trace)
+    fig, _ax = _plot_graph(
+        graph,
+        dimensions=2,
+        config=PlotConfig(
+            figsize=(4, 3),
+            show_contraction_scheme=False,
+            contraction_playback=False,
+            contraction_scheme_cost_hover=False,
+        ),
+        show_tensor_labels=False,
+        show_index_labels=False,
+        renderer_name="test_lazy_playback_pause",
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_contraction_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+
+    _click_checkbutton(controls._checkbuttons, 1)
+
+    assert controls._viewer is not None
+    assert controls._viewer._btn_play is not None
+    _click_button(controls._viewer._btn_play)
+    assert controls._viewer._is_playing
+
+    _click_checkbutton(controls._checkbuttons, 0)
+
+    assert not controls._viewer._is_playing
+    assert controls._viewer.slider is not None
+    assert not controls._viewer.slider.ax.get_visible()
+    assert controls._viewer._btn_play is not None
+    assert not controls._viewer._btn_play.ax.get_visible()
+
+
+def test_cost_hover_click_auto_enables_scheme_and_registers_hover() -> None:
+    trace = [
+        pair_tensor("A0", "x0", "r0", "pa,p->a"),
+        pair_tensor("r0", "A1", "r1", "a,apb->pb"),
+    ]
+    graph = _build_graph(trace)
+    fig, _ax = _plot_graph(
+        graph,
+        dimensions=2,
+        config=PlotConfig(
+            figsize=(4, 3),
+            show_contraction_scheme=False,
+            contraction_playback=False,
+            contraction_scheme_cost_hover=False,
+        ),
+        show_tensor_labels=False,
+        show_index_labels=False,
+        renderer_name="test_lazy_cost_hover",
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_contraction_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+
+    _click_checkbutton(controls._checkbuttons, 2)
+
+    assert controls.scheme_on
+    assert controls.cost_hover_on
+    assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+
+
+def test_scheme_reenable_restores_recorded_playback_without_recompute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.draw.graph_pipeline as graph_pipeline
+
+    trace = [
+        pair_tensor("A0", "x0", "r0", "pa,p->a"),
+        pair_tensor("r0", "A1", "r1", "a,apb->pb"),
+    ]
+    graph = _build_graph(trace)
+    calls = {"steps": 0}
+    original_steps = graph_pipeline._effective_contraction_steps
+
+    def counting_steps(*args: object, **kwargs: object) -> object:
+        calls["steps"] += 1
+        return original_steps(*args, **kwargs)
+
+    monkeypatch.setattr(graph_pipeline, "_effective_contraction_steps", counting_steps)
+
+    fig, _ax = _plot_graph(
+        graph,
+        dimensions=2,
+        config=PlotConfig(
+            figsize=(4, 3),
+            show_contraction_scheme=False,
+            contraction_playback=False,
+            contraction_scheme_cost_hover=False,
+        ),
+        show_tensor_labels=False,
+        show_index_labels=False,
+        renderer_name="test_scheme_restore_playback",
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_contraction_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+
+    _click_checkbutton(controls._checkbuttons, 1)
+    assert calls["steps"] == 1
+    assert controls._viewer is not None
+    assert controls._viewer.slider is not None
+    assert controls._viewer.slider.ax.get_visible()
+
+    _click_checkbutton(controls._checkbuttons, 0)
+    assert not controls._viewer.slider.ax.get_visible()
+
+    _click_checkbutton(controls._checkbuttons, 0)
+    assert calls["steps"] == 1
+    assert controls._viewer.slider.ax.get_visible()
+
+
+def test_plot_graph_without_scheme_source_does_not_create_lazy_controls() -> None:
+    graph = _GraphData(
+        nodes={0: _make_node("A", ("i",))},
+        edges=(),
+    )
+
+    fig, _ax = _plot_graph(
+        graph,
+        dimensions=2,
+        config=PlotConfig(figsize=(4, 3)),
+        show_tensor_labels=False,
+        show_index_labels=False,
+        renderer_name="test_no_scheme_source_controls",
+    )
+
+    assert getattr(fig, "_tensor_network_viz_contraction_controls", None) is None

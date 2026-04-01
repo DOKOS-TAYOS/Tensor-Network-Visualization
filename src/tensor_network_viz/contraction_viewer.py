@@ -11,8 +11,9 @@ only adds matplotlib widgets and mutates existing artists.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import Any, Final, Literal, cast
 
 import matplotlib.pyplot as plt
@@ -22,7 +23,7 @@ from matplotlib.axes import Axes
 from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 from matplotlib.patches import FancyBboxPatch, Rectangle
-from matplotlib.widgets import Button, Slider
+from matplotlib.widgets import Button, CheckButtons, Slider
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
@@ -31,6 +32,7 @@ from .config import PlotConfig
 from .viewer import _show_figure
 
 VisualizerMode = Literal["cumulative", "highlight_current", "window"]
+_SchemeAvailability = Literal["not_computed", "computed", "unavailable"]
 
 # Must stay aligned with ``_CONTRACTION_SCHEME_GID`` in ``_core.draw.contraction_scheme``.
 _TNV_CONTRACTION_SCHEME_PATCH_GID: Final[str] = "tnv_contraction_scheme"
@@ -44,6 +46,22 @@ _PLAYBACK_BUTTON_WIDTH: float = 0.058
 _PLAYBACK_BUTTON_HEIGHT: float = 0.04
 _PLAYBACK_BUTTON_GAP: float = 0.012
 _PLAYBACK_RESET_WIDTH: float = 0.068
+_CONTROLS_MAIN_BOTTOM: float = _PLAYBACK_MAIN_BOTTOM
+_CONTROLS_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.045, 0.17, 0.11)
+_SCHEME_LABELS: tuple[str, str, str] = ("Scheme", "Playback", "Cost hover")
+
+
+@dataclass
+class _ContractionSchemeBundle:
+    availability: _SchemeAvailability = "not_computed"
+    steps: tuple[frozenset[int], ...] | None = None
+    artists_by_step: list[Artist | None] | None = None
+    scheme_aabb: list[tuple[float, float, float, float, float, float] | None] | None = None
+    metrics_row: tuple[Any | None, ...] | None = None
+    tooltips: tuple[str | None, ...] | None = None
+    viewer: _ContractionViewerBase | None = None
+    bounds_2d: tuple[float, float, float, float] | None = None
+    bounds_3d: tuple[float, float, float, float, float, float] | None = None
 
 
 def _is_tensor_network_scheme_artist(artist: Artist) -> bool:
@@ -146,6 +164,23 @@ def _safe_set_linewidth(artist: Artist, lw: float) -> None:
     if callable(setter2):
         with suppress(AttributeError, TypeError, ValueError):
             setter2(lw)
+
+
+def _set_axes_visible(ax: Axes, visible: bool) -> None:
+    ax.set_visible(visible)
+    ax.patch.set_visible(visible)
+    for child in ax.get_children():
+        setter = getattr(child, "set_visible", None)
+        if callable(setter):
+            with suppress(AttributeError, TypeError, ValueError):
+                setter(visible)
+
+
+def _reserve_figure_bottom(fig: Figure, bottom: float) -> None:
+    current = float(getattr(fig, "_tensor_network_viz_reserved_bottom", 0.02))
+    target = max(current, float(bottom))
+    fig._tensor_network_viz_reserved_bottom = target  # type: ignore[attr-defined]
+    fig.subplots_adjust(bottom=target)
 
 
 def _snapshot_style(artist: Artist) -> dict[str, Any]:
@@ -275,7 +310,8 @@ class _ContractionViewerBase:
             _snapshot_style(a) if a is not None else None for a in self._artists
         ]
 
-        self.current_step: int = 0
+        init_step = initial_step if initial_step is not None else len(self._artists)
+        self.current_step: int = int(np.clip(init_step, 0, len(self._artists)))
         self._initial_step = initial_step
 
         self.slider: Slider | None = None
@@ -286,6 +322,7 @@ class _ContractionViewerBase:
         self._is_playing: bool = False
         self._slider_callback_guard: bool = False
         self._ui_built: bool = False
+        self._playback_widgets_visible: bool = False
         self._cid_close: int | None = None
 
     @property
@@ -389,13 +426,13 @@ class _ContractionViewerBase:
 
         self.figure.canvas.draw_idle()
 
-    def build_ui(self) -> None:
+    def build_ui(self, *, initialize_step: bool = True) -> None:
         """Create slider and buttons on 2D axes; no-op if ``enable_playback`` is False."""
         if not self._enable_playback or self._ui_built:
             return
 
         n = self.num_steps
-        self.figure.subplots_adjust(bottom=_PLAYBACK_MAIN_BOTTOM)
+        _reserve_figure_bottom(self.figure, _PLAYBACK_MAIN_BOTTOM)
         ax_slider = self.figure.add_axes(_PLAYBACK_SLIDER_BOUNDS)
         slider = Slider(
             ax_slider,
@@ -414,9 +451,7 @@ class _ContractionViewerBase:
         gap = _PLAYBACK_BUTTON_GAP
         ax_play = self.figure.add_axes((bx, by, bw, bh))
         ax_pause = self.figure.add_axes((bx + bw + gap, by, bw, bh))
-        ax_reset = self.figure.add_axes(
-            (bx + 2.0 * (bw + gap), by, _PLAYBACK_RESET_WIDTH, bh)
-        )
+        ax_reset = self.figure.add_axes((bx + 2.0 * (bw + gap), by, _PLAYBACK_RESET_WIDTH, bh))
         btn_play = Button(ax_play, "Play")
         btn_pause = Button(ax_pause, "Pause")
         btn_reset = Button(ax_reset, "Reset")
@@ -446,8 +481,10 @@ class _ContractionViewerBase:
         self._timer.add_callback(self._tick_playback)
 
         self._ui_built = True
-        init = self._initial_step if self._initial_step is not None else n
-        self.set_step(init)
+        self.set_playback_widgets_visible(True)
+        if initialize_step:
+            init = self._initial_step if self._initial_step is not None else n
+            self.set_step(init)
 
     def _tick_playback(self) -> None:
         if not self._is_playing:
@@ -479,10 +516,237 @@ class _ContractionViewerBase:
         self.pause()
         self.set_step(0)
 
+    def set_playback_widgets_visible(self, visible: bool) -> None:
+        if not self._ui_built:
+            return
+        widget_axes = [
+            self.slider.ax if self.slider is not None else None,
+            self._btn_play.ax if self._btn_play is not None else None,
+            self._btn_pause.ax if self._btn_pause is not None else None,
+            self._btn_reset.ax if self._btn_reset is not None else None,
+        ]
+        for widget_ax in widget_axes:
+            if widget_ax is None:
+                continue
+            _set_axes_visible(widget_ax, visible)
+        self._playback_widgets_visible = visible
+        self.figure.canvas.draw_idle()
+
+    def show_static_scheme(self) -> None:
+        for i, art in enumerate(self._artists):
+            if art is None:
+                continue
+            _safe_set_visible(art, True)
+            self._restore_base_style(i, art)
+        self.figure.canvas.draw_idle()
+
+    def hide_scheme_artists(self) -> None:
+        for art in self._artists:
+            if art is None:
+                continue
+            _safe_set_visible(art, False)
+        self.figure.canvas.draw_idle()
+
     def show(self) -> None:
         """Standalone demos; in-library use relies on ``show_tensor_network`` / ``_show_figure``."""
         self.build_ui()
         _show_figure(self.figure)
+
+
+class _ContractionControls:
+    """Per-figure controller for lazy contraction scheme, playback, and cost-hover toggles."""
+
+    def __init__(
+        self,
+        *,
+        fig: Figure,
+        ax: Axes | Axes3D,
+        config: PlotConfig,
+        bundle_builder: Callable[[bool], _ContractionSchemeBundle],
+        refresh_hover: Callable[
+            [
+                Sequence[tuple[Artist, str]],
+                Sequence[tuple[tuple[float, float, float, float, float, float], str, Artist]],
+            ],
+            None,
+        ],
+    ) -> None:
+        self.figure = fig
+        self.ax = ax
+        self.config = config
+        self._bundle_builder = bundle_builder
+        self._refresh_hover_callback = refresh_hover
+        self._bundle = _ContractionSchemeBundle()
+        self._viewer: _ContractionViewerBase | None = None
+        self.scheme_on: bool = bool(config.show_contraction_scheme)
+        self.playback_on: bool = bool(config.contraction_playback)
+        self.cost_hover_on: bool = bool(config.contraction_scheme_cost_hover)
+        self._controls_ax: Axes | None = None
+        self._checkbuttons: CheckButtons | None = None
+        self._checkbuttons_cid: int | None = None
+        self._callback_guard: bool = False
+
+        _reserve_figure_bottom(fig, _CONTROLS_MAIN_BOTTOM)
+        self._build_controls()
+        fig._tensor_network_viz_contraction_controls = self  # type: ignore[attr-defined]
+        if self.scheme_on:
+            self._ensure_bundle(strict=self.playback_on, swallow_errors=False)
+        self._apply_visual_state()
+        self._refresh_hover()
+
+    def _build_controls(self) -> None:
+        controls_ax = self.figure.add_axes(_CONTROLS_CHECKBOX_BOUNDS)
+        self._controls_ax = controls_ax
+        self._checkbuttons = CheckButtons(
+            controls_ax,
+            list(_SCHEME_LABELS),
+            [self.scheme_on, self.playback_on, self.cost_hover_on],
+        )
+        self._checkbuttons_cid = self._checkbuttons.on_clicked(self._on_toggle)
+
+    def _set_checkbox_state(self, index: int, value: bool) -> None:
+        if self._checkbuttons is None:
+            return
+        current = bool(self._checkbuttons.get_status()[index])
+        if current == value:
+            return
+        self._callback_guard = True
+        try:
+            self._checkbuttons.set_active(index, state=value)
+        finally:
+            self._callback_guard = False
+
+    def _sync_checkbuttons(self) -> None:
+        self._set_checkbox_state(0, self.scheme_on)
+        self._set_checkbox_state(1, self.playback_on)
+        self._set_checkbox_state(2, self.cost_hover_on)
+
+    def _on_toggle(self, label: str) -> None:
+        if self._callback_guard or self._checkbuttons is None:
+            return
+        prev_scheme = self.scheme_on
+        prev_playback = self.playback_on
+        prev_cost = self.cost_hover_on
+        ui_scheme, ui_playback, ui_cost = [bool(v) for v in self._checkbuttons.get_status()]
+
+        new_scheme = ui_scheme
+        new_playback = ui_playback
+        new_cost = ui_cost
+        if label == "Playback" and new_playback:
+            new_scheme = True
+        if label == "Cost hover" and new_cost:
+            new_scheme = True
+
+        strict = label in ("Scheme", "Playback", "Cost hover") and (
+            new_scheme or new_playback or new_cost
+        )
+        if strict:
+            bundle = self._ensure_bundle(strict=True, swallow_errors=True)
+            if bundle is None:
+                self.scheme_on = prev_scheme
+                self.playback_on = prev_playback
+                self.cost_hover_on = prev_cost
+                self._sync_checkbuttons()
+                self._apply_visual_state()
+                self._refresh_hover()
+                return
+            self._viewer = bundle.viewer
+
+        self.scheme_on = new_scheme
+        self.playback_on = new_playback
+        self.cost_hover_on = new_cost
+        self._sync_checkbuttons()
+        self._apply_visual_state()
+        self._refresh_hover()
+
+    def _ensure_bundle(
+        self,
+        *,
+        strict: bool,
+        swallow_errors: bool = True,
+    ) -> _ContractionSchemeBundle | None:
+        if self._bundle.availability == "unavailable":
+            return None
+        if self._bundle.availability == "computed":
+            return self._bundle
+
+        try:
+            bundle = self._bundle_builder(strict)
+        except ValueError:
+            self._bundle.availability = "unavailable"
+            if swallow_errors:
+                return None
+            raise
+
+        self._bundle = bundle
+        self._viewer = bundle.viewer
+        if self._viewer is not None:
+            self._viewer.build_ui(initialize_step=False)
+            self._viewer.set_playback_widgets_visible(False)
+            self.figure._tensor_network_viz_contraction_viewer = self._viewer  # type: ignore[attr-defined]
+        return bundle
+
+    def _scheme_entries_2d(self) -> tuple[tuple[Artist, str], ...]:
+        if self._bundle.artists_by_step is None or self._bundle.tooltips is None:
+            return ()
+        out: list[tuple[Artist, str]] = []
+        for artist, tooltip in zip(self._bundle.artists_by_step, self._bundle.tooltips):
+            if artist is None or not tooltip:
+                continue
+            out.append((artist, tooltip))
+        return tuple(out)
+
+    def _scheme_entries_3d(
+        self,
+    ) -> tuple[tuple[tuple[float, float, float, float, float, float], str, Artist], ...]:
+        if (
+            self._bundle.artists_by_step is None
+            or self._bundle.tooltips is None
+            or self._bundle.scheme_aabb is None
+        ):
+            return ()
+        out: list[tuple[tuple[float, float, float, float, float, float], str, Artist]] = []
+        for artist, tooltip, bounds in zip(
+            self._bundle.artists_by_step,
+            self._bundle.tooltips,
+            self._bundle.scheme_aabb,
+        ):
+            if artist is None or not tooltip or bounds is None:
+                continue
+            out.append((bounds, tooltip, artist))
+        return tuple(out)
+
+    def _apply_visual_state(self) -> None:
+        if self._viewer is None:
+            if not self.scheme_on:
+                self.figure.canvas.draw_idle()
+            return
+
+        if not self.scheme_on:
+            self._viewer.pause()
+            self._viewer.set_playback_widgets_visible(False)
+            self._viewer.hide_scheme_artists()
+            return
+
+        if self.playback_on:
+            self._viewer.set_playback_widgets_visible(True)
+            self._viewer.set_step(self._viewer.current_step)
+            return
+
+        self._viewer.pause()
+        self._viewer.set_playback_widgets_visible(False)
+        self._viewer.show_static_scheme()
+
+    def _refresh_hover(self) -> None:
+        scheme_patches_2d: tuple[tuple[Artist, str], ...] = ()
+        scheme_aabbs_3d: tuple[
+            tuple[tuple[float, float, float, float, float, float], str, Artist],
+            ...,
+        ] = ()
+        if self.scheme_on and self.cost_hover_on and self._bundle.availability == "computed":
+            scheme_patches_2d = self._scheme_entries_2d()
+            scheme_aabbs_3d = self._scheme_entries_3d()
+        self._refresh_hover_callback(scheme_patches_2d, scheme_aabbs_3d)
 
 
 class ContractionViewer2D(_ContractionViewerBase):
@@ -618,6 +882,7 @@ def attach_playback_to_tensor_network_figure(
     fig: Figure,
     ax: Axes | Axes3D,
     config: PlotConfig,
+    build_ui: bool = True,
 ) -> _ContractionViewerBase:
     """Attach playback UI to the figure produced by ``show_tensor_network``."""
     if getattr(ax, "name", None) == "3d":
@@ -636,7 +901,8 @@ def attach_playback_to_tensor_network_figure(
             config=config,
             enable_playback=True,
         )
-    v.build_ui()
+    if build_ui:
+        v.build_ui()
     fig._tensor_network_viz_contraction_viewer = v  # type: ignore[attr-defined]
     return v
 

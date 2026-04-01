@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -19,6 +20,21 @@ from .pick_distance import (
     _min_sqdist_point_to_polyline_display_3d,
 )
 from .tensors import _tensor_disk_radius_px
+
+
+@dataclass(frozen=True)
+class _RenderHoverState:
+    ax: Any
+    figure: FigureLike
+    dimensions: int
+    node_patch_coll: PatchCollection | Sequence[PatchCollection] | None
+    visible_node_ids: tuple[int, ...]
+    tensor_hover: dict[int, tuple[str, float]]
+    edge_hover: tuple[tuple[np.ndarray, str], ...]
+    line_width_px_hint: float
+    positions: NodePositions | None = None
+    params: _DrawScaleParams | None = None
+    tensor_disk_radius_px_3d: float | None = None
 
 
 def _display_point_in_projected_aabb(
@@ -69,6 +85,15 @@ def _disconnect_tensor_network_hover(fig: FigureLike) -> None:
         with suppress(ValueError, KeyError):
             resolved_figure.canvas.mpl_disconnect(int(cid))
         resolved_figure._tensor_network_viz_hover_cid = None
+    ann = getattr(resolved_figure, "_tensor_network_viz_hover_ann", None)
+    if ann is not None:
+        setter = getattr(ann, "set_visible", None)
+        if callable(setter):
+            with suppress(AttributeError, TypeError, ValueError):
+                setter(False)
+        draw_idle = getattr(resolved_figure.canvas, "draw_idle", None)
+        if callable(draw_idle):
+            draw_idle()
 
 
 def _register_2d_hover_labels(
@@ -329,8 +354,54 @@ def _register_3d_hover_labels(
     )
 
 
+def _apply_saved_hover_state(
+    state: _RenderHoverState,
+    *,
+    scheme_patches_2d: Sequence[tuple[Any, str]] | None = None,
+    scheme_aabbs_3d: Sequence[tuple[tuple[float, float, float, float, float, float], str, Any]]
+    | None = None,
+) -> None:
+    scheme_2d = tuple(scheme_patches_2d or ())
+    scheme_3d = tuple(scheme_aabbs_3d or ())
+    want_label_hover = bool(state.tensor_hover) or bool(state.edge_hover)
+    want_scheme_hover = bool(scheme_2d) or bool(scheme_3d)
+    if not (want_label_hover or want_scheme_hover):
+        _disconnect_tensor_network_hover(state.figure)
+        return
+
+    if state.dimensions == 2:
+        node_collection = state.node_patch_coll if state.tensor_hover else None
+        _register_2d_hover_labels(
+            state.ax,
+            node_patch_coll=node_collection,
+            visible_node_ids=list(state.visible_node_ids),
+            tensor_hover=dict(state.tensor_hover),
+            edge_hover=list(state.edge_hover),
+            line_width_px_hint=float(state.line_width_px_hint),
+            scheme_hover_patches=scheme_2d,
+        )
+        return
+
+    assert state.positions is not None
+    assert state.params is not None
+    _register_3d_hover_labels(
+        state.ax,
+        state.figure,
+        positions=state.positions,
+        visible_node_ids=list(state.visible_node_ids),
+        tensor_hover=dict(state.tensor_hover),
+        edge_hover=list(state.edge_hover),
+        line_width_px_hint=float(state.line_width_px_hint),
+        p=state.params,
+        tensor_disk_radius_px_3d=state.tensor_disk_radius_px_3d,
+        scheme_hover_aabbs=scheme_3d,
+    )
+
+
 __all__ = [
+    "_apply_saved_hover_state",
     "_disconnect_tensor_network_hover",
+    "_RenderHoverState",
     "_register_2d_hover_labels",
     "_register_3d_hover_labels",
 ]

@@ -77,7 +77,7 @@ class PlotConfig:
             Play/Pause/Reset controls on the same figure (2D widget axes only) to step through
             contraction highlights interactively. Requires ``show_contraction_scheme=True`` and a
             non-empty contraction step list.
-        contraction_scheme_cost_hover: If True (default), show a tooltip with naive dense
+        contraction_scheme_cost_hover: If True, show a tooltip with naive dense
             contraction cost when the pointer hovers a contraction-scheme hull (2D patch or 3D
             wireframe box). Requires metrics on ``graph`` (einsum traces with shapes). Independent
             of ``hover_labels``.
@@ -121,6 +121,7 @@ class PlotConfig:
     contraction_scheme_colors: tuple[str, ...] | None = None
     contraction_scheme_by_name: tuple[tuple[str, ...], ...] | None = None
     contraction_playback: bool = False
-    contraction_scheme_cost_hover: bool = True
+    contraction_scheme_cost_hover: bool = False
+
 
 __all__ = ["EngineName", "PerformanceMode", "PlotConfig", "ViewName"]

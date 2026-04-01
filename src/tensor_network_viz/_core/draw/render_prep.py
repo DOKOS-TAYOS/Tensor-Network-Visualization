@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import weakref
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
@@ -20,9 +21,9 @@ from .fonts_and_scale import (
     _register_2d_zoom_font_scaling,
 )
 from .hover import (
+    _apply_saved_hover_state,
     _disconnect_tensor_network_hover,
-    _register_2d_hover_labels,
-    _register_3d_hover_labels,
+    _RenderHoverState,
 )
 from .labels_misc import _estimate_drawn_label_count
 from .plotter import _make_plotter, _node_edge_degrees, _PlotAdapter
@@ -35,7 +36,6 @@ from .tensors import (
 from .viewport_geometry import (
     _apply_axis_limits_with_outset,
     _stack_viewport_coords,
-    _stack_visible_tensor_coords,
     _view_outset_margin_data_units,
 )
 
@@ -296,12 +296,7 @@ def _register_render_hover(
     scheme_patches_2d: list[tuple[Any, str]],
     scheme_aabbs_3d: list[tuple[tuple[float, float, float, float, float, float], str, Any]],
     tensor_disk_radius_px_3d: float | None,
-) -> None:
-    want_label_hover = context.config.hover_labels and (show_tensor_labels or show_index_labels)
-    want_scheme_hover = bool(scheme_patches_2d) or bool(scheme_aabbs_3d)
-    if not (want_label_hover or want_scheme_hover):
-        return
-
+) -> _RenderHoverState:
     visible_ids = list(context.graph_state.visible_order)
     if context.dimensions == 2:
         node_colls = getattr(context.plotter, "_node_disk_collections", None)
@@ -310,39 +305,66 @@ def _register_render_hover(
             if isinstance(node_colls, list) and len(node_colls) > 0
             else getattr(context.plotter, "_node_disk_collection", None)
         )
-        if not want_label_hover:
-            node_collection = None
-        _register_2d_hover_labels(
-            cast(Axes, ax),
+        state = _RenderHoverState(
+            ax=cast(Axes, ax),
+            figure=ax.figure,
+            dimensions=2,
             node_patch_coll=node_collection if show_tensor_labels else None,
-            visible_node_ids=visible_ids,
-            tensor_hover=context.tensor_hover_by_node or {},
-            edge_hover=list(context.hover_edge_targets or ()),
+            visible_node_ids=tuple(visible_ids),
+            tensor_hover=dict(context.tensor_hover_by_node or {}),
+            edge_hover=tuple(context.hover_edge_targets or ()),
             line_width_px_hint=float(context.params.lw),
-            scheme_hover_patches=scheme_patches_2d,
         )
-        return
+        _apply_saved_hover_state(
+            state,
+            scheme_patches_2d=scheme_patches_2d,
+            scheme_aabbs_3d=scheme_aabbs_3d,
+        )
+        return state
 
-    _register_3d_hover_labels(
-        ax,
-        ax.figure,
-        positions=context.positions,
-        visible_node_ids=visible_ids,
-        tensor_hover=context.tensor_hover_by_node or {},
-        edge_hover=list(context.hover_edge_targets or ()),
+    state = _RenderHoverState(
+        ax=ax,
+        figure=ax.figure,
+        dimensions=3,
+        node_patch_coll=None,
+        visible_node_ids=tuple(visible_ids),
+        tensor_hover=dict(context.tensor_hover_by_node or {}),
+        edge_hover=tuple(context.hover_edge_targets or ()),
         line_width_px_hint=float(context.params.lw),
-        p=context.params,
+        positions=context.positions,
+        params=context.params,
         tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
-        scheme_hover_aabbs=scheme_aabbs_3d,
+    )
+    _apply_saved_hover_state(
+        state,
+        scheme_patches_2d=scheme_patches_2d,
+        scheme_aabbs_3d=scheme_aabbs_3d,
+    )
+    return state
+
+
+def _apply_render_hover_state(
+    state: _RenderHoverState,
+    *,
+    scheme_patches_2d: Sequence[tuple[Any, str]] | None = None,
+    scheme_aabbs_3d: Sequence[tuple[tuple[float, float, float, float, float, float], str, Any]]
+    | None = None,
+) -> None:
+    _apply_saved_hover_state(
+        state,
+        scheme_patches_2d=scheme_patches_2d,
+        scheme_aabbs_3d=scheme_aabbs_3d,
     )
 
 
 __all__ = [
+    "_apply_render_hover_state",
     "_graph_render_state",
     "_should_refine_tensor_labels",
     "_prepare_render_context",
     "_draw_edges_nodes_and_labels",
     "_register_render_hover",
     "_GraphRenderState",
+    "_RenderHoverState",
     "_RenderPrepContext",
 ]

@@ -413,7 +413,8 @@ def _plot_graph(
         contraction_groups=contraction_groups,
         bond_curve_pad=bond_curve_pad,
     )
-    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
+    reserved_bottom = float(getattr(fig, "_tensor_network_viz_reserved_bottom", 0.02))
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=reserved_bottom, top=0.98)
     return fig, resolved_ax
 
 
