@@ -64,6 +64,7 @@ class _RenderPrepContext:
 
 
 _graph_render_state_by_id: dict[int, _GraphRenderState] = {}
+_AUTO_FAST_VISIBLE_TENSOR_THRESHOLD: int = 40
 
 
 def _graph_render_state(
@@ -86,6 +87,20 @@ def _graph_render_state(
 
     weakref.finalize(graph, _evict)
     return state
+
+
+def _should_refine_tensor_labels(
+    config: PlotConfig,
+    *,
+    visible_tensor_count: int,
+) -> bool:
+    if not config.refine_tensor_labels:
+        return False
+    if config.performance_mode == "quality":
+        return True
+    if config.performance_mode == "fast":
+        return False
+    return visible_tensor_count < _AUTO_FAST_VISIBLE_TENSOR_THRESHOLD
 
 
 def _prepare_render_context(
@@ -254,7 +269,10 @@ def _draw_edges_nodes_and_labels(
         tensor_label_zorder_by_node=tensor_z_by_node,
         tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
     )
-    if context.config.refine_tensor_labels:
+    if _should_refine_tensor_labels(
+        context.config,
+        visible_tensor_count=len(visible_order),
+    ):
         _refit_tensor_labels_to_disks(
             ax=ax,
             p=context.params,
@@ -318,6 +336,7 @@ def _register_render_hover(
 
 __all__ = [
     "_graph_render_state",
+    "_should_refine_tensor_labels",
     "_prepare_render_context",
     "_draw_edges_nodes_and_labels",
     "_register_render_hover",

@@ -26,6 +26,7 @@ def test_plot_config_has_expected_defaults() -> None:
     assert config.positions is None
     assert config.validate_positions is False
     assert config.refine_tensor_labels is True
+    assert config.performance_mode == "auto"
     assert config.approximate_3d_tensor_disk_px is True
 
 
@@ -45,10 +46,12 @@ def test_plot_config_accepts_overrides() -> None:
         figsize=(10, 5),
         show_tensor_labels=False,
         layout_iterations=100,
+        performance_mode="fast",
     )
     assert config.figsize == (10, 5)
     assert config.show_tensor_labels is False
     assert config.layout_iterations == 100
+    assert config.performance_mode == "fast"
 
 
 def test_show_tensor_network_rejects_invalid_view() -> None:

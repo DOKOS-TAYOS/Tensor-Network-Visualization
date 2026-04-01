@@ -38,16 +38,19 @@ _TNV_CONTRACTION_SCHEME_PATCH_GID: Final[str] = "tnv_contraction_scheme"
 _TRANSPARENT: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
 
-def _is_tensor_network_scheme_fancy_patch(artist: Artist) -> bool:
-    """True for 2D contraction-scheme hulls (playback restyle only; static draw unchanged)."""
-    if not isinstance(artist, FancyBboxPatch):
-        return False
+def _is_tensor_network_scheme_artist(artist: Artist) -> bool:
+    """True for contraction-scheme artists tagged by the draw pipeline."""
     getter = getattr(artist, "get_gid", None)
     if not callable(getter):
         return False
     with suppress(TypeError, ValueError):
         return getter() == _TNV_CONTRACTION_SCHEME_PATCH_GID
     return False
+
+
+def _is_tensor_network_scheme_fancy_patch(artist: Artist) -> bool:
+    """True for 2D contraction-scheme hulls (playback restyle only; static draw unchanged)."""
+    return isinstance(artist, FancyBboxPatch) and _is_tensor_network_scheme_artist(artist)
 
 
 def _apply_scheme_2d_highlight_past(artist: Artist) -> None:
@@ -332,6 +335,13 @@ class _ContractionViewerBase:
                             edge_alpha=self.current_alpha,
                             linewidth=self.current_linewidth,
                         )
+                    else:
+                        self._apply_future_style(art)
+                elif _is_tensor_network_scheme_artist(art):
+                    if i < k - 1:
+                        _safe_set_visible(art, False)
+                    elif i == k - 1 and k > 0:
+                        self._apply_current_style(art)
                     else:
                         self._apply_future_style(art)
                 elif i < k - 1:

@@ -7,6 +7,7 @@ from ._engine_specs import EngineName
 from ._typing import PositionMapping
 
 ViewName: TypeAlias = Literal["2d", "3d"]
+PerformanceMode: TypeAlias = Literal["auto", "quality", "fast"]
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,10 @@ class PlotConfig:
             measures text bounding boxes — often a large share of end-to-end plot time on dense
             figures. Set False for much faster plots when slight overflow of long names is
             acceptable (first-pass TextPath sizing still applies).
+        performance_mode: Performance policy for non-essential draw polish. ``"quality"``
+            always keeps label refit enabled when ``refine_tensor_labels`` is True.
+            ``"fast"`` always skips that post-draw refit. ``"auto"`` keeps the full
+            behavior on smaller graphs and skips the refit on larger ones.
         approximate_3d_tensor_disk_px: If True (default), tensor label disk radius in pixels
             uses a single nominal scale from axis spans (cheap). If False, uses per-node
             projection (slower, marginally more accurate under 3D perspective).
@@ -106,6 +111,7 @@ class PlotConfig:
     positions: PositionMapping | None = None
     validate_positions: bool = False
     refine_tensor_labels: bool = True
+    performance_mode: PerformanceMode = "auto"
     approximate_3d_tensor_disk_px: bool = True
     hover_labels: bool = False
     show_contraction_scheme: bool = False
@@ -117,5 +123,4 @@ class PlotConfig:
     contraction_playback: bool = False
     contraction_scheme_cost_hover: bool = True
 
-
-__all__ = ["EngineName", "PlotConfig", "ViewName"]
+__all__ = ["EngineName", "PerformanceMode", "PlotConfig", "ViewName"]

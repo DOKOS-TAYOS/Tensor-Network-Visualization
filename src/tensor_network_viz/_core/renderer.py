@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import warnings
+import weakref
 from collections.abc import Callable
 from typing import Any, Literal, TypeAlias, cast
 
@@ -32,6 +33,30 @@ from .layout_structure import _LayoutComponent
 
 RenderedAxes: TypeAlias = Axes | Axes3D
 _Dimensions = Literal[2, 3]
+_LayoutCacheKey: TypeAlias = tuple[int, int, int]
+
+_layout_positions_by_id: dict[
+    int,
+    dict[_LayoutCacheKey, tuple[NodePositions, tuple[_LayoutComponent, ...]]],
+] = {}
+
+
+def _layout_positions_bucket(
+    graph: _GraphData,
+) -> dict[_LayoutCacheKey, tuple[NodePositions, tuple[_LayoutComponent, ...]]]:
+    key = id(graph)
+    cached = _layout_positions_by_id.get(key)
+    if cached is not None:
+        return cached
+
+    bucket: dict[_LayoutCacheKey, tuple[NodePositions, tuple[_LayoutComponent, ...]]] = {}
+    _layout_positions_by_id[key] = bucket
+
+    def _evict() -> None:
+        _layout_positions_by_id.pop(key, None)
+
+    weakref.finalize(graph, _evict)
+    return bucket
 
 
 def _apply_custom_positions(
@@ -310,7 +335,12 @@ def _resolve_positions(
             components,
         )
     if config.positions is None:
-        return (
+        cache_key: _LayoutCacheKey = (int(dimensions), int(seed), int(iterations))
+        cache_bucket = _layout_positions_bucket(graph)
+        cached = cache_bucket.get(cache_key)
+        if cached is not None:
+            return cached
+        resolved = (
             _compute_layout_from_components(
                 graph,
                 components,
@@ -320,6 +350,8 @@ def _resolve_positions(
             ),
             components,
         )
+        cache_bucket[cache_key] = resolved
+        return resolved
     return (
         _apply_custom_positions(
             graph,

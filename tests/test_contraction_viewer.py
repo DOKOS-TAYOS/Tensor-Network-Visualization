@@ -187,3 +187,41 @@ def test_pause_stops_play_without_timer_crash() -> None:
     v.play()
     v.pause()
     assert not v._is_playing
+
+
+def test_plot_graph_contraction_playback_3d_hides_past_scheme_steps() -> None:
+    trace = [
+        pair_tensor("A0", "x0", "r0", "pa,p->a"),
+        pair_tensor("r0", "A1", "r1", "a,apb->pb"),
+        pair_tensor("r1", "x1", "r2", "pb,p->b"),
+        pair_tensor("r2", "A2", "r3", "b,bqc->qc"),
+        pair_tensor("r3", "x2", "r4", "qc,q->c"),
+        pair_tensor("r4", "A3", "r5", "c,crd->rd"),
+        pair_tensor("r5", "x3", "r6", "rd,r->d"),
+        pair_tensor("r6", "A4", "r7", "d,dse->se"),
+    ]
+    graph = _build_graph(trace)
+    fig, ax = _plot_graph(
+        graph,
+        dimensions=3,
+        config=PlotConfig(
+            figsize=(5, 4),
+            show_contraction_scheme=True,
+            contraction_playback=True,
+        ),
+        show_tensor_labels=False,
+        show_index_labels=False,
+        renderer_name="test_playback_3d_scheme_visibility",
+    )
+    viewer = getattr(fig, "_tensor_network_viz_contraction_viewer", None)
+    assert viewer is not None
+
+    viewer.set_step(6)
+
+    visible_steps = [
+        artist.get_visible() for artist in viewer._artists if artist is not None
+    ]
+    assert len(visible_steps) >= 6
+    assert sum(1 for visible in visible_steps if visible) == 1
+    assert viewer._artists[5] is not None
+    assert viewer._artists[5].get_visible()
