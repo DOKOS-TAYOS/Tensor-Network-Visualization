@@ -34,6 +34,7 @@ from .tensors import (
 )
 from .viewport_geometry import (
     _apply_axis_limits_with_outset,
+    _stack_viewport_coords,
     _stack_visible_tensor_coords,
     _view_outset_margin_data_units,
 )
@@ -60,6 +61,7 @@ class _RenderPrepContext:
     plotter: _PlotAdapter
     hover_edge_targets: list[tuple[np.ndarray, str]] | None
     tensor_hover_by_node: dict[int, tuple[str, float]] | None
+    viewport_coords: np.ndarray
     view_margin: float
 
 
@@ -147,7 +149,7 @@ def _prepare_render_context(
         dimensions=dimensions,
         hover_edge_targets=hover_edge_targets,
     )
-    pre_coords = _stack_visible_tensor_coords(graph, positions)
+    pre_coords = _stack_viewport_coords(positions)
     view_margin = _view_outset_margin_data_units(
         graph,
         positions,
@@ -170,6 +172,7 @@ def _prepare_render_context(
         plotter=plotter,
         hover_edge_targets=hover_edge_targets,
         tensor_hover_by_node=tensor_hover_by_node,
+        viewport_coords=pre_coords,
         view_margin=view_margin,
     )
 
@@ -254,7 +257,7 @@ def _draw_edges_nodes_and_labels(
             node_degrees=node_degrees,
         )
 
-    context.plotter.style_axes(coords, view_margin=context.view_margin)
+    context.plotter.style_axes(context.viewport_coords, view_margin=context.view_margin)
     _draw_labels(
         plotter=context.plotter,
         ax=ax,

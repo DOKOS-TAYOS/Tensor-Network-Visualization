@@ -116,6 +116,12 @@ def _stack_visible_tensor_coords(graph: _GraphData, positions: NodePositions) ->
     return np.stack([np.asarray(v, dtype=float) for v in positions.values()])
 
 
+def _stack_viewport_coords(positions: NodePositions) -> np.ndarray:
+    if not positions:
+        return np.zeros((0, 2), dtype=float)
+    return np.stack([np.asarray(v, dtype=float) for v in positions.values()])
+
+
 def _line_halfwidth_data_2d(ax: Axes, lw_pt: float, xy: np.ndarray) -> float:
     """Half of a bond linewidth in data units at *xy* (robust for ``set_aspect('equal')``)."""
     x, y = float(xy[0]), float(xy[1])
@@ -684,6 +690,7 @@ __all__ = [
     "_point_tangent_along_polyline_from_start",
     "_polyline_arc_length_total",
     "_self_loop_spatial_extent",
+    "_stack_viewport_coords",
     "_stack_visible_tensor_coords",
     "_stroke_index_normal_screen_unit_2d",
     "_stroke_perp_distance_data_units_3d",

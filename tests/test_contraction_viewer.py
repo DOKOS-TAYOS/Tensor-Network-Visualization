@@ -64,6 +64,10 @@ def test_enable_playback_true_creates_slider_and_buttons() -> None:
     assert isinstance(v.slider, Slider)
     widgets = [axw for axw in fig.axes if axw is not ax]
     assert len(widgets) >= 3
+    slider_bounds = v.slider.ax.get_position().bounds
+    main_bounds = ax.get_position().bounds
+    assert slider_bounds[2] <= 0.48
+    assert main_bounds[1] >= 0.22
 
 
 def test_plot_graph_contraction_playback_adds_widgets() -> None:

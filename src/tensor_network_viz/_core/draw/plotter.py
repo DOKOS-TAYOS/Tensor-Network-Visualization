@@ -4,6 +4,7 @@ from collections import defaultdict
 from typing import Any, Literal, Protocol
 
 import numpy as np
+from matplotlib import patheffects
 from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection, PatchCollection
 from matplotlib.patches import Circle
@@ -20,6 +21,17 @@ from .viewport_geometry import (
     _apply_edge_line_style,
     _apply_text_no_clip,
 )
+
+_EDGE_OUTLINE_COLOR: str = "black"
+_EDGE_OUTLINE_LINEWIDTH_DELTA: float = 0.35
+
+
+def _edge_outline_effects(linewidth: float) -> list[patheffects.AbstractPathEffect]:
+    outline_width = max(
+        float(linewidth) + _EDGE_OUTLINE_LINEWIDTH_DELTA,
+        float(linewidth) * 1.14,
+    )
+    return [patheffects.withStroke(linewidth=outline_width, foreground=_EDGE_OUTLINE_COLOR)]
 
 
 def _node_edge_degrees(graph: _GraphData) -> dict[int, int]:
@@ -124,6 +136,7 @@ def _make_plotter(
                         capstyle=_EDGE_LINE_CAP_STYLE,
                         joinstyle=_EDGE_LINE_JOIN_STYLE,
                     )
+                    coll.set_path_effects(_edge_outline_effects(float(lw)))
                     ax_.add_collection(coll)
                 self._edge_segments.clear()
 
@@ -219,11 +232,17 @@ def _make_plotter(
 
         def plot_line(self, start: np.ndarray, end: np.ndarray, **kwargs: Any) -> None:
             _apply_edge_line_style(kwargs)
-            ax.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]], **kwargs)
+            artists = ax.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]], **kwargs)
+            linewidth = float(kwargs.get("linewidth", 1.0))
+            for artist in artists:
+                artist.set_path_effects(_edge_outline_effects(linewidth))
 
         def plot_curve(self, curve: np.ndarray, **kwargs: Any) -> None:
             _apply_edge_line_style(kwargs)
-            ax.plot(curve[:, 0], curve[:, 1], curve[:, 2], **kwargs)
+            artists = ax.plot(curve[:, 0], curve[:, 1], curve[:, 2], **kwargs)
+            linewidth = float(kwargs.get("linewidth", 1.0))
+            for artist in artists:
+                artist.set_path_effects(_edge_outline_effects(linewidth))
 
         def plot_text(self, pos: np.ndarray, text: str, **kwargs: Any) -> None:
             _apply_text_no_clip(kwargs)

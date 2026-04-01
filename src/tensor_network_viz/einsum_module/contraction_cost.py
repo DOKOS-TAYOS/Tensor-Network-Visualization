@@ -70,7 +70,6 @@ def format_contraction_step_tooltip(m: _ContractionStepMetrics) -> str:
         lines.append("Indices:\n" + "\n".join(parts))
     lines.append(f"C (product of dims): {_format_big_int(m.multiplicative_cost)}")
     lines.append(f"FLOPs (MAC, ≈2C): {_format_big_int(m.flop_mac)}")
-    lines.append("(Naive dense step cost; not optimized contraction order.)")
     return "\n".join(lines)
 
 

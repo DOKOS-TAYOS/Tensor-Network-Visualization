@@ -11,6 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.collections import LineCollection
 
 import tensor_network_viz._core.renderer as core_renderer_module
 import tensor_network_viz.tensorkrowch.graph as tk_graph_module
@@ -25,6 +26,14 @@ from plotting_helpers import (
 )
 from tensor_network_viz import PlotConfig, show_tensor_network
 from tensor_network_viz._core import _draw_common
+from tensor_network_viz._core.graph import (
+    _EdgeEndpoint,
+    _GraphData,
+    _make_contraction_edge,
+    _make_dangling_edge,
+    _make_node,
+)
+from tensor_network_viz._core.renderer import _plot_graph
 from tensor_network_viz.tensorkrowch import (
     plot_tensorkrowch_network_2d,
     plot_tensorkrowch_network_3d,
@@ -239,6 +248,65 @@ def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
     assert fig is ax.figure
     assert labels >= {"A", "B", "left", "right"}
     assert line_collection_segment_count(ax) == 1
+
+
+def test_plot_tensornetwork_network_2d_edges_have_black_outline() -> None:
+    left = DummyTensorNetworkNode("A", ["left"])
+    right = DummyTensorNetworkNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = plot_tensornetwork_network_2d({left, right})
+
+    line_collections = [c for c in ax.collections if isinstance(c, LineCollection)]
+    assert len(line_collections) == 1
+    path_effects = line_collections[0].get_path_effects()
+    assert path_effects
+    stroke = path_effects[0]
+    assert getattr(stroke, "_gc", {}).get("foreground") == "black"
+
+
+def test_plot_graph_2d_keeps_virtual_dangling_index_labels_in_view() -> None:
+    graph = _GraphData(
+        nodes={
+            0: _make_node("A", ("left",)),
+            1: _make_node("hub", ("left", "out"), is_virtual=True),
+        },
+        edges=(
+            _make_contraction_edge(
+                _EdgeEndpoint(0, 0, "left"),
+                _EdgeEndpoint(1, 0, "left"),
+                name="bond",
+            ),
+            _make_dangling_edge(
+                _EdgeEndpoint(1, 1, "out"),
+                name="out",
+            ),
+        ),
+    )
+
+    fig, ax = _plot_graph(
+        graph,
+        dimensions=2,
+        config=PlotConfig(
+            figsize=(4, 3),
+            positions={
+                0: (0.0, 0.0),
+                1: (4.0, 0.0),
+            },
+        ),
+        show_tensor_labels=False,
+        show_index_labels=True,
+        renderer_name="test_virtual_viewport",
+    )
+
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    label_positions = [text.get_position() for text in ax.texts if text.get_text() == "out"]
+    assert fig is ax.figure
+    assert label_positions
+    label_x, label_y = label_positions[0]
+    assert x0 <= label_x <= x1
+    assert y0 <= label_y <= y1
 
 
 def test_plot_tensornetwork_network_2d_hover_labels_skips_static_label_artists() -> None:

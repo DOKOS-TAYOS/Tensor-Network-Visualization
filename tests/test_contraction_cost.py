@@ -53,6 +53,14 @@ def test_format_tooltip_contains_cost_lines() -> None:
     assert "24" in t.replace(",", "")
 
 
+def test_format_tooltip_omits_naive_footer() -> None:
+    parsed = parse_einsum_equation("ij,jk->ik", ((2, 3), (3, 4)))
+    m = metrics_for_parsed_step(parsed, ((2, 3), (3, 4)), equation_snippet="ij,jk->ik")
+    t = format_contraction_step_tooltip(m)
+    assert "Naive dense" not in t
+    assert "optimized contraction order" not in t
+
+
 def test_build_graph_records_metrics_same_length_as_steps() -> None:
     trace = [
         pair_tensor("A0", "x0", "r0", "pa,p->a"),

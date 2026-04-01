@@ -36,6 +36,14 @@ VisualizerMode = Literal["cumulative", "highlight_current", "window"]
 _TNV_CONTRACTION_SCHEME_PATCH_GID: Final[str] = "tnv_contraction_scheme"
 
 _TRANSPARENT: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+_PLAYBACK_MAIN_BOTTOM: float = 0.24
+_PLAYBACK_SLIDER_BOUNDS: tuple[float, float, float, float] = (0.16, 0.065, 0.46, 0.028)
+_PLAYBACK_BUTTON_START_X: float = 0.66
+_PLAYBACK_BUTTON_Y: float = 0.058
+_PLAYBACK_BUTTON_WIDTH: float = 0.058
+_PLAYBACK_BUTTON_HEIGHT: float = 0.04
+_PLAYBACK_BUTTON_GAP: float = 0.012
+_PLAYBACK_RESET_WIDTH: float = 0.068
 
 
 def _is_tensor_network_scheme_artist(artist: Artist) -> bool:
@@ -387,8 +395,8 @@ class _ContractionViewerBase:
             return
 
         n = self.num_steps
-        self.figure.subplots_adjust(bottom=0.2)
-        ax_slider = self.figure.add_axes((0.15, 0.06, 0.55, 0.03))
+        self.figure.subplots_adjust(bottom=_PLAYBACK_MAIN_BOTTOM)
+        ax_slider = self.figure.add_axes(_PLAYBACK_SLIDER_BOUNDS)
         slider = Slider(
             ax_slider,
             "Step",
@@ -399,10 +407,16 @@ class _ContractionViewerBase:
         )
         self.slider = slider
 
-        bx = 0.72
-        ax_play = self.figure.add_axes((bx, 0.06, 0.06, 0.04))
-        ax_pause = self.figure.add_axes((bx + 0.065, 0.06, 0.06, 0.04))
-        ax_reset = self.figure.add_axes((bx + 0.13, 0.06, 0.07, 0.04))
+        bx = _PLAYBACK_BUTTON_START_X
+        by = _PLAYBACK_BUTTON_Y
+        bw = _PLAYBACK_BUTTON_WIDTH
+        bh = _PLAYBACK_BUTTON_HEIGHT
+        gap = _PLAYBACK_BUTTON_GAP
+        ax_play = self.figure.add_axes((bx, by, bw, bh))
+        ax_pause = self.figure.add_axes((bx + bw + gap, by, bw, bh))
+        ax_reset = self.figure.add_axes(
+            (bx + 2.0 * (bw + gap), by, _PLAYBACK_RESET_WIDTH, bh)
+        )
         btn_play = Button(ax_play, "Play")
         btn_pause = Button(ax_pause, "Pause")
         btn_reset = Button(ax_reset, "Reset")
