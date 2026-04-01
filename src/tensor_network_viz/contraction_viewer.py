@@ -690,7 +690,9 @@ class _ContractionControls:
         if self._bundle.artists_by_step is None or self._bundle.tooltips is None:
             return ()
         out: list[tuple[Artist, str]] = []
-        for artist, tooltip in zip(self._bundle.artists_by_step, self._bundle.tooltips):
+        for artist, tooltip in zip(
+            self._bundle.artists_by_step, self._bundle.tooltips, strict=True
+        ):
             if artist is None or not tooltip:
                 continue
             out.append((artist, tooltip))
@@ -710,6 +712,7 @@ class _ContractionControls:
             self._bundle.artists_by_step,
             self._bundle.tooltips,
             self._bundle.scheme_aabb,
+            strict=True,
         ):
             if artist is None or not tooltip or bounds is None:
                 continue

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Interactive visualization:** mode-switching controls (buttons) in the viewer UI.
+
+### Changed
+
+- **Refactor and performance:** substantial internal refactor spanning architecture and computational optimizations.
+- **Visualization:** minor polish and clarity improvements to the rendered network.
+
 ## [1.4.2] — 2026-03-31
 
 ### Added
