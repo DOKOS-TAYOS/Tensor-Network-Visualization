@@ -10,9 +10,10 @@ from typing import Any, Literal, TypeAlias, cast
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.figure import Figure, SubFigure
+from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
+from .._typing import PositionMapping, root_figure
 from ..config import PlotConfig
 from ._draw_common import _draw_graph
 from .contractions import _ContractionGroups, _group_contractions, _iter_contractions
@@ -21,12 +22,13 @@ from .graph import _GraphData
 from .graph_cache import _get_or_build_graph
 from .layout import (
     NodePositions,
+    _analyze_layout_components_cached,
     _compute_axis_directions,
     _compute_layout,
     _compute_layout_from_components,
     _normalize_positions,
 )
-from .layout_structure import _analyze_layout_components, _LayoutComponent
+from .layout_structure import _LayoutComponent
 
 RenderedAxes: TypeAlias = Axes | Axes3D
 _Dimensions = Literal[2, 3]
@@ -34,7 +36,7 @@ _Dimensions = Literal[2, 3]
 
 def _apply_custom_positions(
     graph: _GraphData,
-    custom_positions: dict[int, tuple[float, ...]],
+    custom_positions: PositionMapping,
     dimensions: int,
     *,
     iterations: int,
@@ -262,7 +264,7 @@ def _prepare_axes(
     figsize: tuple[float, float] | None,
     renderer_name: str,
     dimensions: _Dimensions,
-) -> tuple[Figure | SubFigure, RenderedAxes]:
+) -> tuple[Figure, RenderedAxes]:
     if ax is None:
         if dimensions == 2:
             fig, created_ax = plt.subplots(figsize=figsize or (14, 10))
@@ -275,7 +277,7 @@ def _prepare_axes(
         raise ValueError(f"{renderer_name} requires a 2D Matplotlib axis.")
     if dimensions == 3 and axis_name != "3d":
         raise ValueError(f"{renderer_name} requires a 3D Matplotlib axis.")
-    return ax.figure, ax
+    return root_figure(ax.figure), ax
 
 
 def _effective_layout_iterations(config: PlotConfig, *, n_nodes: int) -> int:
@@ -300,7 +302,7 @@ def _resolve_positions(
 ) -> tuple[NodePositions, tuple[_LayoutComponent, ...]]:
     """Resolve positions and layout components (one structural analysis per plot)."""
     iterations = _effective_layout_iterations(config, n_nodes=len(graph.nodes))
-    components = _analyze_layout_components(graph)
+    components = _analyze_layout_components_cached(graph)
     node_ids = list(graph.nodes)
     if len(node_ids) == 1:
         return (
@@ -340,7 +342,7 @@ def _plot_graph(
     show_index_labels: bool | None = None,
     seed: int = 0,
     renderer_name: str,
-) -> tuple[Figure | SubFigure, RenderedAxes]:
+) -> tuple[Figure, RenderedAxes]:
     style = config or PlotConfig()
     fig, resolved_ax = _prepare_axes(
         ax=ax,
@@ -390,8 +392,8 @@ def _make_plot_functions(
     doc_2d: str,
     doc_3d: str,
 ) -> tuple[
-    Callable[..., tuple[Figure | SubFigure, Axes]],
-    Callable[..., tuple[Figure | SubFigure, Axes3D]],
+    Callable[..., tuple[Figure, Axes]],
+    Callable[..., tuple[Figure, Axes3D]],
 ]:
     """Create plot_2d and plot_3d functions for a backend."""
 
@@ -403,7 +405,7 @@ def _make_plot_functions(
         show_tensor_labels: bool | None = None,
         show_index_labels: bool | None = None,
         seed: int = 0,
-    ) -> tuple[Figure | SubFigure, Axes]:
+    ) -> tuple[Figure, Axes]:
         graph = _get_or_build_graph(network, build_graph_fn)
         fig, resolved_ax = _plot_graph(
             graph,
@@ -425,7 +427,7 @@ def _make_plot_functions(
         show_tensor_labels: bool | None = None,
         show_index_labels: bool | None = None,
         seed: int = 0,
-    ) -> tuple[Figure | SubFigure, Axes3D]:
+    ) -> tuple[Figure, Axes3D]:
         graph = _get_or_build_graph(network, build_graph_fn)
         fig, resolved_ax = _plot_graph(
             graph,

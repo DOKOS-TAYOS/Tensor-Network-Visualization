@@ -79,7 +79,7 @@ def test_build_einsum_graph_supports_disconnected_components() -> None:
     assert visible == ["A", "B", "x", "y"]
     assert sum(1 for n in graph.nodes.values() if n.is_virtual) == 0
     assert [edge.kind for edge in graph.edges].count("contraction") == 2
-    assert sorted(edge.label for edge in graph.edges if edge.kind == "dangling") == ["a", "c"]
+    assert sorted(str(edge.label) for edge in graph.edges if edge.kind == "dangling") == ["a", "c"]
 
 
 @pytest.mark.parametrize(

@@ -8,13 +8,15 @@ from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from ._registry import _get_plotters
+from ._typing import FigureLike, root_figure
 from .config import EngineName, PlotConfig, ViewName
 
 RenderedAxes: TypeAlias = Axes | Axes3D
 
 
-def _show_figure(fig: Figure) -> None:
+def _show_figure(fig: FigureLike) -> None:
     """Show *fig* in a Jupyter kernel via IPython display, else ``plt.show()``."""
+    display_figure = root_figure(fig)
     try:
         from IPython.core.getipython import get_ipython
         from IPython.display import display
@@ -23,7 +25,7 @@ def _show_figure(fig: Figure) -> None:
         return
     ip = get_ipython()
     if ip is not None and getattr(ip, "kernel", None) is not None:
-        display(fig)
+        display(display_figure)
         return
     plt.show()
 
@@ -90,4 +92,4 @@ def show_tensor_network(
         raise ValueError(f"Unsupported tensor network view: {view}")
     if show:
         _show_figure(fig)
-    return fig, ax
+    return root_figure(fig), ax

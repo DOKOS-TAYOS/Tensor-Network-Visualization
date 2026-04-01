@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import ClassVar, Literal, TypeAlias
 
 from ._engine_specs import EngineName
+from ._typing import PositionMapping
 
 ViewName: TypeAlias = Literal["2d", "3d"]
 
@@ -33,8 +34,9 @@ class PlotConfig:
         self_loop_radius: Radius for self-contraction loops; None uses default (0.2).
         line_width_2d: Line width for 2D plots (node outlines and tensor edges); None uses default.
         line_width_3d: Line width for 3D plots (node outlines and tensor edges); None uses default.
-        positions: Custom node positions for grid/PEPS layout; dict mapping node id to
-            (x, y) for 2D or (x, y, z) for 3D. None uses automatic layout.
+        positions: Custom node positions for grid/PEPS layout; mapping from node id to
+            (x, y) for 2D or (x, y, z) for 3D. Tuple-like coordinates and NumPy arrays are both
+            accepted. None uses automatic layout.
         node_edge_color: Border color for tensor nodes; use dark for contrast on light nodes.
         node_color_degree_one: Fill for non-virtual tensors with graph degree 1 (any edge kinds).
         node_edge_color_degree_one: Border for those same tensors.
@@ -101,7 +103,7 @@ class PlotConfig:
     line_width_2d: float | None = None
     line_width_3d: float | None = None
     layout_iterations: int | None = None
-    positions: dict[int, tuple[float, ...]] | None = None
+    positions: PositionMapping | None = None
     validate_positions: bool = False
     refine_tensor_labels: bool = True
     approximate_3d_tensor_disk_px: bool = True

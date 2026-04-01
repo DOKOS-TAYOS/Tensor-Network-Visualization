@@ -40,9 +40,7 @@ def metrics_for_parsed_step(
             elif d_int == 1:
                 continue
             else:
-                raise ValueError(
-                    f"Inconsistent dimension for label {ch!r}: {prev} vs {d_int}."
-                )
+                raise ValueError(f"Inconsistent dimension for label {ch!r}: {prev} vs {d_int}.")
 
     labels_in_step: set[str] = set()
     for axes in parsed.operand_axes:

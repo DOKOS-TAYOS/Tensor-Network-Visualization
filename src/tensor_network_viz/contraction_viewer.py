@@ -26,6 +26,7 @@ from matplotlib.widgets import Button, Slider
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
+from ._typing import root_figure
 from .config import PlotConfig
 from .viewer import _show_figure
 
@@ -378,7 +379,7 @@ class _ContractionViewerBase:
         n = self.num_steps
         self.figure.subplots_adjust(bottom=0.2)
         ax_slider = self.figure.add_axes((0.15, 0.06, 0.55, 0.03))
-        self.slider = Slider(
+        slider = Slider(
             ax_slider,
             "Step",
             0,
@@ -386,24 +387,28 @@ class _ContractionViewerBase:
             valinit=float(self._initial_step if self._initial_step is not None else n),
             valstep=1,
         )
+        self.slider = slider
 
         bx = 0.72
         ax_play = self.figure.add_axes((bx, 0.06, 0.06, 0.04))
         ax_pause = self.figure.add_axes((bx + 0.065, 0.06, 0.06, 0.04))
         ax_reset = self.figure.add_axes((bx + 0.13, 0.06, 0.07, 0.04))
-        self._btn_play = Button(ax_play, "Play")
-        self._btn_pause = Button(ax_pause, "Pause")
-        self._btn_reset = Button(ax_reset, "Reset")
+        btn_play = Button(ax_play, "Play")
+        btn_pause = Button(ax_pause, "Pause")
+        btn_reset = Button(ax_reset, "Reset")
+        self._btn_play = btn_play
+        self._btn_pause = btn_pause
+        self._btn_reset = btn_reset
 
         def _on_slider_change(_: float) -> None:
             if self._slider_callback_guard or self.slider is None:
                 return
             self.set_step(int(self.slider.val))
 
-        self.slider.on_changed(_on_slider_change)
-        self._btn_play.on_clicked(lambda _e: self.play())
-        self._btn_pause.on_clicked(lambda _e: self.pause())
-        self._btn_reset.on_clicked(lambda _e: self.reset())
+        slider.on_changed(_on_slider_change)
+        btn_play.on_clicked(lambda _e: self.play())
+        btn_pause.on_clicked(lambda _e: self.pause())
+        btn_reset.on_clicked(lambda _e: self.reset())
 
         def _on_close(_: Any) -> None:
             self.pause()
@@ -470,7 +475,7 @@ class ContractionViewer2D(_ContractionViewerBase):
         **kwargs: Any,
     ) -> None:
         if fig is None and ax is not None:
-            fig = ax.figure
+            fig = root_figure(ax.figure)
         if fig is None:
             fig, ax_new = plt.subplots()
             ax = cast(Axes, ax_new)
@@ -498,7 +503,7 @@ class ContractionViewer2D(_ContractionViewerBase):
         **kwargs: Any,
     ) -> ContractionViewer2D:
         if fig is None and ax is not None:
-            fig = ax.figure
+            fig = root_figure(ax.figure)
         if fig is None:
             fig, ax_new = plt.subplots()
             ax = cast(Axes, ax_new)
@@ -532,7 +537,7 @@ class ContractionViewer3D(_ContractionViewerBase):
         **kwargs: Any,
     ) -> None:
         if fig is None and ax is not None:
-            fig = ax.figure
+            fig = root_figure(ax.figure)
         if fig is None:
             fig = plt.figure()
             ax = cast(Axes3D, fig.add_subplot(111, projection="3d"))
@@ -560,7 +565,7 @@ class ContractionViewer3D(_ContractionViewerBase):
         **kwargs: Any,
     ) -> ContractionViewer3D:
         if fig is None and ax is not None:
-            fig = ax.figure
+            fig = root_figure(ax.figure)
         if fig is None:
             fig = plt.figure()
             ax = cast(Axes3D, fig.add_subplot(111, projection="3d"))

@@ -249,7 +249,7 @@ def test_explicit_tn_matches_finite_mps_topology() -> None:
     mps = _build_finite_mps(length=3)
     ref = _build_tenpy_graph(mps)
     tn = make_tenpy_tensor_network(
-        nodes=[(f"B{i}", mps.get_B(i, form=None)) for i in range(3)],
+        nodes=[(f"B{i}", mps.get_B(i)) for i in range(3)],
         bonds=[
             (("B0", "vR"), ("B1", "vL")),
             (("B1", "vR"), ("B2", "vL")),

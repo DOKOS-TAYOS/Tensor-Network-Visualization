@@ -8,9 +8,9 @@ from typing import Any
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.collections import PatchCollection
-from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d import proj3d
 
+from ..._typing import FigureLike, root_figure
 from ..layout import NodePositions
 from .constants import *
 from .fonts_and_scale import _DrawScaleParams
@@ -62,12 +62,13 @@ def _display_point_in_projected_aabb(
     return (x0 - m <= x_pix <= x1 + m) and (y0 - m <= y_pix <= y1 + m)
 
 
-def _disconnect_tensor_network_hover(fig: Figure) -> None:
-    cid = getattr(fig, "_tensor_network_viz_hover_cid", None)
+def _disconnect_tensor_network_hover(fig: FigureLike) -> None:
+    resolved_figure = root_figure(fig)
+    cid = getattr(resolved_figure, "_tensor_network_viz_hover_cid", None)
     if cid is not None:
         with suppress(ValueError, KeyError):
-            fig.canvas.mpl_disconnect(int(cid))
-        fig._tensor_network_viz_hover_cid = None
+            resolved_figure.canvas.mpl_disconnect(int(cid))
+        resolved_figure._tensor_network_viz_hover_cid = None
 
 
 def _register_2d_hover_labels(
@@ -168,9 +169,16 @@ def _register_2d_hover_labels(
                 if not callable(contains_fn):
                     continue
                 try:
-                    hit, _props = contains_fn(event)
+                    contains_result = contains_fn(event)
                 except (NotImplementedError, TypeError, ValueError):
                     continue
+                if (
+                    not isinstance(contains_result, tuple)
+                    or len(contains_result) != 2
+                    or not isinstance(contains_result[0], bool)
+                ):
+                    continue
+                hit = contains_result[0]
                 if hit:
                     label = txt
                     fs_hint = 8.0
@@ -197,7 +205,7 @@ def _register_2d_hover_labels(
 
 def _register_3d_hover_labels(
     ax: Any,
-    fig: Figure,
+    fig: FigureLike,
     *,
     positions: NodePositions,
     visible_node_ids: list[int],
@@ -210,7 +218,8 @@ def _register_3d_hover_labels(
     | None = None,
 ) -> None:
     """Show tensor / bond labels in a figure-space tooltip while the pointer hovers (3D)."""
-    _disconnect_tensor_network_hover(fig)
+    resolved_figure = root_figure(fig)
+    _disconnect_tensor_network_hover(resolved_figure)
 
     scheme_3d = tuple(scheme_hover_aabbs or ())
     if not tensor_hover and not edge_hover and not scheme_3d:
@@ -238,12 +247,12 @@ def _register_3d_hover_labels(
         zorder=1_000_000,
         clip_on=False,
     )
-    fig._tensor_network_viz_hover_ann = ann
+    resolved_figure._tensor_network_viz_hover_ann = ann
 
     def on_move(event: Any) -> None:
         if event.inaxes != ax or event.x is None or event.y is None:
             ann.set_visible(False)
-            fig.canvas.draw_idle()
+            resolved_figure.canvas.draw_idle()
             return
 
         x_d, y_d = float(event.x), float(event.y)
@@ -305,16 +314,19 @@ def _register_3d_hover_labels(
 
         if not label:
             ann.set_visible(False)
-            fig.canvas.draw_idle()
+            resolved_figure.canvas.draw_idle()
             return
 
         ann.xy = (x_d, y_d)
         ann.set_text(label)
         ann.set_fontsize(max(7.0, min(14.0, fs_hint)))
         ann.set_visible(True)
-        fig.canvas.draw_idle()
+        resolved_figure.canvas.draw_idle()
 
-    fig._tensor_network_viz_hover_cid = fig.canvas.mpl_connect("motion_notify_event", on_move)
+    resolved_figure._tensor_network_viz_hover_cid = resolved_figure.canvas.mpl_connect(
+        "motion_notify_event",
+        on_move,
+    )
 
 
 __all__ = [

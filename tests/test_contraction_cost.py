@@ -63,7 +63,9 @@ def test_build_graph_records_metrics_same_length_as_steps() -> None:
     assert graph.contraction_step_metrics is not None
     assert len(graph.contraction_step_metrics) == len(graph.contraction_steps)
     assert all(m is not None for m in graph.contraction_step_metrics)
-    assert graph.contraction_step_metrics[0].multiplicative_cost == 1
+    first_metric = graph.contraction_step_metrics[0]
+    assert first_metric is not None
+    assert first_metric.multiplicative_cost == 1
 
 
 def test_metrics_for_draw_none_when_scheme_overridden_by_name() -> None:
