@@ -107,7 +107,7 @@ Everything below maps to real parameters—there are no hidden mode switches.
 | **Label policy** | `PlotConfig` + overrides | Defaults: `show_tensor_labels=False`, `show_index_labels=False`. Per-call: `show_tensor_network(..., show_tensor_labels=..., show_index_labels=...)`. |
 | **Hover labels** | `PlotConfig(hover_labels=True)` | Default is `True`. Hover tooltips are independent from static labels, so both can stay enabled together in an interactive Matplotlib window. |
 | **Contraction scheme** | `PlotConfig(show_contraction_scheme=True)` | **Einsum:** cumulative per-step highlights from the trace. **Other engines:** set **`contraction_scheme_by_name`**. Compatible figures now add Matplotlib toggles for **Scheme**, **Playback**, and **Cost hover**; if you start with those flags off, the scheme bundle is computed lazily on first use. **2D:** rounded boxes (AABB + pad); colored borders (no fill by default). **3D:** wireframe box. See **`docs/guide.md`**. |
-| **Einsum workflow** | `engine="einsum"` | **Auto:** `EinsumTrace` + `einsum` (binary `pair_tensor`, unary/ternary+ `einsum_trace_step`; implicit `->`, `out=`). **Manual:** `pair_tensor` / `einsum_trace_step` (ellipsis needs `metadata` shapes). See **`examples/einsum_general.py`**. |
+| **Einsum workflow** | `engine="einsum"` | **Auto:** `EinsumTrace` + `einsum` (binary `pair_tensor`, unary/ternary+ `einsum_trace_step`; implicit `->`, `out=`). **Manual:** ordered `pair_tensor` / `einsum_trace_step` lists when you want a fully explicit trace. See **`examples/run_demo.py`** and **`examples/einsum_demo.py`**. |
 
 `show_tensor_network` now creates figure-level Matplotlib widgets by default: a `2d/3d` selector on
 figures it creates itself, plus `Hover`, `Tensor labels`, and `Edge labels` checkboxes. If you
@@ -302,23 +302,35 @@ Details, subgraph behavior, and Quimb hyperindex hubs are in **[docs/guide.md](d
 
 ## Example scripts
 
-Runnable demos live under **`examples/`**. From the repo root with the right extra installed:
+Runnable demos live under **`examples/`** and now share one public launcher:
 
-| Script | Purpose |
+```bash
+python examples/run_demo.py <engine> <example> [options]
+```
+
+Main files:
+
+| File | Purpose |
 |--------|---------|
-| `demo_cli.py` | Shared helpers; demos intentionally keep hover off by default unless `--hover-labels` is passed. |
-| `tensorkrowch_demo.py` | MPS, MPO, PEPS, weird, disconnected; `--from-list` subset. |
-| `tensornetwork_demo.py` | Same topologies with `tensornetwork.Node`. |
-| `mera_tree_demo.py` | Large MERA + binary TTN stress test. |
-| `cubic_peps_demo.py` | 3D cubic PEPS lattice. |
-| `quimb_demo.py` | Includes hyper-index example; `--from-list`. |
-| `tenpy_demo.py` | MPS/MPO, purification, uniform, excitation chain (duck-typed like `MomentumMPS`). |
-| `tenpy_explicit_tn_demo.py` | Explicit `TenPyTensorNetwork`: open chain or 3-way hub ([examples/README](examples/README.md)). |
-| `einsum_demo.py` | Auto trace vs manual `pair_tensor`. |
-| `einsum_general.py` | Ellipsis, batch hubs, multi-step fusion, traces, short MPS, implicit/`out=`, unary, ternary (auto-trace). |
-| `tn_tsp.py` | Larger TensorKrowch TSP construction. |
+| `run_demo.py` | Public CLI entry point for every engine and example. |
+| `demo_cli.py` | Shared typed helpers for parsing, save paths, plot config, and topology builders. |
+| `tensorkrowch_demo.py` | TensorKrowch registry: MPS/TT, MPO, ladder, PEPS, cubic PEPS, MERA, MERA+TTN, weird, disconnected. |
+| `tensornetwork_demo.py` | TensorNetwork registry with the same structured graph examples. |
+| `quimb_demo.py` | Quimb registry with the same graph family plus a native hypergraph example. |
+| `tenpy_demo.py` | TeNPy registry: native MPS/MPO/iMPS/iMPO/purification/uniform/excitation plus explicit chain/hub/hyper examples. |
+| `einsum_demo.py` | Einsum registry: network-style traces plus `ellipsis`, `batch`, `trace`, `ternary`, `unary`, `nway`, `implicit_out`. |
+| `run_all_examples.py` | Headless batch runner that calls `run_demo.py` and saves PNGs. |
 
-Catalog and one-liner commands: **[examples/README.md](examples/README.md)**.
+Useful launcher examples:
+
+```bash
+python examples/run_demo.py quimb hyper --view 2d
+python examples/run_demo.py tenpy chain --view 2d --save tenpy_chain.png --no-show
+python examples/run_demo.py einsum ellipsis --view 3d --from-list
+python examples/run_demo.py tensornetwork mera_ttn --view 2d --scheme
+```
+
+Catalog and CLI details: **[examples/README.md](examples/README.md)**.
 
 ## Backend notes
 
@@ -339,7 +351,7 @@ Catalog and one-liner commands: **[examples/README.md](examples/README.md)**.
 
 ```bash
 python -m pip install -e ".[quimb]"
-python examples/quimb_demo.py mps 2d --save quimb_mps.png --no-show
+python examples/run_demo.py quimb mps --view 2d --save quimb_mps.png --no-show
 python -m pytest
 ```
 
@@ -364,7 +376,7 @@ Expect `quimb_mps.png` and all tests passing.
 - **[docs/guide.md](docs/guide.md)** — Installation, backends, `PlotConfig` recipes, layout/draw
   behavior, architecture, **extended troubleshooting**.
 - **[CHANGELOG.md](CHANGELOG.md)** — Release notes by version.
-- **[examples/README.md](examples/README.md)** — CLI examples per script.
+- **[examples/README.md](examples/README.md)** — launcher usage, engine/example matrix, and batch examples.
 - **[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)**
 
 ## Support and contributing

@@ -77,16 +77,20 @@ That runner saves PNGs under **`.tmp/run-all-examples/`** and appends **`--save`
 exports. The **`hover`** batch group only checks that the CLI flag path still works; for real hover
 interaction you still need one of the manual interactive commands below.
 
-For **headless** runs use **`--no-show`** / **`--save`** where supported. **`--hover-labels`** only does something in a **real interactive** Matplotlib session (or **`%matplotlib widget`** in Jupyter).
+For **headless** runs use **`--no-show`** / **`--save`**. The public launcher is:
 
-The example scripts intentionally start with the library hover default overridden to **off** unless
-you pass **`--hover-labels`**. In interactive runs you can still use the figure checkboxes from
-`show_tensor_network` to toggle **Hover**, **Tensor labels**, and **Edge labels** after the window
-opens.
+```bash
+python examples/run_demo.py <engine> <example> [options]
+```
 
-**`--contraction-scheme`** draws colored hull outlines per contraction step (no step-number labels). It combines with **`--save`** / **`--no-show`**. For **`engine="einsum"`**, steps come from trace metadata (cumulative physical lineage along the trace). For **`mps`**, **`mpo`**, and **`peps`** on TensorNetwork / TensorKrowch / Quimb, demos pass a **full** cumulative schedule via **`scheme_tensor_names`** in **`finalize_demo_plot_config`** (every site in the example, growing prefixes). **`cubic_peps_demo.py`** does the same using **`cubic_peps_tensor_names(lx, ly, lz)`**. Other keywords still use **`optional_backend_contraction_scheme_by_name`** where defined (e.g. **`disconnected`**, Quimb **`hyper`**, TeNPy explicit **`chain`** / **`hub`**). The flag is accepted everywhere, but **`mera_tree_demo`**, **`tn_tsp`**, native **`tenpy_demo`**, **`ladder`**, **`weird`**, etc. have no bundled schedule, so the overlay may not appear unless you pass a custom **`PlotConfig.contraction_scheme_by_name`**.
+Useful flags include **`--view`**, **`--labels-nodes`**, **`--labels-edges`**, **`--labels`**,
+**`--hover-labels`**, **`--scheme`**, **`--playback`**, **`--hover-cost`**,
+**`--from-scratch`**, and **`--from-list`**.
 
-Install **`tensor-network-visualization[einsum]`** (PyTorch) for **`einsum_demo.py`** and **`einsum_general.py`**. See **`examples/README.md`** for more flags (`--from-list`, `--compact`, grid sizes, etc.).
+`--hover-labels` only has a visible effect in a **real interactive** Matplotlib session (or
+**`%matplotlib widget`** in Jupyter). `--playback` and `--hover-cost` automatically enable scheme
+rendering. Install **`tensor-network-visualization[einsum]`** (PyTorch) for the einsum demos. See
+**`examples/README.md`** for the engine/example matrix and copy-paste commands.
 
 ## Lint and Type Checks
 
@@ -157,7 +161,7 @@ Open an issue to discuss the backend and its API before implementing.
 - **README.md** — high-level overview, installation, modes, `show_tensor_network` / `PlotConfig`, quick troubleshooting
 - **docs/guide.md** — full manual: backends, recipes, layout/draw behavior, architecture, extended troubleshooting
 - **CHANGELOG.md** — user-facing release notes; add an entry when cutting a PyPI release
-- **examples/** — runnable scripts and **examples/README.md**; update **both** when adding CLI flags (e.g. `--hover-labels`, `--contraction-scheme`) or new demos
+- **examples/** — runnable demos centered on `examples/run_demo.py` plus **examples/README.md**; update both when adding launcher flags or new engine/example entries
 - **Docstrings** — document public functions with Args, Returns, and a short Example where helpful
 
 **When you change the public API or defaults**, update **README.md**, **docs/guide.md**, and any affected **examples** text so PyPI and the repo stay aligned with `_core` behavior.

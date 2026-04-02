@@ -615,17 +615,14 @@ The [`examples/`](../examples/) directory includes:
 
 | Script | Role |
 |--------|------|
-| `demo_cli.py` | Shared CLI helpers; demos intentionally keep hover off by default unless you pass `--hover-labels`. |
-| `tensorkrowch_demo.py` | MPS, MPO, PEPS, weird, disconnected. |
-| `tensornetwork_demo.py` | TensorNetwork equivalents. |
-| `mera_tree_demo.py` | Deep / wide MERA + TTN stress test. |
-| `cubic_peps_demo.py` | Cubic PEPS (3D-friendly). |
-| `quimb_demo.py` | Hyper-index demo, tensor lists. |
-| `tenpy_demo.py` | MPS/MPO, purification, uniform, excitation (`MomentumMPS`-like API). |
-| `tenpy_explicit_tn_demo.py` | `make_tenpy_tensor_network` + `npc.Array`: chain vs hub (TeNPy-only). |
-| `einsum_demo.py` | Auto vs manual trace. |
-| `einsum_general.py` | Ellipsis, batch hyperedges, traces, short MPS, implicit/`out=`, unary, ternary (auto-trace). |
-| `tn_tsp.py` | TensorKrowch TSP construction. |
+| `run_demo.py` | Public CLI: `python examples/run_demo.py <engine> <example> [options]`. |
+| `demo_cli.py` | Shared typed helpers for parsing, save paths, plot config, and reusable topology builders. |
+| `tensorkrowch_demo.py` | TensorKrowch registry: MPS/TT, MPO, ladder, PEPS, cubic PEPS, MERA, MERA+TTN, weird, disconnected. |
+| `tensornetwork_demo.py` | TensorNetwork registry with the same structured graph examples. |
+| `quimb_demo.py` | Quimb registry with the same family plus a native hypergraph example. |
+| `tenpy_demo.py` | Native TeNPy MPS/MPO/iMPS/iMPO/purification/uniform/excitation plus explicit chain/hub/hyper demos. |
+| `einsum_demo.py` | Network-style traces and equation-pattern traces (`ellipsis`, `batch`, `trace`, `ternary`, `unary`, `nway`, `implicit_out`). |
+| `run_all_examples.py` | Batch runner that calls `run_demo.py` and saves PNGs headlessly. |
 
 Command catalog: [`examples/README.md`](../examples/README.md).
 
@@ -651,7 +648,7 @@ using NumPy’s `einsum` (same rules as NumPy/PyTorch for duplicates, broadcasti
 - **Visualization:** indices that appear **twice or more** on the LHS, or appear in the **output**
   while touching more than one leg, use **virtual hub** nodes. A **single** pairwise summation (one
   letter per operand, not in the output) is a **direct bond** (no hub). See
-  [`examples/einsum_general.py`](../examples/einsum_general.py).
+  [`examples/einsum_demo.py`](../examples/einsum_demo.py).
 - **Graph build** rejects **unary index disappearance** (a label on only one operand, not in the
   output, and summed away).
 

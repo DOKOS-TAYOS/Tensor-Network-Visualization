@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from tensor_network_viz import EinsumTrace, pair_tensor
+_EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
+if str(_EXAMPLES) not in sys.path:
+    sys.path.insert(0, str(_EXAMPLES))
 
 
 def _require_quimb() -> None:
@@ -15,6 +17,10 @@ def _require_quimb() -> None:
 
 def _require_tenpy() -> None:
     pytest.importorskip("tenpy")
+
+
+def _require_tensornetwork() -> None:
+    pytest.importorskip("tensornetwork")
 
 
 def _require_torch() -> None:
@@ -30,471 +36,254 @@ def _load_example_module(path: Path, module_name: str):
     return module
 
 
-def test_total_tests_bat_uses_root_venv_and_covers_example_matrix() -> None:
-    script_path = Path("examples/total_tests.bat")
-    expected_commands = [
-        r"call :run examples\tensorkrowch_demo.py mps 2d",
-        r"call :run examples\tensorkrowch_demo.py mps 3d",
-        r"call :run examples\tensorkrowch_demo.py mpo 2d",
-        r"call :run examples\tensorkrowch_demo.py mpo 3d",
-        r"call :run examples\tensorkrowch_demo.py peps 2d",
-        r"call :run examples\tensorkrowch_demo.py peps 3d",
-        r"call :run examples\tensorkrowch_demo.py weird 2d",
-        r"call :run examples\tensorkrowch_demo.py weird 3d",
-        r"call :run examples\tensorkrowch_demo.py disconnected 2d",
-        r"call :run examples\tensorkrowch_demo.py disconnected 3d",
-        r"call :run examples\tensorkrowch_demo.py mps 2d --from-list",
-        r"call :run examples\tensornetwork_demo.py mps 2d",
-        r"call :run examples\tensornetwork_demo.py mps 3d",
-        r"call :run examples\tensornetwork_demo.py mpo 2d",
-        r"call :run examples\tensornetwork_demo.py mpo 3d",
-        r"call :run examples\tensornetwork_demo.py peps 2d",
-        r"call :run examples\tensornetwork_demo.py peps 3d",
-        r"call :run examples\tensornetwork_demo.py weird 2d",
-        r"call :run examples\tensornetwork_demo.py weird 3d",
-        r"call :run examples\tensornetwork_demo.py disconnected 2d",
-        r"call :run examples\tensornetwork_demo.py disconnected 3d",
-        r"call :run examples\quimb_demo.py mps 2d",
-        r"call :run examples\quimb_demo.py mps 3d",
-        r"call :run examples\quimb_demo.py hyper 2d",
-        r"call :run examples\quimb_demo.py hyper 3d",
-        r"call :run examples\quimb_demo.py mpo 2d",
-        r"call :run examples\quimb_demo.py mpo 3d",
-        r"call :run examples\quimb_demo.py peps 2d",
-        r"call :run examples\quimb_demo.py peps 3d",
-        r"call :run examples\quimb_demo.py weird 2d",
-        r"call :run examples\quimb_demo.py weird 3d",
-        r"call :run examples\quimb_demo.py disconnected 2d",
-        r"call :run examples\quimb_demo.py disconnected 3d",
-        r"call :run examples\quimb_demo.py mps 2d --from-list",
-        r"call :run examples\tenpy_demo.py mps 2d",
-        r"call :run examples\tenpy_demo.py mps 3d",
-        r"call :run examples\tenpy_demo.py mpo 2d",
-        r"call :run examples\tenpy_demo.py mpo 3d",
-        r"call :run examples\tenpy_demo.py imps 2d",
-        r"call :run examples\tenpy_demo.py imps 3d",
-        r"call :run examples\tenpy_demo.py impo 2d",
-        r"call :run examples\tenpy_demo.py impo 3d",
-        r"call :run examples\tenpy_demo.py purification 2d",
-        r"call :run examples\tenpy_demo.py purification 3d",
-        r"call :run examples\tenpy_demo.py uniform 2d",
-        r"call :run examples\tenpy_demo.py uniform 3d",
-        r"call :run examples\tenpy_demo.py excitation 2d",
-        r"call :run examples\tenpy_demo.py excitation 3d",
-        r"call :run examples\tenpy_explicit_tn_demo.py chain 2d",
-        r"call :run examples\tenpy_explicit_tn_demo.py chain 3d",
-        r"call :run examples\tenpy_explicit_tn_demo.py hub 2d",
-        r"call :run examples\tenpy_explicit_tn_demo.py hub 3d",
-        r"call :run examples\einsum_demo.py mps 2d",
-        r"call :run examples\einsum_demo.py mps 3d",
-        r"call :run examples\einsum_demo.py mps 2d --mode manual",
-        r"call :run examples\einsum_demo.py mps 3d --mode manual",
-        r"call :run examples\einsum_demo.py peps 2d",
-        r"call :run examples\einsum_demo.py peps 3d",
-        r"call :run examples\einsum_demo.py disconnected 2d",
-        r"call :run examples\einsum_demo.py disconnected 3d",
-        r"call :run examples\einsum_general.py batch 2d",
-        r"call :run examples\einsum_general.py batch 3d",
-        r"call :run examples\einsum_general.py ellipsis 2d",
-        r"call :run examples\einsum_general.py ellipsis 3d",
-        r"call :run examples\einsum_general.py mps_short 2d",
-        r"call :run examples\einsum_general.py mps_short 3d",
-        r"call :run examples\einsum_general.py nway 2d",
-        r"call :run examples\einsum_general.py nway 3d",
-        r"call :run examples\einsum_general.py trace 2d",
-        r"call :run examples\einsum_general.py trace 3d",
-        r"call :run examples\tn_tsp.py -n 4 --view 2d",
-        r"call :run examples\tn_tsp.py -n 4 --view 3d",
-        r"call :run examples\tn_tsp.py -n 5 --view 2d",
-        r"call :run examples\tn_tsp.py -n 5 --view 3d",
-        r"call :run examples\tn_tsp.py -n 6 --view 2d",
-        r"call :run examples\tn_tsp.py -n 6 --view 3d",
-    ]
+def test_run_demo_registry_declares_expected_example_sets() -> None:
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_registry")
 
-    content = script_path.read_text(encoding="utf-8")
-
-    assert 'set "PYTHON=%ROOT%\\.venv\\Scripts\\python.exe"' in content
-    assert ":find_root" in content
-    assert 'if exist "%ROOT%\\.venv\\Scripts\\python.exe"' in content
-    assert "if not exist" in content
-    assert "goto :error" in content
-    for command in expected_commands:
-        assert command in content
+    assert set(module.available_examples("tensorkrowch")) == {
+        "cubic_peps",
+        "disconnected",
+        "ladder",
+        "mera",
+        "mera_ttn",
+        "mps",
+        "mpo",
+        "peps",
+        "weird",
+    }
+    assert set(module.available_examples("tensornetwork")) == {
+        "cubic_peps",
+        "disconnected",
+        "ladder",
+        "mera",
+        "mera_ttn",
+        "mps",
+        "mpo",
+        "peps",
+        "weird",
+    }
+    assert set(module.available_examples("quimb")) == {
+        "cubic_peps",
+        "disconnected",
+        "hyper",
+        "ladder",
+        "mera",
+        "mera_ttn",
+        "mps",
+        "mpo",
+        "peps",
+        "weird",
+    }
+    assert set(module.available_examples("tenpy")) == {
+        "chain",
+        "excitation",
+        "hub",
+        "hyper",
+        "impo",
+        "imps",
+        "mps",
+        "mpo",
+        "purification",
+        "uniform",
+    }
+    assert set(module.available_examples("einsum")) == {
+        "batch",
+        "disconnected",
+        "ellipsis",
+        "implicit_out",
+        "mps",
+        "mpo",
+        "nway",
+        "peps",
+        "ternary",
+        "trace",
+        "unary",
+    }
 
 
-def test_total_tests_bat_wraps_examples_with_auto_close() -> None:
-    content = Path("examples/total_tests.bat").read_text(encoding="utf-8")
+def test_run_demo_alias_tt_resolves_to_mps() -> None:
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_alias")
 
-    assert 'if not defined PLOT_DELAY_SECONDS set "PLOT_DELAY_SECONDS=2"' in content
-    assert 'set "WRAPPER=%ROOT%\\.tmp\\total-tests\\plot_wrapper.py"' in content
-    assert 'set "VIEWER=%ROOT%\\.tmp\\total-tests\\image_viewer.ps1"' in content
-    assert 'echo matplotlib.use^("Agg"^)' in content
-    assert "runpy.run_path" in content
-    assert 'savefig^(image_path, bbox_inches="tight"^)' in content
-    assert "System.Windows.Forms" in content
-    assert "plt.close^('all'^)" in content
+    resolved = module.resolve_requested_example(engine="quimb", example="tt")
+
+    assert resolved == "mps"
 
 
-def test_quimb_demo_saves_figure_without_showing(
+def test_run_demo_unknown_engine_lists_valid_engines(capsys: pytest.CaptureFixture[str]) -> None:
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_bad_engine")
+
+    with pytest.raises(SystemExit, match="2"):
+        module.main(["bad-engine", "mps"])
+
+    captured = capsys.readouterr()
+    assert "Unknown engine 'bad-engine'" in captured.err
+    assert "einsum, quimb, tenpy, tensorkrowch, tensornetwork" in captured.err
+
+
+def test_run_demo_unknown_example_lists_valid_examples_for_engine(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_bad_example")
+
+    with pytest.raises(SystemExit, match="2"):
+        module.main(["quimb", "bad-example"])
+
+    captured = capsys.readouterr()
+    assert "Unknown example 'bad-example' for engine 'quimb'" in captured.err
+    assert "hyper" in captured.err
+    assert "mera_ttn" in captured.err
+
+
+def test_run_demo_rejects_unsupported_from_list(capsys: pytest.CaptureFixture[str]) -> None:
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_from_list_error")
+
+    with pytest.raises(SystemExit, match="2"):
+        module.main(["tenpy", "imps", "--from-list"])
+
+    captured = capsys.readouterr()
+    assert "does not support --from-list" in captured.err
+
+
+def test_run_demo_rejects_unsupported_from_scratch(capsys: pytest.CaptureFixture[str]) -> None:
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_from_scratch_error")
+
+    with pytest.raises(SystemExit, match="2"):
+        module.main(["tenpy", "uniform", "--from-scratch"])
+
+    captured = capsys.readouterr()
+    assert "does not support --from-scratch" in captured.err
+
+
+def test_run_demo_auto_save_path_is_used_when_save_has_no_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_auto_save")
+    save_paths: list[Path] = []
+
+    def _fake_run_example(args) -> tuple[str, Path]:
+        assert args.engine == "einsum"
+        assert args.example == "batch"
+        assert args.save is not None
+        save_paths.append(args.save)
+        return ("figure", args.save)
+
+    monkeypatch.setattr(module, "dispatch_run", _fake_run_example)
+
+    exit_code = module.main(["einsum", "batch", "--save", "--no-show"])
+
+    assert exit_code == 0
+    assert save_paths == [Path(".tmp") / "examples" / "einsum" / "batch.png"]
+
+
+def test_quimb_hyper_saves_figure_without_showing() -> None:
     _require_quimb()
-    output_dir = Path(".tmp") / "example-tests"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "quimb-demo.png"
-    module = _load_example_module(
-        Path("examples/quimb_demo.py"),
-        "quimb_demo_test",
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "quimb_demo.py",
-            "mps",
-            "2d",
-            "--from-list",
-            "--save",
-            str(output_path),
-            "--no-show",
-        ],
-    )
-
-    module.main()
-
-    assert output_path.exists()
-
-
-def test_quimb_demo_hyper_saves_figure_without_showing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _require_quimb()
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_quimb_hyper")
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "quimb-hyper-demo.png"
-    module = _load_example_module(
-        Path("examples/quimb_demo.py"),
-        "quimb_demo_hyper_test",
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "quimb_demo.py",
-            "hyper",
-            "2d",
-            "--save",
-            str(output_path),
-            "--no-show",
-        ],
+
+    exit_code = module.main(
+        ["quimb", "hyper", "--view", "2d", "--save", str(output_path), "--no-show"]
     )
 
-    module.main()
-
+    assert exit_code == 0
     assert output_path.exists()
 
 
-def test_tenpy_demo_saves_figure_without_showing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_tenpy_imps_saves_figure_without_showing() -> None:
     _require_tenpy()
-    output_dir = Path(".tmp") / "example-tests"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "tenpy-demo.png"
-    module = _load_example_module(
-        Path("examples/tenpy_demo.py"),
-        "tenpy_demo_test",
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "tenpy_demo.py",
-            "mps",
-            "2d",
-            "--save",
-            str(output_path),
-            "--no-show",
-        ],
-    )
-
-    module.main()
-
-    assert output_path.exists()
-
-
-def test_tenpy_explicit_tn_demo_saves_figure_without_showing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _require_tenpy()
-    output_dir = Path(".tmp") / "example-tests"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "tenpy-explicit-tn.png"
-    module = _load_example_module(
-        Path("examples/tenpy_explicit_tn_demo.py"),
-        "tenpy_explicit_tn_demo_test",
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "tenpy_explicit_tn_demo.py",
-            "chain",
-            "2d",
-            "--save",
-            str(output_path),
-            "--no-show",
-        ],
-    )
-
-    module.main()
-
-    assert output_path.exists()
-
-
-def test_tenpy_infinite_mps_demo_saves_figure_without_showing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _require_tenpy()
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_tenpy_imps")
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "tenpy-imps-demo.png"
-    module = _load_example_module(
-        Path("examples/tenpy_demo.py"),
-        "tenpy_demo_imps_test",
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "tenpy_demo.py",
-            "imps",
-            "2d",
-            "--save",
-            str(output_path),
-            "--no-show",
-        ],
+
+    exit_code = module.main(
+        ["tenpy", "imps", "--view", "2d", "--save", str(output_path), "--no-show"]
     )
 
-    module.main()
-
+    assert exit_code == 0
     assert output_path.exists()
 
 
-def test_tenpy_infinite_mpo_demo_saves_figure_without_showing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_tenpy_chain_saves_figure_without_showing() -> None:
     _require_tenpy()
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_tenpy_chain")
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "tenpy-impo-demo.png"
-    module = _load_example_module(
-        Path("examples/tenpy_demo.py"),
-        "tenpy_demo_impo_test",
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "tenpy_demo.py",
-            "impo",
-            "3d",
-            "--save",
-            str(output_path),
-            "--no-show",
-        ],
+    output_path = output_dir / "tenpy-chain-demo.png"
+
+    exit_code = module.main(
+        ["tenpy", "chain", "--view", "2d", "--save", str(output_path), "--no-show"]
     )
 
-    module.main()
-
+    assert exit_code == 0
     assert output_path.exists()
 
 
-def test_einsum_demo_saves_figure_without_showing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_einsum_ellipsis_saves_figure_without_showing() -> None:
     _require_torch()
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_einsum_ellipsis")
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "einsum-demo.png"
-    module = _load_example_module(
-        Path("examples/einsum_demo.py"),
-        "einsum_demo_test",
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "einsum_demo.py",
-            "mps",
-            "2d",
-            "--mode",
-            "auto",
-            "--save",
-            str(output_path),
-            "--no-show",
-        ],
+    output_path = output_dir / "einsum-ellipsis-demo.png"
+
+    exit_code = module.main(
+        ["einsum", "ellipsis", "--view", "2d", "--save", str(output_path), "--no-show"]
     )
 
-    module.main()
-
+    assert exit_code == 0
     assert output_path.exists()
 
 
-def test_einsum_general_saves_figure_without_showing(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    _require_torch()
-    output_path = tmp_path / "einsum-general.png"
-    module = _load_example_module(
-        Path("examples/einsum_general.py"),
-        "einsum_general_test",
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
+def test_tensornetwork_mera_ttn_saves_figure_without_showing() -> None:
+    _require_tensornetwork()
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_tn_mera_ttn")
+    output_dir = Path(".tmp") / "example-tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "tensornetwork-mera-ttn-demo.png"
+
+    exit_code = module.main(
         [
-            "einsum_general.py",
-            "ellipsis",
+            "tensornetwork",
+            "mera_ttn",
+            "--view",
             "2d",
             "--save",
             str(output_path),
             "--no-show",
-        ],
+        ]
     )
 
-    module.main()
-
+    assert exit_code == 0
     assert output_path.exists()
 
 
-def test_einsum_demo_manual_mode_saves_figure_without_showing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _require_torch()
-    output_dir = Path(".tmp") / "example-tests"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "einsum-demo-manual.png"
-    module = _load_example_module(
-        Path("examples/einsum_demo.py"),
-        "einsum_demo_manual_test",
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "einsum_demo.py",
-            "mps",
-            "2d",
-            "--mode",
-            "manual",
-            "--save",
-            str(output_path),
-            "--no-show",
-        ],
-    )
-
-    module.main()
-
-    assert output_path.exists()
-
-
-def test_einsum_demo_builders_support_auto_and_manual_modes() -> None:
-    _require_torch()
-    module = _load_example_module(
-        Path("examples/einsum_demo.py"),
-        "einsum_demo_builders_test",
-    )
-
-    auto_mps_trace, _ = module.build_mps_trace(mode="auto")
-    auto_peps_trace, _ = module.build_peps_trace(mode="auto")
-    manual_mps_trace, _ = module.build_mps_trace(mode="manual")
-    manual_peps_trace, _ = module.build_peps_trace(mode="manual")
-
-    assert isinstance(auto_mps_trace, EinsumTrace)
-    assert isinstance(auto_peps_trace, EinsumTrace)
-    assert list(auto_mps_trace)[0].left_name == "A0"
-    assert list(auto_peps_trace)[0].left_name == "P00"
-    assert isinstance(manual_mps_trace, list)
-    assert isinstance(manual_peps_trace, list)
-    assert all(isinstance(item, pair_tensor) for item in manual_mps_trace)
-    assert all(isinstance(item, pair_tensor) for item in manual_peps_trace)
-    assert manual_mps_trace[0].left_name == "A0"
-    assert manual_peps_trace[0].left_name == "P00"
-
-
-def test_einsum_peps_demo_saves_figure_without_showing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _require_torch()
-    output_dir = Path(".tmp") / "example-tests"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "einsum-peps-demo.png"
-    module = _load_example_module(
-        Path("examples/einsum_demo.py"),
-        "einsum_demo_peps_test",
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "einsum_demo.py",
-            "peps",
-            "3d",
-            "--mode",
-            "auto",
-            "--save",
-            str(output_path),
-            "--no-show",
-        ],
-    )
-
-    module.main()
-
-    assert output_path.exists()
-
-
-def test_run_all_examples_default_2d_matches_contributing_matrix() -> None:
-    module = _load_example_module(
-        Path("examples/run_all_examples.py"),
-        "run_all_examples_default_test",
-    )
+def test_run_all_examples_default_2d_matches_new_matrix() -> None:
+    module = _load_example_module(Path("examples/run_all_examples.py"), "run_all_examples_default")
 
     commands = module.select_example_commands(group="default", views="2d")
     argvs = {command.argv for command in commands}
 
-    assert ("examples/tensorkrowch_demo.py", "disconnected", "2d") in argvs
-    assert ("examples/quimb_demo.py", "ladder", "2d") in argvs
-    assert ("examples/mera_tree_demo.py", "2d") in argvs
-    assert ("examples/cubic_peps_demo.py", "2d") in argvs
-    assert ("examples/tn_tsp.py", "-n", "4", "--view", "2d") in argvs
+    assert ("examples/run_demo.py", "tensorkrowch", "disconnected", "--view", "2d") in argvs
+    assert ("examples/run_demo.py", "quimb", "hyper", "--view", "2d") in argvs
+    assert ("examples/run_demo.py", "tenpy", "chain", "--view", "2d") in argvs
+    assert ("examples/run_demo.py", "einsum", "ellipsis", "--view", "2d") in argvs
 
 
 def test_run_all_examples_hover_group_appends_hover_flag() -> None:
-    module = _load_example_module(
-        Path("examples/run_all_examples.py"),
-        "run_all_examples_hover_test",
-    )
+    module = _load_example_module(Path("examples/run_all_examples.py"), "run_all_examples_hover")
 
     commands = module.select_example_commands(group="hover", views="3d")
 
     assert commands
     assert all("--hover-labels" in command.argv for command in commands)
-    assert ("examples/tn_tsp.py", "-n", "5", "--view", "3d", "--hover-labels") in {
-        command.argv for command in commands
-    }
 
 
 def test_run_all_examples_builds_headless_subprocess_command(tmp_path: Path) -> None:
-    module = _load_example_module(
-        Path("examples/run_all_examples.py"),
-        "run_all_examples_build_test",
-    )
+    module = _load_example_module(Path("examples/run_all_examples.py"), "run_all_examples_build")
 
     command = module.ExampleCommand(
-        slug="tn_tsp_2d",
-        argv=("examples/tn_tsp.py", "-n", "4", "--view", "2d"),
+        slug="quimb_hyper_2d",
+        argv=("examples/run_demo.py", "quimb", "hyper", "--view", "2d"),
     )
     subprocess_command = module.build_subprocess_command(
         command,
@@ -504,25 +293,22 @@ def test_run_all_examples_builds_headless_subprocess_command(tmp_path: Path) -> 
 
     assert subprocess_command[:6] == [
         "python-test",
-        "examples/tn_tsp.py",
-        "-n",
-        "4",
+        "examples/run_demo.py",
+        "quimb",
+        "hyper",
         "--view",
         "2d",
     ]
     assert "--no-show" in subprocess_command
     assert "--save" in subprocess_command
-    assert str(tmp_path / "tn_tsp_2d.png") in subprocess_command
+    assert str(tmp_path / "quimb_hyper_2d.png") in subprocess_command
 
 
 def test_run_all_examples_list_mode_prints_without_running_subprocesses(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    module = _load_example_module(
-        Path("examples/run_all_examples.py"),
-        "run_all_examples_list_test",
-    )
+    module = _load_example_module(Path("examples/run_all_examples.py"), "run_all_examples_list")
 
     def _fail_run(*args: object, **kwargs: object) -> None:
         raise AssertionError("subprocess.run should not be called in --list mode")
@@ -533,14 +319,11 @@ def test_run_all_examples_list_mode_prints_without_running_subprocesses(
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert "examples/tensorkrowch_demo.py mps 2d --contraction-scheme" in captured.out
+    assert "examples/run_demo.py tensornetwork mera_ttn --view 2d --scheme" in captured.out
 
 
 def test_run_all_examples_all_group_contains_more_commands_than_default() -> None:
-    module = _load_example_module(
-        Path("examples/run_all_examples.py"),
-        "run_all_examples_all_test",
-    )
+    module = _load_example_module(Path("examples/run_all_examples.py"), "run_all_examples_all")
 
     default_commands = module.select_example_commands(group="default", views="both")
     all_commands = module.select_example_commands(group="all", views="both")
