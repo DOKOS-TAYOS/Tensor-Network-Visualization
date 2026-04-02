@@ -27,6 +27,7 @@ from .geometry import (
     _segment_hits_existing_geometry_2d,
     _segment_point_min_distance_sq_2d,
     _segment_point_min_distance_sq_3d,
+    _segment_segment_min_distance_2d,
     _segments_cross_2d,
 )
 from .positions import (
@@ -65,6 +66,11 @@ def _compute_axis_directions(
     layout_components: tuple[_LayoutComponent, ...] | None = None,
 ) -> AxisDirections:
     directions: AxisDirections = {}
+    components = (
+        layout_components
+        if layout_components is not None
+        else _analyze_layout_components_cached(graph)
+    )
     for record in _iter_contractions(graph):
         left_id, right_id = record.node_ids
         left_endpoint, right_endpoint = record.endpoints
@@ -83,19 +89,15 @@ def _compute_axis_directions(
             directions,
             draw_scale=draw_scale,
             contraction_groups=contraction_groups,
+            layout_components=components,
         )
     else:
-        components_3d = (
-            layout_components
-            if layout_components is not None
-            else _analyze_layout_components_cached(graph)
-        )
         _compute_free_directions_3d(
             graph,
             positions,
             directions,
             draw_scale=draw_scale,
-            layout_components=components_3d,
+            layout_components=components,
         )
 
     return directions
@@ -140,6 +142,7 @@ __all__ = [
     "_segment_hits_existing_geometry_2d",
     "_segment_point_min_distance_sq_2d",
     "_segment_point_min_distance_sq_3d",
+    "_segment_segment_min_distance_2d",
     "_segments_cross_2d",
     "_snap_virtual_nodes_to_barycenters",
     "_spread_colocated_virtual_hubs_2d",
