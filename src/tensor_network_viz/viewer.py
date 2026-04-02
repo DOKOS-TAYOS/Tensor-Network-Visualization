@@ -93,9 +93,7 @@ def show_tensor_network(
         ax_view = "3d" if getattr(ax, "name", "") == "3d" else "2d"
     resolved_view = ax_view or "2d" if view is None else view
     if ax_view is not None and resolved_view != ax_view:
-        raise ValueError(
-            f"Provided ax is {ax_view}, but view={resolved_view!r} was requested."
-        )
+        raise ValueError(f"Provided ax is {ax_view}, but view={resolved_view!r} was requested.")
     if resolved_view not in ("2d", "3d"):
         raise ValueError(f"Unsupported tensor network view: {resolved_view}")
     plot_2d, plot_3d = _get_plotters(engine)

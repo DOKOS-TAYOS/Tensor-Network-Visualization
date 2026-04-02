@@ -28,10 +28,7 @@ def _network_demo_commands(
     view: Literal["2d", "3d"],
 ) -> tuple[ExampleCommand, ...]:
     stem = Path(script).stem.replace("_demo", "")
-    return tuple(
-        _command(script, name, view, slug=f"{stem}_{name}_{view}")
-        for name in names
-    )
+    return tuple(_command(script, name, view, slug=f"{stem}_{name}_{view}") for name in names)
 
 
 def _hover_commands(commands: Sequence[ExampleCommand]) -> tuple[ExampleCommand, ...]:

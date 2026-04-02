@@ -543,8 +543,9 @@ class _ContractionViewerBase:
                 if mouse_grabber is widget_ax:
                     with suppress(AttributeError, RuntimeError, TypeError, ValueError):
                         self.figure.canvas.release_mouse(widget_ax)
-                if self.slider is widget:
-                    self.slider.drag_active = False
+                slider = self.slider
+                if slider is not None and slider is widget:
+                    slider.drag_active = False
             _set_widget_active(widget, visible)
             _set_axes_visible(widget_ax, visible)
         self._playback_widgets_visible = visible
@@ -680,9 +681,8 @@ class _ContractionControls:
         if source_label is None:
             if new_playback or new_cost:
                 new_scheme = True
-        elif (
-            (source_label == "Playback" and new_playback)
-            or (source_label == "Cost hover" and new_cost)
+        elif (source_label == "Playback" and new_playback) or (
+            source_label == "Cost hover" and new_cost
         ):
             new_scheme = True
 
@@ -757,9 +757,7 @@ class _ContractionControls:
         for index, artist in enumerate(self._bundle.artists_by_step):
             tooltip = self._bundle.tooltips[index] if index < len(self._bundle.tooltips) else None
             bounds = (
-                self._bundle.scheme_aabb[index]
-                if index < len(self._bundle.scheme_aabb)
-                else None
+                self._bundle.scheme_aabb[index] if index < len(self._bundle.scheme_aabb) else None
             )
             if artist is None or not tooltip or bounds is None:
                 continue

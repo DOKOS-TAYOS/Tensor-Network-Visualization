@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from collections.abc import Callable
+from typing import Any, Literal, cast
 
 from ...config import PlotConfig
 from ...contraction_viewer import (
@@ -52,10 +53,14 @@ def _scheme_bounds_2d(
         get_height = getattr(artist, "get_height", None)
         if not all(callable(fn) for fn in (get_x, get_y, get_width, get_height)):
             continue
-        x0 = float(get_x())
-        y0 = float(get_y())
-        x1 = x0 + float(get_width())
-        y1 = y0 + float(get_height())
+        cx = cast(Callable[[], Any], get_x)
+        cy = cast(Callable[[], Any], get_y)
+        cw = cast(Callable[[], Any], get_width)
+        ch = cast(Callable[[], Any], get_height)
+        x0 = float(cx())
+        y0 = float(cy())
+        x1 = x0 + float(cw())
+        y1 = y0 + float(ch())
         xs.extend((x0, x1))
         ys.extend((y0, y1))
     if not xs or not ys:
@@ -132,18 +137,15 @@ def _build_contraction_scheme_bundle(
         raise ValueError("contraction scheme requires at least one drawable contraction step.")
 
     metrics_row = _contraction_step_metrics_for_draw(graph, scheme_steps_eff)
-    tooltips = tuple(
-        (
-            format_contraction_step_tooltip(metrics_row[index])
-            if (
-                metrics_row is not None
-                and index < len(metrics_row)
-                and metrics_row[index] is not None
-            )
-            else None
-        )
-        for index in range(len(per_step_artists))
-    )
+    tooltips_list: list[str | None] = []
+    for index in range(len(per_step_artists)):
+        tip: str | None = None
+        if metrics_row is not None and index < len(metrics_row):
+            m = metrics_row[index]
+            if m is not None:
+                tip = format_contraction_step_tooltip(m)
+        tooltips_list.append(tip)
+    tooltips = tuple(tooltips_list)
     viewer = attach_playback_to_tensor_network_figure(
         artists_by_step=per_step_artists,
         fig=ax.figure,
