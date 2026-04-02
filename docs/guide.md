@@ -110,7 +110,7 @@ There are no hidden “modes”. Use this table as the user-facing map to the AP
 | Concept | API | Notes |
 |--------|-----|--------|
 | View | `view="2d"` or `"3d"` | Default is `"2d"` in `show_tensor_network`; interactive figures can switch views from the same window. |
-| Engine | `engine="tensorkrowch"` … `"einsum"` | Lazy-imports adapter module; invalid → `ValueError`. |
+| Engine | `engine="tensorkrowch"` … `"einsum"` | Optional override. When omitted, `show_tensor_network` infers the backend from the received input. Invalid explicit values still raise `ValueError`. |
 | Display | `show=True` / `False` | If `True`: Jupyter **kernel** uses `IPython.display.display(fig)`; otherwise `plt.show()`. If `False`: no display call (for `savefig` / batch). |
 | Interactive controls | `interactive_controls=True` | `show_tensor_network` adds Matplotlib widgets for `2d/3d`, `Hover`, `Tensor labels`, and `Edge labels`. Set `False` for static exports. |
 | Labels | `PlotConfig` + call kwargs | Defaults are `show_tensor_labels=False` and `show_index_labels=False`; call kwargs still override them. |
@@ -129,7 +129,7 @@ There are no hidden “modes”. Use this table as the user-facing map to the AP
 show_tensor_network(
     network,
     *,
-    engine="quimb",
+    engine=None,
     view=None,
     config=None,
     ax=None,
@@ -681,7 +681,7 @@ TeNPy maps to **`physics-tenpy`**. **`einsum`** tracing needs **`torch`**.
 
 ### Invalid `engine` or `view`
 
-Allowed engines: **`tensorkrowch`**, **`tensornetwork`**, **`quimb`**, **`tenpy`**, **`einsum`**.
+Allowed explicit engines: **`tensorkrowch`**, **`tensornetwork`**, **`quimb`**, **`tenpy`**, **`einsum`**.
 Views: **`2d`**, **`3d`**. Anything else raises **`ValueError`**. If you pass an external `ax`,
 its dimensionality must agree with `view` (`Axes3D` for `3d`, normal `Axes` for `2d`).
 

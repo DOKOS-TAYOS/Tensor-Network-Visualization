@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Viewer defaults:** `show_tensor_network` now defaults to `view="2d"` (when omitted),
   `PlotConfig(hover_labels=True, show_tensor_labels=False, show_index_labels=False)`, and exposes
   `interactive_controls=False` for static exports or headless runs.
+- **Engine selection:** `show_tensor_network` now accepts `engine` as an optional override. When
+  omitted, the function auto-detects the backend from supported TensorKrowch, TensorNetwork,
+  Quimb, TeNPy, or einsum inputs.
 - **Hover semantics:** hover is now independent from static tensor and edge labels, so both can be
   enabled at the same time.
 - **Documentation:** refreshed `README.md`, `docs/guide.md`, `examples/README.md`, and
