@@ -73,9 +73,7 @@ def _validate_and_normalize_args(
     definitions = _definitions_for_engine(engine)
     if definitions is None:
         available = format_joined_names(available_engines())
-        parser.error(
-            f"Unknown engine {args.engine!r}. Available engines: {available}."
-        )
+        parser.error(f"Unknown engine {args.engine!r}. Available engines: {available}.")
     definition = resolve_example_definition(definitions, args.example)
     if definition is None:
         parser.error(

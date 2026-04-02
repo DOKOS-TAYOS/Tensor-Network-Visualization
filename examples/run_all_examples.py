@@ -118,8 +118,7 @@ def format_example_command(command: ExampleCommand) -> str:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run the example demos in batch from the repository root "
-            "and save PNGs headlessly."
+            "Run the example demos in batch from the repository root and save PNGs headlessly."
         ),
     )
     parser.add_argument(

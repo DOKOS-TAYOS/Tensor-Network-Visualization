@@ -62,10 +62,7 @@ def _is_tenpy_like(network: Any) -> bool:
     return (
         isinstance(network, TenPyTensorNetwork)
         or callable(getattr(network, "get_W", None))
-        or (
-            callable(getattr(network, "get_X", None))
-            and hasattr(network, "uMPS_GS")
-        )
+        or (callable(getattr(network, "get_X", None)) and hasattr(network, "uMPS_GS"))
         or callable(getattr(network, "get_B", None))
     )
 

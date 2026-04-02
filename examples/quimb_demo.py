@@ -87,8 +87,7 @@ def _build_quimb_network(blueprint: GraphBlueprint) -> tuple[Any, list[Any]]:
     tensors: list[Any] = []
     for node in blueprint.nodes:
         inds = tuple(
-            bonded_axes.get((node.name, axis), f"{node.name}_{axis}")
-            for axis in node.axes
+            bonded_axes.get((node.name, axis), f"{node.name}_{axis}") for axis in node.axes
         )
         shape = tuple(axis_dimension(axis) for axis in node.axes)
         tensors.append(
