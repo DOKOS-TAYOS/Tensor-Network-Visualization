@@ -10,7 +10,7 @@ authors = [{ name = "Alejandro Mata Ali" }]
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["tensor-network", "visualization", "pytorch", "numpy", "tensorkrowch", "tensornetwork", "quimb", "tenpy", "einsum", "quantum-inspired", "matplotlib"]
 dependencies = [
     "matplotlib>=3.7",
@@ -20,6 +20,9 @@ dependencies = [
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Visualization",
 ]
 
@@ -37,7 +40,6 @@ dev = [
     "ruff",
     "pyright",
     "ipython",
-    "tomli>=2.0.1; python_version < '3.11'",
     "tensorkrowch",
     "tensornetwork",
     "quimb",
@@ -63,7 +65,7 @@ pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 src = ["src", "tests"]
 exclude = [".venv", ".tmp", ".tmp_venv_*", ".pip_tmp", ".pytest_cache", ".ruff_cache", "pytest-cache-files-*", "tn_tsp.py"]
 

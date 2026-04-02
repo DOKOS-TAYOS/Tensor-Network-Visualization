@@ -26,6 +26,8 @@ diagrams across Quimb, TeNPy, TensorNetwork, TensorKrowch, or traced `einsum` co
 
 PyPI package name: `tensor-network-visualization`. Import module: `tensor_network_viz`.
 
+**Requires Python 3.11 or newer.**
+
 ### Base install
 
 ```bash

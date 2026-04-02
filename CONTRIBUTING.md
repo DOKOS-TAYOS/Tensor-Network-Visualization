@@ -126,7 +126,7 @@ python scripts/verify.py
 ## Code Style and Expectations
 
 - **Line length:** 100 characters
-- **Target:** Python 3.10+
+- **Target:** Python 3.11+
 - **Ruff rules:** E, F, I, B, UP, C4, SIM
 - **Typing:** Use type hints on public functions and modules; the codebase is `py.typed`
 

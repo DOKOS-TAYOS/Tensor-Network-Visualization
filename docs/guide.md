@@ -46,6 +46,8 @@ views and toggle hover/static labels without rewriting the `PlotConfig`.
 
 ## Installation
 
+The library targets **Python 3.11+**.
+
 ### PyPI
 
 Install the base package:

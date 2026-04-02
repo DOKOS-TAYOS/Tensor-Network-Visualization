@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import sys
+import tomllib
 from pathlib import Path
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
+
+def test_requires_python_is_3_11_or_newer() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    assert pyproject["project"]["requires-python"] == ">=3.11"
 
 
 def test_base_dependencies_include_numpy() -> None:

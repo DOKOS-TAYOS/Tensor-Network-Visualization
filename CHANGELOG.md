@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Python support:** the package now requires **Python 3.11+**; Python 3.10 is no longer supported.
 - **Viewer defaults:** `show_tensor_network` now defaults to `view="2d"` (when omitted),
   `PlotConfig(hover_labels=True, show_tensor_labels=False, show_index_labels=False)`, and exposes
   `interactive_controls=False` for static exports or headless runs.
