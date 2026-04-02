@@ -101,7 +101,7 @@ Everything below maps to real parameters—there are no hidden mode switches.
 | Concept | Where | Meaning |
 |--------|--------|---------|
 | **View mode** | `show_tensor_network(..., view=...)` | Default is `"2d"`; `"3d"` is available from the same figure controls when widgets are enabled. |
-| **Engine mode** | `engine=...` | Adapter: `"tensorkrowch"`, `"tensornetwork"`, `"quimb"`, `"tenpy"`, `"einsum"`. Invalid → `ValueError`. |
+| **Engine mode** | `engine=...` | Optional override. When omitted, `show_tensor_network` auto-detects `"tensorkrowch"`, `"tensornetwork"`, `"quimb"`, `"tenpy"`, or `"einsum"` from the input. Invalid explicit values still raise `ValueError`. |
 | **Display mode** | `show=True` / `False` | If `True`: Jupyter **kernel** uses `IPython.display.display(fig)`; otherwise `plt.show()`. If `False`: neither runs—use for `savefig` / batch. |
 | **Interactive controls** | `interactive_controls=True` | Figure-level Matplotlib widgets for view/hover/label toggles. Set `False` for clean static exports or headless batch rendering. |
 | **Label policy** | `PlotConfig` + overrides | Defaults: `show_tensor_labels=False`, `show_index_labels=False`. Per-call: `show_tensor_network(..., show_tensor_labels=..., show_index_labels=...)`. |
@@ -194,7 +194,7 @@ fig, ax = show_tensor_network(
 show_tensor_network(
     network,
     *,
-    engine: EngineName,
+    engine: EngineName | None = None,
     view: ViewName | None = None,
     config: PlotConfig | None = None,
     ax: Axes | Axes3D | None = None,
@@ -206,7 +206,7 @@ show_tensor_network(
 ```
 
 - **`network`:** Backend-native object or iterable (see [guide — supported inputs](docs/guide.md)).
-- **`engine`:** `"tensorkrowch"` \| `"tensornetwork"` \| `"quimb"` \| `"tenpy"` \| `"einsum"`.
+- **`engine`:** optional explicit override. If omitted, the backend is inferred from `network`.
 - **`view`:** `"2d"` \| `"3d"`; omitted means `"2d"` unless a 3D `ax` is passed.
 - **`config`:** Styling and layout; defaults to `PlotConfig()` if omitted.
 - **`ax`:** Optional Matplotlib axes. When present, rendering stays on that axes and the `2d/3d` selector is hidden.
