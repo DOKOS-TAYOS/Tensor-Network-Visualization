@@ -10,10 +10,12 @@ import numpy as np
 from ...config import PlotConfig
 from ..contractions import _ContractionGroups, _group_contractions, _iter_contractions
 from ..graph import _GraphData
+from ..layout_structure import _LayoutComponent
 from .direction_common import (
     _direction_from_axis_name,
     _direction_has_space,
     _is_dangling_leg_axis,
+    _preferred_component_directions_2d,
     _used_axis_directions,
 )
 from .geometry import (
@@ -23,10 +25,12 @@ from .geometry import (
     _planar_contraction_bond_segment_records_2d,
     _segment_bboxes_overlap_2d,
     _segment_point_min_distance_sq_2d_many,
+    _segment_segment_min_distance_2d,
     _segments_cross_2d,
 )
 from .parameters import (
     _FREE_DIR_SAMPLES_2D,
+    _SEGMENT_BOND_CLEAR_2D,
     _STUB_ORIGIN_PAIR_CLEAR,
     _STUB_PARALLEL_DOT,
     _STUB_TIP_NODE_CLEAR,
@@ -214,41 +218,107 @@ def _candidate_conflicts(
     draw_scale: float,
     strict_physical_node_clearance: bool,
 ) -> bool:
+    return _candidate_margin(
+        node_id=node_id,
+        origin=origin,
+        direction=direction,
+        assigned_stubs=assigned_stubs,
+        other_coords=other_coords,
+        non_incident_segments=non_incident_segments,
+        draw_scale=draw_scale,
+        strict_physical_node_clearance=strict_physical_node_clearance,
+    ) < 0.0
+
+
+def _candidate_margin(
+    *,
+    node_id: int,
+    origin: np.ndarray,
+    direction: np.ndarray,
+    assigned_stubs: list[_AssignedStub2D],
+    other_coords: np.ndarray,
+    non_incident_segments: tuple[_BondSegment2D, ...],
+    draw_scale: float,
+    strict_physical_node_clearance: bool,
+) -> float:
     normalized_direction = _normalize_2d(direction)
     p0, p1 = _dangling_stub_segment_2d(origin, normalized_direction, draw_scale=draw_scale)
+    margin = float("inf")
 
     for segment in non_incident_segments:
-        if not _segment_bboxes_overlap_2d(p0, p1, segment.bbox):
+        if not _segment_bboxes_overlap_2d(
+            p0,
+            p1,
+            segment.bbox,
+            padding=_SEGMENT_BOND_CLEAR_2D,
+        ):
             continue
-        if _segments_cross_2d(p0, p1, segment.start, segment.end):
-            return True
+        margin = min(
+            margin,
+            _segment_segment_min_distance_2d(p0, p1, segment.start, segment.end)
+            - _SEGMENT_BOND_CLEAR_2D,
+        )
 
     if other_coords.size:
         if strict_physical_node_clearance:
             r_disk_sq = (
                 float(PlotConfig.DEFAULT_NODE_RADIUS) * max(float(draw_scale), 1e-6) * 1.08
             ) ** 2
-            if (
-                float(np.min(_segment_point_min_distance_sq_2d_many(p0, p1, other_coords)))
-                < r_disk_sq
-            ):
-                return True
+            margin = min(
+                margin,
+                math.sqrt(
+                    float(np.min(_segment_point_min_distance_sq_2d_many(p0, p1, other_coords)))
+                )
+                - math.sqrt(r_disk_sq),
+            )
         else:
             deltas = other_coords - p1
-            if bool(np.any(np.einsum("ij,ij->i", deltas, deltas) < (_STUB_TIP_NODE_CLEAR**2))):
-                return True
+            margin = min(
+                margin,
+                math.sqrt(float(np.min(np.einsum("ij,ij->i", deltas, deltas))))
+                - _STUB_TIP_NODE_CLEAR,
+            )
 
     for assigned in assigned_stubs:
         if _segments_cross_2d(p0, p1, assigned.start, assigned.end):
-            return True
-        if float(np.linalg.norm(p1 - assigned.end)) < _STUB_TIP_TIP_CLEAR:
-            return True
+            margin = min(margin, -1.0)
+        margin = min(margin, float(np.linalg.norm(p1 - assigned.end)) - _STUB_TIP_TIP_CLEAR)
         if (
             float(np.linalg.norm(origin - assigned.origin)) < _STUB_ORIGIN_PAIR_CLEAR
-            and float(np.dot(normalized_direction, assigned.direction)) > _STUB_PARALLEL_DOT
         ):
-            return True
-    return False
+            margin = min(
+                margin,
+                _STUB_PARALLEL_DOT - float(np.dot(normalized_direction, assigned.direction)),
+            )
+    return margin
+
+
+def _strict_candidate_best_margin(
+    *,
+    origin: np.ndarray,
+    unit_circle: np.ndarray,
+    assigned_stubs: list[_AssignedStub2D],
+    other_coords: np.ndarray,
+    non_incident_segments: tuple[_BondSegment2D, ...],
+    draw_scale: float,
+) -> int | None:
+    best_index: int | None = None
+    best_margin = -1e300
+    for index in range(int(unit_circle.shape[0])):
+        margin = _candidate_margin(
+            node_id=-1,
+            origin=origin,
+            direction=unit_circle[index],
+            assigned_stubs=assigned_stubs,
+            other_coords=other_coords,
+            non_incident_segments=non_incident_segments,
+            draw_scale=draw_scale,
+            strict_physical_node_clearance=True,
+        )
+        if margin > best_margin:
+            best_margin = margin
+            best_index = index
+    return best_index
 
 
 def _compute_free_directions_2d(
@@ -258,6 +328,7 @@ def _compute_free_directions_2d(
     *,
     draw_scale: float = 1.0,
     contraction_groups: _ContractionGroups | None = None,
+    layout_components: tuple[_LayoutComponent, ...],
 ) -> None:
     context = _build_context(
         graph,
@@ -266,6 +337,9 @@ def _compute_free_directions_2d(
         contraction_groups=contraction_groups,
     )
     assigned_stubs: list[_AssignedStub2D] = []
+    component_by_node = {
+        node_id: component for component in layout_components for node_id in component.node_ids
+    }
 
     for node_id in sorted(graph.nodes.keys()):
         node = graph.nodes[node_id]
@@ -274,6 +348,7 @@ def _compute_free_directions_2d(
         away_scores = context.away_scores_by_node[node_id]
         other_coords = context.other_coords_by_node[node_id]
         non_incident_segments = context.non_incident_segments_by_node.get(node_id, ())
+        component = component_by_node[node_id]
 
         for axis_index in range(axis_count):
             axis_key = (node_id, axis_index)
@@ -284,6 +359,11 @@ def _compute_free_directions_2d(
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
             named_direction = _direction_from_axis_name(axis_name, dimensions=2)
             strict_phys = axis_key in context.dangling_axes
+            space_kwargs = (
+                {"overlap_threshold": _STUB_PARALLEL_DOT, "cumulative": False}
+                if strict_phys
+                else {}
+            )
 
             if used_dirs:
                 used_stack = np.stack(
@@ -295,9 +375,19 @@ def _compute_free_directions_2d(
                 separation = np.zeros(context.unit_circle.shape[0], dtype=float)
             scores = away_scores - separation
             order = np.argsort(-scores)
+            preferred_directions = _preferred_component_directions_2d(
+                component,
+                positions,
+                node_id=node_id,
+                origin=origin,
+            )
 
             picked: np.ndarray | None = None
-            if named_direction is not None and _direction_has_space(named_direction, used_dirs):
+            if named_direction is not None and _direction_has_space(
+                named_direction,
+                used_dirs,
+                **space_kwargs,
+            ):
                 named_2d = _normalize_2d(named_direction[:2])
                 if not _candidate_conflicts(
                     node_id=node_id,
@@ -312,9 +402,34 @@ def _compute_free_directions_2d(
                     picked = named_2d
 
             if picked is None:
+                for candidate in preferred_directions:
+                    candidate_2d = _normalize_2d(candidate[:2])
+                    if not _direction_has_space(candidate_2d, used_dirs, **space_kwargs):
+                        continue
+                    if _candidate_conflicts(
+                        node_id=node_id,
+                        origin=origin,
+                        direction=candidate_2d,
+                        assigned_stubs=assigned_stubs,
+                        other_coords=other_coords,
+                        non_incident_segments=non_incident_segments,
+                        draw_scale=draw_scale,
+                        strict_physical_node_clearance=strict_phys,
+                    ):
+                        continue
+                    picked = candidate_2d.copy()
+                    break
+
+            if picked is None:
+                seen_preferred = {
+                    tuple(np.round(_normalize_2d(candidate[:2]), decimals=6))
+                    for candidate in preferred_directions
+                }
                 for index in order:
                     candidate = context.unit_circle[int(index)]
-                    if not _direction_has_space(candidate, used_dirs):
+                    if tuple(np.round(candidate, decimals=6)) in seen_preferred:
+                        continue
+                    if not _direction_has_space(candidate, used_dirs, **space_kwargs):
                         continue
                     if _candidate_conflicts(
                         node_id=node_id,
@@ -333,38 +448,20 @@ def _compute_free_directions_2d(
             if picked is None and not strict_phys:
                 for index in order:
                     candidate = context.unit_circle[int(index)]
-                    if not _direction_has_space(candidate, used_dirs):
+                    if not _direction_has_space(candidate, used_dirs, **space_kwargs):
                         continue
                     picked = candidate.copy()
                     break
 
             if picked is None and strict_phys:
-                r_disk = float(PlotConfig.DEFAULT_NODE_RADIUS) * max(float(draw_scale), 1e-6) * 1.08
-                best_index: int | None = None
-                best_margin = -1e300
-                for index in range(int(context.unit_circle.shape[0])):
-                    candidate = context.unit_circle[index]
-                    p0, p1 = _dangling_stub_segment_2d(origin, candidate, draw_scale=draw_scale)
-                    if other_coords.size:
-                        margin = float(
-                            math.sqrt(
-                                float(
-                                    np.min(
-                                        _segment_point_min_distance_sq_2d_many(
-                                            p0,
-                                            p1,
-                                            other_coords,
-                                        )
-                                    )
-                                )
-                            )
-                            - r_disk
-                        )
-                    else:
-                        margin = 0.0
-                    if margin > best_margin:
-                        best_margin = margin
-                        best_index = index
+                best_index = _strict_candidate_best_margin(
+                    origin=origin,
+                    unit_circle=context.unit_circle,
+                    assigned_stubs=assigned_stubs,
+                    other_coords=other_coords,
+                    non_incident_segments=non_incident_segments,
+                    draw_scale=draw_scale,
+                )
                 if best_index is not None:
                     picked = context.unit_circle[int(best_index)].copy()
 

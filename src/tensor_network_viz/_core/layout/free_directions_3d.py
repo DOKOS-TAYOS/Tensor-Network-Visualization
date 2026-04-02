@@ -13,10 +13,17 @@ from .direction_common import (
     _direction_from_axis_name,
     _direction_has_space,
     _is_dangling_leg_axis,
+    _normalize_direction,
     _orthogonal_unit,
+    _preferred_component_directions_3d,
     _used_axis_directions,
 )
-from .geometry import _dangling_stub_segment_3d, _segment_point_min_distance_sq_3d
+from .geometry import (
+    _dangling_stub_segment_3d,
+    _segment_point_min_distance_sq_3d,
+    _segment_segment_min_distance_sq_3d,
+)
+from .parameters import _STUB_BOND_CLEAR_3D
 from .types import AxisDirections, NodePositions
 
 
@@ -32,12 +39,21 @@ def _compute_free_directions_3d(
     component_by_node = {
         node_id: component for component in layout_components for node_id in component.node_ids
     }
+    bond_segments_by_node = _non_incident_bond_segments_by_node(graph, positions)
 
     for node_id, node in graph.nodes.items():
         component = component_by_node[node_id]
         axis_count = max(node.degree, 1)
         axis, lateral, normal = _component_orthogonal_basis(component, positions)
-        candidate_directions = [normal, -normal, lateral, -lateral, axis, -axis]
+        candidate_directions = _preferred_component_directions_3d(
+            component,
+            positions,
+            node_id=node_id,
+            origin=positions[node_id],
+            axis=axis,
+            lateral=lateral,
+            normal=normal,
+        )
 
         for axis_index in range(axis_count):
             axis_key = (node_id, axis_index)
@@ -49,6 +65,7 @@ def _compute_free_directions_3d(
             strict_phys = _is_dangling_leg_axis(graph, node_id, axis_index)
             used_dirs = _used_axis_directions(directions, node_id=node_id, axis_count=axis_count)
             origin = positions[node_id]
+            node_bond_segments = bond_segments_by_node.get(node_id, ())
             if (
                 named_direction is not None
                 and _direction_has_space(named_direction, used_dirs)
@@ -57,13 +74,15 @@ def _compute_free_directions_3d(
                     origin=origin,
                     direction=named_direction,
                     assigned_segments=assigned_segments,
+                    bond_segments=node_bond_segments,
                     positions=positions,
                     draw_scale=draw_scale,
                     strict_physical_node_clearance=strict_phys,
                 )
             ):
-                directions[axis_key] = named_direction
-                assigned_segments.append((origin.copy(), named_direction.copy()))
+                normalized_named = _normalize_direction(named_direction, dimensions=3)
+                directions[axis_key] = normalized_named
+                assigned_segments.append((origin.copy(), normalized_named.copy()))
                 continue
 
             for direction in candidate_directions:
@@ -74,6 +93,7 @@ def _compute_free_directions_3d(
                     origin=origin,
                     direction=direction,
                     assigned_segments=assigned_segments,
+                    bond_segments=node_bond_segments,
                     positions=positions,
                     draw_scale=draw_scale,
                     strict_physical_node_clearance=strict_phys,
@@ -86,42 +106,27 @@ def _compute_free_directions_3d(
                 if strict_phys:
                     dirs_try: list[np.ndarray] = []
                     if named_direction is not None:
-                        dirs_try.append(np.asarray(named_direction, dtype=float))
+                        dirs_try.append(_normalize_direction(named_direction, dimensions=3))
                     dirs_try.extend(list(candidate_directions))
-                    r_disk = (
-                        float(PlotConfig.DEFAULT_NODE_RADIUS) * max(float(draw_scale), 1e-6) * 1.08
-                    )
-                    origin_3d = np.asarray(origin, dtype=float).reshape(-1)[:3]
-                    other_ids = [other_id for other_id in positions if other_id != node_id]
                     best_direction: np.ndarray | None = None
                     best_margin = -1e300
+                    seen: set[tuple[float, float, float]] = set()
                     for raw_direction in dirs_try:
-                        direction_vec = np.asarray(raw_direction, dtype=float).reshape(-1)[:3]
-                        norm = float(np.linalg.norm(direction_vec))
-                        if norm < 1e-9:
+                        direction_unit = _normalize_direction(raw_direction, dimensions=3)
+                        key = tuple(np.round(direction_unit, decimals=6))
+                        if key in seen:
                             continue
-                        direction_unit = direction_vec / norm
-                        start, end = _dangling_stub_segment_3d(
-                            origin_3d,
-                            direction_unit,
+                        seen.add(key)
+                        margin = _direction_margin_3d(
+                            node_id=node_id,
+                            origin=origin,
+                            direction=direction_unit,
+                            assigned_segments=assigned_segments,
+                            bond_segments=node_bond_segments,
+                            positions=positions,
                             draw_scale=draw_scale,
+                            strict_physical_node_clearance=strict_phys,
                         )
-                        if other_ids:
-                            margin = min(
-                                math.sqrt(
-                                    _segment_point_min_distance_sq_3d(
-                                        start,
-                                        end,
-                                        np.asarray(positions[other_id], dtype=float).reshape(-1)[
-                                            :3
-                                        ],
-                                    )
-                                )
-                                - r_disk
-                                for other_id in other_ids
-                            )
-                        else:
-                            margin = 0.0
                         if margin > best_margin:
                             best_margin = margin
                             best_direction = direction_unit
@@ -145,45 +150,95 @@ def _direction_conflicts_3d(
     origin: np.ndarray,
     direction: np.ndarray,
     assigned_segments: list[tuple[np.ndarray, np.ndarray]],
+    bond_segments: tuple[tuple[np.ndarray, np.ndarray], ...],
     positions: NodePositions,
     draw_scale: float = 1.0,
     strict_physical_node_clearance: bool = False,
 ) -> bool:
-    tip = origin + direction * 0.45
+    return _direction_margin_3d(
+        node_id=node_id,
+        origin=origin,
+        direction=direction,
+        assigned_segments=assigned_segments,
+        bond_segments=bond_segments,
+        positions=positions,
+        draw_scale=draw_scale,
+        strict_physical_node_clearance=strict_physical_node_clearance,
+    ) < 0.0
+
+
+def _direction_margin_3d(
+    *,
+    node_id: int,
+    origin: np.ndarray,
+    direction: np.ndarray,
+    assigned_segments: list[tuple[np.ndarray, np.ndarray]],
+    bond_segments: tuple[tuple[np.ndarray, np.ndarray], ...],
+    positions: NodePositions,
+    draw_scale: float = 1.0,
+    strict_physical_node_clearance: bool = False,
+) -> float:
+    direction_unit = _normalize_direction(direction, dimensions=3)
+    origin_3d = np.asarray(origin, dtype=float).reshape(-1)[:3]
+    tip = origin_3d + direction_unit * 0.45
+    margin = float("inf")
 
     if strict_physical_node_clearance:
-        direction_vec = np.asarray(direction, dtype=float).reshape(-1)[:3]
-        norm = float(np.linalg.norm(direction_vec))
-        direction_unit = (
-            direction_vec / norm if norm >= 1e-9 else np.array([0.0, 0.0, 1.0], dtype=float)
-        )
         scale = max(float(draw_scale), 1e-6)
-        start, end = _dangling_stub_segment_3d(origin, direction_unit, draw_scale=draw_scale)
+        start, end = _dangling_stub_segment_3d(origin_3d, direction_unit, draw_scale=draw_scale)
         r_disk = float(PlotConfig.DEFAULT_NODE_RADIUS) * scale * 1.08
         for other_id, other_position in positions.items():
             if other_id == node_id:
                 continue
             other = np.asarray(other_position, dtype=float).reshape(-1)[:3]
-            if math.sqrt(_segment_point_min_distance_sq_3d(start, end, other)) < r_disk:
-                return True
+            margin = min(
+                margin,
+                math.sqrt(_segment_point_min_distance_sq_3d(start, end, other)) - r_disk,
+            )
+        for bond_start, bond_end in bond_segments:
+            margin = min(
+                margin,
+                math.sqrt(_segment_segment_min_distance_sq_3d(start, end, bond_start, bond_end))
+                - _STUB_BOND_CLEAR_3D,
+            )
     else:
         for other_id, other_position in positions.items():
             if other_id == node_id:
                 continue
-            if np.linalg.norm(tip - other_position) < 0.26:
-                return True
+            margin = min(margin, float(np.linalg.norm(tip - other_position)) - 0.26)
 
     for other_origin, other_direction in assigned_segments:
-        other_tip = other_origin + other_direction * 0.45
-        if np.linalg.norm(tip - other_tip) < 0.26:
-            return True
+        other_origin_3d = np.asarray(other_origin, dtype=float).reshape(-1)[:3]
+        other_direction_3d = _normalize_direction(other_direction, dimensions=3)
+        other_tip = other_origin_3d + other_direction_3d * 0.45
+        margin = min(margin, float(np.linalg.norm(tip - other_tip)) - 0.26)
         if (
-            np.linalg.norm(origin - other_origin) < 0.12
-            and float(np.dot(direction, other_direction)) > 0.92
+            float(np.linalg.norm(origin_3d - other_origin_3d)) < 0.12
+            and float(np.dot(direction_unit, other_direction_3d)) > 0.92
         ):
-            return True
+            margin = min(margin, -1.0)
 
-    return False
+    return margin
+
+
+def _non_incident_bond_segments_by_node(
+    graph: _GraphData,
+    positions: NodePositions,
+) -> dict[int, tuple[tuple[np.ndarray, np.ndarray], ...]]:
+    segments_by_node: dict[int, list[tuple[np.ndarray, np.ndarray]]] = {
+        node_id: [] for node_id in positions
+    }
+    for edge in graph.edges:
+        if edge.kind != "contraction" or len(edge.node_ids) != 2:
+            continue
+        left_id, right_id = (int(edge.node_ids[0]), int(edge.node_ids[1]))
+        start = np.asarray(positions[left_id], dtype=float).reshape(-1)[:3]
+        end = np.asarray(positions[right_id], dtype=float).reshape(-1)[:3]
+        for node_id in segments_by_node:
+            if node_id in {left_id, right_id}:
+                continue
+            segments_by_node[node_id].append((start, end))
+    return {node_id: tuple(segments) for node_id, segments in segments_by_node.items()}
 
 
 __all__ = [

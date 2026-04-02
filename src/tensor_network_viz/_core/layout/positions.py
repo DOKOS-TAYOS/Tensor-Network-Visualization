@@ -17,13 +17,27 @@ from ..layout_structure import (
     _leaf_nodes,
     _specialized_anchor_positions,
 )
+from .direction_common import _preferred_component_directions_2d
 from .force_directed import _compute_force_layout
-from .geometry import _segment_hits_existing_geometry_2d, _segments_cross_2d
+from .geometry import (
+    _BondSegment2D,
+    _planar_contraction_bond_segment_records_2d,
+    _segment_bboxes_overlap_2d,
+    _segment_hits_existing_geometry_2d,
+    _segment_segment_min_distance_2d,
+    _segments_cross_2d,
+)
 from .parameters import (
+    _ATTACHMENT_NODE_CLEAR_2D,
+    _ATTACHMENT_PARALLEL_DOT_2D,
+    _ATTACHMENT_RADII_2D,
+    _ATTACHMENT_TARGET_CLEAR_2D,
     _COMPONENT_GAP,
+    _FREE_DIR_SAMPLES_2D,
     _LAYER_SEQUENCE,
     _LAYER_SPACING,
     _LAYOUT_TARGET_NORM,
+    _SEGMENT_BOND_CLEAR_2D,
     _VIRTUAL_HUB_CHORD_CLEARANCE,
     _VIRTUAL_HUB_MIN_SEPARATION,
 )
@@ -118,33 +132,49 @@ def _compute_component_layout_2d(
     iterations: int,
 ) -> NodePositions:
     node_ids = list(component.node_ids)
-    if len(node_ids) == 1:
-        return {node_ids[0]: np.zeros(2, dtype=float)}
+    trimmed_leaf_ids = {leaf_id for leaf_id, _ in component.trimmed_leaf_parents}
+    layout_node_ids = [node_id for node_id in node_ids if node_id not in trimmed_leaf_ids]
+    if not layout_node_ids:
+        layout_node_ids = node_ids.copy()
+    fixed_positions = {
+        node_id: np.asarray(position, dtype=float).copy()
+        for node_id, position in _specialized_anchor_positions(component).items()
+        if node_id in layout_node_ids
+    }
 
-    fixed_positions = _specialized_anchor_positions(component)
-    if fixed_positions:
-        positions = _compute_force_layout(
-            graph,
-            node_ids=node_ids,
-            dimensions=2,
-            seed=seed,
-            iterations=iterations,
-            fixed_positions=fixed_positions,
-        )
+    if len(fixed_positions) == len(layout_node_ids):
+        positions = {node_id: fixed_positions[node_id].copy() for node_id in layout_node_ids}
+    elif len(layout_node_ids) == 1:
+        positions = {
+            layout_node_ids[0]: fixed_positions.get(
+                layout_node_ids[0],
+                np.zeros(2, dtype=float),
+            ).copy()
+        }
     else:
-        positions = _compute_force_layout(
-            graph,
-            node_ids=node_ids,
-            dimensions=2,
-            seed=seed,
-            iterations=iterations,
-        )
+        if fixed_positions:
+            positions = _compute_force_layout(
+                graph,
+                node_ids=layout_node_ids,
+                dimensions=2,
+                seed=seed,
+                iterations=iterations,
+                fixed_positions=fixed_positions,
+            )
+        else:
+            positions = _compute_force_layout(
+                graph,
+                node_ids=layout_node_ids,
+                dimensions=2,
+                seed=seed,
+                iterations=iterations,
+            )
 
     _snap_virtual_nodes_to_barycenters(component, positions)
     _spread_colocated_virtual_hubs_2d(component, positions)
     _nudge_singleton_attachment_virtual_hubs_2d(graph, component, positions)
     _offset_virtual_hubs_off_direct_tensor_chords_2d(graph, component, positions)
-    _place_trimmed_leaf_nodes_2d(component, positions)
+    _place_trimmed_leaf_nodes_2d(graph, component, positions)
     return _center_positions(positions, node_ids=node_ids)
 
 
@@ -287,7 +317,7 @@ def _nudge_singleton_attachment_virtual_hubs_2d(
         visible_ids = [
             visible_id
             for visible_id in component.visible_node_ids
-            if not graph.nodes[visible_id].is_virtual
+            if not graph.nodes[visible_id].is_virtual and visible_id in positions
         ]
         if len(visible_ids) <= 1:
             tangent = np.array([0.0, 1.0], dtype=float)
@@ -347,43 +377,49 @@ def _offset_virtual_hubs_off_direct_tensor_chords_2d(
 
 
 def _place_trimmed_leaf_nodes_2d(
+    graph: _GraphData,
     component: _LayoutComponent,
     positions: NodePositions,
 ) -> None:
     if not component.trimmed_leaf_parents:
         return
 
-    axis = _component_main_axis_2d(component, positions)
-    perpendicular = np.array([-axis[1], axis[0]], dtype=float)
-    if np.linalg.norm(perpendicular) < 1e-6:
-        perpendicular = np.array([0.0, 1.0], dtype=float)
-    else:
-        perpendicular /= np.linalg.norm(perpendicular)
     leaf_node_ids = {leaf_id for leaf_id, _ in component.trimmed_leaf_parents}
-    core_node_ids = [
-        node_id for node_id in component.visible_node_ids if node_id not in leaf_node_ids
-    ]
-    if not core_node_ids:
-        return
-    centroid = np.mean(
-        np.stack([positions[node_id] for node_id in core_node_ids]),
-        axis=0,
+    component_node_ids = frozenset(component.node_ids)
+    core_segments = tuple(
+        record
+        for record in _planar_contraction_bond_segment_records_2d(
+            graph,
+            positions,
+            scale=1.0,
+            node_filter=component_node_ids,
+        )
+        if record.node_ids[0] not in leaf_node_ids and record.node_ids[1] not in leaf_node_ids
     )
-
-    assigned_targets: list[np.ndarray] = []
+    assigned_targets: list[tuple[int, np.ndarray, np.ndarray, np.ndarray]] = []
     for leaf_id, parent_id in component.trimmed_leaf_parents:
         positions[leaf_id] = _best_attachment_position_2d(
             component=component,
             origin=positions[parent_id],
             parent_id=parent_id,
             leaf_id=leaf_id,
-            candidates=(perpendicular, -perpendicular),
-            axis=axis,
-            centroid=centroid,
             assigned_targets=assigned_targets,
+            core_segments=core_segments,
             positions=positions,
         )
-        assigned_targets.append(positions[leaf_id].copy())
+        direction = positions[leaf_id][:2] - positions[parent_id][:2]
+        norm = float(np.linalg.norm(direction))
+        normalized = (
+            direction / norm if norm > 1e-9 else np.array([1.0, 0.0], dtype=float)
+        )
+        assigned_targets.append(
+            (
+                parent_id,
+                np.asarray(positions[parent_id], dtype=float).copy(),
+                positions[leaf_id].copy(),
+                normalized,
+            )
+        )
 
 
 def _place_trimmed_leaf_nodes_3d(
@@ -409,10 +445,17 @@ def _component_main_axis_2d(
     component: _LayoutComponent,
     positions: NodePositions,
 ) -> np.ndarray:
-    anchor_node_ids = component.anchor_node_ids or component.visible_node_ids
-    if component.structure_kind == "chain" and len(component.chain_order) >= 2:
-        start = positions[component.chain_order[0]]
-        end = positions[component.chain_order[-1]]
+    anchor_node_ids = [
+        node_id
+        for node_id in (component.anchor_node_ids or component.visible_node_ids)
+        if node_id in positions
+    ]
+    if not anchor_node_ids:
+        anchor_node_ids = [node_id for node_id in component.node_ids if node_id in positions]
+    chain_node_ids = [node_id for node_id in component.chain_order if node_id in positions]
+    if component.structure_kind == "chain" and len(chain_node_ids) >= 2:
+        start = positions[chain_node_ids[0]]
+        end = positions[chain_node_ids[-1]]
         axis = end - start
     elif len(anchor_node_ids) >= 2:
         coords = np.stack([positions[node_id] for node_id in anchor_node_ids])
@@ -433,16 +476,29 @@ def _best_attachment_position_2d(
     origin: np.ndarray,
     parent_id: int,
     leaf_id: int,
-    candidates: tuple[np.ndarray, ...],
-    axis: np.ndarray,
-    centroid: np.ndarray,
-    assigned_targets: list[np.ndarray],
+    assigned_targets: list[tuple[int, np.ndarray, np.ndarray, np.ndarray]],
+    core_segments: tuple[_BondSegment2D, ...],
     positions: NodePositions,
 ) -> np.ndarray:
     leaf_node_ids = {node_id for node_id, _ in component.trimmed_leaf_parents}
-    direction_options = (
-        candidates if component.structure_kind == "chain" else (*candidates, axis, -axis)
+    direction_options = _preferred_component_directions_2d(
+        component,
+        positions,
+        node_id=parent_id,
+        origin=origin,
+        prefer_outward_chain_axis=False,
     )
+    if not direction_options:
+        direction_options = (np.array([0.0, 1.0], dtype=float), np.array([0.0, -1.0], dtype=float))
+    preferred_directions = _dedupe_attachment_directions_2d(direction_options)
+    angles = np.linspace(0.0, 2.0 * np.pi, _FREE_DIR_SAMPLES_2D, endpoint=False)
+    raw_fallback_directions = tuple(
+        np.array([float(np.cos(angle)), float(np.sin(angle))], dtype=float) for angle in angles
+    )
+    all_directions = _dedupe_attachment_directions_2d(
+        (*preferred_directions, *raw_fallback_directions),
+    )
+    fallback_directions = all_directions[len(preferred_directions) :]
     used_dirs: list[np.ndarray] = []
     for neighbor_id in component.contraction_graph.neighbors(parent_id):
         if neighbor_id == leaf_id or neighbor_id in leaf_node_ids:
@@ -452,47 +508,171 @@ def _best_attachment_position_2d(
         if norm > 1e-6:
             used_dirs.append(delta / norm)
 
-    outward = origin[:2] - centroid[:2]
-    outward_norm = np.linalg.norm(outward)
-    outward_dir = outward / outward_norm if outward_norm > 1e-6 else np.zeros(2, dtype=float)
+    origin_2d = np.asarray(origin, dtype=float).reshape(-1)[:2]
+    for directions in (preferred_directions, fallback_directions):
+        for radius in _ATTACHMENT_RADII_2D:
+            for direction in directions:
+                direction_2d = np.asarray(direction, dtype=float).reshape(-1)[:2]
+                candidate = origin_2d + direction_2d * float(radius)
+                if _attachment_candidate_conflicts_2d(
+                    candidate=candidate,
+                    direction=direction_2d,
+                    parent_id=parent_id,
+                    leaf_id=leaf_id,
+                    origin=origin_2d,
+                    assigned_targets=assigned_targets,
+                    core_segments=core_segments,
+                    positions=positions,
+                    used_dirs=used_dirs,
+                ):
+                    continue
+                return candidate
 
-    existing_segments: list[tuple[np.ndarray, np.ndarray]] = []
-    for left_id, right_id in component.contraction_graph.edges():
-        if leaf_id in (left_id, right_id):
-            continue
-        if left_id in leaf_node_ids or right_id in leaf_node_ids:
-            continue
-        if parent_id in (left_id, right_id):
-            continue
-        existing_segments.append((positions[left_id][:2], positions[right_id][:2]))
-
-    distance = 1.0
-    best_score = -np.inf
-    best_candidate = origin[:2] + candidates[0] * distance
-    for direction in direction_options:
-        candidate = origin + direction * distance
-        score = 0.8 * float(np.dot(direction[:2], outward_dir))
-        score -= 2.5 * sum(
-            max(0.0, float(np.dot(direction[:2], used_dir))) for used_dir in used_dirs
-        )
-        score -= 2.0 * sum(
-            1.0 for target in assigned_targets if np.linalg.norm(candidate[:2] - target[:2]) < 0.3
-        )
-        score -= 4.0 * sum(
-            1.0
-            for node_id, position in positions.items()
-            if node_id not in {leaf_id, parent_id}
-            and np.linalg.norm(candidate[:2] - position[:2]) < 0.25
-        )
-        score -= 4.0 * sum(
-            1.0
-            for start, end in existing_segments
-            if _segment_hits_existing_geometry_2d(origin[:2], candidate[:2], start, end)
-        )
-        if score > best_score:
-            best_score = score
-            best_candidate = candidate[:2].copy()
+    best_candidate = origin_2d + (
+        np.asarray(preferred_directions[0], dtype=float).reshape(-1)[:2]
+        * float(_ATTACHMENT_RADII_2D[-1])
+    )
+    best_margin = -1e300
+    for radius in _ATTACHMENT_RADII_2D:
+        for direction in all_directions:
+            direction_2d = np.asarray(direction, dtype=float).reshape(-1)[:2]
+            candidate = origin_2d + direction_2d * float(radius)
+            margin = _attachment_candidate_margin_2d(
+                candidate=candidate,
+                direction=direction_2d,
+                parent_id=parent_id,
+                leaf_id=leaf_id,
+                origin=origin_2d,
+                assigned_targets=assigned_targets,
+                core_segments=core_segments,
+                positions=positions,
+                used_dirs=used_dirs,
+            )
+            if margin > best_margin:
+                best_margin = margin
+                best_candidate = candidate.copy()
     return best_candidate
+
+
+def _dedupe_attachment_directions_2d(
+    directions: tuple[np.ndarray, ...],
+) -> tuple[np.ndarray, ...]:
+    unique: list[np.ndarray] = []
+    for direction in directions:
+        normalized = np.asarray(direction, dtype=float).reshape(-1)[:2]
+        norm = float(np.linalg.norm(normalized))
+        if norm < 1e-9:
+            continue
+        normalized = normalized / norm
+        if any(float(np.dot(normalized, other)) > 0.995 for other in unique):
+            continue
+        unique.append(normalized)
+    return tuple(unique)
+
+
+def _attachment_candidate_conflicts_2d(
+    *,
+    candidate: np.ndarray,
+    direction: np.ndarray,
+    parent_id: int,
+    leaf_id: int,
+    origin: np.ndarray,
+    assigned_targets: list[tuple[int, np.ndarray, np.ndarray, np.ndarray]],
+    core_segments: tuple[_BondSegment2D, ...],
+    positions: NodePositions,
+    used_dirs: list[np.ndarray],
+) -> bool:
+    return _attachment_candidate_margin_2d(
+        candidate=candidate,
+        direction=direction,
+        parent_id=parent_id,
+        leaf_id=leaf_id,
+        origin=origin,
+        assigned_targets=assigned_targets,
+        core_segments=core_segments,
+        positions=positions,
+        used_dirs=used_dirs,
+    ) < 0.0
+
+
+def _attachment_candidate_margin_2d(
+    *,
+    candidate: np.ndarray,
+    direction: np.ndarray,
+    parent_id: int,
+    leaf_id: int,
+    origin: np.ndarray,
+    assigned_targets: list[tuple[int, np.ndarray, np.ndarray, np.ndarray]],
+    core_segments: tuple[_BondSegment2D, ...],
+    positions: NodePositions,
+    used_dirs: list[np.ndarray],
+) -> float:
+    candidate_2d = np.asarray(candidate, dtype=float).reshape(-1)[:2]
+    direction_2d = np.asarray(direction, dtype=float).reshape(-1)[:2]
+    origin_2d = np.asarray(origin, dtype=float).reshape(-1)[:2]
+    direction_norm = float(np.linalg.norm(direction_2d))
+    if direction_norm > 1e-9:
+        direction_2d = direction_2d / direction_norm
+    margin = float("inf")
+
+    for used_dir in used_dirs:
+        margin = min(
+            margin,
+            _ATTACHMENT_PARALLEL_DOT_2D - float(np.dot(direction_2d, used_dir[:2])),
+        )
+
+    for other_parent_id, parent_origin, target, target_direction in assigned_targets:
+        parent_origin_2d = np.asarray(parent_origin, dtype=float).reshape(-1)[:2]
+        target_2d = np.asarray(target, dtype=float).reshape(-1)[:2]
+        margin = min(
+            margin,
+            float(np.linalg.norm(candidate_2d - target_2d)) - _ATTACHMENT_TARGET_CLEAR_2D,
+        )
+        if _segments_cross_2d(origin_2d, candidate_2d, parent_origin_2d, target_2d):
+            margin = min(margin, -1.0)
+        if other_parent_id == parent_id:
+            margin = min(
+                margin,
+                _ATTACHMENT_PARALLEL_DOT_2D
+                - float(
+                    np.dot(
+                        direction_2d,
+                        np.asarray(target_direction, dtype=float).reshape(-1)[:2],
+                    )
+                ),
+            )
+
+    for node_id, position in positions.items():
+        if node_id in {leaf_id, parent_id}:
+            continue
+        other = np.asarray(position, dtype=float).reshape(-1)[:2]
+        margin = min(
+            margin,
+            float(np.linalg.norm(candidate_2d - other)) - _ATTACHMENT_NODE_CLEAR_2D,
+        )
+
+    for record in core_segments:
+        if parent_id in record.node_ids:
+            continue
+        if not _segment_bboxes_overlap_2d(
+            origin_2d,
+            candidate_2d,
+            record.bbox,
+            padding=_SEGMENT_BOND_CLEAR_2D,
+        ):
+            continue
+        start = record.start
+        end = record.end
+        if _segment_hits_existing_geometry_2d(origin_2d, candidate_2d, start, end):
+            margin = min(margin, -1.0)
+            continue
+        margin = min(
+            margin,
+            _segment_segment_min_distance_2d(origin_2d, candidate_2d, start, end)
+            - _SEGMENT_BOND_CLEAR_2D,
+        )
+
+    return margin
 
 
 def _best_attachment_position_3d(

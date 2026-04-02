@@ -13,6 +13,10 @@ import pytest
 from plotting_helpers import line_collection_segment_count
 from tensor_network_viz import PlotConfig, einsum_trace_step, pair_tensor
 from tensor_network_viz._core.layout.body import _compute_layout
+from tensor_network_viz._core.layout.positions import (
+    _analyze_layout_components_cached,
+    _compute_component_layout_2d,
+)
 from tensor_network_viz.einsum_module import (
     plot_einsum_network_2d,
     plot_einsum_network_3d,
@@ -80,6 +84,132 @@ def test_build_einsum_graph_supports_disconnected_components() -> None:
     assert sum(1 for n in graph.nodes.values() if n.is_virtual) == 0
     assert [edge.kind for edge in graph.edges].count("contraction") == 2
     assert sorted(str(edge.label) for edge in graph.edges if edge.kind == "dangling") == ["a", "c"]
+
+
+def _einsum_like_mpo_trace(n_sites: int) -> list[object]:
+    phys_dim = 2
+    bond_dims = tuple(3 + index for index in range(max(n_sites - 1, 0)))
+    if n_sites == 1:
+        return [
+            einsum_trace_step(
+                ("W0", "d0", "u0"),
+                "r0",
+                "du,d,u->",
+                metadata={"operand_shapes": ((phys_dim, phys_dim), (phys_dim,), (phys_dim,))},
+            )
+        ]
+
+    steps: list[object] = [
+        einsum_trace_step(
+            operand_names=("W0", "d0", "u0"),
+            result_name="r0",
+            equation="dub,d,u->b",
+            metadata={
+                "operand_shapes": ((phys_dim, phys_dim, bond_dims[0]), (phys_dim,), (phys_dim,))
+            },
+        )
+    ]
+    current_name = "r0"
+    current_shape = (bond_dims[0],)
+    for index in range(1, n_sites - 1):
+        steps.append(
+            einsum_trace_step(
+                operand_names=(current_name, f"W{index}", f"d{index}", f"u{index}"),
+                result_name=f"r{index}",
+                equation="a,adub,d,u->b",
+                metadata={
+                    "operand_shapes": (
+                        current_shape,
+                        (bond_dims[index - 1], phys_dim, phys_dim, bond_dims[index]),
+                        (phys_dim,),
+                        (phys_dim,),
+                    )
+                },
+            )
+        )
+        current_name = f"r{index}"
+        current_shape = (bond_dims[index],)
+    steps.append(
+        einsum_trace_step(
+            operand_names=(current_name, f"W{n_sites - 1}", f"d{n_sites - 1}", f"u{n_sites - 1}"),
+            result_name=f"r{n_sites - 1}",
+            equation="a,adu,d,u->",
+            metadata={
+                "operand_shapes": (
+                    current_shape,
+                    (bond_dims[n_sites - 2], phys_dim, phys_dim),
+                    (phys_dim,),
+                    (phys_dim,),
+                )
+            },
+        )
+    )
+    return steps
+
+
+def test_compute_layout_einsum_disconnected_components_2d_does_not_raise() -> None:
+    graph = _build_graph(
+        [
+            pair_tensor("A", "x", "r0", "ab,b->a"),
+            pair_tensor("B", "y", "r1", "cd,d->c"),
+        ]
+    )
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+
+    assert set(positions) == set(graph.nodes)
+
+
+def test_compute_layout_einsum_mpo_2d_separates_up_and_down_vectors() -> None:
+    graph = _build_graph(_einsum_like_mpo_trace(4))
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    node_id_by_name = {node.name: node_id for node_id, node in graph.nodes.items()}
+
+    for index in range(4):
+        down = np.asarray(positions[node_id_by_name[f"d{index}"]], dtype=float).reshape(-1)[:2]
+        up = np.asarray(positions[node_id_by_name[f"u{index}"]], dtype=float).reshape(-1)[:2]
+        tensor = np.asarray(positions[node_id_by_name[f"W{index}"]], dtype=float).reshape(-1)[:2]
+        assert np.linalg.norm(down - up) > 0.5
+        assert float(np.dot(down - tensor, up - tensor)) < 0.0
+
+
+def test_compute_component_layout_2d_skips_trimmed_leaf_nodes_in_force_layout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _build_graph(_einsum_like_mpo_trace(4))
+    component = _analyze_layout_components_cached(graph)[0]
+    captured_node_ids: list[int] = []
+
+    def fake_force_layout(
+        graph_obj: object,
+        *,
+        node_ids: list[int],
+        dimensions: int,
+        seed: int,
+        iterations: int,
+        fixed_positions: dict[int, np.ndarray] | None = None,
+    ) -> dict[int, np.ndarray]:
+        del graph_obj, dimensions, seed, iterations
+        captured_node_ids[:] = list(node_ids)
+        positions: dict[int, np.ndarray] = {}
+        for index, node_id in enumerate(node_ids):
+            if fixed_positions is not None and node_id in fixed_positions:
+                positions[node_id] = np.asarray(fixed_positions[node_id], dtype=float).copy()
+            else:
+                positions[node_id] = np.array([float(index), 0.0], dtype=float)
+        return positions
+
+    monkeypatch.setattr(
+        "tensor_network_viz._core.layout.positions._compute_force_layout",
+        fake_force_layout,
+    )
+
+    _compute_component_layout_2d(graph, component, seed=0, iterations=1)
+
+    trimmed_leaf_ids = {leaf_id for leaf_id, _ in component.trimmed_leaf_parents}
+    assert trimmed_leaf_ids
+    assert trimmed_leaf_ids.isdisjoint(captured_node_ids)
 
 
 @pytest.mark.parametrize(

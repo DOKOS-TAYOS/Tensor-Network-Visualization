@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
+import pytest
 
 from tensor_network_viz import PlotConfig
 from tensor_network_viz._core._draw_common import _graph_edge_degree
@@ -14,12 +15,16 @@ from tensor_network_viz._core.graph import (
     _make_node,
 )
 from tensor_network_viz._core.layout import (
+    _analyze_layout_components_cached,
     _compute_axis_directions,
+    _compute_component_layout_2d,
     _compute_layout,
     _dangling_stub_segment_2d,
+    _dangling_stub_segment_3d,
     _is_dangling_leg_axis,
     _planar_contraction_bond_segments_2d,
     _segment_point_min_distance_sq_2d,
+    _segment_segment_min_distance_2d,
     _segments_cross_2d,
 )
 from tensor_network_viz._core.renderer import (
@@ -225,6 +230,122 @@ def _build_3d_grid_graph(lx: int, ly: int, lz: int) -> _GraphData:
         for left_id, right_id, left_name, right_name in edge_specs
     ]
     return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
+def _build_3d_grid_graph_with_dangling_phys(lx: int, ly: int, lz: int) -> _GraphData:
+    """3D nearest-neighbor cubic lattice with one dangling phys leg per tensor."""
+
+    def node_index(i: int, j: int, k: int) -> int:
+        return i * ly * lz + j * lz + k
+
+    nodes = {}
+    edge_specs: list[tuple[int, int, str, str]] = []
+
+    for i in range(lx):
+        for j in range(ly):
+            for k in range(lz):
+                axes_names: list[str] = ["phys"]
+                if i > 0:
+                    axes_names.append("xm")
+                if i < lx - 1:
+                    axes_names.append("xp")
+                if j > 0:
+                    axes_names.append("ym")
+                if j < ly - 1:
+                    axes_names.append("yp")
+                if k > 0:
+                    axes_names.append("zm")
+                if k < lz - 1:
+                    axes_names.append("zp")
+                nid = node_index(i, j, k)
+                nodes[nid] = _make_node(f"P{i}_{j}_{k}", tuple(axes_names))
+
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+
+    for i in range(lx):
+        for j in range(ly):
+            for k in range(lz):
+                nid = node_index(i, j, k)
+                if i < lx - 1:
+                    rid = node_index(i + 1, j, k)
+                    edge_specs.append((nid, rid, "xp", "xm"))
+                if j < ly - 1:
+                    rid = node_index(i, j + 1, k)
+                    edge_specs.append((nid, rid, "yp", "ym"))
+                if k < lz - 1:
+                    rid = node_index(i, j, k + 1)
+                    edge_specs.append((nid, rid, "zp", "zm"))
+
+    edges = [
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][left_name], left_name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][right_name], right_name),
+            name=f"{left_id}_{right_id}",
+            label=None,
+        )
+        for left_id, right_id, left_name, right_name in edge_specs
+    ]
+    for node_id, axis_map in axis_lookup.items():
+        edges.append(
+            _make_dangling_edge(
+                _EdgeEndpoint(node_id, axis_map["phys"], "phys"),
+                name=f"p{node_id}",
+                label=None,
+            )
+        )
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
+def _build_binary_tree_graph_with_leaf_phys() -> _GraphData:
+    nodes = {
+        0: _make_node("R", ("left", "right")),
+        1: _make_node("L", ("parent", "left", "right")),
+        2: _make_node("M", ("parent", "left", "right")),
+        3: _make_node("LL", ("parent", "phys")),
+        4: _make_node("LR", ("parent", "phys")),
+        5: _make_node("ML", ("parent", "phys")),
+        6: _make_node("MR", ("parent", "phys")),
+    }
+    edges = (
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 0, "left"),
+            _EdgeEndpoint(1, 0, "parent"),
+            name="e01",
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 1, "right"),
+            _EdgeEndpoint(2, 0, "parent"),
+            name="e02",
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(1, 1, "left"),
+            _EdgeEndpoint(3, 0, "parent"),
+            name="e13",
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(1, 2, "right"),
+            _EdgeEndpoint(4, 0, "parent"),
+            name="e14",
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(2, 1, "left"),
+            _EdgeEndpoint(5, 0, "parent"),
+            name="e25",
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(2, 2, "right"),
+            _EdgeEndpoint(6, 0, "parent"),
+            name="e26",
+        ),
+        _make_dangling_edge(_EdgeEndpoint(3, 1, "phys"), name="phys_3", label=None),
+        _make_dangling_edge(_EdgeEndpoint(4, 1, "phys"), name="phys_4", label=None),
+        _make_dangling_edge(_EdgeEndpoint(5, 1, "phys"), name="phys_5", label=None),
+        _make_dangling_edge(_EdgeEndpoint(6, 1, "phys"), name="phys_6", label=None),
+    )
+    return _GraphData(nodes=nodes, edges=edges)
 
 
 def _build_grid_graph(rows: int, cols: int) -> _GraphData:
@@ -515,6 +636,142 @@ def _build_grid_with_leaf_nodes() -> _GraphData:
     return _GraphData(nodes=nodes, edges=edges)
 
 
+def _build_peps_grid_with_leaf_vectors(rows: int, cols: int) -> tuple[_GraphData, dict[int, int]]:
+    nodes: dict[int, object] = {}
+    edges = []
+    leaf_parent_by_id: dict[int, int] = {}
+
+    def core_node_id(row: int, col: int) -> int:
+        return 2 * (row * cols + col)
+
+    def leaf_node_id(row: int, col: int) -> int:
+        return core_node_id(row, col) + 1
+
+    for row in range(rows):
+        for col in range(cols):
+            axes_names: list[str] = []
+            if col > 0:
+                axes_names.append("left")
+            if col < cols - 1:
+                axes_names.append("right")
+            if row > 0:
+                axes_names.append("down")
+            if row < rows - 1:
+                axes_names.append("up")
+            phys_name = f"p_{row}_{col}"
+            axes_names.append(phys_name)
+            core_id = core_node_id(row, col)
+            leaf_id = leaf_node_id(row, col)
+            nodes[core_id] = _make_node(f"P{row}_{col}", tuple(axes_names))
+            nodes[leaf_id] = _make_node(f"x{row}_{col}", (phys_name,))
+            leaf_parent_by_id[leaf_id] = core_id
+
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+
+    for row in range(rows):
+        for col in range(cols):
+            core_id = core_node_id(row, col)
+            if col < cols - 1:
+                right_id = core_node_id(row, col + 1)
+                edges.append(
+                    _make_contraction_edge(
+                        _EdgeEndpoint(core_id, axis_lookup[core_id]["right"], "right"),
+                        _EdgeEndpoint(right_id, axis_lookup[right_id]["left"], "left"),
+                        name=f"h_{row}_{col}",
+                        label=None,
+                    )
+                )
+            if row < rows - 1:
+                up_id = core_node_id(row + 1, col)
+                edges.append(
+                    _make_contraction_edge(
+                        _EdgeEndpoint(core_id, axis_lookup[core_id]["up"], "up"),
+                        _EdgeEndpoint(up_id, axis_lookup[up_id]["down"], "down"),
+                        name=f"v_{row}_{col}",
+                        label=None,
+                    )
+                )
+            phys_name = f"p_{row}_{col}"
+            leaf_id = leaf_node_id(row, col)
+            edges.append(
+                _make_contraction_edge(
+                    _EdgeEndpoint(core_id, axis_lookup[core_id][phys_name], phys_name),
+                    _EdgeEndpoint(leaf_id, 0, phys_name),
+                    name=phys_name,
+                    label=None,
+                )
+            )
+    return _GraphData(nodes=nodes, edges=tuple(edges)), leaf_parent_by_id
+
+
+def _segment_segment_min_distance_sq_3d(
+    start_a: np.ndarray,
+    end_a: np.ndarray,
+    start_b: np.ndarray,
+    end_b: np.ndarray,
+) -> float:
+    """Squared minimum distance between two 3D segments."""
+
+    delta_a = end_a - start_a
+    delta_b = end_b - start_b
+    offset = start_a - start_b
+    aa = float(np.dot(delta_a, delta_a))
+    ab = float(np.dot(delta_a, delta_b))
+    bb = float(np.dot(delta_b, delta_b))
+    ao = float(np.dot(delta_a, offset))
+    bo = float(np.dot(delta_b, offset))
+    denom = aa * bb - ab * ab
+    small = 1e-12
+    s_num = 0.0
+    s_den = denom
+    t_num = 0.0
+    t_den = denom
+
+    if denom < small:
+        s_num = 0.0
+        s_den = 1.0
+        t_num = bo
+        t_den = bb
+    else:
+        s_num = ab * bo - bb * ao
+        t_num = aa * bo - ab * ao
+        if s_num < 0.0:
+            s_num = 0.0
+            t_num = bo
+            t_den = bb
+        elif s_num > s_den:
+            s_num = s_den
+            t_num = bo + ab
+            t_den = bb
+
+    if t_num < 0.0:
+        t_num = 0.0
+        if -ao < 0.0:
+            s_num = 0.0
+        elif -ao > aa:
+            s_num = s_den
+        else:
+            s_num = -ao
+            s_den = aa
+    elif t_num > t_den:
+        t_num = t_den
+        if (-ao + ab) < 0.0:
+            s_num = 0.0
+        elif (-ao + ab) > aa:
+            s_num = s_den
+        else:
+            s_num = -ao + ab
+            s_den = aa
+
+    s_param = 0.0 if abs(s_num) < small else s_num / s_den
+    t_param = 0.0 if abs(t_num) < small else t_num / t_den
+    delta = offset + s_param * delta_a - t_param * delta_b
+    return float(np.dot(delta, delta))
+
+
 def _principal_axis(points: np.ndarray) -> np.ndarray:
     centered = points - points.mean(axis=0, keepdims=True)
     _, _, vh = np.linalg.svd(centered, full_matrices=False)
@@ -596,6 +853,61 @@ def test_compute_layout_grid_with_leaf_nodes_2d_keeps_leaf_positions_off_core_no
         )
 
 
+def _assert_peps_leaf_vectors_clear_2d(rows: int, cols: int) -> None:
+    graph, leaf_parent_by_id = _build_peps_grid_with_leaf_vectors(rows, cols)
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    draw_scale = _resolve_draw_scale(graph, positions)
+    r_disk = float(PlotConfig.DEFAULT_NODE_RADIUS) * max(float(draw_scale), 1e-6) * 1.08
+    bond_segments = _planar_contraction_bond_segments_2d(graph, positions, scale=draw_scale)
+
+    for leaf_id, parent_id in leaf_parent_by_id.items():
+        parent = np.asarray(positions[parent_id], dtype=float).reshape(-1)[:2]
+        leaf = np.asarray(positions[leaf_id], dtype=float).reshape(-1)[:2]
+        for node_id, node_position in positions.items():
+            if node_id in {leaf_id, parent_id}:
+                continue
+            other = np.asarray(node_position, dtype=float).reshape(-1)[:2]
+            assert np.linalg.norm(leaf - other) >= r_disk - 1e-9
+        for left_id, right_id, bond_start, bond_end in bond_segments:
+            if left_id in {leaf_id, parent_id} or right_id in {leaf_id, parent_id}:
+                continue
+            assert not _segments_cross_2d(parent, leaf, bond_start, bond_end)
+
+
+def test_compute_layout_peps_leaf_vectors_2d_clear_other_core_nodes_3x3() -> None:
+    _assert_peps_leaf_vectors_clear_2d(3, 3)
+
+
+def test_compute_layout_peps_leaf_vectors_2d_clear_other_core_nodes_4x4() -> None:
+    _assert_peps_leaf_vectors_clear_2d(4, 4)
+
+
+def test_compute_layout_peps_leaf_vectors_2d_regular_grid_boundary_faces_prefer_cardinals() -> None:
+    graph, _leaf_parent_by_id = _build_peps_grid_with_leaf_vectors(3, 3)
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+
+    expected_by_site = {
+        (2, 0): np.array([0.0, 1.0], dtype=float),
+        (2, 1): np.array([0.0, 1.0], dtype=float),
+        (2, 2): np.array([0.0, 1.0], dtype=float),
+        (0, 0): np.array([0.0, -1.0], dtype=float),
+        (0, 1): np.array([0.0, -1.0], dtype=float),
+        (0, 2): np.array([0.0, -1.0], dtype=float),
+        (1, 0): np.array([-1.0, 0.0], dtype=float),
+        (1, 2): np.array([1.0, 0.0], dtype=float),
+    }
+
+    for (row, col), expected in expected_by_site.items():
+        parent_id = 2 * (row * 3 + col)
+        leaf_id = parent_id + 1
+        direction = np.asarray(
+            positions[leaf_id] - positions[parent_id],
+            dtype=float,
+        ).reshape(-1)[:2]
+        direction /= np.linalg.norm(direction)
+        assert np.allclose(direction, expected, atol=1e-6), (row, col, direction)
+
+
 def test_compute_layout_grid_2d_places_nodes_on_regular_lattice() -> None:
     graph = _build_grid_graph(2, 2)
 
@@ -657,6 +969,31 @@ def test_compute_axis_directions_chain_3d_assigns_orthogonal_open_end() -> None:
     assert np.allclose(directions[(0, 1)], np.array([0.0, 0.0, 1.0]), atol=1e-6)
 
 
+def test_compute_axis_directions_3d_supports_xp_alias_for_free_axes() -> None:
+    graph = _GraphData(
+        nodes={
+            0: _make_node("A", ("up", "xp")),
+            1: _make_node("B", ("down",)),
+        },
+        edges=(
+            _make_contraction_edge(
+                _EdgeEndpoint(0, 0, "up"),
+                _EdgeEndpoint(1, 0, "down"),
+                name="vertical",
+                label=None,
+            ),
+        ),
+    )
+    positions = {
+        0: np.array([0.0, 0.0, 0.0], dtype=float),
+        1: np.array([0.0, 1.0, 0.0], dtype=float),
+    }
+
+    directions = _compute_axis_directions(graph, positions, dimensions=3)
+
+    assert np.allclose(directions[(0, 1)], np.array([1.0, 0.0, 0.0]), atol=1e-6)
+
+
 def test_compute_axis_directions_competing_free_axes_prefer_unused_orthogonal_directions() -> None:
     graph = _build_star_with_free_axes()
 
@@ -667,6 +1004,104 @@ def test_compute_axis_directions_competing_free_axes_prefer_unused_orthogonal_di
     assert np.allclose(directions[(0, 5)], np.array([0.0, -1.0, 0.0]), atol=1e-6)
     for axis_index in range(6, 8):
         assert np.isclose(np.linalg.norm(directions[(0, axis_index)]), 1.0, atol=1e-6)
+
+
+def test_compute_axis_directions_cubic_phys_stubs_3d_clear_nonincident_bonds() -> None:
+    graph = _build_3d_grid_graph_with_dangling_phys(3, 3, 2)
+
+    positions = _compute_layout(graph, dimensions=3, seed=0)
+    draw_scale = _resolve_draw_scale(graph, positions)
+    directions = _compute_axis_directions(graph, positions, dimensions=3, draw_scale=draw_scale)
+    bond_segments = [
+        (
+            int(left_id),
+            int(right_id),
+            np.asarray(positions[left_id], dtype=float).reshape(-1)[:3],
+            np.asarray(positions[right_id], dtype=float).reshape(-1)[:3],
+        )
+        for left_id, right_id in (
+            edge.node_ids for edge in graph.edges if edge.kind == "contraction"
+        )
+    ]
+
+    for edge in graph.edges:
+        if edge.kind != "dangling":
+            continue
+        endpoint = edge.endpoints[0]
+        origin = np.asarray(positions[endpoint.node_id], dtype=float).reshape(-1)[:3]
+        direction = np.asarray(
+            directions[(endpoint.node_id, endpoint.axis_index)],
+            dtype=float,
+        ).reshape(-1)[:3]
+        start, end = _dangling_stub_segment_3d(origin, direction, draw_scale=draw_scale)
+        for left_id, right_id, bond_start, bond_end in bond_segments:
+            if endpoint.node_id in {left_id, right_id}:
+                continue
+            distance = math.sqrt(
+                _segment_segment_min_distance_sq_3d(start, end, bond_start, bond_end)
+            )
+            assert distance >= 0.2 - 1e-9
+
+
+def test_compute_axis_directions_cubic_phys_stubs_3d_face_centers_point_outward() -> None:
+    graph = _build_3d_grid_graph_with_dangling_phys(3, 3, 3)
+
+    positions = _compute_layout(graph, dimensions=3, seed=0)
+    directions = _compute_axis_directions(graph, positions, dimensions=3)
+    component = _analyze_layout_components_cached(graph)[0]
+    node_id_by_coords = {coords: node_id for node_id, coords in component.grid3d_mapping.items()}
+    centroid = np.mean(
+        np.stack(
+            [
+                np.asarray(positions[node_id], dtype=float).reshape(-1)[:3]
+                for node_id in component.anchor_node_ids
+            ],
+            axis=0,
+        ),
+        axis=0,
+    )
+
+    face_center_coords = (
+        (2, 1, 1),
+        (1, 2, 1),
+        (1, 1, 2),
+        (0, 1, 1),
+        (1, 0, 1),
+        (1, 1, 0),
+    )
+    for coords in face_center_coords:
+        node_id = node_id_by_coords[coords]
+        axis_index = graph.nodes[node_id].axes_names.index("phys")
+        direction = np.asarray(directions[(node_id, axis_index)], dtype=float).reshape(-1)[:3]
+        direction /= np.linalg.norm(direction)
+        outward = np.asarray(positions[node_id], dtype=float).reshape(-1)[:3] - centroid
+        outward /= np.linalg.norm(outward)
+        assert float(np.dot(direction, outward)) > 0.95, (coords, direction, outward)
+
+
+def test_compute_axis_directions_cubic_phys_stubs_2d_clear_nonincident_projected_bonds() -> None:
+    graph = _build_3d_grid_graph_with_dangling_phys(3, 3, 2)
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    draw_scale = _resolve_draw_scale(graph, positions)
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=draw_scale)
+    bond_segments = _planar_contraction_bond_segments_2d(graph, positions, scale=draw_scale)
+
+    for edge in graph.edges:
+        if edge.kind != "dangling":
+            continue
+        endpoint = edge.endpoints[0]
+        origin = np.asarray(positions[endpoint.node_id], dtype=float).reshape(-1)[:2]
+        direction = np.asarray(
+            directions[(endpoint.node_id, endpoint.axis_index)],
+            dtype=float,
+        ).reshape(-1)[:2]
+        start, end = _dangling_stub_segment_2d(origin, direction, draw_scale=draw_scale)
+        for left_id, right_id, bond_start, bond_end in bond_segments:
+            if endpoint.node_id in {left_id, right_id}:
+                continue
+            distance = _segment_segment_min_distance_2d(start, end, bond_start, bond_end)
+            assert distance >= 0.15 - 1e-9
 
 
 def test_compute_layout_virtual_hub_uses_incident_barycenter() -> None:
@@ -702,6 +1137,26 @@ def test_compute_layout_generic_graph_uses_force_fallback_produces_valid_positio
     assert not np.any(np.isnan(coords))
     assert not np.any(np.isinf(coords))
     assert np.all(np.isfinite(coords))
+
+
+def test_tree_component_layout_2d_skips_force_layout_when_anchors_cover_all_nodes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _build_binary_tree_graph_with_leaf_phys()
+    component = _analyze_layout_components_cached(graph)[0]
+
+    def fail_force_layout(*args: object, **kwargs: object) -> dict[int, np.ndarray]:
+        del args, kwargs
+        raise AssertionError("_compute_force_layout should not run for fully anchored trees")
+
+    monkeypatch.setattr(
+        "tensor_network_viz._core.layout.positions._compute_force_layout",
+        fail_force_layout,
+    )
+
+    positions = _compute_component_layout_2d(graph, component, seed=0, iterations=1)
+
+    assert set(positions) == set(graph.nodes)
 
 
 def test_weird_topology_2d_phys_stubs_do_not_cross() -> None:

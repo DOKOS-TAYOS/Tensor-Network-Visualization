@@ -118,22 +118,12 @@ def test_compute_axis_directions_chain_2d_is_stable_for_dense_dangling_case() ->
 
     directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=1.0)
 
-    assert np.allclose(
-        directions[(0, graph.nodes[0].axes_names.index("phys"))],
-        np.array([-1.0, 0.0], dtype=float),
-        atol=1e-9,
-    )
-    for node_id in range(1, 4):
+    for node_id in range(5):
         assert np.allclose(
             directions[(node_id, graph.nodes[node_id].axes_names.index("phys"))],
             np.array([0.0, 1.0], dtype=float),
             atol=1e-9,
         )
-    assert np.allclose(
-        directions[(4, graph.nodes[4].axes_names.index("phys"))],
-        np.array([1.0, 0.0], dtype=float),
-        atol=1e-9,
-    )
 
 
 def test_compute_axis_directions_dense_dangling_chain_completes_quickly() -> None:

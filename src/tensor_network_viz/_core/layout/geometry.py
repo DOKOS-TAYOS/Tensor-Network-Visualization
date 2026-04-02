@@ -14,6 +14,7 @@ from .parameters import (
     _LAYOUT_BOND_CURVE_NEAR_PAIR_REF,
     _LAYOUT_BOND_CURVE_OFFSET_FACTOR,
     _LAYOUT_BOND_CURVE_SAMPLES,
+    _SEGMENT_BOND_CLEAR_2D,
     _STUB_LAYOUT_R0,
     _STUB_LAYOUT_R1,
 )
@@ -76,6 +77,100 @@ def _segment_point_min_distance_sq_3d(a: np.ndarray, b: np.ndarray, c: np.ndarra
     return float(np.sum((c3 - closest) ** 2))
 
 
+def _segment_segment_min_distance_2d(
+    start_a: np.ndarray,
+    end_a: np.ndarray,
+    start_b: np.ndarray,
+    end_b: np.ndarray,
+) -> float:
+    a0 = np.asarray(start_a, dtype=float).reshape(-1)[:2]
+    a1 = np.asarray(end_a, dtype=float).reshape(-1)[:2]
+    b0 = np.asarray(start_b, dtype=float).reshape(-1)[:2]
+    b1 = np.asarray(end_b, dtype=float).reshape(-1)[:2]
+    if _segments_cross_2d(a0, a1, b0, b1):
+        return 0.0
+    return min(
+        math.sqrt(_segment_point_min_distance_sq_2d(a0, a1, b0)),
+        math.sqrt(_segment_point_min_distance_sq_2d(a0, a1, b1)),
+        math.sqrt(_segment_point_min_distance_sq_2d(b0, b1, a0)),
+        math.sqrt(_segment_point_min_distance_sq_2d(b0, b1, a1)),
+    )
+
+
+def _segment_segment_min_distance_sq_3d(
+    start_a: np.ndarray,
+    end_a: np.ndarray,
+    start_b: np.ndarray,
+    end_b: np.ndarray,
+) -> float:
+    """Squared minimum distance between two 3D segments."""
+
+    delta_a = np.asarray(end_a, dtype=float).reshape(-1)[:3] - np.asarray(
+        start_a,
+        dtype=float,
+    ).reshape(-1)[:3]
+    delta_b = np.asarray(end_b, dtype=float).reshape(-1)[:3] - np.asarray(
+        start_b,
+        dtype=float,
+    ).reshape(-1)[:3]
+    offset = np.asarray(start_a, dtype=float).reshape(-1)[:3] - np.asarray(
+        start_b,
+        dtype=float,
+    ).reshape(-1)[:3]
+    aa = float(np.dot(delta_a, delta_a))
+    ab = float(np.dot(delta_a, delta_b))
+    bb = float(np.dot(delta_b, delta_b))
+    ao = float(np.dot(delta_a, offset))
+    bo = float(np.dot(delta_b, offset))
+    denom = aa * bb - ab * ab
+    small = 1e-12
+    s_num = 0.0
+    s_den = denom
+    t_num = 0.0
+    t_den = denom
+
+    if denom < small:
+        s_num = 0.0
+        s_den = 1.0
+        t_num = bo
+        t_den = bb
+    else:
+        s_num = ab * bo - bb * ao
+        t_num = aa * bo - ab * ao
+        if s_num < 0.0:
+            s_num = 0.0
+            t_num = bo
+            t_den = bb
+        elif s_num > s_den:
+            s_num = s_den
+            t_num = bo + ab
+            t_den = bb
+
+    if t_num < 0.0:
+        t_num = 0.0
+        if -ao < 0.0:
+            s_num = 0.0
+        elif -ao > aa:
+            s_num = s_den
+        else:
+            s_num = -ao
+            s_den = aa
+    elif t_num > t_den:
+        t_num = t_den
+        if (-ao + ab) < 0.0:
+            s_num = 0.0
+        elif (-ao + ab) > aa:
+            s_num = s_den
+        else:
+            s_num = -ao + ab
+            s_den = aa
+
+    s_param = 0.0 if abs(s_num) < small else s_num / s_den
+    t_param = 0.0 if abs(t_num) < small else t_num / t_den
+    delta = offset + s_param * delta_a - t_param * delta_b
+    return float(np.dot(delta, delta))
+
+
 def _segments_cross_2d(a: np.ndarray, b: np.ndarray, c: np.ndarray, d: np.ndarray) -> bool:
     def orient(p: np.ndarray, q: np.ndarray, r: np.ndarray) -> float:
         return float((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]))
@@ -108,22 +203,28 @@ def _segment_hits_existing_geometry_2d(
     other_start: np.ndarray,
     other_end: np.ndarray,
 ) -> bool:
-    if _segments_cross_2d(start, end, other_start, other_end):
-        return True
-    midpoint = (start + end) / 2.0
-    return _point_segment_distance_2d(midpoint, other_start, other_end) < 0.15
+    return (
+        _segment_segment_min_distance_2d(start, end, other_start, other_end)
+        < _SEGMENT_BOND_CLEAR_2D
+    )
 
 
 def _segment_bboxes_overlap_2d(
     p0: np.ndarray,
     p1: np.ndarray,
     bbox: tuple[float, float, float, float],
+    *,
+    padding: float = 0.0,
 ) -> bool:
-    min_x = min(float(p0[0]), float(p1[0]))
-    max_x = max(float(p0[0]), float(p1[0]))
-    min_y = min(float(p0[1]), float(p1[1]))
-    max_y = max(float(p0[1]), float(p1[1]))
+    min_x = min(float(p0[0]), float(p1[0])) - float(padding)
+    max_x = max(float(p0[0]), float(p1[0])) + float(padding)
+    min_y = min(float(p0[1]), float(p1[1])) - float(padding)
+    max_y = max(float(p0[1]), float(p1[1])) + float(padding)
     seg_min_x, seg_max_x, seg_min_y, seg_max_y = bbox
+    seg_min_x -= float(padding)
+    seg_max_x += float(padding)
+    seg_min_y -= float(padding)
+    seg_max_y += float(padding)
     return not (max_x < seg_min_x or seg_max_x < min_x or max_y < seg_min_y or seg_max_y < min_y)
 
 
@@ -216,12 +317,19 @@ def _planar_contraction_bond_segment_records_2d(
     *,
     scale: float = 1.0,
     contraction_groups: _ContractionGroups | None = None,
+    node_filter: frozenset[int] | None = None,
 ) -> tuple[_BondSegment2D, ...]:
     groups = contraction_groups if contraction_groups is not None else _group_contractions(graph)
     out: list[_BondSegment2D] = []
     for record in _iter_contractions(graph):
         left_id, right_id = record.node_ids
         if left_id == right_id:
+            continue
+        if node_filter is not None and (
+            left_id not in node_filter or right_id not in node_filter
+        ):
+            continue
+        if left_id not in positions or right_id not in positions:
             continue
         offset_index, edge_count = groups.offsets[id(record.edge)]
         start = np.asarray(positions[left_id], dtype=float).reshape(-1)[:2]
@@ -261,5 +369,7 @@ __all__ = [
     "_segment_point_min_distance_sq_2d",
     "_segment_point_min_distance_sq_2d_many",
     "_segment_point_min_distance_sq_3d",
+    "_segment_segment_min_distance_2d",
+    "_segment_segment_min_distance_sq_3d",
     "_segments_cross_2d",
 ]

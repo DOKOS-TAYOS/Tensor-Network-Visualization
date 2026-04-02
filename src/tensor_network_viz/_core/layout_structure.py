@@ -14,8 +14,10 @@ from .graph import _GraphData
 
 StructureKind = Literal["chain", "grid", "grid3d", "tree", "planar", "generic"]
 
-# Skew in 2D projection (i,j,k) → layout xy so sites with same (i,j) and different k stay separated.
-_GRID3D_PROJECTION_K: float = 0.4
+# Oblique 2D projection (i,j,k) → layout xy. The depth axis uses an asymmetric skew so
+# free stubs on projected cubic grids get a cleaner outward corridor between bonds.
+_GRID3D_PROJECTION_X: float = 0.45
+_GRID3D_PROJECTION_Y: float = -0.25
 
 
 @dataclass(frozen=True)
@@ -381,10 +383,12 @@ def _detect_grid_3d(nx_graph: nx.Graph) -> dict[int, tuple[int, int, int]] | Non
 def _layout_grid3d_projection_2d(
     grid3d_mapping: dict[int, tuple[int, int, int]],
 ) -> dict[int, np.ndarray]:
-    alpha = _GRID3D_PROJECTION_K
     return {
         node_id: np.array(
-            [float(i) + alpha * float(k), float(j) + alpha * float(k)],
+            [
+                float(i) + _GRID3D_PROJECTION_X * float(k),
+                float(j) + _GRID3D_PROJECTION_Y * float(k),
+            ],
             dtype=float,
         )
         for node_id, (i, j, k) in grid3d_mapping.items()
