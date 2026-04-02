@@ -105,18 +105,27 @@ def _segment_segment_min_distance_sq_3d(
 ) -> float:
     """Squared minimum distance between two 3D segments."""
 
-    delta_a = np.asarray(end_a, dtype=float).reshape(-1)[:3] - np.asarray(
-        start_a,
-        dtype=float,
-    ).reshape(-1)[:3]
-    delta_b = np.asarray(end_b, dtype=float).reshape(-1)[:3] - np.asarray(
-        start_b,
-        dtype=float,
-    ).reshape(-1)[:3]
-    offset = np.asarray(start_a, dtype=float).reshape(-1)[:3] - np.asarray(
-        start_b,
-        dtype=float,
-    ).reshape(-1)[:3]
+    delta_a = (
+        np.asarray(end_a, dtype=float).reshape(-1)[:3]
+        - np.asarray(
+            start_a,
+            dtype=float,
+        ).reshape(-1)[:3]
+    )
+    delta_b = (
+        np.asarray(end_b, dtype=float).reshape(-1)[:3]
+        - np.asarray(
+            start_b,
+            dtype=float,
+        ).reshape(-1)[:3]
+    )
+    offset = (
+        np.asarray(start_a, dtype=float).reshape(-1)[:3]
+        - np.asarray(
+            start_b,
+            dtype=float,
+        ).reshape(-1)[:3]
+    )
     aa = float(np.dot(delta_a, delta_a))
     ab = float(np.dot(delta_a, delta_b))
     bb = float(np.dot(delta_b, delta_b))
@@ -325,9 +334,7 @@ def _planar_contraction_bond_segment_records_2d(
         left_id, right_id = record.node_ids
         if left_id == right_id:
             continue
-        if node_filter is not None and (
-            left_id not in node_filter or right_id not in node_filter
-        ):
+        if node_filter is not None and (left_id not in node_filter or right_id not in node_filter):
             continue
         if left_id not in positions or right_id not in positions:
             continue

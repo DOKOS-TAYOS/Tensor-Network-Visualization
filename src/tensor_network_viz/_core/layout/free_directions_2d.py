@@ -218,16 +218,19 @@ def _candidate_conflicts(
     draw_scale: float,
     strict_physical_node_clearance: bool,
 ) -> bool:
-    return _candidate_margin(
-        node_id=node_id,
-        origin=origin,
-        direction=direction,
-        assigned_stubs=assigned_stubs,
-        other_coords=other_coords,
-        non_incident_segments=non_incident_segments,
-        draw_scale=draw_scale,
-        strict_physical_node_clearance=strict_physical_node_clearance,
-    ) < 0.0
+    return (
+        _candidate_margin(
+            node_id=node_id,
+            origin=origin,
+            direction=direction,
+            assigned_stubs=assigned_stubs,
+            other_coords=other_coords,
+            non_incident_segments=non_incident_segments,
+            draw_scale=draw_scale,
+            strict_physical_node_clearance=strict_physical_node_clearance,
+        )
+        < 0.0
+    )
 
 
 def _candidate_margin(
@@ -283,9 +286,7 @@ def _candidate_margin(
         if _segments_cross_2d(p0, p1, assigned.start, assigned.end):
             margin = min(margin, -1.0)
         margin = min(margin, float(np.linalg.norm(p1 - assigned.end)) - _STUB_TIP_TIP_CLEAR)
-        if (
-            float(np.linalg.norm(origin - assigned.origin)) < _STUB_ORIGIN_PAIR_CLEAR
-        ):
+        if float(np.linalg.norm(origin - assigned.origin)) < _STUB_ORIGIN_PAIR_CLEAR:
             margin = min(
                 margin,
                 _STUB_PARALLEL_DOT - float(np.dot(normalized_direction, assigned.direction)),

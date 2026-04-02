@@ -409,9 +409,7 @@ def _place_trimmed_leaf_nodes_2d(
         )
         direction = positions[leaf_id][:2] - positions[parent_id][:2]
         norm = float(np.linalg.norm(direction))
-        normalized = (
-            direction / norm if norm > 1e-9 else np.array([1.0, 0.0], dtype=float)
-        )
+        normalized = direction / norm if norm > 1e-9 else np.array([1.0, 0.0], dtype=float)
         assigned_targets.append(
             (
                 parent_id,
@@ -582,17 +580,20 @@ def _attachment_candidate_conflicts_2d(
     positions: NodePositions,
     used_dirs: list[np.ndarray],
 ) -> bool:
-    return _attachment_candidate_margin_2d(
-        candidate=candidate,
-        direction=direction,
-        parent_id=parent_id,
-        leaf_id=leaf_id,
-        origin=origin,
-        assigned_targets=assigned_targets,
-        core_segments=core_segments,
-        positions=positions,
-        used_dirs=used_dirs,
-    ) < 0.0
+    return (
+        _attachment_candidate_margin_2d(
+            candidate=candidate,
+            direction=direction,
+            parent_id=parent_id,
+            leaf_id=leaf_id,
+            origin=origin,
+            assigned_targets=assigned_targets,
+            core_segments=core_segments,
+            positions=positions,
+            used_dirs=used_dirs,
+        )
+        < 0.0
+    )
 
 
 def _attachment_candidate_margin_2d(

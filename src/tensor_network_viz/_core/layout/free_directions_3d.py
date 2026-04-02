@@ -155,16 +155,19 @@ def _direction_conflicts_3d(
     draw_scale: float = 1.0,
     strict_physical_node_clearance: bool = False,
 ) -> bool:
-    return _direction_margin_3d(
-        node_id=node_id,
-        origin=origin,
-        direction=direction,
-        assigned_segments=assigned_segments,
-        bond_segments=bond_segments,
-        positions=positions,
-        draw_scale=draw_scale,
-        strict_physical_node_clearance=strict_physical_node_clearance,
-    ) < 0.0
+    return (
+        _direction_margin_3d(
+            node_id=node_id,
+            origin=origin,
+            direction=direction,
+            assigned_segments=assigned_segments,
+            bond_segments=bond_segments,
+            positions=positions,
+            draw_scale=draw_scale,
+            strict_physical_node_clearance=strict_physical_node_clearance,
+        )
+        < 0.0
+    )
 
 
 def _direction_margin_3d(

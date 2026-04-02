@@ -147,9 +147,7 @@ def _component_centroid(
     *,
     dimensions: int,
 ) -> np.ndarray:
-    source_ids = (
-        component.anchor_node_ids or component.visible_node_ids or component.node_ids
-    )
+    source_ids = component.anchor_node_ids or component.visible_node_ids or component.node_ids
     anchor_ids = tuple(node_id for node_id in source_ids if node_id in positions)
     if not anchor_ids:
         anchor_ids = tuple(sorted(positions))
@@ -166,9 +164,7 @@ def _component_main_axis_2d_like(
     component: _LayoutComponent,
     positions: NodePositions,
 ) -> np.ndarray:
-    source_ids = (
-        component.anchor_node_ids or component.visible_node_ids or component.node_ids
-    )
+    source_ids = component.anchor_node_ids or component.visible_node_ids or component.node_ids
     anchor_ids = tuple(node_id for node_id in source_ids if node_id in positions)
     if not anchor_ids:
         anchor_ids = tuple(sorted(positions))
