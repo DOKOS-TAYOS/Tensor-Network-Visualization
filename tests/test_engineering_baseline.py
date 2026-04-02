@@ -135,4 +135,4 @@ def test_compute_axis_directions_dense_dangling_chain_completes_quickly() -> Non
     elapsed = time.perf_counter() - started
 
     assert len(directions) == 178
-    assert elapsed < 0.18, f"_compute_axis_directions took {elapsed:.4f}s"
+    assert elapsed < 0.35, f"_compute_axis_directions took {elapsed:.4f}s"

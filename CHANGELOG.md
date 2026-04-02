@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [1.5.0] — 2026-04-03
 
+### Added
+- **Visualization improvements:** Enhanced the rules for determining node location and bond direction, resulting in clearer, more informative layouts for complex tensor networks.
+- **Geometry computation optimization:** Major performance improvement in layout and rendering by optimizing the calculation, storage, and update of node and edge positions across both 2D and 3D modes.
+- **Contribution tools:** Improved and streamlined contribution tools for developers, including enhanced linting, type-checking, and developer setup scripts.
 - **Interactive viewer controls:** `show_tensor_network` now opens with a Matplotlib control panel
   by default: `2d/3d` selector (when the figure owns the axes), plus `Hover`, `Tensor labels`, and
   `Edge labels` checkboxes.
@@ -84,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[1.5.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.3.3...v1.4.0
