@@ -25,11 +25,11 @@ import matplotlib
 import numpy as np
 
 try:
-    from tensor_network_viz import make_tenpy_tensor_network, show_tensor_network
+    from tensor_network_viz import make_tenpy_tensor_network
 except ImportError:
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root / "src"))
-    from tensor_network_viz import make_tenpy_tensor_network, show_tensor_network
+    from tensor_network_viz import make_tenpy_tensor_network
 
 _EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(_EXAMPLES_DIR) not in sys.path:
@@ -39,7 +39,9 @@ from demo_cli import (
     add_contraction_scheme_argument,
     add_hover_labels_argument,
     apply_demo_caption,
+    demo_runs_headless,
     finalize_demo_plot_config,
+    render_demo_tensor_network,
 )
 
 
@@ -114,7 +116,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if args.no_show or args.save is not None:
+    if demo_runs_headless(args):
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -123,12 +125,12 @@ def main() -> None:
     print(f"View: {args.view}")
     print("Rendering figure...")
 
-    fig, ax = show_tensor_network(
+    fig, ax = render_demo_tensor_network(
         network,
+        args=args,
         engine="tenpy",
         view=args.view,
         config=finalize_demo_plot_config(args, network=args.network, engine="tenpy_explicit"),
-        show=False,
     )
     apply_demo_caption(
         fig,

@@ -20,6 +20,7 @@ from .labels_misc import (
     _self_loop_hover_label_text,
 )
 from .plotter import _PlotAdapter
+from .scene_state import _RenderedEdgeGeometry
 from .vectors import _perpendicular_2d
 from .viewport_geometry import (
     _blend_bond_tangent_with_chord_2d,
@@ -52,6 +53,7 @@ def _draw_dangling_edge(
     scale: float,
     zorder_line: float | None = None,
     zorder_label: float | None = None,
+    edge_geometry_sink: list[_RenderedEdgeGeometry] | None = None,
 ) -> None:
     endpoint = edge.endpoints[0]
     direction = directions[(endpoint.node_id, endpoint.axis_index)]
@@ -73,9 +75,50 @@ def _draw_dangling_edge(
         linewidth=p.lw,
         zorder=zorder_stub,
     )
-    if not (show_index_labels and edge.label):
-        return
+    if edge_geometry_sink is not None:
+        stub_segment = np.stack(
+            [np.asarray(start, dtype=float), np.asarray(end, dtype=float)],
+            axis=0,
+        )
+        edge_geometry_sink.append(
+            _RenderedEdgeGeometry(
+                edge=edge,
+                polyline=np.asarray(stub_segment[:, :dimensions], dtype=float, order="C"),
+            )
+        )
+    _draw_dangling_edge_labels(
+        plotter=plotter,
+        edge=edge,
+        graph=graph,
+        start=np.asarray(start, dtype=float),
+        end=np.asarray(end, dtype=float),
+        show_index_labels=show_index_labels,
+        config=config,
+        dimensions=dimensions,
+        p=p,
+        ax=ax,
+        scale=scale,
+        zorder_label=zorder_label,
+    )
 
+
+def _draw_dangling_edge_labels(
+    *,
+    plotter: _PlotAdapter,
+    edge: _EdgeData,
+    graph: _GraphData,
+    start: np.ndarray,
+    end: np.ndarray,
+    show_index_labels: bool,
+    config: PlotConfig,
+    dimensions: Literal[2, 3],
+    p: _DrawScaleParams,
+    ax: Any,
+    scale: float,
+    zorder_label: float | None = None,
+) -> None:
+    if not edge.label and not config.hover_labels:
+        return
     hover_targets = getattr(plotter, "_hover_edge_targets", None)
     if config.hover_labels and hover_targets is not None:
         caption = _dangling_hover_label_text(edge)
@@ -101,6 +144,7 @@ def _draw_dangling_edge(
                 start_3d[: min(3, start_arr.size)] = start_arr[: min(3, start_arr.size)]
                 end_3d[: min(3, end_arr.size)] = end_arr[: min(3, end_arr.size)]
                 hover_targets.append((np.stack([start_3d, end_3d], axis=0), caption))
+    if not (show_index_labels and edge.label):
         return
 
     raw_label = edge.label
@@ -178,6 +222,7 @@ def _draw_self_loop_edge(
     scale: float,
     zorder_line: float | None = None,
     zorder_label: float | None = None,
+    edge_geometry_sink: list[_RenderedEdgeGeometry] | None = None,
 ) -> None:
     endpoint_a, endpoint_b = _require_self_endpoints(edge)
     direction_a = directions[(endpoint_a.node_id, endpoint_a.axis_index)]
@@ -200,7 +245,6 @@ def _draw_self_loop_edge(
             width=p.ellipse_w,
             height=p.ellipse_h,
         )
-        label_offset_dir = normal * p.ellipse_w
     else:
         normal = _orthogonal_unit(orientation)
         binormal = np.cross(orientation, normal)
@@ -212,14 +256,50 @@ def _draw_self_loop_edge(
             width=p.ellipse_w,
             height=p.ellipse_h,
         )
-        label_offset_dir = binormal * p.ellipse_w
     zorder_loop = (
         float(_ZORDER_FLAT_DANGLE_SELF_LINE) if zorder_line is None else float(zorder_line)
     )
     plotter.plot_curve(curve, color=config.bond_edge_color, linewidth=p.lw, zorder=zorder_loop)
-    if not show_index_labels:
-        return
+    if edge_geometry_sink is not None:
+        edge_geometry_sink.append(
+            _RenderedEdgeGeometry(
+                edge=edge,
+                polyline=np.asarray(curve[:, :dimensions], dtype=float, order="C"),
+            )
+        )
+    _draw_self_loop_edge_labels(
+        plotter=plotter,
+        edge=edge,
+        graph=graph,
+        curve=np.asarray(curve, dtype=float),
+        positions=positions,
+        directions=directions,
+        show_index_labels=show_index_labels,
+        config=config,
+        dimensions=dimensions,
+        p=p,
+        ax=ax,
+        scale=scale,
+        zorder_label=zorder_label,
+    )
 
+
+def _draw_self_loop_edge_labels(
+    *,
+    plotter: _PlotAdapter,
+    edge: _EdgeData,
+    graph: _GraphData,
+    curve: np.ndarray,
+    positions: NodePositions,
+    directions: AxisDirections,
+    show_index_labels: bool,
+    config: PlotConfig,
+    dimensions: Literal[2, 3],
+    p: _DrawScaleParams,
+    ax: Any,
+    scale: float,
+    zorder_label: float | None = None,
+) -> None:
     hover_targets = getattr(plotter, "_hover_edge_targets", None)
     if config.hover_labels and hover_targets is not None:
         caption = _self_loop_hover_label_text(edge, graph)
@@ -228,8 +308,27 @@ def _draw_self_loop_edge(
                 hover_targets.append((np.asarray(curve[:, :2], dtype=float, order="C"), caption))
             else:
                 hover_targets.append((np.asarray(curve[:, :3], dtype=float, order="C"), caption))
+    if not show_index_labels:
         return
 
+    endpoint_a, endpoint_b = _require_self_endpoints(edge)
+    direction_a = directions[(endpoint_a.node_id, endpoint_a.axis_index)]
+    direction_b = directions[(endpoint_b.node_id, endpoint_b.axis_index)]
+    orientation = direction_a + direction_b
+    if np.linalg.norm(orientation) < 1e-6:
+        orientation = (
+            np.array([1.0, 0.0, 0.0], dtype=float)
+            if dimensions == 3
+            else np.array([1.0, 0.0], dtype=float)
+        )
+    orientation = orientation / np.linalg.norm(orientation)
+    if dimensions == 2:
+        label_offset_dir = _perpendicular_2d(orientation) * p.ellipse_w
+    else:
+        normal = _orthogonal_unit(orientation)
+        binormal = np.cross(orientation, normal)
+        binormal = binormal / np.linalg.norm(binormal)
+        label_offset_dir = binormal * p.ellipse_w
     caption_a = _endpoint_index_caption(endpoint_a, edge, graph)
     caption_b = _endpoint_index_caption(endpoint_b, edge, graph)
     count = int(curve.shape[0])
@@ -340,5 +439,7 @@ def _draw_self_loop_edge(
 
 __all__ = [
     "_draw_dangling_edge",
+    "_draw_dangling_edge_labels",
     "_draw_self_loop_edge",
+    "_draw_self_loop_edge_labels",
 ]

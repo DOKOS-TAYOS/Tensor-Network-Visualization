@@ -57,9 +57,10 @@ class PlotConfig:
         approximate_3d_tensor_disk_px: If True (default), tensor label disk radius in pixels
             uses a single nominal scale from axis spans (cheap). If False, uses per-node
             projection (slower, marginally more accurate under 3D perspective).
-        hover_labels: If True, tensor names and bond index labels are hidden until the pointer
-            hovers over a node or edge (2D: hit-testing in axes space; 3D: projected screen
-            distance). Use an interactive Matplotlib window.
+        hover_labels: If True, enable hover tooltips for tensor names and bond index labels
+            (2D: hit-testing in axes space; 3D: projected screen distance). This is independent
+            from static tensor/index labels, so both can stay enabled at once. Use an interactive
+            Matplotlib window.
         show_contraction_scheme: If True, draw colored highlights for each contraction step (from
             ``graph.contraction_steps`` or ``contraction_scheme_by_name``).
         contraction_scheme_alpha: Fill alpha for scheme rectangles (2D); 3D uses edge color only.
@@ -100,8 +101,8 @@ class PlotConfig:
     bond_edge_color: str = "#0369A1"
     dangling_edge_color: str = "#BE123C"
     figsize: tuple[float, float] | None = (8, 6)
-    show_tensor_labels: bool = True
-    show_index_labels: bool = True
+    show_tensor_labels: bool = False
+    show_index_labels: bool = False
     node_radius: float | None = None
     stub_length: float | None = None
     self_loop_radius: float | None = None
@@ -113,7 +114,7 @@ class PlotConfig:
     refine_tensor_labels: bool = True
     performance_mode: PerformanceMode = "auto"
     approximate_3d_tensor_disk_px: bool = True
-    hover_labels: bool = False
+    hover_labels: bool = True
     show_contraction_scheme: bool = False
     contraction_scheme_alpha: float = 0.0
     contraction_scheme_edge_alpha: float | None = None

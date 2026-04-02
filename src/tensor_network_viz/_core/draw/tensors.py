@@ -92,7 +92,7 @@ def _draw_labels(
     tensor_label_zorder_by_node: dict[int, float] | None = None,
     tensor_disk_radius_px_3d: float | None = None,
 ) -> None:
-    if show_tensor_labels:
+    if show_tensor_labels or tensor_hover_by_node is not None:
         fig = ax.figure
         ordered_ids: list[int]
         if visible_draw_order is not None:
@@ -120,6 +120,7 @@ def _draw_labels(
                 fs = min(float(fs) * _LABEL_FONT_3D_SCALE, cap_tensor)
             if tensor_hover_by_node is not None:
                 tensor_hover_by_node[node_id] = (display_name, float(fs))
+            if not show_tensor_labels:
                 continue
             if tensor_label_zorder_by_node is None:
                 z_lbl = float(_ZORDER_TENSOR_NAME)

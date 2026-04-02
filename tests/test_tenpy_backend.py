@@ -7,6 +7,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import pytest
 
+from tensor_network_viz import PlotConfig
 from tensor_network_viz._core.curves import _require_self_endpoints
 from tensor_network_viz._core.graph import _require_contraction_endpoints
 from tensor_network_viz.tenpy import (
@@ -129,7 +130,10 @@ def test_build_tenpy_graph_builds_two_site_infinite_mps_as_parallel_edges() -> N
 
 
 def test_plot_tenpy_network_2d_draws_finite_mps() -> None:
-    fig, ax = plot_tenpy_network_2d(_build_finite_mps(length=2))
+    fig, ax = plot_tenpy_network_2d(
+        _build_finite_mps(length=2),
+        config=PlotConfig(show_tensor_labels=True, show_index_labels=True),
+    )
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
@@ -140,7 +144,10 @@ def test_plot_tenpy_network_2d_draws_finite_mps() -> None:
 
 
 def test_plot_tenpy_network_2d_draws_infinite_mps() -> None:
-    fig, ax = plot_tenpy_network_2d(_build_infinite_mps(length=3))
+    fig, ax = plot_tenpy_network_2d(
+        _build_infinite_mps(length=3),
+        config=PlotConfig(show_tensor_labels=True, show_index_labels=True),
+    )
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure

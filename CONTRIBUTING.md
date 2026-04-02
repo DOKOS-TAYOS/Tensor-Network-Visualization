@@ -53,13 +53,42 @@ Add tests for new features or bug fixes. All tests must pass before opening a PR
 
 Automated tests do not open interactive Matplotlib windows. After **`pytest`** passes, sanity-check **layout and drawing** by running the examples below from the **repository root** (with **`pip install -e ".[dev]"`** or the matching optional extras). Run **one command at a time** (each line is a separate invocation).
 
+For a quick **batch** pass that mirrors the grouped commands below, use the Python runner from the
+repository root with the project venv:
+
+```powershell
+.\.venv\Scripts\python examples\run_all_examples.py --group default
+.\.venv\Scripts\python examples\run_all_examples.py --group contraction
+.\.venv\Scripts\python examples\run_all_examples.py --group hover --views 2d
+.\.venv\Scripts\python examples\run_all_examples.py --group all --fail-fast
+```
+
+On Linux/macOS, replace the interpreter with `python`:
+
+```bash
+python examples/run_all_examples.py --group default
+python examples/run_all_examples.py --group contraction
+python examples/run_all_examples.py --group hover --views 2d
+python examples/run_all_examples.py --group all --fail-fast
+```
+
+That runner saves PNGs under **`.tmp/run-all-examples/`** and appends **`--save`** plus
+**`--no-show`** to every demo call, so the demos automatically disable figure widgets for those
+exports. The **`hover`** batch group only checks that the CLI flag path still works; for real hover
+interaction you still need one of the manual interactive commands below.
+
 For **headless** runs use **`--no-show`** / **`--save`** where supported. **`--hover-labels`** only does something in a **real interactive** Matplotlib session (or **`%matplotlib widget`** in Jupyter).
+
+The example scripts intentionally start with the library hover default overridden to **off** unless
+you pass **`--hover-labels`**. In interactive runs you can still use the figure checkboxes from
+`show_tensor_network` to toggle **Hover**, **Tensor labels**, and **Edge labels** after the window
+opens.
 
 **`--contraction-scheme`** draws colored hull outlines per contraction step (no step-number labels). It combines with **`--save`** / **`--no-show`**. For **`engine="einsum"`**, steps come from trace metadata (cumulative physical lineage along the trace). For **`mps`**, **`mpo`**, and **`peps`** on TensorNetwork / TensorKrowch / Quimb, demos pass a **full** cumulative schedule via **`scheme_tensor_names`** in **`finalize_demo_plot_config`** (every site in the example, growing prefixes). **`cubic_peps_demo.py`** does the same using **`cubic_peps_tensor_names(lx, ly, lz)`**. Other keywords still use **`optional_backend_contraction_scheme_by_name`** where defined (e.g. **`disconnected`**, Quimb **`hyper`**, TeNPy explicit **`chain`** / **`hub`**). The flag is accepted everywhere, but **`mera_tree_demo`**, **`tn_tsp`**, native **`tenpy_demo`**, **`ladder`**, **`weird`**, etc. have no bundled schedule, so the overlay may not appear unless you pass a custom **`PlotConfig.contraction_scheme_by_name`**.
 
 Install **`tensor-network-visualization[einsum]`** (PyTorch) for **`einsum_demo.py`** and **`einsum_general.py`**. See **`examples/README.md`** for more flags (`--from-list`, `--compact`, grid sizes, etc.).
 
-**2D (default labels):**
+**2D (default demo settings):**
 
 ```bash
 python examples/tensorkrowch_demo.py disconnected 2d
@@ -169,7 +198,7 @@ python examples/cubic_peps_demo.py 2d --hover-labels
 python examples/tn_tsp.py -n 4 --view 2d --hover-labels
 ```
 
-**3D (default labels):**
+**3D (default demo settings):**
 
 ```bash
 python examples/tensorkrowch_demo.py disconnected 3d

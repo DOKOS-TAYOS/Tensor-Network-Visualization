@@ -5,6 +5,7 @@ matplotlib.use("Agg")
 import numpy as np
 import pytest
 
+from tensor_network_viz import PlotConfig
 from tensor_network_viz.quimb import plot_quimb_network_2d, plot_quimb_network_3d
 from tensor_network_viz.quimb.graph import _build_graph as _build_quimb_graph
 from tensor_network_viz.quimb.graph import _get_network_tensors as _get_quimb_tensors
@@ -74,9 +75,12 @@ def test_plot_quimb_network_2d_draws_simple_contraction() -> None:
     left = _make_tensor(inds=("bond",), tag="A")
     right = _make_tensor(inds=("bond",), tag="B")
 
-    fig, ax = plot_quimb_network_2d([left, right])
+    fig, ax = plot_quimb_network_2d(
+        [left, right],
+        config=PlotConfig(show_tensor_labels=True, show_index_labels=True),
+    )
 
-    labels = {text.get_text() for text in ax.texts}
+    labels = {text.get_text() for text in ax.texts if text.get_text()}
     assert fig is ax.figure
     assert labels >= {"A", "B", "bond"}
     from plotting_helpers import line_collection_segment_count
@@ -102,9 +106,12 @@ def test_plot_quimb_network_2d_draws_hypergraph_without_showing_virtual_hub() ->
     b = _make_tensor(inds=("bond",), tag="B")
     c = _make_tensor(inds=("bond",), tag="C")
 
-    fig, ax = plot_quimb_network_2d(qtn.TensorNetwork([a, b, c]))
+    fig, ax = plot_quimb_network_2d(
+        qtn.TensorNetwork([a, b, c]),
+        config=PlotConfig(show_tensor_labels=True, show_index_labels=True),
+    )
 
-    labels = {text.get_text() for text in ax.texts}
+    labels = {text.get_text() for text in ax.texts if text.get_text()}
     assert fig is ax.figure
     assert labels == {"A", "B", "C", "bond"}
     assert sum(1 for t in ax.texts if t.get_text() == "bond") == 6
@@ -116,9 +123,12 @@ def test_plot_quimb_network_3d_draws_hypergraph() -> None:
     b = _make_tensor(inds=("bond",), tag="B")
     c = _make_tensor(inds=("bond",), tag="C")
 
-    fig, ax = plot_quimb_network_3d(qtn.TensorNetwork([a, b, c]))
+    fig, ax = plot_quimb_network_3d(
+        qtn.TensorNetwork([a, b, c]),
+        config=PlotConfig(show_tensor_labels=True, show_index_labels=True),
+    )
 
-    labels = {text.get_text() for text in ax.texts}
+    labels = {text.get_text() for text in ax.texts if text.get_text()}
     assert fig is ax.figure
     assert ax.name == "3d"
     assert labels == {"A", "B", "C", "bond"}

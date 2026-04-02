@@ -15,6 +15,7 @@ from .edge_labels import _plot_contraction_index_captions
 from .fonts_and_scale import _DrawScaleParams
 from .labels_misc import _contraction_hover_label_text
 from .plotter import _PlotAdapter
+from .scene_state import _RenderedEdgeGeometry
 from .vectors import _bond_perpendicular_unoriented
 
 _ZORDER_FLAT_BOND_LINE: float = 1.0
@@ -57,6 +58,7 @@ def _draw_contraction_edge(
     ax: Any,
     zorder_line: float | None = None,
     zorder_label: float | None = None,
+    edge_geometry_sink: list[_RenderedEdgeGeometry] | None = None,
 ) -> None:
     left_id, right_id = edge.node_ids
     offset_index, edge_count = contraction_groups.offsets[id(edge)]
@@ -70,9 +72,48 @@ def _draw_contraction_edge(
     )
     zorder_curve = float(_ZORDER_FLAT_BOND_LINE) if zorder_line is None else float(zorder_line)
     plotter.plot_curve(curve, color=config.bond_edge_color, linewidth=p.lw, zorder=zorder_curve)
-    if not show_index_labels:
-        return
+    if edge_geometry_sink is not None:
+        edge_geometry_sink.append(
+            _RenderedEdgeGeometry(
+                edge=edge,
+                polyline=np.asarray(curve[:, :dimensions], dtype=float, order="C"),
+            )
+        )
+    _draw_contraction_edge_labels(
+        plotter=plotter,
+        curve=curve,
+        edge=edge,
+        graph=graph,
+        positions=positions,
+        left_id=left_id,
+        right_id=right_id,
+        show_index_labels=show_index_labels,
+        config=config,
+        p=p,
+        dimensions=dimensions,
+        ax=ax,
+        scale=scale,
+        zorder_label=zorder_label,
+    )
 
+
+def _draw_contraction_edge_labels(
+    *,
+    plotter: _PlotAdapter,
+    curve: np.ndarray,
+    edge: _EdgeData,
+    graph: _GraphData,
+    positions: NodePositions,
+    left_id: int,
+    right_id: int,
+    show_index_labels: bool,
+    config: PlotConfig,
+    p: _DrawScaleParams,
+    dimensions: Literal[2, 3],
+    ax: Any,
+    scale: float,
+    zorder_label: float | None = None,
+) -> None:
     hover_targets = getattr(plotter, "_hover_edge_targets", None)
     if config.hover_labels and hover_targets is not None:
         caption = _contraction_hover_label_text(edge, graph)
@@ -81,6 +122,7 @@ def _draw_contraction_edge(
                 hover_targets.append((np.asarray(curve[:, :2], dtype=float, order="C"), caption))
             else:
                 hover_targets.append((np.asarray(curve[:, :3], dtype=float, order="C"), caption))
+    if not show_index_labels:
         return
 
     _plot_contraction_index_captions(
@@ -103,4 +145,5 @@ def _draw_contraction_edge(
 __all__ = [
     "_curved_edge_points",
     "_draw_contraction_edge",
+    "_draw_contraction_edge_labels",
 ]

@@ -12,6 +12,7 @@ from .contraction_edges import _draw_contraction_edge
 from .dangling_self_edges import _draw_dangling_edge, _draw_self_loop_edge
 from .fonts_and_scale import _DrawScaleParams
 from .plotter import _PlotAdapter
+from .scene_state import _RenderedEdgeGeometry
 
 
 def _edge_stable_bond_sort_key(edge: _EdgeData) -> tuple[str, tuple[int, ...], int]:
@@ -35,6 +36,7 @@ def _draw_edges_2d_layered(
     scale: float,
     p: _DrawScaleParams,
     ax: Any,
+    edge_geometry_sink: list[_RenderedEdgeGeometry] | None = None,
 ) -> None:
     """Enqueue 2D edges with per-node z-order; caller must flush collections once."""
     by_node: dict[int, list[_EdgeData]] = defaultdict(list)
@@ -71,6 +73,7 @@ def _draw_edges_2d_layered(
                     scale=scale,
                     zorder_line=z_bond,
                     zorder_label=z_label,
+                    edge_geometry_sink=edge_geometry_sink,
                 )
             else:
                 _draw_contraction_edge(
@@ -87,6 +90,7 @@ def _draw_edges_2d_layered(
                     ax=ax,
                     zorder_line=z_bond,
                     zorder_label=z_label,
+                    edge_geometry_sink=edge_geometry_sink,
                 )
             drawn.add(id(edge))
         for edge in dangles:
@@ -104,6 +108,7 @@ def _draw_edges_2d_layered(
                 scale=scale,
                 zorder_line=z_dangling,
                 zorder_label=z_label,
+                edge_geometry_sink=edge_geometry_sink,
             )
             drawn.add(id(edge))
 
@@ -135,6 +140,7 @@ def _draw_edges_2d_layered(
             scale=scale,
             zorder_line=z_orphan_line,
             zorder_label=z_orphan_label,
+            edge_geometry_sink=edge_geometry_sink,
         )
         drawn.add(id(edge))
 
@@ -152,6 +158,7 @@ def _draw_edges(
     dimensions: Literal[2, 3],
     p: _DrawScaleParams,
     ax: Any,
+    edge_geometry_sink: list[_RenderedEdgeGeometry] | None = None,
 ) -> None:
     for edge in graph.edges:
         if edge.kind == "dangling":
@@ -167,6 +174,7 @@ def _draw_edges(
                 p=p,
                 ax=ax,
                 scale=scale,
+                edge_geometry_sink=edge_geometry_sink,
             )
         elif edge.kind == "self":
             _draw_self_loop_edge(
@@ -181,6 +189,7 @@ def _draw_edges(
                 p=p,
                 ax=ax,
                 scale=scale,
+                edge_geometry_sink=edge_geometry_sink,
             )
         else:
             _draw_contraction_edge(
@@ -195,6 +204,7 @@ def _draw_edges(
                 dimensions=dimensions,
                 p=p,
                 ax=ax,
+                edge_geometry_sink=edge_geometry_sink,
             )
 
 

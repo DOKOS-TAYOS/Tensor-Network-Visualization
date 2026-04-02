@@ -29,7 +29,6 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from ._typing import root_figure
 from .config import PlotConfig
-from .viewer import _show_figure
 
 VisualizerMode = Literal["cumulative", "highlight_current", "window"]
 _SchemeAvailability = Literal["not_computed", "computed", "unavailable"]
@@ -38,17 +37,20 @@ _SchemeAvailability = Literal["not_computed", "computed", "unavailable"]
 _TNV_CONTRACTION_SCHEME_PATCH_GID: Final[str] = "tnv_contraction_scheme"
 
 _TRANSPARENT: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
-_PLAYBACK_MAIN_BOTTOM: float = 0.24
-_PLAYBACK_SLIDER_BOUNDS: tuple[float, float, float, float] = (0.16, 0.065, 0.46, 0.028)
-_PLAYBACK_BUTTON_START_X: float = 0.66
+_PLAYBACK_MAIN_BOTTOM: float = 0.26
+_PLAYBACK_SLIDER_BOUNDS: tuple[float, float, float, float] = (0.25, 0.067, 0.33, 0.024)
+_PLAYBACK_BUTTON_START_X: float = 0.73
 _PLAYBACK_BUTTON_Y: float = 0.058
-_PLAYBACK_BUTTON_WIDTH: float = 0.058
-_PLAYBACK_BUTTON_HEIGHT: float = 0.04
+_PLAYBACK_BUTTON_WIDTH: float = 0.055
+_PLAYBACK_BUTTON_HEIGHT: float = 0.038
 _PLAYBACK_BUTTON_GAP: float = 0.012
-_PLAYBACK_RESET_WIDTH: float = 0.068
+_PLAYBACK_RESET_WIDTH: float = 0.065
 _CONTROLS_MAIN_BOTTOM: float = _PLAYBACK_MAIN_BOTTOM
-_CONTROLS_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.045, 0.17, 0.11)
+_CONTROLS_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.045, 0.13, 0.10)
 _SCHEME_LABELS: tuple[str, str, str] = ("Scheme", "Playback", "Cost hover")
+_CONTROL_LABEL_PROPS: dict[str, list[float]] = {"fontsize": [9.5]}
+_CONTROL_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
+_CONTROL_CHECK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
 
 
 @dataclass
@@ -174,6 +176,13 @@ def _set_axes_visible(ax: Axes, visible: bool) -> None:
         if callable(setter):
             with suppress(AttributeError, TypeError, ValueError):
                 setter(visible)
+
+
+def _set_widget_active(widget: Any, active: bool) -> None:
+    setter = getattr(widget, "set_active", None)
+    if callable(setter):
+        with suppress(AttributeError, TypeError, ValueError):
+            setter(bool(active))
 
 
 def _reserve_figure_bottom(fig: Figure, bottom: float) -> None:
@@ -519,15 +528,24 @@ class _ContractionViewerBase:
     def set_playback_widgets_visible(self, visible: bool) -> None:
         if not self._ui_built:
             return
-        widget_axes = [
-            self.slider.ax if self.slider is not None else None,
-            self._btn_play.ax if self._btn_play is not None else None,
-            self._btn_pause.ax if self._btn_pause is not None else None,
-            self._btn_reset.ax if self._btn_reset is not None else None,
+        widget_pairs = [
+            (self.slider, self.slider.ax) if self.slider is not None else None,
+            (self._btn_play, self._btn_play.ax) if self._btn_play is not None else None,
+            (self._btn_pause, self._btn_pause.ax) if self._btn_pause is not None else None,
+            (self._btn_reset, self._btn_reset.ax) if self._btn_reset is not None else None,
         ]
-        for widget_ax in widget_axes:
-            if widget_ax is None:
+        for pair in widget_pairs:
+            if pair is None:
                 continue
+            widget, widget_ax = pair
+            if not visible:
+                mouse_grabber = getattr(self.figure.canvas, "mouse_grabber", None)
+                if mouse_grabber is widget_ax:
+                    with suppress(AttributeError, RuntimeError, TypeError, ValueError):
+                        self.figure.canvas.release_mouse(widget_ax)
+                if self.slider is widget:
+                    self.slider.drag_active = False
+            _set_widget_active(widget, visible)
             _set_axes_visible(widget_ax, visible)
         self._playback_widgets_visible = visible
         self.figure.canvas.draw_idle()
@@ -549,6 +567,8 @@ class _ContractionViewerBase:
 
     def show(self) -> None:
         """Standalone demos; in-library use relies on ``show_tensor_network`` / ``_show_figure``."""
+        from .viewer import _show_figure
+
         self.build_ui()
         _show_figure(self.figure)
 
@@ -562,6 +582,8 @@ class _ContractionControls:
         fig: Figure,
         ax: Axes | Axes3D,
         config: PlotConfig,
+        build_controls: bool,
+        register_on_figure: bool,
         bundle_builder: Callable[[bool], _ContractionSchemeBundle],
         refresh_hover: Callable[
             [
@@ -574,6 +596,8 @@ class _ContractionControls:
         self.figure = fig
         self.ax = ax
         self.config = config
+        self._build_controls_ui = bool(build_controls)
+        self._register_on_figure = bool(register_on_figure)
         self._bundle_builder = bundle_builder
         self._refresh_hover_callback = refresh_hover
         self._bundle = _ContractionSchemeBundle()
@@ -586,9 +610,12 @@ class _ContractionControls:
         self._checkbuttons_cid: int | None = None
         self._callback_guard: bool = False
 
-        _reserve_figure_bottom(fig, _CONTROLS_MAIN_BOTTOM)
-        self._build_controls()
-        fig._tensor_network_viz_contraction_controls = self  # type: ignore[attr-defined]
+        if self._build_controls_ui:
+            _reserve_figure_bottom(fig, _CONTROLS_MAIN_BOTTOM)
+            self._build_controls()
+        if self._register_on_figure:
+            fig._tensor_network_viz_contraction_controls = self  # type: ignore[attr-defined]
+        ax._tensor_network_viz_contraction_controls = self  # type: ignore[attr-defined]
         if self.scheme_on:
             self._ensure_bundle(strict=self.playback_on, swallow_errors=False)
         self._apply_visual_state()
@@ -601,6 +628,9 @@ class _ContractionControls:
             controls_ax,
             list(_SCHEME_LABELS),
             [self.scheme_on, self.playback_on, self.cost_hover_on],
+            label_props=_CONTROL_LABEL_PROPS,
+            frame_props=_CONTROL_FRAME_PROPS,
+            check_props=_CONTROL_CHECK_PROPS,
         )
         self._checkbuttons_cid = self._checkbuttons.on_clicked(self._on_toggle)
 
@@ -624,22 +654,39 @@ class _ContractionControls:
     def _on_toggle(self, label: str) -> None:
         if self._callback_guard or self._checkbuttons is None:
             return
+        ui_scheme, ui_playback, ui_cost = [bool(v) for v in self._checkbuttons.get_status()]
+        self.set_states(
+            scheme_on=ui_scheme,
+            playback_on=ui_playback,
+            cost_hover_on=ui_cost,
+            source_label=label,
+        )
+
+    def set_states(
+        self,
+        *,
+        scheme_on: bool,
+        playback_on: bool,
+        cost_hover_on: bool,
+        source_label: str | None = None,
+    ) -> None:
         prev_scheme = self.scheme_on
         prev_playback = self.playback_on
         prev_cost = self.cost_hover_on
-        ui_scheme, ui_playback, ui_cost = [bool(v) for v in self._checkbuttons.get_status()]
 
-        new_scheme = ui_scheme
-        new_playback = ui_playback
-        new_cost = ui_cost
-        if label == "Playback" and new_playback:
-            new_scheme = True
-        if label == "Cost hover" and new_cost:
+        new_scheme = bool(scheme_on)
+        new_playback = bool(playback_on)
+        new_cost = bool(cost_hover_on)
+        if source_label is None:
+            if new_playback or new_cost:
+                new_scheme = True
+        elif (
+            (source_label == "Playback" and new_playback)
+            or (source_label == "Cost hover" and new_cost)
+        ):
             new_scheme = True
 
-        strict = label in ("Scheme", "Playback", "Cost hover") and (
-            new_scheme or new_playback or new_cost
-        )
+        strict = bool(new_scheme or new_playback or new_cost)
         if strict:
             bundle = self._ensure_bundle(strict=True, swallow_errors=True)
             if bundle is None:
@@ -690,9 +737,8 @@ class _ContractionControls:
         if self._bundle.artists_by_step is None or self._bundle.tooltips is None:
             return ()
         out: list[tuple[Artist, str]] = []
-        for artist, tooltip in zip(
-            self._bundle.artists_by_step, self._bundle.tooltips, strict=True
-        ):
+        for index, artist in enumerate(self._bundle.artists_by_step):
+            tooltip = self._bundle.tooltips[index] if index < len(self._bundle.tooltips) else None
             if artist is None or not tooltip:
                 continue
             out.append((artist, tooltip))
@@ -708,12 +754,13 @@ class _ContractionControls:
         ):
             return ()
         out: list[tuple[tuple[float, float, float, float, float, float], str, Artist]] = []
-        for artist, tooltip, bounds in zip(
-            self._bundle.artists_by_step,
-            self._bundle.tooltips,
-            self._bundle.scheme_aabb,
-            strict=True,
-        ):
+        for index, artist in enumerate(self._bundle.artists_by_step):
+            tooltip = self._bundle.tooltips[index] if index < len(self._bundle.tooltips) else None
+            bounds = (
+                self._bundle.scheme_aabb[index]
+                if index < len(self._bundle.scheme_aabb)
+                else None
+            )
             if artist is None or not tooltip or bounds is None:
                 continue
             out.append((bounds, tooltip, artist))

@@ -13,7 +13,12 @@ from matplotlib.patches import FancyBboxPatch, Rectangle
 from matplotlib.widgets import Button, CheckButtons, Slider
 
 from tensor_network_viz import ContractionViewer2D, PlotConfig, pair_tensor
-from tensor_network_viz._core.graph import _GraphData, _make_node
+from tensor_network_viz._core.graph import (
+    _EdgeEndpoint,
+    _GraphData,
+    _make_contraction_edge,
+    _make_node,
+)
 from tensor_network_viz._core.renderer import _plot_graph
 from tensor_network_viz.contraction_viewer import attach_playback_to_tensor_network_figure
 from tensor_network_viz.einsum_module.graph import _build_graph
@@ -437,6 +442,47 @@ def test_cost_hover_click_auto_enables_scheme_and_registers_hover() -> None:
         show_tensor_labels=False,
         show_index_labels=False,
         renderer_name="test_lazy_cost_hover",
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_contraction_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+
+    _click_checkbutton(controls._checkbuttons, 2)
+
+    assert controls.scheme_on
+    assert controls.cost_hover_on
+    assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+
+
+def test_cost_hover_with_manual_scheme_and_no_metrics_does_not_crash() -> None:
+    graph = _GraphData(
+        nodes={
+            0: _make_node("A", ("left",)),
+            1: _make_node("B", ("right",)),
+        },
+        edges=(
+            _make_contraction_edge(
+                _EdgeEndpoint(0, 0, "left"),
+                _EdgeEndpoint(1, 0, "right"),
+                name="bond",
+            ),
+        ),
+    )
+
+    fig, _ax = _plot_graph(
+        graph,
+        dimensions=2,
+        config=PlotConfig(
+            figsize=(4, 3),
+            show_contraction_scheme=False,
+            contraction_playback=False,
+            contraction_scheme_cost_hover=False,
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show_tensor_labels=False,
+        show_index_labels=False,
+        renderer_name="test_manual_scheme_cost_hover",
     )
 
     controls = getattr(fig, "_tensor_network_viz_contraction_controls", None)

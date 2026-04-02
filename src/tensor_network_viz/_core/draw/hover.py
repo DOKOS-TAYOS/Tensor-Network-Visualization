@@ -91,6 +91,11 @@ def _disconnect_tensor_network_hover(fig: FigureLike) -> None:
         if callable(setter):
             with suppress(AttributeError, TypeError, ValueError):
                 setter(False)
+        remover = getattr(ann, "remove", None)
+        if callable(remover):
+            with suppress(AttributeError, NotImplementedError, TypeError, ValueError):
+                remover()
+        resolved_figure._tensor_network_viz_hover_ann = None
         draw_idle = getattr(resolved_figure.canvas, "draw_idle", None)
         if callable(draw_idle):
             draw_idle()

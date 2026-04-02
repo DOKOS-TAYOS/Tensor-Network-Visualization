@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import replace
+from typing import Any, TypeAlias
 
+from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from mpl_toolkits.mplot3d.axes3d import Axes3D
 
-from tensor_network_viz import PlotConfig
+from tensor_network_viz import EngineName, PlotConfig, ViewName, show_tensor_network
+
+RenderedAxes: TypeAlias = Axes | Axes3D
 
 
 def add_hover_labels_argument(parser: argparse.ArgumentParser) -> None:
@@ -52,6 +57,28 @@ def showcase_plot_config() -> PlotConfig:
         line_width_2d=1.05,
         line_width_3d=0.95,
         layout_iterations=300,
+    )
+
+
+def demo_runs_headless(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "no_show", False) or getattr(args, "save", None) is not None)
+
+
+def render_demo_tensor_network(
+    network: Any,
+    *,
+    args: argparse.Namespace,
+    engine: EngineName,
+    view: ViewName,
+    config: PlotConfig,
+) -> tuple[Figure, RenderedAxes]:
+    return show_tensor_network(
+        network,
+        engine=engine,
+        view=view,
+        config=config,
+        interactive_controls=not demo_runs_headless(args),
+        show=False,
     )
 
 
@@ -102,9 +129,9 @@ def demo_plot_config(args: argparse.Namespace) -> PlotConfig:
     compact = getattr(args, "compact", False)
     scheme = getattr(args, "contraction_scheme", False)
     if compact:
-        cfg = PlotConfig(show_contraction_scheme=scheme)
+        cfg = PlotConfig(show_contraction_scheme=scheme, hover_labels=False)
     else:
-        cfg = replace(showcase_plot_config(), show_contraction_scheme=scheme)
+        cfg = replace(showcase_plot_config(), show_contraction_scheme=scheme, hover_labels=False)
     if hover:
         return replace(cfg, hover_labels=True)
     return cfg

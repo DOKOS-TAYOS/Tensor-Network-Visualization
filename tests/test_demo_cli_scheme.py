@@ -15,7 +15,9 @@ if str(_EXAMPLES) not in sys.path:
 from demo_cli import (  # noqa: E402
     cubic_peps_tensor_names,
     cumulative_prefix_contraction_scheme,
+    demo_runs_headless,
     finalize_demo_plot_config,
+    render_demo_tensor_network,
 )
 
 
@@ -55,6 +57,13 @@ def _demo_args(*, contraction_scheme: bool = False) -> argparse.Namespace:
     )
 
 
+def _render_args(*, no_show: bool = False, save: Path | None = None) -> argparse.Namespace:
+    return argparse.Namespace(
+        no_show=no_show,
+        save=save,
+    )
+
+
 def test_finalize_contraction_playback_true_for_einsum_scheme() -> None:
     cfg = finalize_demo_plot_config(
         _demo_args(contraction_scheme=True),
@@ -84,3 +93,63 @@ def test_finalize_contraction_playback_false_without_step_schedule() -> None:
     assert cfg.show_contraction_scheme is True
     assert cfg.contraction_scheme_by_name is None
     assert cfg.contraction_playback is False
+
+
+def test_demo_runs_headless_false_without_save_or_no_show() -> None:
+    assert demo_runs_headless(_render_args()) is False
+
+
+def test_demo_runs_headless_true_with_no_show() -> None:
+    assert demo_runs_headless(_render_args(no_show=True)) is True
+
+
+def test_demo_runs_headless_true_with_save() -> None:
+    assert demo_runs_headless(_render_args(save=Path("demo.png"))) is True
+
+
+def test_render_demo_tensor_network_disables_controls_for_headless_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def _fake_show_tensor_network(network: object, **kwargs: object) -> tuple[str, str]:
+        calls.append({"network": network, **kwargs})
+        return ("figure", "axes")
+
+    monkeypatch.setattr("demo_cli.show_tensor_network", _fake_show_tensor_network)
+
+    result = render_demo_tensor_network(
+        object(),
+        args=_render_args(no_show=True),
+        engine="tensornetwork",
+        view="2d",
+        config=finalize_demo_plot_config(_demo_args(), network="mps", engine="tensornetwork"),
+    )
+
+    assert result == ("figure", "axes")
+    assert calls[0]["interactive_controls"] is False
+    assert calls[0]["show"] is False
+
+
+def test_render_demo_tensor_network_keeps_controls_for_interactive_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def _fake_show_tensor_network(network: object, **kwargs: object) -> tuple[str, str]:
+        calls.append({"network": network, **kwargs})
+        return ("figure", "axes")
+
+    monkeypatch.setattr("demo_cli.show_tensor_network", _fake_show_tensor_network)
+
+    result = render_demo_tensor_network(
+        object(),
+        args=_render_args(),
+        engine="tensornetwork",
+        view="3d",
+        config=finalize_demo_plot_config(_demo_args(), network="mps", engine="tensornetwork"),
+    )
+
+    assert result == ("figure", "axes")
+    assert calls[0]["interactive_controls"] is True
+    assert calls[0]["show"] is False

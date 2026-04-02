@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from plotting_helpers import line_collection_segment_count
-from tensor_network_viz import einsum_trace_step, pair_tensor
+from tensor_network_viz import PlotConfig, einsum_trace_step, pair_tensor
 from tensor_network_viz._core.layout.body import _compute_layout
 from tensor_network_viz.einsum_module import (
     plot_einsum_network_2d,
@@ -194,7 +194,10 @@ def test_plot_einsum_network_2d_draws_reconstructed_graph() -> None:
         pair_tensor("r0", "A1", "r1", "a,apb->pb"),
     ]
 
-    fig, ax = plot_einsum_network_2d(trace)
+    fig, ax = plot_einsum_network_2d(
+        trace,
+        config=PlotConfig(show_tensor_labels=True, show_index_labels=True),
+    )
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure

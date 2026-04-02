@@ -11,6 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.backend_bases import MouseEvent
 from matplotlib.collections import LineCollection
 
 import tensor_network_viz._core.renderer as core_renderer_module
@@ -77,6 +78,20 @@ class DummyNetwork:
             self.nodes = nodes
         if leaf_nodes is not None:
             self.leaf_nodes = leaf_nodes
+
+
+def _widget_center_event(fig: matplotlib.figure.Figure, artist: object) -> MouseEvent:
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    bbox = artist.get_window_extent(renderer)  # type: ignore[attr-defined]
+    x = float((bbox.x0 + bbox.x1) / 2.0)
+    y = float((bbox.y0 + bbox.y1) / 2.0)
+    return MouseEvent("button_press_event", fig.canvas, x, y, button=1)
+
+
+def _click_checkbutton(checkbuttons: Any, index: int) -> None:
+    event = _widget_center_event(checkbuttons.ax.figure, checkbuttons.labels[index])
+    checkbuttons._clicked(event)
 
 
 def connect(
@@ -216,7 +231,10 @@ def test_plot_tensorkrowch_network_2d_draws_simple_contraction() -> None:
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
 
-    fig, ax = plot_tensorkrowch_network_2d(DummyNetwork(nodes=[left, right]))
+    fig, ax = plot_tensorkrowch_network_2d(
+        DummyNetwork(nodes=[left, right]),
+        config=PlotConfig(show_tensor_labels=True, show_index_labels=True),
+    )
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
@@ -229,7 +247,10 @@ def test_plot_tensorkrowch_network_2d_accepts_list_of_nodes() -> None:
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
 
-    fig, ax = plot_tensorkrowch_network_2d([left, right])
+    fig, ax = plot_tensorkrowch_network_2d(
+        [left, right],
+        config=PlotConfig(show_tensor_labels=True, show_index_labels=True),
+    )
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
@@ -242,7 +263,10 @@ def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
     right = DummyTensorNetworkNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
 
-    fig, ax = plot_tensornetwork_network_2d({left, right})
+    fig, ax = plot_tensornetwork_network_2d(
+        {left, right},
+        config=PlotConfig(show_tensor_labels=True, show_index_labels=True),
+    )
 
     labels = {text.get_text() for text in ax.texts}
     assert fig is ax.figure
@@ -343,6 +367,415 @@ def test_plot_tensornetwork_network_3d_hover_labels_skips_static_label_artists()
         assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
     finally:
         plt.close(fig)
+
+
+def test_plot_tensornetwork_network_2d_hover_labels_can_coexist_with_static_labels() -> None:
+    left = DummyTensorNetworkNode("A", ["left"])
+    right = DummyTensorNetworkNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = plot_tensornetwork_network_2d(
+        {left, right},
+        config=PlotConfig(
+            figsize=(4, 3),
+            hover_labels=True,
+            show_tensor_labels=True,
+            show_index_labels=True,
+        ),
+    )
+    try:
+        gids = {t.get_gid() for t in ax.texts if t.get_gid()}
+        assert _draw_common._TENSOR_LABEL_GID in gids
+        assert _draw_common._EDGE_INDEX_LABEL_GID in gids
+        assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+    finally:
+        plt.close(fig)
+
+
+def test_show_tensor_network_default_interactive_controls_start_in_2d() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert fig is ax.figure
+    assert ax.name != "3d"
+    assert controls.current_view == "2d"
+    assert controls.hover_on is True
+    assert controls.tensor_labels_on is False
+    assert controls.edge_labels_on is False
+
+
+def test_show_tensor_network_builds_3d_view_lazily_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz.tensorkrowch as tensorkrowch_module
+
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    calls = {"3d": 0}
+    original = tensorkrowch_module.plot_tensorkrowch_network_3d
+
+    def counting_plot(*args: Any, **kwargs: Any):
+        calls["3d"] += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(tensorkrowch_module, "plot_tensorkrowch_network_3d", counting_plot)
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert calls["3d"] == 0
+
+    controls.set_view("3d")
+    assert calls["3d"] == 1
+
+    controls.set_view("2d")
+    controls.set_view("3d")
+    assert calls["3d"] == 1
+
+
+def test_show_tensor_network_reuses_cached_axes_without_creating_empty_overlays() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._radio_ax is not None
+    assert controls._check_ax is not None
+
+    initial_axes_count = len(fig.axes)
+    cached_2d_ax = controls._view_caches["2d"].ax
+    assert cached_2d_ax is not None
+
+    controls.set_view("3d")
+    cached_3d_ax = controls._view_caches["3d"].ax
+    assert cached_3d_ax is not None
+    after_first_switch_count = len(fig.axes)
+    assert after_first_switch_count == initial_axes_count + 1
+    assert len(cached_3d_ax.lines) >= 1
+
+    controls.set_view("2d")
+
+    assert len(fig.axes) == after_first_switch_count
+    assert getattr(fig, "_tensor_network_viz_active_axes", None) is cached_2d_ax
+    assert line_collection_segment_count(cached_2d_ax) == 1
+
+    controls.set_view("3d")
+
+    assert len(fig.axes) == after_first_switch_count
+    assert getattr(fig, "_tensor_network_viz_active_axes", None) is cached_3d_ax
+    assert len(cached_3d_ax.lines) >= 1
+
+
+def test_show_tensor_network_reuses_tensor_and_edge_label_artists_when_toggled() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+
+    controls.set_tensor_labels_enabled(True)
+    controls.set_edge_labels_enabled(True)
+    tensor_label_ids_before = tuple(
+        id(text) for text in controls.current_scene.tensor_label_artists
+    )
+    edge_label_ids_before = tuple(id(text) for text in controls.current_scene.edge_label_artists)
+    assert tensor_label_ids_before
+    assert edge_label_ids_before
+    assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+
+    controls.set_tensor_labels_enabled(False)
+    controls.set_edge_labels_enabled(False)
+    controls.set_tensor_labels_enabled(True)
+    controls.set_edge_labels_enabled(True)
+
+    assert tensor_label_ids_before == tuple(
+        id(text) for text in controls.current_scene.tensor_label_artists
+    )
+    assert edge_label_ids_before == tuple(
+        id(text) for text in controls.current_scene.edge_label_artists
+    )
+
+
+def test_show_tensor_network_discards_stale_hover_annotations_when_switching_views() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    cached_2d_ax = controls._view_caches["2d"].ax
+    assert cached_2d_ax is not None
+
+    ann_2d = getattr(fig, "_tensor_network_viz_hover_ann", None)
+    assert ann_2d is not None
+    ann_2d.set_text("stale-2d")
+    ann_2d.set_visible(True)
+
+    controls.set_view("3d")
+    cached_3d_ax = controls._view_caches["3d"].ax
+    assert cached_3d_ax is not None
+    controls.set_view("2d")
+
+    texts_2d = {text.get_text() for text in cached_2d_ax.texts if text.get_visible()}
+    assert "stale-2d" not in texts_2d
+
+    ann_3d = getattr(fig, "_tensor_network_viz_hover_ann", None)
+    assert ann_3d is not None
+    ann_3d.set_text("stale-3d")
+    ann_3d.set_visible(True)
+
+    controls.set_view("3d")
+
+    texts_3d = {text.get_text() for text in cached_3d_ax.texts if text.get_visible()}
+    assert "stale-3d" not in texts_3d
+
+
+def test_show_tensor_network_places_view_menu_above_options_and_keeps_playback_clear() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            show_contraction_scheme=True,
+            contraction_playback=True,
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._radio_ax is not None
+    assert controls._check_ax is not None
+    scene_controls = controls.current_scene.contraction_controls
+    assert scene_controls is not None
+    assert scene_controls._viewer is not None
+    assert scene_controls._viewer.slider is not None
+    assert scene_controls._viewer._btn_play is not None
+
+    radio_bounds = controls._radio_ax.get_position().bounds
+    check_bounds = controls._check_ax.get_position().bounds
+    slider_bounds = scene_controls._viewer.slider.ax.get_position().bounds
+    play_bounds = scene_controls._viewer._btn_play.ax.get_position().bounds
+
+    radio_right = radio_bounds[0] + radio_bounds[2]
+    check_right = check_bounds[0] + check_bounds[2]
+    slider_right = slider_bounds[0] + slider_bounds[2]
+    check_top = check_bounds[1] + check_bounds[3]
+
+    assert radio_bounds[1] >= check_top
+    assert check_bounds[2] <= 0.19
+    assert radio_bounds[2] <= 0.10
+    assert slider_bounds[0] >= max(radio_right, check_right)
+    assert play_bounds[0] > slider_right
+
+
+def test_show_tensor_network_disables_hidden_view_slider_widgets_after_switch() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            show_contraction_scheme=True,
+            contraction_playback=True,
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    controls.set_view("3d")
+
+    current_scene_controls = controls.current_scene.contraction_controls
+    other_scene = controls._view_caches["2d"].scene
+    assert current_scene_controls is not None
+    assert current_scene_controls._viewer is not None
+    assert current_scene_controls._viewer.slider is not None
+    assert other_scene is not None
+    assert other_scene.contraction_controls is not None
+    assert other_scene.contraction_controls._viewer is not None
+    assert other_scene.contraction_controls._viewer.slider is not None
+
+    hidden_slider = other_scene.contraction_controls._viewer.slider
+    visible_slider = current_scene_controls._viewer.slider
+
+    assert hidden_slider.active is False
+    assert visible_slider.active is True
+
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    bbox = visible_slider.ax.get_window_extent(renderer)
+    x = float((bbox.x0 + bbox.x1) / 2.0)
+    y = float((bbox.y0 + bbox.y1) / 2.0)
+    press = MouseEvent("button_press_event", fig.canvas, x, y, button=1)
+    release = MouseEvent("button_release_event", fig.canvas, x, y, button=1)
+
+    fig.canvas.callbacks.process("button_press_event", press)
+    fig.canvas.callbacks.process("button_release_event", release)
+
+
+def test_show_tensor_network_scheme_checkbox_visual_state_matches_scheme_toggle() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+
+    _click_checkbutton(controls._checkbuttons, 3)
+
+    status_after_enable = tuple(bool(v) for v in controls._checkbuttons.get_status())
+    assert status_after_enable[3] is True
+    assert controls.scheme_on is True
+    assert controls.current_scene.contraction_controls is not None
+    assert controls.current_scene.contraction_controls.scheme_on is True
+
+    _click_checkbutton(controls._checkbuttons, 3)
+
+    status_after_disable = tuple(bool(v) for v in controls._checkbuttons.get_status())
+    assert status_after_disable[3] is False
+    assert controls.scheme_on is False
+    assert controls.current_scene.contraction_controls is not None
+    assert controls.current_scene.contraction_controls.scheme_on is False
+
+
+def test_show_tensor_network_playback_and_cost_hover_keep_visual_checkboxes_in_sync() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+
+    _click_checkbutton(controls._checkbuttons, 4)
+
+    status_after_playback = tuple(bool(v) for v in controls._checkbuttons.get_status())
+    assert status_after_playback[3] is True
+    assert status_after_playback[4] is True
+    assert controls.scheme_on is True
+    assert controls.playback_on is True
+
+    _click_checkbutton(controls._checkbuttons, 5)
+
+    status_after_cost_hover = tuple(bool(v) for v in controls._checkbuttons.get_status())
+    assert status_after_cost_hover[3] is True
+    assert status_after_cost_hover[5] is True
+    assert controls.scheme_on is True
+    assert controls.cost_hover_on is True
+
+
+def test_show_tensor_network_with_external_ax_hides_view_selector() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+    fig, ax = plt.subplots()
+
+    fig_out, ax_out = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        ax=ax,
+        show=False,
+    )
+
+    controls = getattr(fig_out, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert fig_out is fig
+    assert ax_out is ax
+    assert controls._radio is None
+
+
+def test_show_tensor_network_rejects_mismatched_external_ax_and_view() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+    _fig, ax = plt.subplots()
+
+    with pytest.raises(ValueError, match="Provided ax is 2d"):
+        show_tensor_network(
+            DummyNetwork(nodes=[left, right]),
+            engine="tensorkrowch",
+            ax=ax,
+            view="3d",
+            show=False,
+        )
+
+
+def test_show_tensor_network_can_disable_interactive_controls() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        interactive_controls=False,
+        show=False,
+    )
+
+    assert getattr(fig, "_tensor_network_viz_interactive_controls", None) is None
 
 
 def test_plot_tensorkrowch_network_2d_draws_tensor_nodes_as_circle_patches() -> None:

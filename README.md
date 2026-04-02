@@ -15,8 +15,9 @@ PyTorch/NumPy `einsum` tensor networks.
 Tensor network libraries use different object models and rarely share a single visualization path.
 This package **normalizes** each backend into one graph description, **lays out** nodes (chains,
 grids, trees, planar embeddings, or force-directed fallback), and **draws** with Matplotlib in
-**2D** (filled disks) or **3D** (lightweight octahedra). There is no custom GUI: you get standard
-`Figure` and `Axes` objects for saving, composing subplots, and further styling.
+**2D** (filled disks) or **3D** (lightweight octahedra). The interactive layer stays inside
+standard Matplotlib figures: `show_tensor_network` can add a small control panel, while the return
+value is still a normal `Figure` plus `Axes` object that you can save, embed, or restyle.
 
 **Audience:** Researchers who work with tensor networks and want consistent, publication-friendly
 diagrams across Quimb, TeNPy, TensorNetwork, TensorKrowch, or traced `einsum` contraction graphs.
@@ -99,13 +100,19 @@ Everything below maps to real parameters—there are no hidden mode switches.
 
 | Concept | Where | Meaning |
 |--------|--------|---------|
-| **View mode** | `show_tensor_network(..., view=...)` | `"2d"` — disk nodes; `"3d"` — octahedra. Same normalized graph. |
+| **View mode** | `show_tensor_network(..., view=...)` | Default is `"2d"`; `"3d"` is available from the same figure controls when widgets are enabled. |
 | **Engine mode** | `engine=...` | Adapter: `"tensorkrowch"`, `"tensornetwork"`, `"quimb"`, `"tenpy"`, `"einsum"`. Invalid → `ValueError`. |
 | **Display mode** | `show=True` / `False` | If `True`: Jupyter **kernel** uses `IPython.display.display(fig)`; otherwise `plt.show()`. If `False`: neither runs—use for `savefig` / batch. |
-| **Label policy** | `PlotConfig` + overrides | Defaults: `show_tensor_labels`, `show_index_labels`. Per-call: `show_tensor_network(..., show_tensor_labels=..., show_index_labels=...)`. |
-| **Hover labels** | `PlotConfig(hover_labels=True)` | Tensor names and bond labels appear on pointer hover (2D axes hit-test; 3D screen-space distance). Needs an **interactive** Matplotlib window. |
+| **Interactive controls** | `interactive_controls=True` | Figure-level Matplotlib widgets for view/hover/label toggles. Set `False` for clean static exports or headless batch rendering. |
+| **Label policy** | `PlotConfig` + overrides | Defaults: `show_tensor_labels=False`, `show_index_labels=False`. Per-call: `show_tensor_network(..., show_tensor_labels=..., show_index_labels=...)`. |
+| **Hover labels** | `PlotConfig(hover_labels=True)` | Default is `True`. Hover tooltips are independent from static labels, so both can stay enabled together in an interactive Matplotlib window. |
 | **Contraction scheme** | `PlotConfig(show_contraction_scheme=True)` | **Einsum:** cumulative per-step highlights from the trace. **Other engines:** set **`contraction_scheme_by_name`**. Compatible figures now add Matplotlib toggles for **Scheme**, **Playback**, and **Cost hover**; if you start with those flags off, the scheme bundle is computed lazily on first use. **2D:** rounded boxes (AABB + pad); colored borders (no fill by default). **3D:** wireframe box. See **`docs/guide.md`**. |
 | **Einsum workflow** | `engine="einsum"` | **Auto:** `EinsumTrace` + `einsum` (binary `pair_tensor`, unary/ternary+ `einsum_trace_step`; implicit `->`, `out=`). **Manual:** `pair_tensor` / `einsum_trace_step` (ellipsis needs `metadata` shapes). See **`examples/einsum_general.py`**. |
+
+`show_tensor_network` now creates figure-level Matplotlib widgets by default: a `2d/3d` selector on
+figures it creates itself, plus `Hover`, `Tensor labels`, and `Edge labels` checkboxes. If you
+pass an external `ax`, the same-view checkboxes stay available but the `2d/3d` selector is hidden.
+The default widget state is `Hover=True`, `Tensor labels=False`, `Edge labels=False`.
 
 ## Minimal examples
 
@@ -128,12 +135,15 @@ network = qtn.TensorNetwork(tensors)
 fig, ax = show_tensor_network(
     network,
     engine="quimb",
-    view="2d",
     config=PlotConfig(figsize=(8, 6)),
+    interactive_controls=False,
     show=False,
 )
 fig.savefig("network.png", bbox_inches="tight")
 ```
+
+Use `interactive_controls=False` when you want the saved figure without the Matplotlib control
+panel.
 
 ### Quimb 3D, hide index labels on this call only
 
@@ -154,12 +164,12 @@ fig, ax = show_tensor_network(
 fig, ax = show_tensor_network(
     network,
     engine="quimb",
-    view="2d",
     config=PlotConfig(figsize=(8, 6), hover_labels=True),
 )
 ```
 
-No effect for headless `show=False` without a GUI event loop; pair with an interactive backend
+Hover is independent from static labels, so you can also enable tensor or edge labels from the
+figure checkboxes without losing the hover tooltips. This still needs an interactive backend
 (e.g. `%matplotlib widget` in Jupyter).
 
 ### TeNPy finite MPS (sketch)
@@ -173,7 +183,6 @@ from tensor_network_viz import show_tensor_network, PlotConfig
 fig, ax = show_tensor_network(
     mps,
     engine="tenpy",
-    view="2d",
     config=PlotConfig(figsize=(8, 6)),
     show=False,
 )
@@ -186,24 +195,29 @@ show_tensor_network(
     network,
     *,
     engine: EngineName,
-    view: ViewName,
+    view: ViewName | None = None,
     config: PlotConfig | None = None,
+    ax: Axes | Axes3D | None = None,
     show_tensor_labels: bool | None = None,
     show_index_labels: bool | None = None,
+    interactive_controls: bool = True,
     show: bool = True,
 ) -> tuple[Figure, Axes | Axes3D]
 ```
 
 - **`network`:** Backend-native object or iterable (see [guide — supported inputs](docs/guide.md)).
 - **`engine`:** `"tensorkrowch"` \| `"tensornetwork"` \| `"quimb"` \| `"tenpy"` \| `"einsum"`.
-- **`view`:** `"2d"` \| `"3d"`.
+- **`view`:** `"2d"` \| `"3d"`; omitted means `"2d"` unless a 3D `ax` is passed.
 - **`config`:** Styling and layout; defaults to `PlotConfig()` if omitted.
+- **`ax`:** Optional Matplotlib axes. When present, rendering stays on that axes and the `2d/3d` selector is hidden.
 - **`show_tensor_labels` / `show_index_labels`:** If `None`, use values from `config`; else override for this call only.
+- **`interactive_controls`:** If `True`, attach the view/hover/label widgets when the figure supports them. Set `False` for a static render.
 - **`show`:** Whether to push the figure to the current UI (`display`/`show`).
 - **Returns:** `(fig, ax)` for titles, `savefig`, colorbars, or embedding in a subplot.
 
 Backend-specific shortcuts (same renderer core) accept **`ax=`** and **`seed=`** for subplots and
-reproducible layout; see the [guide](docs/guide.md).
+reproducible layout; they stay fixed-dimension helpers (`plot_*_network_2d` or `plot_*_network_3d`)
+and do not add the `2d/3d` selector. See the [guide](docs/guide.md).
 
 ### `PlotConfig` quick reference
 
@@ -221,8 +235,8 @@ Numeric fields with **`None`** use the corresponding `DEFAULT_*` on the class (s
 | `bond_edge_color` | `"#0369A1"` | Contraction edges. |
 | `dangling_edge_color` | `"#BE123C"` | Dangling (open) legs. |
 | `figsize` | `(8, 6)` | `inches`; `None` uses Matplotlib fallback `(14, 10)` when the renderer creates a new figure. |
-| `show_tensor_labels` | `True` | Draw tensor names on nodes. |
-| `show_index_labels` | `True` | Draw axis names on bonds / stubs. |
+| `show_tensor_labels` | `False` | Draw tensor names on nodes. |
+| `show_index_labels` | `False` | Draw axis names on bonds / stubs. |
 | `node_radius` | `None` | → `0.08` data units (scaled with layout; multiplies geometric radius). |
 | `stub_length` | `None` | → `0.16` (dangling stub length scale). |
 | `self_loop_radius` | `None` | → `0.2` (self-contraction loops). |
@@ -232,7 +246,7 @@ Numeric fields with **`None`** use the corresponding `DEFAULT_*` on the class (s
 | `positions` | `None` | `dict[int, tuple[float, ...]]` — custom positions keyed by **normalized node id** (`id` of adapter node); partial dicts get layout for missing ids. |
 | `validate_positions` | `False` | If `True`, warn on unknown keys or short coordinates vs `view`. |
 | `refine_tensor_labels` | `True` | Extra passes to fit tensor names inside the node marker (2D or 3D); set `False` for speed. |
-| `hover_labels` | `False` | Hide labels until hover (interactive only). |
+| `hover_labels` | `True` | Enable hover tooltips independently from static labels (interactive only). |
 
 Defaults `0.08`, `0.16`, `0.2`, `0.85`, `0.75`, `220` are also available as
 `PlotConfig.DEFAULT_NODE_RADIUS`, `DEFAULT_STUB_LENGTH`, `DEFAULT_SELF_LOOP_RADIUS`,
@@ -292,7 +306,7 @@ Runnable demos live under **`examples/`**. From the repo root with the right ext
 
 | Script | Purpose |
 |--------|---------|
-| `demo_cli.py` | Shared helpers (`--hover-labels` → `PlotConfig(hover_labels=True)`); imported by demos. |
+| `demo_cli.py` | Shared helpers; demos intentionally keep hover off by default unless `--hover-labels` is passed. |
 | `tensorkrowch_demo.py` | MPS, MPO, PEPS, weird, disconnected; `--from-list` subset. |
 | `tensornetwork_demo.py` | Same topologies with `tensornetwork.Node`. |
 | `mera_tree_demo.py` | Large MERA + binary TTN stress test. |
@@ -339,6 +353,7 @@ Expect `quimb_mps.png` and all tests passing.
 | `ValueError: Unsupported tensor network engine` / `view` | Use only listed `engine` / `view` literals (see above). |
 | Blank or double figure in Jupyter | Assign `fig, ax = show_tensor_network(...)`; avoid bare tuple as last line; try `%matplotlib widget` or inline. |
 | Hover labels do nothing | Requires interactive backend and `show` path that runs a GUI or widget event loop; not for `--no-show` PNG only. |
+| Saved figure includes the control panel | Pass `interactive_controls=False` when exporting a static figure from `show_tensor_network`. |
 | Huge graphs are slow | `PlotConfig(refine_tensor_labels=False)`; lower `layout_iterations` or pass `positions`. Force layout samples repulsion when node count is large (about 72+; see [guide](docs/guide.md#layout-and-draw-scale)). |
 | Einsum unary trace (`ii->i`) looks odd in 2D | Layout offsets the virtual hub off the tensor in 2D; try `view="3d"` or read [Einsum unary / same-tensor trace in 2D](docs/guide.md#toc-einsum-unary-2d-layout) in the guide. |
 

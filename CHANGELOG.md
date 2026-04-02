@@ -9,12 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Interactive visualization:** mode-switching controls (buttons) in the viewer UI.
+- **Interactive viewer controls:** `show_tensor_network` now opens with a Matplotlib control panel
+  by default: `2d/3d` selector (when the figure owns the axes), plus `Hover`, `Tensor labels`, and
+  `Edge labels` checkboxes.
+- **Lazy interactive caching:** normalized graph extraction is still shared, while 2D and 3D views
+  now keep their own cached geometry, label artists, hover payloads, and contraction-scheme state
+  so switching modes or toggles does not rebuild everything from scratch.
 
 ### Changed
 
-- **Refactor and performance:** substantial internal refactor spanning architecture and computational optimizations.
-- **Visualization:** minor polish and clarity improvements to the rendered network.
+- **Viewer defaults:** `show_tensor_network` now defaults to `view="2d"` (when omitted),
+  `PlotConfig(hover_labels=True, show_tensor_labels=False, show_index_labels=False)`, and exposes
+  `interactive_controls=False` for static exports or headless runs.
+- **Hover semantics:** hover is now independent from static tensor and edge labels, so both can be
+  enabled at the same time.
+- **Documentation:** refreshed `README.md`, `docs/guide.md`, `examples/README.md`, and
+  `CONTRIBUTING.md` to match the current API, example behavior, and interactive workflow.
 
 ## [1.4.2] — 2026-03-31
 

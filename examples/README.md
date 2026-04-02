@@ -27,10 +27,53 @@ python examples/quimb_demo.py mps 2d
 
 Swap `.[quimb]` for `.[tensorkrowch]`, `.[tensornetwork]`, `.[tenpy]`, `.[einsum]`, etc.
 
+## Batch runs
+
+To run the same grouped smoke checks documented in `CONTRIBUTING.md`, use
+[`run_all_examples.py`](run_all_examples.py) from the repository root.
+
+**Windows (PowerShell):**
+
+```powershell
+.\.venv\Scripts\python examples\run_all_examples.py --group default
+.\.venv\Scripts\python examples\run_all_examples.py --group contraction --views 2d
+.\.venv\Scripts\python examples\run_all_examples.py --group hover --list
+.\.venv\Scripts\python examples\run_all_examples.py --group all --fail-fast
+```
+
+**Linux / macOS:**
+
+```bash
+python examples/run_all_examples.py --group default
+python examples/run_all_examples.py --group contraction --views 2d
+python examples/run_all_examples.py --group hover --list
+python examples/run_all_examples.py --group all --fail-fast
+```
+
+The runner saves PNGs into `.tmp/run-all-examples/` by default and appends `--save` plus `--no-show`
+to every demo invocation. Because those runs are headless, the demos automatically disable
+`interactive_controls`, so the exported images do not include the widget panel. The `hover` batch
+group is still useful to check that the `--hover-labels` CLI path works, but it does **not** test
+real pointer interaction; for that you still need an interactive Matplotlib session.
+
 Shared helpers in [`demo_cli.py`](demo_cli.py): **`add_hover_labels_argument`** (`--hover-labels`),
-**`add_compact_argument`** (`--compact` = smaller figure, default line widths and auto layout iterations), **`apply_demo_caption`**
-for titles/subtitles, and **`demo_plot_config(args)`** which merges hover/compact into a **showcase**
-`PlotConfig` (slightly larger canvas, thicker lines, more layout iterations) unless `--compact` is set.
+**`add_compact_argument`** (`--compact` = smaller figure, default line widths and auto layout
+iterations), **`apply_demo_caption`** for titles/subtitles, **`demo_runs_headless(args)`** to detect
+export-only runs, and **`render_demo_tensor_network(...)`** which routes everything through
+`show_tensor_network(..., interactive_controls=...)`. `demo_plot_config(args)` still merges
+hover/compact into a **showcase** `PlotConfig` (slightly larger canvas, thicker lines, more layout
+iterations) unless `--compact` is set.
+
+All example scripts call `show_tensor_network`, so when you run them interactively you also get the
+figure-level Matplotlib controls from the library: `2d/3d`, `Hover`, `Tensor labels`, and
+`Edge labels`. The positional `2d` / `3d` CLI argument chooses the **initial** view only; you can
+still switch after the window opens.
+
+## Example defaults vs library defaults
+
+The library default is `PlotConfig(hover_labels=True)`, but the example scripts intentionally start
+with hover **off** unless you pass `--hover-labels`. That keeps screenshots and smoke checks more
+predictable while still letting you turn hover back on from the CLI or the figure checkbox.
 
 ## Interactive labels (`--hover-labels`)
 
@@ -44,6 +87,10 @@ Requires a **real interactive** Matplotlib window (or **`%matplotlib widget`** i
 flag has **no visible effect** with **`--no-show`** or PNG-only / **Agg** batch runs, because there
 is no pointer event loop.
 
+Static tensor and edge labels are still off at startup in the demos. In an interactive window you
+can turn them on from the `Tensor labels` and `Edge labels` checkboxes without rerunning the
+script.
+
 To use the same behavior directly in code:
 
 ```python
@@ -56,6 +103,9 @@ fig, ax = show_tensor_network(
     config=PlotConfig(figsize=(8, 6), hover_labels=True),
 )
 ```
+
+If you want a plain export from your own code without the widget panel, add
+`interactive_controls=False` to `show_tensor_network(...)`.
 
 ## `tensorkrowch_demo.py`
 
@@ -192,92 +242,14 @@ other scripts.
 
 ## Run-all cheat sheet
 
-For a **short pre-PR smoke checklist** (2D / 3D, default labels vs `--hover-labels`), see
-[CONTRIBUTING.md](../CONTRIBUTING.md#optional-manual-example-smoke-checks).
+For a **short pre-PR smoke checklist** (2D / 3D, default demo settings, hover flag coverage, and
+contraction overlays), see [CONTRIBUTING.md](../CONTRIBUTING.md#optional-manual-example-smoke-checks).
 
 ```bash
-python examples/tensorkrowch_demo.py mps 2d
-python examples/tensorkrowch_demo.py mps 3d
-python examples/tensorkrowch_demo.py mpo 2d
-python examples/tensorkrowch_demo.py mpo 3d
-python examples/tensorkrowch_demo.py peps 2d
-python examples/tensorkrowch_demo.py peps 3d
-python examples/tensorkrowch_demo.py weird 2d
-python examples/tensorkrowch_demo.py weird 3d
-python examples/tensorkrowch_demo.py disconnected 2d
-python examples/tensorkrowch_demo.py disconnected 3d
-python examples/tensorkrowch_demo.py mps 2d --from-list
-python examples/tensornetwork_demo.py mps 2d
-python examples/tensornetwork_demo.py mps 3d
-python examples/tensornetwork_demo.py mpo 2d
-python examples/tensornetwork_demo.py mpo 3d
-python examples/tensornetwork_demo.py peps 2d
-python examples/tensornetwork_demo.py peps 3d
-python examples/tensornetwork_demo.py weird 2d
-python examples/tensornetwork_demo.py weird 3d
-python examples/tensornetwork_demo.py disconnected 2d
-python examples/tensornetwork_demo.py disconnected 3d
-python examples/quimb_demo.py mps 2d
-python examples/quimb_demo.py mps 3d
-python examples/quimb_demo.py hyper 2d
-python examples/quimb_demo.py hyper 3d
-python examples/quimb_demo.py mpo 2d
-python examples/quimb_demo.py mpo 3d
-python examples/quimb_demo.py peps 2d
-python examples/quimb_demo.py peps 3d
-python examples/quimb_demo.py weird 2d
-python examples/quimb_demo.py weird 3d
-python examples/quimb_demo.py disconnected 2d
-python examples/quimb_demo.py disconnected 3d
-python examples/quimb_demo.py mps 2d --from-list
-python examples/tenpy_demo.py mps 2d
-python examples/tenpy_demo.py mps 3d
-python examples/tenpy_demo.py mpo 2d
-python examples/tenpy_demo.py mpo 3d
-python examples/tenpy_demo.py imps 2d
-python examples/tenpy_demo.py imps 3d
-python examples/tenpy_demo.py impo 2d
-python examples/tenpy_demo.py impo 3d
-python examples/tenpy_demo.py purification 2d
-python examples/tenpy_demo.py purification 3d
-python examples/tenpy_demo.py uniform 2d
-python examples/tenpy_demo.py uniform 3d
-python examples/tenpy_demo.py excitation 2d
-python examples/tenpy_demo.py excitation 3d
-python examples/tenpy_explicit_tn_demo.py chain 2d
-python examples/tenpy_explicit_tn_demo.py chain 3d
-python examples/tenpy_explicit_tn_demo.py hub 2d
-python examples/tenpy_explicit_tn_demo.py hub 3d
-python examples/einsum_demo.py mps 2d
-python examples/einsum_demo.py mps 3d
-python examples/einsum_demo.py mps 2d --mode manual
-python examples/einsum_demo.py mps 3d --mode manual
-python examples/einsum_demo.py peps 2d
-python examples/einsum_demo.py peps 3d
-python examples/einsum_demo.py disconnected 2d
-python examples/einsum_demo.py disconnected 3d
-python examples/einsum_general.py batch 2d
-python examples/einsum_general.py batch 3d
-python examples/einsum_general.py ellipsis 2d
-python examples/einsum_general.py ellipsis 3d
-python examples/einsum_general.py mps_short 2d
-python examples/einsum_general.py mps_short 3d
-python examples/einsum_general.py nway 2d
-python examples/einsum_general.py nway 3d
-python examples/einsum_general.py trace 2d
-python examples/einsum_general.py trace 3d
-python examples/einsum_general.py implicit_out 2d
-python examples/einsum_general.py implicit_out 3d
-python examples/einsum_general.py ternary 2d
-python examples/einsum_general.py ternary 3d
-python examples/einsum_general.py unary 2d
-python examples/einsum_general.py unary 3d
-python examples/tn_tsp.py -n 4 --view 2d
-python examples/tn_tsp.py -n 4 --view 3d
-python examples/tn_tsp.py -n 5 --view 2d
-python examples/tn_tsp.py -n 5 --view 3d
-python examples/tn_tsp.py -n 6 --view 2d
-python examples/tn_tsp.py -n 6 --view 3d
+python examples/run_all_examples.py --group default
+python examples/run_all_examples.py --group contraction
+python examples/run_all_examples.py --group hover --views 2d
+python examples/run_all_examples.py --group all --fail-fast
 ```
 
 ## See also

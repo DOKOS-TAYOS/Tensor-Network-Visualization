@@ -20,14 +20,15 @@ pytestmark = pytest.mark.filterwarnings("ignore:unit_cell_width.*:UserWarning")
 def test_plot_config_has_expected_defaults() -> None:
     config = PlotConfig()
     assert config.figsize == (8, 6)
-    assert config.show_tensor_labels is True
-    assert config.show_index_labels is True
+    assert config.show_tensor_labels is False
+    assert config.show_index_labels is False
     assert config.layout_iterations is None
     assert config.positions is None
     assert config.validate_positions is False
     assert config.refine_tensor_labels is True
     assert config.performance_mode == "auto"
     assert config.approximate_3d_tensor_disk_px is True
+    assert config.hover_labels is True
 
 
 def test_effective_layout_iterations_respects_explicit_setting() -> None:
@@ -99,6 +100,24 @@ def test_show_tensor_network_returns_fig_ax_with_show_false() -> None:
         engine="tensorkrowch",
         view="2d",
         config=PlotConfig(figsize=(6, 4)),
+        show=False,
+    )
+
+    assert fig is ax.figure
+    assert ax.name != "3d"
+
+
+def test_show_tensor_network_defaults_to_2d_when_view_is_omitted() -> None:
+    """Omitting ``view`` should start in 2D by default."""
+    tk = pytest.importorskip("tensorkrowch")
+    network = tk.TensorNetwork(name="test")
+    left = tk.Node(shape=(2, 2), axes_names=("a", "b"), name="L", network=network)
+    right = tk.Node(shape=(2, 2), axes_names=("b", "c"), name="R", network=network)
+    left["b"] ^ right["b"]
+
+    fig, ax = show_tensor_network(
+        network,
+        engine="tensorkrowch",
         show=False,
     )
 

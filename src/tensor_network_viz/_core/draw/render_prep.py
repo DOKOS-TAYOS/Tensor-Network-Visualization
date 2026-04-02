@@ -27,6 +27,7 @@ from .hover import (
 )
 from .labels_misc import _estimate_drawn_label_count
 from .plotter import _make_plotter, _node_edge_degrees, _PlotAdapter
+from .scene_state import _InteractiveSceneState, _RenderedEdgeGeometry
 from .tensors import (
     _draw_labels,
     _draw_nodes,
@@ -61,6 +62,7 @@ class _RenderPrepContext:
     plotter: _PlotAdapter
     hover_edge_targets: list[tuple[np.ndarray, str]] | None
     tensor_hover_by_node: dict[int, tuple[str, float]] | None
+    edge_geometry_sink: list[_RenderedEdgeGeometry]
     viewport_coords: np.ndarray
     view_margin: float
 
@@ -140,10 +142,8 @@ def _prepare_render_context(
     hover_edge_targets: list[tuple[np.ndarray, str]] | None = None
     tensor_hover_by_node: dict[int, tuple[str, float]] | None = None
     if config.hover_labels:
-        if show_index_labels:
-            hover_edge_targets = []
-        if show_tensor_labels:
-            tensor_hover_by_node = {}
+        hover_edge_targets = []
+        tensor_hover_by_node = {}
     plotter = _make_plotter(
         ax,
         dimensions=dimensions,
@@ -172,6 +172,7 @@ def _prepare_render_context(
         plotter=plotter,
         hover_edge_targets=hover_edge_targets,
         tensor_hover_by_node=tensor_hover_by_node,
+        edge_geometry_sink=[],
         viewport_coords=pre_coords,
         view_margin=view_margin,
     )
@@ -207,6 +208,7 @@ def _draw_edges_nodes_and_labels(
             scale=context.scale,
             p=context.params,
             ax=ax,
+            edge_geometry_sink=context.edge_geometry_sink,
         )
         flush = getattr(context.plotter, "flush_edge_collections", None)
         if callable(flush):
@@ -243,6 +245,7 @@ def _draw_edges_nodes_and_labels(
             dimensions=context.dimensions,
             p=context.params,
             ax=ax,
+            edge_geometry_sink=context.edge_geometry_sink,
         )
         flush = getattr(context.plotter, "flush_edge_collections", None)
         if callable(flush):
@@ -309,7 +312,7 @@ def _register_render_hover(
             ax=cast(Axes, ax),
             figure=ax.figure,
             dimensions=2,
-            node_patch_coll=node_collection if show_tensor_labels else None,
+            node_patch_coll=node_collection if context.tensor_hover_by_node is not None else None,
             visible_node_ids=tuple(visible_ids),
             tensor_hover=dict(context.tensor_hover_by_node or {}),
             edge_hover=tuple(context.hover_edge_targets or ()),
@@ -357,9 +360,46 @@ def _apply_render_hover_state(
     )
 
 
+def _node_patch_collection_from_plotter(context: _RenderPrepContext) -> Any:
+    node_colls = getattr(context.plotter, "_node_disk_collections", None)
+    if isinstance(node_colls, list) and len(node_colls) > 0:
+        return node_colls
+    return getattr(context.plotter, "_node_disk_collection", None)
+
+
+def _build_interactive_scene_state(
+    *,
+    ax: Any,
+    context: _RenderPrepContext,
+    directions: AxisDirections,
+    scale: float,
+    hover_state: _RenderHoverState,
+    tensor_disk_radius_px_3d: float | None,
+) -> _InteractiveSceneState:
+    return _InteractiveSceneState(
+        ax=ax,
+        graph=context.graph,
+        positions=context.positions,
+        directions=directions,
+        config=context.config,
+        dimensions=context.dimensions,
+        scale=scale,
+        params=context.params,
+        contraction_groups=context.contraction_groups,
+        plotter=context.plotter,
+        visible_node_ids=tuple(context.graph_state.visible_order),
+        node_patch_coll=_node_patch_collection_from_plotter(context),
+        edge_geometry=tuple(context.edge_geometry_sink),
+        hover_state=hover_state,
+        tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
+    )
+
+
 __all__ = [
     "_apply_render_hover_state",
+    "_build_interactive_scene_state",
     "_graph_render_state",
+    "_node_patch_collection_from_plotter",
     "_should_refine_tensor_labels",
     "_prepare_render_context",
     "_draw_edges_nodes_and_labels",

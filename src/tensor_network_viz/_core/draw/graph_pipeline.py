@@ -20,6 +20,7 @@ from .contraction_scheme import (
 from .disk_metrics import _tensor_disk_radius_px_3d_nominal
 from .render_prep import (
     _apply_render_hover_state,
+    _build_interactive_scene_state,
     _draw_edges_nodes_and_labels,
     _prepare_render_context,
     _register_render_hover,
@@ -132,8 +133,16 @@ def _build_contraction_scheme_bundle(
 
     metrics_row = _contraction_step_metrics_for_draw(graph, scheme_steps_eff)
     tooltips = tuple(
-        format_contraction_step_tooltip(metric) if metric is not None else None
-        for metric in (metrics_row or ())
+        (
+            format_contraction_step_tooltip(metrics_row[index])
+            if (
+                metrics_row is not None
+                and index < len(metrics_row)
+                and metrics_row[index] is not None
+            )
+            else None
+        )
+        for index in range(len(per_step_artists))
     )
     viewer = attach_playback_to_tensor_network_figure(
         artists_by_step=per_step_artists,
@@ -176,6 +185,9 @@ def _draw_graph(
     scale: float = 1.0,
     contraction_groups: _ContractionGroups | None = None,
     bond_curve_pad: float | None = None,
+    build_contraction_controls: bool = True,
+    contraction_controls_build_ui: bool = True,
+    register_contraction_controls_on_figure: bool = True,
 ) -> None:
     context = _prepare_render_context(
         ax=ax,
@@ -218,29 +230,44 @@ def _draw_graph(
         scheme_aabbs_3d=[],
         tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
     )
+    controls: _ContractionControls | None = None
+    if _has_contraction_scheme_source(graph, config) and build_contraction_controls:
+        controls = _ContractionControls(
+            fig=ax.figure,
+            ax=ax,
+            config=config,
+            build_controls=contraction_controls_build_ui,
+            register_on_figure=register_contraction_controls_on_figure,
+            bundle_builder=lambda strict: _build_contraction_scheme_bundle(
+                ax=ax,
+                graph=graph,
+                positions=positions,
+                config=config,
+                dimensions=dimensions,
+                scale=scale,
+                context=context,
+                strict=strict,
+            ),
+            refresh_hover=lambda scheme_patches_2d, scheme_aabbs_3d: _apply_render_hover_state(
+                hover_state,
+                scheme_patches_2d=scheme_patches_2d,
+                scheme_aabbs_3d=scheme_aabbs_3d,
+            ),
+        )
+    scene = _build_interactive_scene_state(
+        ax=ax,
+        context=context,
+        directions=directions,
+        scale=scale,
+        hover_state=hover_state,
+        tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
+    )
+    scene.contraction_controls = controls
+    ax._tensor_network_viz_scene = scene  # type: ignore[attr-defined]
+    if controls is not None:
+        ax._tensor_network_viz_contraction_controls = controls  # type: ignore[attr-defined]
     if not _has_contraction_scheme_source(graph, config):
         return
-
-    _ContractionControls(
-        fig=ax.figure,
-        ax=ax,
-        config=config,
-        bundle_builder=lambda strict: _build_contraction_scheme_bundle(
-            ax=ax,
-            graph=graph,
-            positions=positions,
-            config=config,
-            dimensions=dimensions,
-            scale=scale,
-            context=context,
-            strict=strict,
-        ),
-        refresh_hover=lambda scheme_patches_2d, scheme_aabbs_3d: _apply_render_hover_state(
-            hover_state,
-            scheme_patches_2d=scheme_patches_2d,
-            scheme_aabbs_3d=scheme_aabbs_3d,
-        ),
-    )
 
 
 __all__ = ["_draw_graph"]

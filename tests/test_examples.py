@@ -453,3 +453,96 @@ def test_einsum_peps_demo_saves_figure_without_showing(
     module.main()
 
     assert output_path.exists()
+
+
+def test_run_all_examples_default_2d_matches_contributing_matrix() -> None:
+    module = _load_example_module(
+        Path("examples/run_all_examples.py"),
+        "run_all_examples_default_test",
+    )
+
+    commands = module.select_example_commands(group="default", views="2d")
+    argvs = {command.argv for command in commands}
+
+    assert ("examples/tensorkrowch_demo.py", "disconnected", "2d") in argvs
+    assert ("examples/quimb_demo.py", "ladder", "2d") in argvs
+    assert ("examples/mera_tree_demo.py", "2d") in argvs
+    assert ("examples/cubic_peps_demo.py", "2d") in argvs
+    assert ("examples/tn_tsp.py", "-n", "4", "--view", "2d") in argvs
+
+
+def test_run_all_examples_hover_group_appends_hover_flag() -> None:
+    module = _load_example_module(
+        Path("examples/run_all_examples.py"),
+        "run_all_examples_hover_test",
+    )
+
+    commands = module.select_example_commands(group="hover", views="3d")
+
+    assert commands
+    assert all("--hover-labels" in command.argv for command in commands)
+    assert ("examples/tn_tsp.py", "-n", "5", "--view", "3d", "--hover-labels") in {
+        command.argv for command in commands
+    }
+
+
+def test_run_all_examples_builds_headless_subprocess_command(tmp_path: Path) -> None:
+    module = _load_example_module(
+        Path("examples/run_all_examples.py"),
+        "run_all_examples_build_test",
+    )
+
+    command = module.ExampleCommand(
+        slug="tn_tsp_2d",
+        argv=("examples/tn_tsp.py", "-n", "4", "--view", "2d"),
+    )
+    subprocess_command = module.build_subprocess_command(
+        command,
+        output_dir=tmp_path,
+        python_executable="python-test",
+    )
+
+    assert subprocess_command[:6] == [
+        "python-test",
+        "examples/tn_tsp.py",
+        "-n",
+        "4",
+        "--view",
+        "2d",
+    ]
+    assert "--no-show" in subprocess_command
+    assert "--save" in subprocess_command
+    assert str(tmp_path / "tn_tsp_2d.png") in subprocess_command
+
+
+def test_run_all_examples_list_mode_prints_without_running_subprocesses(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_example_module(
+        Path("examples/run_all_examples.py"),
+        "run_all_examples_list_test",
+    )
+
+    def _fail_run(*args: object, **kwargs: object) -> None:
+        raise AssertionError("subprocess.run should not be called in --list mode")
+
+    monkeypatch.setattr(module.subprocess, "run", _fail_run)
+
+    exit_code = module.main(["--group", "contraction", "--views", "2d", "--list"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "examples/tensorkrowch_demo.py mps 2d --contraction-scheme" in captured.out
+
+
+def test_run_all_examples_all_group_contains_more_commands_than_default() -> None:
+    module = _load_example_module(
+        Path("examples/run_all_examples.py"),
+        "run_all_examples_all_test",
+    )
+
+    default_commands = module.select_example_commands(group="default", views="both")
+    all_commands = module.select_example_commands(group="all", views="both")
+
+    assert len(all_commands) > len(default_commands)
