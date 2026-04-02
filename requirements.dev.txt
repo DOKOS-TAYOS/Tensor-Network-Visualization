@@ -1,1 +1,14 @@
--e ".[dev]"
+-e .
+build==1.4.2
+ipython==9.12.0
+matplotlib==3.10.8
+networkx==3.6.1
+numpy==2.4.3
+physics-tenpy==1.1.0
+pyright==1.1.408
+pytest==9.0.2
+quimb==1.13.0
+ruff==0.15.8
+tensorkrowch==1.1.6
+tensornetwork==0.4.6
+tomli==2.0.1 ; python_version < "3.11"

@@ -27,11 +27,11 @@ For larger changes, open an issue first to discuss scope and approach.
   ```
   - Windows: `.\.venv\Scripts\Activate.ps1` or `.\.venv\Scripts\activate.bat`
   - Linux/macOS: `source .venv/bin/activate`
-3. Install in editable mode with dev dependencies:
+3. Install the pinned development requirements:
   ```bash
-   pip install -e ".[dev]"
+   pip install -r requirements.dev.txt
   ```
-   This installs pytest, ruff, pyright, and the optional backends (tensorkrowch, tensornetwork, quimb, physics-tenpy) required for the full test suite.
+   This installs the pinned local toolchain plus the optional backends required for the full test suite.
 
 ## Running Tests
 
@@ -51,7 +51,7 @@ Add tests for new features or bug fixes. All tests must pass before opening a PR
 
 ### Optional: manual example smoke checks
 
-Automated tests do not open interactive Matplotlib windows. After **`pytest`** passes, sanity-check **layout and drawing** by running the examples below from the **repository root** (with **`pip install -e ".[dev]"`** or the matching optional extras). Run **one command at a time** (each line is a separate invocation).
+Automated tests do not open interactive Matplotlib windows. After **`pytest`** passes, sanity-check **layout and drawing** by running the examples below from the **repository root** (with **`pip install -r requirements.dev.txt`** or the matching optional extras). Run **one command at a time** (each line is a separate invocation).
 
 For a quick **batch** pass that mirrors the grouped commands below, use the Python runner from the
 repository root with the project venv:
@@ -109,6 +109,20 @@ pyright
 
 Configuration lives in `pyproject.toml` (ruff) and `pyrightconfig.json` (pyright).
 
+**One-command verification** from the project venv:
+
+Windows:
+
+```powershell
+.\.venv\Scripts\python scripts\verify.py
+```
+
+Linux/macOS (with the venv activated):
+
+```bash
+python scripts/verify.py
+```
+
 ## Code Style and Expectations
 
 - **Line length:** 100 characters
@@ -116,7 +130,7 @@ Configuration lives in `pyproject.toml` (ruff) and `pyrightconfig.json` (pyright
 - **Ruff rules:** E, F, I, B, UP, C4, SIM
 - **Typing:** Use type hints on public functions and modules; the codebase is `py.typed`
 
-Run `ruff check .` and `ruff format .` before committing. Fix any pyright errors.
+Run `python scripts/verify.py` before committing. If you prefer, you can still run `ruff`, `pyright`, and `pytest` individually.
 
 ## Opening Useful Issues
 

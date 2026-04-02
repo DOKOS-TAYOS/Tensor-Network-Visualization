@@ -48,7 +48,7 @@ _PLAYBACK_RESET_WIDTH: float = 0.065
 _CONTROLS_MAIN_BOTTOM: float = _PLAYBACK_MAIN_BOTTOM
 _CONTROLS_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.045, 0.13, 0.10)
 _SCHEME_LABELS: tuple[str, str, str] = ("Scheme", "Playback", "Cost hover")
-_CONTROL_LABEL_PROPS: dict[str, list[float]] = {"fontsize": [9.5]}
+_CONTROL_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _CONTROL_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _CONTROL_CHECK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
 
@@ -652,7 +652,7 @@ class _ContractionControls:
         self._set_checkbox_state(1, self.playback_on)
         self._set_checkbox_state(2, self.cost_hover_on)
 
-    def _on_toggle(self, label: str) -> None:
+    def _on_toggle(self, label: str | None) -> None:
         if self._callback_guard or self._checkbuttons is None:
             return
         ui_scheme, ui_playback, ui_cost = [bool(v) for v in self._checkbuttons.get_status()]

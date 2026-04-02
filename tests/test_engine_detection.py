@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import matplotlib
@@ -59,7 +60,7 @@ def connect(
 
 
 @pytest.fixture(autouse=True)
-def close_figures() -> None:
+def close_figures() -> Iterator[None]:
     yield
     plt.close("all")
 

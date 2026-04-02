@@ -23,6 +23,9 @@ class _Plot2D(Protocol):
         show_tensor_labels: bool | None = None,
         show_index_labels: bool | None = None,
         seed: int = 0,
+        _build_contraction_controls: bool = True,
+        _contraction_controls_build_ui: bool = True,
+        _register_contraction_controls_on_figure: bool = True,
     ) -> tuple[Figure, Axes]: ...
 
 
@@ -36,6 +39,9 @@ class _Plot3D(Protocol):
         show_tensor_labels: bool | None = None,
         show_index_labels: bool | None = None,
         seed: int = 0,
+        _build_contraction_controls: bool = True,
+        _contraction_controls_build_ui: bool = True,
+        _register_contraction_controls_on_figure: bool = True,
     ) -> tuple[Figure, Axes3D]: ...
 
 

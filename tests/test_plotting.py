@@ -11,7 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from matplotlib.backend_bases import MouseEvent
+from matplotlib.backend_bases import MouseButton, MouseEvent
 from matplotlib.collections import LineCollection
 
 import tensor_network_viz._core.renderer as core_renderer_module
@@ -84,9 +84,9 @@ def _widget_center_event(fig: matplotlib.figure.Figure, artist: object) -> Mouse
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     bbox = artist.get_window_extent(renderer)  # type: ignore[attr-defined]
-    x = float((bbox.x0 + bbox.x1) / 2.0)
-    y = float((bbox.y0 + bbox.y1) / 2.0)
-    return MouseEvent("button_press_event", fig.canvas, x, y, button=1)
+    x = int(round((bbox.x0 + bbox.x1) / 2.0))
+    y = int(round((bbox.y0 + bbox.y1) / 2.0))
+    return MouseEvent("button_press_event", fig.canvas, x, y, button=MouseButton.LEFT)
 
 
 def _click_checkbutton(checkbuttons: Any, index: int) -> None:
@@ -648,10 +648,10 @@ def test_show_tensor_network_disables_hidden_view_slider_widgets_after_switch() 
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     bbox = visible_slider.ax.get_window_extent(renderer)
-    x = float((bbox.x0 + bbox.x1) / 2.0)
-    y = float((bbox.y0 + bbox.y1) / 2.0)
-    press = MouseEvent("button_press_event", fig.canvas, x, y, button=1)
-    release = MouseEvent("button_release_event", fig.canvas, x, y, button=1)
+    x = int(round((bbox.x0 + bbox.x1) / 2.0))
+    y = int(round((bbox.y0 + bbox.y1) / 2.0))
+    press = MouseEvent("button_press_event", fig.canvas, x, y, button=MouseButton.LEFT)
+    release = MouseEvent("button_release_event", fig.canvas, x, y, button=MouseButton.LEFT)
 
     fig.canvas.callbacks.process("button_press_event", press)
     fig.canvas.callbacks.process("button_release_event", release)

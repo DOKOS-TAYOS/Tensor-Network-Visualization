@@ -388,9 +388,18 @@ Expect `quimb_mps.png` and all tests passing.
 ## Development
 
 ```bash
-python -m pip install -e ".[dev]"
-ruff check .
-ruff format .
-pyright
-pytest
+python -m venv .venv
+python -m pip install -r requirements.dev.txt
+```
+
+Windows:
+
+```powershell
+.\.venv\Scripts\python scripts\verify.py
+```
+
+Linux/macOS (with the venv activated):
+
+```bash
+python scripts/verify.py
 ```

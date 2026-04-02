@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,8 @@ version = "1.4.2"
 description = "Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced PyTorch/NumPy einsum tensor networks."
 authors = [{ name = "Alejandro Mata Ali" }]
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 keywords = ["tensor-network", "visualization", "pytorch", "numpy", "tensorkrowch", "tensornetwork", "quimb", "tenpy", "einsum", "quantum-inspired", "matplotlib"]
 dependencies = [
@@ -17,7 +18,6 @@ dependencies = [
     "numpy",
 ]
 classifiers = [
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Scientific/Engineering :: Visualization",
@@ -31,7 +31,18 @@ Repository = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization"
 Issues = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/issues"
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "pyright", "ipython", "tomli>=2.0.1", "tensorkrowch", "tensornetwork", "quimb", "physics-tenpy"]
+dev = [
+    "build",
+    "pytest",
+    "ruff",
+    "pyright",
+    "ipython",
+    "tomli>=2.0.1; python_version < '3.11'",
+    "tensorkrowch",
+    "tensornetwork",
+    "quimb",
+    "physics-tenpy",
+]
 jupyter = ["ipympl>=0.9.0", "ipywidgets>=8.0", "jupyterlab>=4.0", "notebook>=7.0"]
 tensorkrowch = ["tensorkrowch"]
 tensornetwork = ["tensornetwork"]

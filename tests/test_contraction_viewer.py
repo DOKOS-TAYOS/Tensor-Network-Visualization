@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import matplotlib
 
 matplotlib.use("Agg")
 
 import numpy as np
 import pytest
-from matplotlib.backend_bases import MouseEvent
+from matplotlib.backend_bases import MouseButton, MouseEvent
 from matplotlib.patches import FancyBboxPatch, Rectangle
 from matplotlib.widgets import Button, CheckButtons, Slider
 
@@ -28,9 +30,9 @@ def _widget_center_event(fig: matplotlib.figure.Figure, artist: object) -> Mouse
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     bbox = artist.get_window_extent(renderer)  # type: ignore[attr-defined]
-    x = float((bbox.x0 + bbox.x1) / 2.0)
-    y = float((bbox.y0 + bbox.y1) / 2.0)
-    return MouseEvent("button_press_event", fig.canvas, x, y, button=1)
+    x = int(round((bbox.x0 + bbox.x1) / 2.0))
+    y = int(round((bbox.y0 + bbox.y1) / 2.0))
+    return MouseEvent("button_press_event", fig.canvas, x, y, button=MouseButton.LEFT)
 
 
 def _click_checkbutton(checkbuttons: CheckButtons, index: int) -> None:
@@ -43,10 +45,10 @@ def _click_button(button: Button) -> None:
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     bbox = button.ax.get_window_extent(renderer)
-    x = float((bbox.x0 + bbox.x1) / 2.0)
-    y = float((bbox.y0 + bbox.y1) / 2.0)
-    press = MouseEvent("button_press_event", fig.canvas, x, y, button=1)
-    release = MouseEvent("button_release_event", fig.canvas, x, y, button=1)
+    x = int(round((bbox.x0 + bbox.x1) / 2.0))
+    y = int(round((bbox.y0 + bbox.y1) / 2.0))
+    press = MouseEvent("button_press_event", fig.canvas, x, y, button=MouseButton.LEFT)
+    release = MouseEvent("button_release_event", fig.canvas, x, y, button=MouseButton.LEFT)
     button._click(press)
     button._release(release)
 
@@ -284,15 +286,15 @@ def test_plot_graph_lazy_scheme_controls_render_without_initial_bundle(
     original_draw = graph_pipeline._draw_contraction_scheme
     original_metrics = graph_pipeline._contraction_step_metrics_for_draw
 
-    def counting_steps(*args: object, **kwargs: object) -> object:
+    def counting_steps(*args: Any, **kwargs: Any) -> Any:
         calls.append("steps")
         return original_steps(*args, **kwargs)
 
-    def counting_draw(*args: object, **kwargs: object) -> object:
+    def counting_draw(*args: Any, **kwargs: Any) -> Any:
         calls.append("draw")
         return original_draw(*args, **kwargs)
 
-    def counting_metrics(*args: object, **kwargs: object) -> object:
+    def counting_metrics(*args: Any, **kwargs: Any) -> Any:
         calls.append("metrics")
         return original_metrics(*args, **kwargs)
 
@@ -337,15 +339,15 @@ def test_lazy_scheme_click_builds_bundle_once_and_playback_reuses_it(
     original_draw = graph_pipeline._draw_contraction_scheme
     original_metrics = graph_pipeline._contraction_step_metrics_for_draw
 
-    def counting_steps(*args: object, **kwargs: object) -> object:
+    def counting_steps(*args: Any, **kwargs: Any) -> Any:
         counts["steps"] += 1
         return original_steps(*args, **kwargs)
 
-    def counting_draw(*args: object, **kwargs: object) -> object:
+    def counting_draw(*args: Any, **kwargs: Any) -> Any:
         counts["draw"] += 1
         return original_draw(*args, **kwargs)
 
-    def counting_metrics(*args: object, **kwargs: object) -> object:
+    def counting_metrics(*args: Any, **kwargs: Any) -> Any:
         counts["metrics"] += 1
         return original_metrics(*args, **kwargs)
 
@@ -509,7 +511,7 @@ def test_scheme_reenable_restores_recorded_playback_without_recompute(
     calls = {"steps": 0}
     original_steps = graph_pipeline._effective_contraction_steps
 
-    def counting_steps(*args: object, **kwargs: object) -> object:
+    def counting_steps(*args: Any, **kwargs: Any) -> Any:
         calls["steps"] += 1
         return original_steps(*args, **kwargs)
 

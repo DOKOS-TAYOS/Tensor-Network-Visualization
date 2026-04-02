@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any, cast
 
@@ -36,6 +37,7 @@ from ._core.draw.render_prep import (
 from ._core.draw.scene_state import _InteractiveSceneState
 from ._core.draw.tensors import _draw_labels, _refit_tensor_labels_to_disks
 from ._registry import _get_plotters
+from ._typing import root_figure
 from .config import EngineName, PlotConfig, ViewName
 
 RenderedAxes = Axes | Axes3D
@@ -46,7 +48,7 @@ _SCHEME_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 
 _INTERACTIVE_CONTROLS_BOTTOM: float = 0.26
 _BASE_TOGGLE_LABELS: tuple[str, str, str] = ("Hover", "Tensor labels", "Edge labels")
 _SCHEME_TOGGLE_LABELS: tuple[str, str, str] = ("Scheme", "Playback", "Cost hover")
-_INTERACTIVE_LABEL_PROPS: dict[str, list[float]] = {"fontsize": [9.5]}
+_INTERACTIVE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _INTERACTIVE_CHECK_MARK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
 _INTERACTIVE_RADIO_PROPS: dict[str, float] = {"s": 38.0, "linewidth": 0.9}
@@ -405,7 +407,7 @@ class _InteractiveTensorFigureController:
     ) -> tuple[Figure, RenderedAxes]:
         cache = self._view_caches[view]
         if cache.ax is not None and cache.scene is not None:
-            return cache.ax.figure, cache.ax
+            return root_figure(cache.ax.figure), cache.ax
         fig, rendered_ax = self._render_view(view, ax=ax)
         scene = _scene_from_axes(rendered_ax)
         cache.ax = rendered_ax
@@ -472,12 +474,12 @@ class _InteractiveTensorFigureController:
         finally:
             self._callback_guard = False
 
-    def _on_view_clicked(self, label: str) -> None:
-        if self._callback_guard:
+    def _on_view_clicked(self, label: str | None) -> None:
+        if self._callback_guard or label is None:
             return
         self.set_view(cast(ViewName, label))
 
-    def _on_toggle_clicked(self, _label: str) -> None:
+    def _on_toggle_clicked(self, _label: str | None) -> None:
         if self._callback_guard or self._checkbuttons is None:
             return
         status = [bool(value) for value in self._checkbuttons.get_status()]

@@ -75,6 +75,20 @@ def test_tmp_path_allows_file_writes(tmp_path: Path) -> None:
     assert output_path.read_bytes() == b"ok"
 
 
+def test_dev_requirements_pin_verification_tools_and_use_editable_install() -> None:
+    content = Path("requirements.dev.txt").read_text(encoding="utf-8")
+
+    assert "-e ." in content
+    assert '".[dev]"' not in content
+    assert "pytest==" in content
+    assert "ruff==" in content
+    assert "pyright==" in content
+    assert "build==" in content
+    assert "matplotlib==" in content
+    assert "networkx==" in content
+    assert "numpy==" in content
+
+
 def test_layout_module_compatibility_exports_survive_internal_split() -> None:
     layout_body = importlib.import_module("tensor_network_viz._core.layout.body")
     draw_edges = importlib.import_module("tensor_network_viz._core.draw.edges")
