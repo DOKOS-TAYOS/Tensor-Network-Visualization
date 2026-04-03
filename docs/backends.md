@@ -2,6 +2,29 @@
 
 This page collects copy-paste examples for each supported backend.
 
+## Tensor Inspection
+
+### Base-dependency example with `EinsumTrace`
+
+```python
+import numpy as np
+from tensor_network_viz import EinsumTrace, TensorElementsConfig, einsum, show_tensor_elements
+
+trace = EinsumTrace()
+a = np.arange(6, dtype=float).reshape(2, 3)
+x = np.array([1.0, -0.5, 0.25], dtype=float)
+trace.bind("A", a)
+trace.bind("x", x)
+r0 = einsum("ab,b->a", a, x, trace=trace, backend="numpy")
+
+fig, ax = show_tensor_elements(
+    trace,
+    config=TensorElementsConfig(mode="auto"),
+    show=False,
+)
+fig.savefig("tensor-elements.png", bbox_inches="tight")
+```
+
 ## TensorKrowch
 
 ```python
@@ -144,6 +167,13 @@ fig, ax = show_tensor_network(
 ## Notes
 
 - You can often omit `engine=...` because `show_tensor_network` auto-detects the backend.
+- `show_tensor_elements(...)` auto-detects the same backends, but it needs real tensor values.
 - Use `show_controls=False` when you want a clean saved figure with no embedded buttons/sliders.
 - Use `PlotConfig(...)` for labels, hover behavior, contraction schemes, and performance-related
   rendering choices.
+- Use `TensorElementsConfig(...)` for tensor-view mode, matrix grouping, and downsampling choices.
+- When multiple tensors are present, `show_tensor_elements(...)` shows one tensor at a time and
+  adds a slider to move between them. Interactive views are grouped into `basic`, `complex`, and
+  `diagnostic`, with diagnostic modes `sign` and `signed_value`.
+- TensorKrowch shape-only nodes and manual `pair_tensor(...)` lists are intentionally unsupported
+  for `show_tensor_elements(...)` because they do not expose inspectable tensor values.

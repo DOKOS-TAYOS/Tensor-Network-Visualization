@@ -28,6 +28,23 @@ The launcher is useful for three common cases:
 2. save a clean static export,
 3. inspect contraction schemes and playback behavior.
 
+## Tensor Inspection Example
+
+There is also a small standalone example for `show_tensor_elements(...)` that only uses base
+dependencies:
+
+```bash
+python examples/tensor_elements_demo.py
+python examples/tensor_elements_demo.py --demo batch
+python examples/tensor_elements_demo.py --demo structured
+```
+
+It uses fairly large NumPy tensors, keeps one tensor active at a time with a slider, and exposes a
+grouped control flow: `basic` (`elements`, `magnitude`, `distribution`, `data`), `complex`
+(`real`, `imag`, `phase`), and `diagnostic` (`sign`, `signed_value`). The optional demos are: `matvec`
+(default, traced matrix-vector), `batch` (traced batched matmul), and `structured` (3D complex
+tensor plus a lattice as TensorNetwork-style nodes).
+
 ## Common Workflows
 
 ### Open an interactive figure
@@ -44,7 +61,8 @@ python examples/run_demo.py tenpy chain --view 2d --save tenpy_chain.png --no-sh
 python examples/run_demo.py quimb mps --view 2d --save quimb_mps.png --no-show
 ```
 
-When `--no-show` or `--save` is used, the launcher calls `show_tensor_network(..., show_controls=False, show=False)` internally.
+When `--no-show` or `--save` is used, the launcher calls
+`show_tensor_network(..., show_controls=False, show=False)` internally.
 
 ### Visualize contraction schemes
 

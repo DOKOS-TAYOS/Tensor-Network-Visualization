@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     from .contraction_viewer import ContractionViewer2D, ContractionViewer3D
     from .einsum_module.trace import EinsumTrace, einsum, einsum_trace_step, pair_tensor
     from .tenpy.explicit import TenPyTensorNetwork, make_tenpy_tensor_network
+    from .tensor_elements import show_tensor_elements
+    from .tensor_elements_config import TensorElementsConfig
     from .viewer import show_tensor_network
 else:
 
@@ -37,12 +39,33 @@ else:
             show=show,
         )
 
+    def show_tensor_elements(
+        data: Any,
+        *,
+        engine: EngineName | None = None,
+        config: "TensorElementsConfig | None" = None,
+        ax: Axes | None = None,
+        show_controls: bool = True,
+        show: bool = True,
+    ) -> tuple[Figure, Axes]:
+        from .tensor_elements import show_tensor_elements as _show_tensor_elements
+
+        return _show_tensor_elements(
+            data,
+            engine=engine,
+            config=config,
+            ax=ax,
+            show_controls=show_controls,
+            show=show,
+        )
+
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "ContractionViewer2D": (".contraction_viewer", "ContractionViewer2D"),
     "ContractionViewer3D": (".contraction_viewer", "ContractionViewer3D"),
     "EinsumTrace": (".einsum_module.trace", "EinsumTrace"),
     "TenPyTensorNetwork": (".tenpy.explicit", "TenPyTensorNetwork"),
+    "TensorElementsConfig": (".tensor_elements_config", "TensorElementsConfig"),
     "einsum": (".einsum_module.trace", "einsum"),
     "einsum_trace_step": (".einsum_module.trace", "einsum_trace_step"),
     "make_tenpy_tensor_network": (".tenpy.explicit", "make_tenpy_tensor_network"),
@@ -69,6 +92,7 @@ __all__ = [
     "EngineName",
     "EinsumTrace",
     "PlotConfig",
+    "TensorElementsConfig",
     "TenPyTensorNetwork",
     "ViewName",
     "clear_tensor_network_graph_cache",
@@ -76,5 +100,6 @@ __all__ = [
     "einsum_trace_step",
     "make_tenpy_tensor_network",
     "pair_tensor",
+    "show_tensor_elements",
     "show_tensor_network",
 ]

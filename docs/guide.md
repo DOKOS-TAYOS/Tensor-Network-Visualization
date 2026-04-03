@@ -4,15 +4,18 @@ This guide is organized around user workflows instead of internal implementation
 
 ## Core Idea
 
-The public API is intentionally split into two responsibilities:
+The public API is intentionally split into four responsibilities:
 
 - `show_tensor_network(...)` manages the figure lifecycle.
-- `PlotConfig(...)` manages how the network should look and behave.
+- `show_tensor_elements(...)` manages tensor element inspection figures.
+- `PlotConfig(...)` manages how tensor networks should look and behave.
+- `TensorElementsConfig(...)` manages how tensor inspection should look and behave.
 
 If you remember only one thing, remember this:
 
 ```python
 fig, ax = show_tensor_network(network, config=PlotConfig(...))
+fig, ax = show_tensor_elements(data, config=TensorElementsConfig(...))
 ```
 
 ## Public API
@@ -30,6 +33,18 @@ show_tensor_network(
 )
 ```
 
+```python
+show_tensor_elements(
+    data,
+    *,
+    engine=None,
+    config=None,
+    ax=None,
+    show_controls=True,
+    show=True,
+)
+```
+
 ### Parameters
 
 | Parameter | Meaning |
@@ -40,6 +55,15 @@ show_tensor_network(
 | `config` | A `PlotConfig` instance. If omitted, `PlotConfig()` is used. |
 | `ax` | Existing Matplotlib axis to draw into. |
 | `show_controls` | If `True`, add the figure control panel. If `False`, render only the network. |
+| `show` | If `True`, display the figure immediately. If `False`, just return `(fig, ax)`. |
+
+| Parameter | Meaning |
+| --- | --- |
+| `data` | Supported tensor object, tensor collection, backend-native tensor container, or `EinsumTrace` with live tensors. |
+| `engine` | Optional explicit backend: `"tensorkrowch"`, `"tensornetwork"`, `"quimb"`, `"tenpy"`, or `"einsum"`. |
+| `config` | A `TensorElementsConfig` instance. If omitted, `TensorElementsConfig()` is used. |
+| `ax` | Existing Matplotlib axis for single-tensor rendering only. |
+| `show_controls` | If `True`, add compact `group + mode` controls and, when several tensors are present, a tensor slider. |
 | `show` | If `True`, display the figure immediately. If `False`, just return `(fig, ax)`. |
 
 ## `PlotConfig` in Practice
@@ -98,6 +122,39 @@ config = PlotConfig(
 )
 ```
 
+## `TensorElementsConfig` in Practice
+
+`TensorElementsConfig` is where tensor inspection behavior lives.
+
+### Useful defaults
+
+```python
+config = TensorElementsConfig(
+    mode="auto",
+    max_matrix_shape=(256, 256),
+    histogram_bins=40,
+)
+```
+
+When multiple tensors are present, `show_tensor_elements(...)` keeps one tensor visible at a time.
+The slider changes the active tensor. The controls are grouped so you first choose a family of
+views and then the concrete mode inside that family:
+
+- `basic`: `elements`, `magnitude`, `distribution`, `data`
+- `complex`: `real`, `imag`, `phase`
+- `diagnostic`: `sign`, `signed_value`
+
+### Rank > 2 tensors
+
+```python
+config = TensorElementsConfig(
+    row_axes=("left", "phys"),
+    col_axes=("right",),
+)
+```
+
+If you omit `row_axes` / `col_axes`, the library chooses a deterministic balanced partition.
+
 ## Common Workflows
 
 ### 1. Explore interactively
@@ -148,31 +205,50 @@ show_tensor_network(
 
 If you pass `ax`, the plot is rendered into that axis and the figure is not recreated.
 
+### 4. Inspect tensor values
+
+```python
+fig, ax = show_tensor_elements(
+    trace,
+    config=TensorElementsConfig(mode="auto"),
+    show=False,
+)
+fig.savefig("tensor-elements.png", bbox_inches="tight")
+```
+
+Use this when you want one tensor at a time, quick switches between grouped views, and a `data`
+summary without leaving the same figure.
+
 ## Supported Inputs
 
 ### TensorKrowch
 
 - `TensorNetwork`
 - iterable of TensorKrowch nodes
+- single TensorKrowch node with a materialized `tensor`
 
 ### TensorNetwork
 
 - iterable of `tensornetwork.Node`
+- single `tensornetwork.Node`
 
 ### Quimb
 
 - `quimb.tensor.TensorNetwork`
 - iterable of `quimb.tensor.Tensor`
+- single `quimb.tensor.Tensor`
 
 ### TeNPy
 
 - common native MPS/MPO-style objects
 - explicit `TenPyTensorNetwork`
+- single TeNPy tensor exposing `to_ndarray()` and `get_leg_labels()`
 
 ### `einsum`
 
 - `EinsumTrace`
-- ordered iterable of `pair_tensor(...)` / `einsum_trace_step(...)`
+- manual `pair_tensor(...)` / `einsum_trace_step(...)` lists are only valid for
+  `show_tensor_network(...)`, not for `show_tensor_elements(...)`
 
 More detailed copy-paste examples: [backends.md](backends.md)
 
@@ -184,6 +260,11 @@ Every path returns ordinary Matplotlib objects.
 fig, ax = show_tensor_network(network, show=False)
 ax.set_title("My tensor network")
 fig.savefig("out.png", bbox_inches="tight")
+```
+
+```python
+fig, ax = show_tensor_elements(data, show=False)
+fig.savefig("tensor-elements.png", bbox_inches="tight")
 ```
 
 That means you can:
@@ -219,6 +300,16 @@ config = PlotConfig(
 ```
 
 Then consider passing `positions` if you already know the layout you want.
+
+### Tensor inspection fails for TensorKrowch shape-only nodes
+
+`show_tensor_elements(...)` needs real tensor values. Nodes with only `shape` metadata are not
+enough.
+
+### Tensor inspection fails for manual `pair_tensor(...)` lists
+
+Manual trace steps describe contractions, not tensor values. Use `EinsumTrace` and keep the traced
+tensors alive until you render them.
 
 ### Jupyter shows duplicate output
 

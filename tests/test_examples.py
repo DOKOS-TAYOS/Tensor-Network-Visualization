@@ -329,3 +329,14 @@ def test_run_all_examples_all_group_contains_more_commands_than_default() -> Non
     all_commands = module.select_example_commands(group="all", views="both")
 
     assert len(all_commands) > len(default_commands)
+
+
+def test_tensor_elements_demo_saves_figure_without_showing(tmp_path: Path) -> None:
+    module = _load_example_module(Path("examples/tensor_elements_demo.py"), "tensor_elements_demo")
+    output_path = tmp_path / "tensor-elements-demo.png"
+
+    fig, _ = module.main(show=False)
+    fig.savefig(output_path, bbox_inches="tight")
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0

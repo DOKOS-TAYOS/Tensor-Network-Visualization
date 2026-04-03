@@ -18,6 +18,8 @@ import tensor_network_viz
 
 heavy = {
     "tensor_network_viz.contraction_viewer": "contraction_viewer",
+    "tensor_network_viz.tensor_elements": "tensor_elements",
+    "tensor_network_viz.tensor_elements_config": "tensor_elements_config",
     "tensor_network_viz.einsum_module.trace": "einsum_trace",
     "tensor_network_viz.tenpy.explicit": "tenpy_explicit",
     "tensor_network_viz.viewer": "viewer",
@@ -36,5 +38,6 @@ print(json.dumps(loaded, sort_keys=True))
 
     assert result.stdout.strip() == (
         '{"contraction_viewer": false, "einsum_trace": false, '
-        '"tenpy_explicit": false, "viewer": false}'
+        '"tenpy_explicit": false, "tensor_elements": false, '
+        '"tensor_elements_config": false, "viewer": false}'
     )

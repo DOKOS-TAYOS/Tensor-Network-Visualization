@@ -12,11 +12,12 @@ PyTorch/NumPy `einsum` tensor networks.
 
 ## What This Library Does
 
-Tensor-network libraries expose very different Python objects, but this package gives them one
-common plotting entry point:
+Tensor-network libraries expose very different Python objects, but this package gives them two
+aligned plotting entry points:
 
 ```python
 fig, ax = show_tensor_network(...)
+fig, ax = show_tensor_elements(...)
 ```
 
 Internally, the library:
@@ -101,6 +102,35 @@ show_tensor_network(
 - `show_controls`: if `False`, the figure is saved/rendered without the embedded control panel.
 - `show`: if `False`, nothing is displayed automatically.
 
+### `show_tensor_elements`
+
+Use `show_tensor_elements` to inspect tensor values:
+
+```python
+show_tensor_elements(
+    data,
+    *,
+    engine=None,
+    config=None,
+    ax=None,
+    show_controls=True,
+    show=True,
+)
+```
+
+When several tensors are present, the figure keeps one tensor active at a time and uses a slider
+to switch between them. The interactive controls are grouped: `basic` (`elements`, `magnitude`,
+`distribution`, `data`), `complex` (`real`, `imag`, `phase`), and `diagnostic` (`sign`,
+`signed_value`).
+
+- `data`: single tensor, iterable of tensors, supported backend-native tensor collections, or an
+  `EinsumTrace` with live tensor values.
+- `engine`: optional backend override. If omitted, the library auto-detects it.
+- `config`: tensor-inspection behavior lives here.
+- `ax`: render a single tensor into an existing Matplotlib axis.
+- `show_controls`: if `True`, add compact Matplotlib `group + mode` controls and, when needed, a tensor slider.
+- `show`: if `False`, nothing is displayed automatically.
+
 ### `PlotConfig`
 
 Use `PlotConfig` for visual behavior:
@@ -127,6 +157,31 @@ This is where you configure:
 - custom positions,
 - label-refinement policy,
 - static/export-oriented rendering choices.
+
+### `TensorElementsConfig`
+
+Use `TensorElementsConfig` for tensor inspection behavior:
+
+```python
+from tensor_network_viz import TensorElementsConfig
+
+config = TensorElementsConfig(
+    mode="auto",
+    max_matrix_shape=(256, 256),
+    histogram_bins=40,
+)
+```
+
+This is where you configure:
+
+- the active inspection mode,
+- row/column axis grouping for rank > 2 tensors,
+- heatmap downsampling limits,
+- histogram sampling and bin count.
+
+If you want to start in a specific grouped view, pass `mode="real"`, `mode="imag"`,
+`mode="phase"`, `mode="sign"`, or `mode="signed_value"` directly in
+`TensorElementsConfig(...)`.
 
 ## Most Common Workflows
 
@@ -160,6 +215,19 @@ fig, ax = show_tensor_network(
     show=False,
 )
 fig.savefig("network.png", bbox_inches="tight")
+```
+
+### Inspect tensor values
+
+```python
+from tensor_network_viz import TensorElementsConfig, show_tensor_elements
+
+fig, ax = show_tensor_elements(
+    trace,
+    config=TensorElementsConfig(mode="auto"),
+    show=False,
+)
+fig.savefig("tensor-elements.png", bbox_inches="tight")
 ```
 
 ### Faster render for large graphs
@@ -302,6 +370,12 @@ python examples/run_demo.py einsum ellipsis --view 3d --scheme
 
 More details: [examples/README.md](examples/README.md)
 
+There is also a minimal inspection example that only uses base dependencies:
+
+```bash
+python examples/tensor_elements_demo.py
+```
+
 ## Troubleshooting
 
 | Symptom | What to try |
@@ -310,6 +384,8 @@ More details: [examples/README.md](examples/README.md)
 | Hover tooltips do nothing | Use an interactive Matplotlib backend; hover is not useful for PNG-only runs. |
 | Big graphs are slow | Set `tensor_label_refinement="never"`, reduce `layout_iterations`, or pass `positions`. |
 | `Unsupported tensor network engine` | Install the matching extra or pass the correct backend object. |
+| `show_tensor_elements(...)` fails on TensorKrowch nodes | Materialize the node tensors first; shape-only nodes do not expose element values. |
+| `show_tensor_elements(...)` fails on manual `pair_tensor(...)` lists | Use an `EinsumTrace` with live tensors instead; manual trace steps only describe contractions. |
 | Blank / duplicate Jupyter figure | Assign `fig, ax = show_tensor_network(...)` instead of leaving the tuple as the last line. |
 
 ## Documentation Map
@@ -317,6 +393,8 @@ More details: [examples/README.md](examples/README.md)
 - [docs/guide.md](docs/guide.md): workflow-oriented guide to the public API.
 - [docs/backends.md](docs/backends.md): copy-paste backend-specific examples.
 - [examples/README.md](examples/README.md): demo launcher and batch-render usage.
+- [examples/tensor_elements_demo.py](examples/tensor_elements_demo.py): minimal tensor inspection
+  example.
 - [CHANGELOG.md](CHANGELOG.md): release notes.
 
 ## Development
