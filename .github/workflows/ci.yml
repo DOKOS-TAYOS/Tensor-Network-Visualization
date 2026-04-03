@@ -67,11 +67,11 @@ jobs:
       - name: Smoke import and render (Linux)
         if: runner.os != 'Windows'
         run: |
-          .wheel-venv/bin/python -c "import matplotlib; matplotlib.use('Agg'); import tensor_network_viz; from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network; trace=[pair_tensor('A', 'x', 'r0', 'ab,b->a')]; fig, _ = show_tensor_network(trace, engine='einsum', view='2d', config=PlotConfig(tensor_label_refinement="never"), show=False); assert fig is not None"
+          .wheel-venv/bin/python -c "import matplotlib; matplotlib.use('Agg'); import tensor_network_viz; from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network; trace=[pair_tensor('A', 'x', 'r0', 'ab,b->a')]; fig, _ = show_tensor_network(trace, engine='einsum', view='2d', config=PlotConfig(tensor_label_refinement='never'), show=False); assert fig is not None"
 
       - name: Smoke import and render (Windows)
         if: runner.os == 'Windows'
-        run: .wheel-venv\Scripts\python -c "import matplotlib; matplotlib.use('Agg'); import tensor_network_viz; from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network; trace=[pair_tensor('A', 'x', 'r0', 'ab,b->a')]; fig, _ = show_tensor_network(trace, engine='einsum', view='2d', config=PlotConfig(tensor_label_refinement="never"), show=False); assert fig is not None"
+        run: .wheel-venv\Scripts\python -c "import matplotlib; matplotlib.use('Agg'); import tensor_network_viz; from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network; trace=[pair_tensor('A', 'x', 'r0', 'ab,b->a')]; fig, _ = show_tensor_network(trace, engine='einsum', view='2d', config=PlotConfig(tensor_label_refinement='never'), show=False); assert fig is not None"
 
   lint-and-test:
     strategy:
