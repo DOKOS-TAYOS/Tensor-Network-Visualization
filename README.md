@@ -368,7 +368,8 @@ python examples/run_demo.py tenpy chain --view 2d --save tenpy_chain.png --no-sh
 python examples/run_demo.py einsum ellipsis --view 3d --scheme
 ```
 
-More details: [examples/README.md](examples/README.md)
+More details, including an exhaustive copy-paste command list for every CLI example:
+[examples/README.md](examples/README.md)
 
 There is also a minimal inspection example that only uses base dependencies:
 

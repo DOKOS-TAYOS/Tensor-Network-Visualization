@@ -155,6 +155,95 @@ python examples/run_demo.py tenpy chain --view 2d --scheme
 - `nway`
 - `implicit_out`
 
+## Exhaustive Copy-Paste Command List
+
+This section lists every example command currently available from the command line.
+
+### Standalone tensor inspection demos
+
+```bash
+python examples/tensor_elements_demo.py
+python examples/tensor_elements_demo.py --demo batch
+python examples/tensor_elements_demo.py --demo structured
+```
+
+### `tensorkrowch`
+
+```bash
+python examples/run_demo.py tensorkrowch mps --view 2d
+python examples/run_demo.py tensorkrowch tt --view 2d
+python examples/run_demo.py tensorkrowch mpo --view 2d
+python examples/run_demo.py tensorkrowch ladder --view 2d
+python examples/run_demo.py tensorkrowch peps --view 2d
+python examples/run_demo.py tensorkrowch cubic_peps --view 2d
+python examples/run_demo.py tensorkrowch mera --view 2d
+python examples/run_demo.py tensorkrowch mera_ttn --view 2d
+python examples/run_demo.py tensorkrowch weird --view 2d
+python examples/run_demo.py tensorkrowch disconnected --view 2d
+```
+
+### `tensornetwork`
+
+```bash
+python examples/run_demo.py tensornetwork mps --view 2d
+python examples/run_demo.py tensornetwork tt --view 2d
+python examples/run_demo.py tensornetwork mpo --view 2d
+python examples/run_demo.py tensornetwork ladder --view 2d
+python examples/run_demo.py tensornetwork peps --view 2d
+python examples/run_demo.py tensornetwork cubic_peps --view 2d
+python examples/run_demo.py tensornetwork mera --view 2d
+python examples/run_demo.py tensornetwork mera_ttn --view 2d
+python examples/run_demo.py tensornetwork weird --view 2d
+python examples/run_demo.py tensornetwork disconnected --view 2d
+```
+
+### `quimb`
+
+```bash
+python examples/run_demo.py quimb mps --view 2d
+python examples/run_demo.py quimb tt --view 2d
+python examples/run_demo.py quimb mpo --view 2d
+python examples/run_demo.py quimb ladder --view 2d
+python examples/run_demo.py quimb peps --view 2d
+python examples/run_demo.py quimb cubic_peps --view 2d
+python examples/run_demo.py quimb mera --view 2d
+python examples/run_demo.py quimb mera_ttn --view 2d
+python examples/run_demo.py quimb weird --view 2d
+python examples/run_demo.py quimb disconnected --view 2d
+python examples/run_demo.py quimb hyper --view 2d
+```
+
+### `tenpy`
+
+```bash
+python examples/run_demo.py tenpy mps --view 2d
+python examples/run_demo.py tenpy mpo --view 2d
+python examples/run_demo.py tenpy imps --view 2d
+python examples/run_demo.py tenpy impo --view 2d
+python examples/run_demo.py tenpy purification --view 2d
+python examples/run_demo.py tenpy uniform --view 2d
+python examples/run_demo.py tenpy excitation --view 2d
+python examples/run_demo.py tenpy chain --view 2d
+python examples/run_demo.py tenpy hub --view 2d
+python examples/run_demo.py tenpy hyper --view 2d
+```
+
+### `einsum`
+
+```bash
+python examples/run_demo.py einsum mps --view 2d
+python examples/run_demo.py einsum mpo --view 2d
+python examples/run_demo.py einsum peps --view 2d
+python examples/run_demo.py einsum disconnected --view 2d
+python examples/run_demo.py einsum ellipsis --view 2d
+python examples/run_demo.py einsum batch --view 2d
+python examples/run_demo.py einsum trace --view 2d
+python examples/run_demo.py einsum ternary --view 2d
+python examples/run_demo.py einsum unary --view 2d
+python examples/run_demo.py einsum nway --view 2d
+python examples/run_demo.py einsum implicit_out --view 2d
+```
+
 ## Batch Rendering
 
 Use `run_all_examples.py` to save many examples headlessly:
