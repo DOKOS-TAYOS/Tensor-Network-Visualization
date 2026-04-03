@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Final, Literal
 
 import matplotlib.pyplot as plt
@@ -12,13 +12,16 @@ from matplotlib.figure import Figure
 from matplotlib.widgets import RadioButtons, Slider
 
 from ._tensor_elements_support import (
-    _build_stats,
     _extract_tensor_records,
     _group_modes,
+    _HeatmapPayload,
+    _HistogramPayload,
     _mode_group,
     _prepare_mode_payload,
     _resolve_group_mode_for_record,
+    _TensorElementsPayload,
     _TensorRecord,
+    _TextSummaryPayload,
     _valid_group_modes_for_record,
 )
 from ._typing import root_figure
@@ -51,6 +54,11 @@ class _RenderedTensorPanel:
     colorbar: Any | None = None
 
 
+@dataclass
+class _TensorPayloadCacheEntry:
+    payloads: dict[str, _TensorElementsPayload] = field(default_factory=dict)
+
+
 class _TensorElementsFigureController:
     def __init__(
         self,
@@ -60,13 +68,14 @@ class _TensorElementsFigureController:
         panel: _RenderedTensorPanel,
         records: list[_TensorRecord],
         allow_interactive_fallback: bool,
+        initial_payload_cache: dict[int, _TensorPayloadCacheEntry] | None = None,
     ) -> None:
         self._config = config
         self._figure = figure
         self._panel = panel
         self._records = records
         self._allow_interactive_fallback = allow_interactive_fallback
-        self._stats_cache: dict[int, str] = {}
+        self._payload_cache = {} if initial_payload_cache is None else dict(initial_payload_cache)
         self._tensor_index = 0
         self._group: TensorElementsGroup
         self._mode: str
@@ -84,10 +93,10 @@ class _TensorElementsFigureController:
     def _current_record(self) -> _TensorRecord:
         return self._records[self._tensor_index]
 
-    def _stats_text_for_index(self, index: int) -> str:
-        if index not in self._stats_cache:
-            self._stats_cache[index] = _build_stats(self._records[index]).text
-        return self._stats_cache[index]
+    def _payload_cache_for_index(self, index: int) -> _TensorPayloadCacheEntry:
+        if index not in self._payload_cache:
+            self._payload_cache[index] = _TensorPayloadCacheEntry()
+        return self._payload_cache[index]
 
     def _initial_requested_mode(self) -> str:
         if self._config.mode == "auto":
@@ -205,12 +214,12 @@ class _TensorElementsFigureController:
         self.set_tensor_index(int(round(value)))
 
     def _render_current(self, *, redraw: bool) -> None:
-        resolved_mode = _render_panel(
+        resolved_mode, payload = self._payload_for_current()
+        _render_panel(
             self._panel,
             config=self._config,
             record=self._current_record(),
-            requested_mode=self._mode,
-            stats_text=self._stats_text_for_index(self._tensor_index),
+            payload=payload,
         )
         self._mode = resolved_mode
         self._sync_group_radio_active()
@@ -218,6 +227,20 @@ class _TensorElementsFigureController:
         self._sync_slider_label()
         if redraw:
             self._figure.canvas.draw_idle()
+
+    def _payload_for_current(self) -> tuple[str, _TensorElementsPayload]:
+        record = self._current_record()
+        cache_entry = self._payload_cache_for_index(self._tensor_index)
+        if self._mode in cache_entry.payloads:
+            return self._mode, cache_entry.payloads[self._mode]
+
+        resolved_mode, payload = _prepare_mode_payload(
+            record,
+            config=self._config,
+            mode=self._mode,
+        )
+        cache_entry.payloads[resolved_mode] = payload
+        return resolved_mode, payload
 
     def set_group(self, group: TensorElementsGroup | str, *, redraw: bool = True) -> None:
         resolved_group = str(group)
@@ -308,21 +331,19 @@ def _render_panel(
     *,
     config: TensorElementsConfig,
     record: _TensorRecord,
-    requested_mode: TensorElementsMode | str,
-    stats_text: str,
-) -> str:
+    payload: _TensorElementsPayload,
+) -> None:
     _remove_colorbar(panel)
     panel.main_ax.clear()
     panel.main_ax.set_position(panel.base_position)
 
-    resolved_mode, payload = _prepare_mode_payload(record, config=config, mode=requested_mode)
-    if resolved_mode == "data":
+    if isinstance(payload, _TextSummaryPayload):
         panel.main_ax.axis("off")
-        panel.main_ax.set_title(f"{record.name} [{record.engine}] - data")
+        panel.main_ax.set_title(f"{record.name} [{record.engine}] - {payload.mode_label}")
         panel.main_ax.text(
             0.02,
             0.98,
-            stats_text,
+            payload.text,
             ha="left",
             va="top",
             family="monospace",
@@ -331,11 +352,11 @@ def _render_panel(
             transform=panel.main_ax.transAxes,
             bbox=_DATA_TEXT_BOX,
         )
-        return resolved_mode
+        return
 
     panel.main_ax.set_axis_on()
-    if resolved_mode == "distribution":
-        values = np.asarray(payload["values"])
+    if isinstance(payload, _HistogramPayload):
+        values = np.asarray(payload.values)
         panel.main_ax.hist(
             values,
             bins=int(config.histogram_bins),
@@ -343,23 +364,22 @@ def _render_panel(
             edgecolor="#0F172A",
             alpha=0.85,
         )
-        panel.main_ax.set_xlabel(str(payload["xlabel"]))
+        panel.main_ax.set_xlabel(payload.xlabel)
         panel.main_ax.set_ylabel("count")
-        mode_label = "distribution (magnitude)" if np.iscomplexobj(record.array) else "distribution"
-        panel.main_ax.set_title(f"{record.name} [{record.engine}] - {mode_label}")
-        return resolved_mode
+        panel.main_ax.set_title(f"{record.name} [{record.engine}] - {payload.mode_label}")
+        return
 
-    matrix = np.asarray(payload["matrix"])
-    metadata = payload["metadata"]
-    style_key = str(payload["style_key"])
+    assert isinstance(payload, _HeatmapPayload)
+    matrix = np.asarray(payload.matrix)
+    metadata = payload.metadata
+    style_key = payload.style_key
     image = panel.main_ax.imshow(
         matrix,
         **_heatmap_style_kwargs(matrix=matrix, style_key=style_key),
     )
     panel.main_ax.set_ylabel(_axis_label_text("rows", metadata.row_names))
     panel.main_ax.set_xlabel(_axis_label_text("cols", metadata.col_names))
-    mode_label = str(payload["mode_label"])
-    panel.main_ax.set_title(f"{record.name} [{record.engine}] - {mode_label}")
+    panel.main_ax.set_title(f"{record.name} [{record.engine}] - {payload.mode_label}")
     panel.colorbar = panel.main_ax.figure.colorbar(
         image,
         ax=panel.main_ax,
@@ -369,8 +389,7 @@ def _render_panel(
     if style_key == "sign":
         panel.colorbar.set_ticks([-1.0, 0.0, 1.0])
         panel.colorbar.set_ticklabels(["-1", "0", "+1"])
-    panel.colorbar.ax.set_ylabel(str(payload["colorbar_label"]), rotation=90)
-    return resolved_mode
+    panel.colorbar.ax.set_ylabel(payload.colorbar_label, rotation=90)
 
 
 def _build_single_external_axis(ax: Axes) -> tuple[Figure, Axes]:
@@ -395,8 +414,10 @@ def show_tensor_elements(
     """Render tensor values in a single Matplotlib view with optional controls."""
     style = config or TensorElementsConfig()
     _, records = _extract_tensor_records(data, engine=engine)
+    initial_payload_cache: dict[int, _TensorPayloadCacheEntry] = {}
     if style.mode != "auto" and (not show_controls or len(records) == 1):
-        _prepare_mode_payload(records[0], config=style, mode=style.mode)
+        resolved_mode, payload = _prepare_mode_payload(records[0], config=style, mode=style.mode)
+        initial_payload_cache[0] = _TensorPayloadCacheEntry(payloads={resolved_mode: payload})
     if ax is not None and len(records) != 1:
         raise ValueError("An explicit ax is only supported when visualizing a single tensor.")
     if ax is not None and show_controls and len(root_figure(ax.figure).axes) > 1:
@@ -420,6 +441,7 @@ def show_tensor_elements(
         panel=panel,
         records=records,
         allow_interactive_fallback=show_controls,
+        initial_payload_cache=initial_payload_cache,
     )
     controller.initialize(show_controls=show_controls)
 

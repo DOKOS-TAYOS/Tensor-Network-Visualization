@@ -16,8 +16,13 @@ from matplotlib.backend_bases import MouseButton, MouseEvent
 
 from tensor_network_viz import TensorElementsConfig, pair_tensor, show_tensor_elements
 from tensor_network_viz._tensor_elements_support import (
+    _HeatmapPayload,
+    _HistogramPayload,
     _matrixize_tensor,
+    _prepare_mode_payload,
     _resolve_matrix_axes,
+    _TensorRecord,
+    _TextSummaryPayload,
 )
 
 
@@ -139,6 +144,56 @@ def test_show_tensor_elements_supports_single_quimb_like_tensor() -> None:
     assert "quimb" in ax.get_title().lower()
 
 
+def test_prepare_mode_payload_returns_typed_heatmap_payload() -> None:
+    record = _TensorRecord(
+        array=np.arange(6, dtype=float).reshape(2, 3),
+        name="Heatmap",
+        axis_names=("row", "col"),
+        engine="tensornetwork",
+    )
+
+    resolved_mode, payload = _prepare_mode_payload(
+        record,
+        config=TensorElementsConfig(mode="elements"),
+        mode="elements",
+    )
+
+    assert resolved_mode == "elements"
+    assert isinstance(payload, _HeatmapPayload)
+    assert tuple(payload.matrix.shape) == (2, 3)
+    assert payload.mode_label == "elements"
+    assert payload.colorbar_label == "value"
+
+
+def test_prepare_mode_payload_returns_typed_non_heatmap_payloads() -> None:
+    record = _TensorRecord(
+        array=np.arange(6, dtype=float).reshape(2, 3),
+        name="PayloadKinds",
+        axis_names=("row", "col"),
+        engine="tensornetwork",
+    )
+
+    distribution_mode, distribution_payload = _prepare_mode_payload(
+        record,
+        config=TensorElementsConfig(mode="distribution"),
+        mode="distribution",
+    )
+    data_mode, data_payload = _prepare_mode_payload(
+        record,
+        config=TensorElementsConfig(mode="data"),
+        mode="data",
+    )
+
+    assert distribution_mode == "distribution"
+    assert isinstance(distribution_payload, _HistogramPayload)
+    assert distribution_payload.xlabel == "value"
+    assert distribution_payload.values.ndim == 1
+
+    assert data_mode == "data"
+    assert isinstance(data_payload, _TextSummaryPayload)
+    assert "shape:" in data_payload.text.lower()
+
+
 def test_show_tensor_elements_multiple_tensors_use_slider_and_single_axes() -> None:
     tensors = [
         DummyTensorNetworkNode(
@@ -164,6 +219,50 @@ def test_show_tensor_elements_multiple_tensors_use_slider_and_single_axes() -> N
     controller._slider.set_val(1.0)
 
     assert "B" in ax.get_title()
+
+
+def test_show_tensor_elements_reuses_prepared_payloads_for_revisited_modes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz.tensor_elements as tensor_elements_module
+
+    tensor = DummyTensorNetworkNode(
+        np.arange(6, dtype=float).reshape(2, 3),
+        name="CachedModes",
+        axis_names=("row", "col"),
+    )
+    counts: dict[str, int] = {}
+    original_prepare_mode_payload = tensor_elements_module._prepare_mode_payload
+
+    def counting_prepare_mode_payload(
+        record: Any,
+        *,
+        config: TensorElementsConfig,
+        mode: str,
+    ) -> tuple[str, Any]:
+        counts[mode] = counts.get(mode, 0) + 1
+        return original_prepare_mode_payload(record, config=config, mode=mode)
+
+    monkeypatch.setattr(
+        tensor_elements_module,
+        "_prepare_mode_payload",
+        counting_prepare_mode_payload,
+    )
+
+    fig, _ = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="elements"),
+        show=False,
+        show_controls=True,
+    )
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    controller.set_mode("distribution")
+    controller.set_mode("elements")
+    controller.set_mode("distribution")
+
+    assert counts["elements"] == 1
+    assert counts["distribution"] == 1
 
 
 def test_show_tensor_elements_rejects_multi_tensor_with_explicit_ax() -> None:
