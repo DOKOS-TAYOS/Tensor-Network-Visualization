@@ -7,7 +7,7 @@ from ._engine_specs import EngineName
 from ._typing import PositionMapping
 
 ViewName: TypeAlias = Literal["2d", "3d"]
-PerformanceMode: TypeAlias = Literal["auto", "quality", "fast"]
+TensorLabelRefinement: TypeAlias = Literal["auto", "always", "never"]
 
 
 @dataclass(frozen=True)
@@ -15,8 +15,6 @@ class PlotConfig:
     """Configuration for tensor network plot styling.
 
     Used by ``show_tensor_network`` and backend ``plot_*_network_*`` helpers.
-    Label visibility can also be overridden per call via
-    ``show_tensor_network(..., show_tensor_labels=..., show_index_labels=...)``.
 
     Attributes:
         node_color: Fill color for tensor nodes (hex or named color).
@@ -45,15 +43,10 @@ class PlotConfig:
         layout_iterations: Force-directed layout iterations; None uses default (220).
         validate_positions: If True, warn when custom positions have unknown keys or
             wrong dimension count for the view.
-        refine_tensor_labels: If True, run post-draw passes that shrink tensor names so
-            they fit the node marker in 2D or 3D. Each pass calls ``fig.canvas.draw()`` and
-            measures text bounding boxes — often a large share of end-to-end plot time on dense
-            figures. Set False for much faster plots when slight overflow of long names is
-            acceptable (first-pass TextPath sizing still applies).
-        performance_mode: Performance policy for non-essential draw polish. ``"quality"``
-            always keeps label refit enabled when ``refine_tensor_labels`` is True.
-            ``"fast"`` always skips that post-draw refit. ``"auto"`` keeps the full
-            behavior on smaller graphs and skips the refit on larger ones.
+        tensor_label_refinement: Post-draw policy for shrinking tensor names so they fit the
+            node marker in 2D or 3D. ``"always"`` always runs the refit passes, ``"never"``
+            always skips them, and ``"auto"`` keeps the full behavior on smaller graphs while
+            skipping the extra passes on larger ones.
         approximate_3d_tensor_disk_px: If True (default), tensor label disk radius in pixels
             uses a single nominal scale from axis spans (cheap). If False, uses per-node
             projection (slower, marginally more accurate under 3D perspective).
@@ -111,8 +104,7 @@ class PlotConfig:
     layout_iterations: int | None = None
     positions: PositionMapping | None = None
     validate_positions: bool = False
-    refine_tensor_labels: bool = True
-    performance_mode: PerformanceMode = "auto"
+    tensor_label_refinement: TensorLabelRefinement = "auto"
     approximate_3d_tensor_disk_px: bool = True
     hover_labels: bool = True
     show_contraction_scheme: bool = False
@@ -124,5 +116,4 @@ class PlotConfig:
     contraction_playback: bool = False
     contraction_scheme_cost_hover: bool = False
 
-
-__all__ = ["EngineName", "PerformanceMode", "PlotConfig", "ViewName"]
+__all__ = ["EngineName", "PlotConfig", "TensorLabelRefinement", "ViewName"]

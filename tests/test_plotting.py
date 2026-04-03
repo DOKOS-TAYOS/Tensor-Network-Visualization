@@ -763,19 +763,28 @@ def test_show_tensor_network_rejects_mismatched_external_ax_and_view() -> None:
         )
 
 
-def test_show_tensor_network_can_disable_interactive_controls() -> None:
+def test_show_tensor_network_show_controls_false_hides_all_figure_controls() -> None:
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
 
-    fig, _ax = show_tensor_network(
+    fig, ax = show_tensor_network(
         DummyNetwork(nodes=[left, right]),
         engine="tensorkrowch",
-        interactive_controls=False,
+        config=PlotConfig(
+            show_contraction_scheme=True,
+            contraction_playback=True,
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show_controls=False,
         show=False,
     )
 
     assert getattr(fig, "_tensor_network_viz_interactive_controls", None) is None
+    assert getattr(fig, "_tensor_network_viz_contraction_controls", None) is None
+    assert getattr(fig, "_tensor_network_viz_contraction_viewer", None) is None
+    assert len(fig.axes) == 1
+    assert getattr(ax, "_tensor_network_viz_scene", None) is None
 
 
 def test_plot_tensorkrowch_network_2d_draws_tensor_nodes_as_circle_patches() -> None:

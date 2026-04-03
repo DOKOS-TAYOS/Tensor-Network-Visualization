@@ -7,7 +7,7 @@
   machine 2026-03-29.
 - ``_display_disk_radius_px_3d`` — 300 calls ~0.042s; nominal scale is one multiply per node
   after a single axis read (~0.0002s order for the same 300 logical uses if reused).
-- ``refine_tensor_labels`` — turning it off avoids repeated ``canvas.draw()`` in
+- ``tensor_label_refinement="never"`` — skipping it avoids repeated ``canvas.draw()`` in
   ``_refit_tensor_labels_to_disks`` (see ``PlotConfig`` docstring); magnitude depends on figure
   complexity — use ``test_draw_performance`` / local ``time.perf_counter`` for full draws.
 """

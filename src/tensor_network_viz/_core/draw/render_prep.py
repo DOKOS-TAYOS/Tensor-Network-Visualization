@@ -98,11 +98,9 @@ def _should_refine_tensor_labels(
     *,
     visible_tensor_count: int,
 ) -> bool:
-    if not config.refine_tensor_labels:
-        return False
-    if config.performance_mode == "quality":
+    if config.tensor_label_refinement == "always":
         return True
-    if config.performance_mode == "fast":
+    if config.tensor_label_refinement == "never":
         return False
     return visible_tensor_count < _AUTO_FAST_VISIBLE_TENSOR_THRESHOLD
 

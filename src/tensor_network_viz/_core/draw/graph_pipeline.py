@@ -117,6 +117,7 @@ def _build_contraction_scheme_bundle(
     scale: float,
     context: _RenderPrepContext,
     strict: bool,
+    include_viewer: bool = True,
 ) -> _ContractionSchemeBundle:
     scheme_steps_eff = _effective_contraction_steps(graph, config)
     if not scheme_steps_eff:
@@ -146,12 +147,16 @@ def _build_contraction_scheme_bundle(
                 tip = format_contraction_step_tooltip(m)
         tooltips_list.append(tip)
     tooltips = tuple(tooltips_list)
-    viewer = attach_playback_to_tensor_network_figure(
-        artists_by_step=per_step_artists,
-        fig=ax.figure,
-        ax=ax,
-        config=config,
-        build_ui=False,
+    viewer = (
+        attach_playback_to_tensor_network_figure(
+            artists_by_step=per_step_artists,
+            fig=ax.figure,
+            ax=ax,
+            config=config,
+            build_ui=False,
+        )
+        if include_viewer
+        else None
     )
     bounds_2d = _scheme_bounds_2d(per_step_artists) if dimensions == 2 else None
     bounds_3d = _scheme_bounds_3d(scheme_aabb) if dimensions == 3 else None
@@ -174,6 +179,39 @@ def _build_contraction_scheme_bundle(
     )
 
 
+def _bundle_scheme_entries_2d(
+    bundle: _ContractionSchemeBundle,
+) -> tuple[tuple[Any, str], ...]:
+    if bundle.artists_by_step is None or bundle.tooltips is None:
+        return ()
+    out: list[tuple[Any, str]] = []
+    for index, artist in enumerate(bundle.artists_by_step):
+        tooltip = bundle.tooltips[index] if index < len(bundle.tooltips) else None
+        if artist is None or not tooltip:
+            continue
+        out.append((artist, tooltip))
+    return tuple(out)
+
+
+def _bundle_scheme_entries_3d(
+    bundle: _ContractionSchemeBundle,
+) -> tuple[tuple[tuple[float, float, float, float, float, float], str, Any], ...]:
+    if (
+        bundle.artists_by_step is None
+        or bundle.tooltips is None
+        or bundle.scheme_aabb is None
+    ):
+        return ()
+    out: list[tuple[tuple[float, float, float, float, float, float], str, Any]] = []
+    for index, artist in enumerate(bundle.artists_by_step):
+        tooltip = bundle.tooltips[index] if index < len(bundle.tooltips) else None
+        bounds = bundle.scheme_aabb[index] if index < len(bundle.scheme_aabb) else None
+        if artist is None or not tooltip or bounds is None:
+            continue
+        out.append((bounds, tooltip, artist))
+    return tuple(out)
+
+
 def _draw_graph(
     *,
     ax: Any,
@@ -190,6 +228,7 @@ def _draw_graph(
     build_contraction_controls: bool = True,
     contraction_controls_build_ui: bool = True,
     register_contraction_controls_on_figure: bool = True,
+    build_scene_state: bool = True,
 ) -> None:
     context = _prepare_render_context(
         ax=ax,
@@ -233,14 +272,32 @@ def _draw_graph(
         tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
     )
     controls: _ContractionControls | None = None
-    if _has_contraction_scheme_source(graph, config) and build_contraction_controls:
-        controls = _ContractionControls(
-            fig=ax.figure,
-            ax=ax,
-            config=config,
-            build_controls=contraction_controls_build_ui,
-            register_on_figure=register_contraction_controls_on_figure,
-            bundle_builder=lambda strict: _build_contraction_scheme_bundle(
+    if _has_contraction_scheme_source(graph, config):
+        if build_contraction_controls:
+            controls = _ContractionControls(
+                fig=ax.figure,
+                ax=ax,
+                config=config,
+                build_controls=contraction_controls_build_ui,
+                register_on_figure=register_contraction_controls_on_figure,
+                bundle_builder=lambda strict: _build_contraction_scheme_bundle(
+                    ax=ax,
+                    graph=graph,
+                    positions=positions,
+                    config=config,
+                    dimensions=dimensions,
+                    scale=scale,
+                    context=context,
+                    strict=strict,
+                ),
+                refresh_hover=lambda scheme_patches_2d, scheme_aabbs_3d: _apply_render_hover_state(
+                    hover_state,
+                    scheme_patches_2d=scheme_patches_2d,
+                    scheme_aabbs_3d=scheme_aabbs_3d,
+                ),
+            )
+        elif config.show_contraction_scheme:
+            bundle = _build_contraction_scheme_bundle(
                 ax=ax,
                 graph=graph,
                 positions=positions,
@@ -248,26 +305,33 @@ def _draw_graph(
                 dimensions=dimensions,
                 scale=scale,
                 context=context,
-                strict=strict,
-            ),
-            refresh_hover=lambda scheme_patches_2d, scheme_aabbs_3d: _apply_render_hover_state(
-                hover_state,
-                scheme_patches_2d=scheme_patches_2d,
-                scheme_aabbs_3d=scheme_aabbs_3d,
-            ),
+                strict=False,
+                include_viewer=False,
+            )
+            if config.contraction_scheme_cost_hover:
+                _apply_render_hover_state(
+                    hover_state,
+                    scheme_patches_2d=_bundle_scheme_entries_2d(bundle),
+                    scheme_aabbs_3d=_bundle_scheme_entries_3d(bundle),
+                )
+    if build_scene_state:
+        scene = _build_interactive_scene_state(
+            ax=ax,
+            context=context,
+            directions=directions,
+            scale=scale,
+            hover_state=hover_state,
+            tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
         )
-    scene = _build_interactive_scene_state(
-        ax=ax,
-        context=context,
-        directions=directions,
-        scale=scale,
-        hover_state=hover_state,
-        tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
-    )
-    scene.contraction_controls = controls
-    ax._tensor_network_viz_scene = scene  # type: ignore[attr-defined]
-    if controls is not None:
-        ax._tensor_network_viz_contraction_controls = controls  # type: ignore[attr-defined]
+        scene.contraction_controls = controls
+        ax._tensor_network_viz_scene = scene  # type: ignore[attr-defined]
+        if controls is not None:
+            ax._tensor_network_viz_contraction_controls = controls  # type: ignore[attr-defined]
+    else:
+        if hasattr(ax, "_tensor_network_viz_scene"):
+            delattr(ax, "_tensor_network_viz_scene")
+        if hasattr(ax, "_tensor_network_viz_contraction_controls"):
+            delattr(ax, "_tensor_network_viz_contraction_controls")
     if not _has_contraction_scheme_source(graph, config):
         return
 

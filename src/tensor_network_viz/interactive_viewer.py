@@ -38,6 +38,7 @@ from ._core.draw.scene_state import _InteractiveSceneState
 from ._core.draw.tensors import _draw_labels, _refit_tensor_labels_to_disks
 from ._registry import _get_plotters
 from ._typing import root_figure
+from ._ui_utils import _reserve_figure_bottom, _set_axes_visible
 from .config import EngineName, PlotConfig, ViewName
 
 RenderedAxes = Axes | Axes3D
@@ -53,14 +54,6 @@ _INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _INTERACTIVE_CHECK_MARK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
 _INTERACTIVE_RADIO_PROPS: dict[str, float] = {"s": 38.0, "linewidth": 0.9}
 
-
-def _reserve_figure_bottom(fig: Figure, bottom: float) -> None:
-    current = float(getattr(fig, "_tensor_network_viz_reserved_bottom", 0.02))
-    target = max(current, float(bottom))
-    fig._tensor_network_viz_reserved_bottom = target  # type: ignore[attr-defined]
-    fig.subplots_adjust(bottom=target)
-
-
 @dataclass
 class _ViewCache:
     ax: RenderedAxes | None = None
@@ -71,16 +64,6 @@ def _set_artist_visible(artist: Artist, visible: bool) -> None:
     setter = getattr(artist, "set_visible", None)
     if callable(setter):
         setter(bool(visible))
-
-
-def _set_axes_visible(ax: RenderedAxes, visible: bool) -> None:
-    ax.set_visible(visible)
-    ax.patch.set_visible(visible)
-    for child in ax.get_children():
-        setter = getattr(child, "set_visible", None)
-        if callable(setter):
-            setter(bool(visible))
-
 
 def _scene_from_axes(ax: RenderedAxes | None) -> _InteractiveSceneState | None:
     if ax is None:
@@ -323,16 +306,14 @@ class _InteractiveTensorFigureController:
         config: PlotConfig,
         initial_view: ViewName,
         initial_ax: RenderedAxes | None,
-        show_tensor_labels: bool,
-        show_index_labels: bool,
     ) -> None:
         self.network = network
         self.engine = engine
         self.config = config
         self.current_view: ViewName = initial_view
         self.hover_on: bool = bool(config.hover_labels)
-        self.tensor_labels_on: bool = bool(show_tensor_labels)
-        self.edge_labels_on: bool = bool(show_index_labels)
+        self.tensor_labels_on: bool = bool(config.show_tensor_labels)
+        self.edge_labels_on: bool = bool(config.show_index_labels)
         self.scheme_on: bool = bool(config.show_contraction_scheme)
         self.playback_on: bool = bool(config.contraction_playback)
         self.cost_hover_on: bool = bool(config.contraction_scheme_cost_hover)
@@ -391,8 +372,6 @@ class _InteractiveTensorFigureController:
             self.network,
             ax=ax,
             config=self._base_config(),
-            show_tensor_labels=False,
-            show_index_labels=False,
             _build_contraction_controls=True,
             _contraction_controls_build_ui=False,
             _register_contraction_controls_on_figure=False,
@@ -574,8 +553,6 @@ def show_tensor_network_interactive(
     engine: EngineName,
     view: ViewName,
     config: PlotConfig,
-    show_tensor_labels: bool,
-    show_index_labels: bool,
     ax: RenderedAxes | None,
 ) -> tuple[Figure, RenderedAxes]:
     controller = _InteractiveTensorFigureController(
@@ -584,8 +561,6 @@ def show_tensor_network_interactive(
         config=config,
         initial_view=view,
         initial_ax=ax,
-        show_tensor_labels=show_tensor_labels,
-        show_index_labels=show_index_labels,
     )
     return controller.initialize()
 

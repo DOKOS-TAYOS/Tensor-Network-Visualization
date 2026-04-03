@@ -58,7 +58,7 @@ def test_dense_2d_draw_fast_flags_complete() -> None:
             show_index_labels=True,
             config=PlotConfig(
                 positions=positions,
-                refine_tensor_labels=False,
+                tensor_label_refinement="never",
             ),
             dimensions=2,
             scale=ds,

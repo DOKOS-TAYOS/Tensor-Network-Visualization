@@ -28,6 +28,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from ._typing import root_figure
+from ._ui_utils import _reserve_figure_bottom, _set_axes_visible, _set_widget_active
 from .config import PlotConfig
 
 VisualizerMode = Literal["cumulative", "highlight_current", "window"]
@@ -166,31 +167,6 @@ def _safe_set_linewidth(artist: Artist, lw: float) -> None:
     if callable(setter2):
         with suppress(AttributeError, TypeError, ValueError):
             setter2(lw)
-
-
-def _set_axes_visible(ax: Axes, visible: bool) -> None:
-    ax.set_visible(visible)
-    ax.patch.set_visible(visible)
-    for child in ax.get_children():
-        setter = getattr(child, "set_visible", None)
-        if callable(setter):
-            with suppress(AttributeError, TypeError, ValueError):
-                setter(visible)
-
-
-def _set_widget_active(widget: Any, active: bool) -> None:
-    setter = getattr(widget, "set_active", None)
-    if callable(setter):
-        with suppress(AttributeError, TypeError, ValueError):
-            setter(bool(active))
-
-
-def _reserve_figure_bottom(fig: Figure, bottom: float) -> None:
-    current = float(getattr(fig, "_tensor_network_viz_reserved_bottom", 0.02))
-    target = max(current, float(bottom))
-    fig._tensor_network_viz_reserved_bottom = target  # type: ignore[attr-defined]
-    fig.subplots_adjust(bottom=target)
-
 
 def _snapshot_style(artist: Artist) -> dict[str, Any]:
     snap: dict[str, Any] = {}
@@ -959,49 +935,3 @@ __all__ = [
     "ContractionViewer2D",
     "ContractionViewer3D",
 ]
-
-
-if __name__ == "__main__":
-    # Demo 2D standalone; library: show_tensor_network + PlotConfig(contraction_playback=True).
-    rng = np.random.default_rng(0)
-    rects = []
-    for _ in range(5):
-        rects.append(
-            (
-                float(rng.random()),
-                float(rng.random()),
-                0.12 + float(rng.random()) * 0.15,
-                0.1 + float(rng.random()) * 0.12,
-            )
-        )
-    v2 = ContractionViewer2D.from_rectangles(
-        rects,
-        mode="highlight_current",
-        current_color="tab:red",
-        past_color="0.65",
-        interval_ms=350,
-        enable_playback=True,
-    )
-    v2._ax_main.set_xlim(0, 1.3)
-    v2._ax_main.set_ylim(0, 1.3)
-    v2._ax_main.set_aspect("equal")
-    v2.show()
-
-    # Demo 3D (opens after closing the 2D window when using an interactive backend).
-    boxes_demo = [
-        (np.array([0, 0, 0]), np.array([1, 0.6, 0.5])),
-        (np.array([1.1, 0.1, 0.1]), np.array([1.8, 0.9, 0.7])),
-        (np.array([0.2, 0.8, 0.2]), np.array([0.9, 1.4, 0.9])),
-    ]
-    v3 = ContractionViewer3D.from_boxes(
-        boxes_demo,
-        mode="highlight_current",
-        current_color="tab:red",
-        past_color="0.65",
-        interval_ms=400,
-        enable_playback=True,
-    )
-    cast(Axes3D, v3._ax_main).set_xlim(0, 2)
-    cast(Axes3D, v3._ax_main).set_ylim(0, 2)
-    cast(Axes3D, v3._ax_main).set_zlim(0, 1.2)
-    v3.show()

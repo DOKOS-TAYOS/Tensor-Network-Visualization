@@ -377,6 +377,7 @@ def _plot_graph(
     build_contraction_controls: bool = True,
     contraction_controls_build_ui: bool = True,
     register_contraction_controls_on_figure: bool = True,
+    build_scene_state: bool = True,
 ) -> tuple[Figure, RenderedAxes]:
     style = config or PlotConfig()
     fig, resolved_ax = _prepare_axes(
@@ -418,6 +419,7 @@ def _plot_graph(
         build_contraction_controls=build_contraction_controls,
         contraction_controls_build_ui=contraction_controls_build_ui,
         register_contraction_controls_on_figure=register_contraction_controls_on_figure,
+        build_scene_state=build_scene_state,
     )
     reserved_bottom = float(getattr(fig, "_tensor_network_viz_reserved_bottom", 0.02))
     fig.subplots_adjust(left=0.02, right=0.98, bottom=reserved_bottom, top=0.98)
@@ -441,12 +443,11 @@ def _make_plot_functions(
         *,
         ax: Axes | None = None,
         config: PlotConfig | None = None,
-        show_tensor_labels: bool | None = None,
-        show_index_labels: bool | None = None,
         seed: int = 0,
         _build_contraction_controls: bool = True,
         _contraction_controls_build_ui: bool = True,
         _register_contraction_controls_on_figure: bool = True,
+        _build_scene_state: bool = True,
     ) -> tuple[Figure, Axes]:
         graph = _get_or_build_graph(network, build_graph_fn)
         fig, resolved_ax = _plot_graph(
@@ -454,13 +455,12 @@ def _make_plot_functions(
             dimensions=2,
             ax=ax,
             config=config,
-            show_tensor_labels=show_tensor_labels,
-            show_index_labels=show_index_labels,
             seed=seed,
             renderer_name=renderer_2d_name,
             build_contraction_controls=_build_contraction_controls,
             contraction_controls_build_ui=_contraction_controls_build_ui,
             register_contraction_controls_on_figure=_register_contraction_controls_on_figure,
+            build_scene_state=_build_scene_state,
         )
         return fig, cast(Axes, resolved_ax)
 
@@ -469,12 +469,11 @@ def _make_plot_functions(
         *,
         ax: Axes | Axes3D | None = None,
         config: PlotConfig | None = None,
-        show_tensor_labels: bool | None = None,
-        show_index_labels: bool | None = None,
         seed: int = 0,
         _build_contraction_controls: bool = True,
         _contraction_controls_build_ui: bool = True,
         _register_contraction_controls_on_figure: bool = True,
+        _build_scene_state: bool = True,
     ) -> tuple[Figure, Axes3D]:
         graph = _get_or_build_graph(network, build_graph_fn)
         fig, resolved_ax = _plot_graph(
@@ -482,13 +481,12 @@ def _make_plot_functions(
             dimensions=3,
             ax=ax,
             config=config,
-            show_tensor_labels=show_tensor_labels,
-            show_index_labels=show_index_labels,
             seed=seed,
             renderer_name=renderer_3d_name,
             build_contraction_controls=_build_contraction_controls,
             contraction_controls_build_ui=_contraction_controls_build_ui,
             register_contraction_controls_on_figure=_register_contraction_controls_on_figure,
+            build_scene_state=_build_scene_state,
         )
         return fig, cast(Axes3D, resolved_ax)
 

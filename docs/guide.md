@@ -1,131 +1,21 @@
 # Tensor-Network-Visualization Guide
 
-In-depth, code-aligned manual: installation, **modes**, APIs, copy-paste recipes, backends,
-`PlotConfig`, layout and drawing behavior, architecture, and troubleshooting.
+This guide is organized around user workflows instead of internal implementation details.
 
-## Table of contents
+## Core Idea
 
-- [Overview](#toc-overview)
-- [Installation](#toc-installation)
-- [Modes and parameters](#toc-modes-and-parameters)
-- [Core usage](#toc-core-usage)
-  - [Generic dispatcher](#toc-generic-dispatcher)
-  - [Notebook snippet](#toc-notebook-snippet)
-  - [Headless script](#toc-headless-script)
-  - [Subplot embedding](#toc-subplot-embedding)
-  - [Backend-specific plotters](#toc-backend-specific-plotters)
-- [Supported inputs by engine](#toc-supported-inputs-by-engine)
-- [PlotConfig](#toc-plotconfig)
-- [Layout and draw scale](#toc-layout-and-draw-scale)
-- [Custom positions](#toc-custom-positions)
-- [Working with the returned figure](#toc-working-with-the-returned-figure)
-- [Example scripts](#toc-example-scripts)
-- [Limitations](#toc-limitations)
-- [Troubleshooting](#toc-troubleshooting)
-- [Internal architecture](#toc-internal-architecture)
-- [Development notes](#toc-development-notes)
+The public API is intentionally split into two responsibilities:
 
-<a id="toc-overview"></a>
+- `show_tensor_network(...)` manages the figure lifecycle.
+- `PlotConfig(...)` manages how the network should look and behave.
 
-## Overview
+If you remember only one thing, remember this:
 
-`tensor_network_viz` does four things:
-
-1. Accept **backend-native** tensor-network objects (or traced `einsum` graphs).
-2. **Normalize** them into a shared graph model (`_GraphData`).
-3. **Lay out** tensor positions (structure-aware defaults + force fallback).
-4. **Draw** with Matplotlib in **2D** or **3D**.
-
-The main entry point is **`show_tensor_network`**. Each backend also exposes **`plot_*_network_2d`**
-and **`plot_*_network_3d`** - thin wrappers around the same core renderer (see
-[`renderer._make_plot_functions`](../src/tensor_network_viz/_core/renderer.py)).
-By default, `show_tensor_network` also adds a Matplotlib control strip so you can switch between
-views and toggle hover/static labels without rewriting the `PlotConfig`.
-
-<a id="toc-installation"></a>
-
-## Installation
-
-The library targets **Python 3.11+**.
-
-### PyPI
-
-Install the base package:
-
-```bash
-python -m pip install tensor-network-visualization
+```python
+fig, ax = show_tensor_network(network, config=PlotConfig(...))
 ```
 
-Base runtime dependencies are `numpy`, `matplotlib`, and `networkx`. Add the extra for each
-backend you need:
-
-```bash
-python -m pip install "tensor-network-visualization[tensorkrowch]"
-python -m pip install "tensor-network-visualization[tensornetwork]"
-python -m pip install "tensor-network-visualization[quimb]"
-python -m pip install "tensor-network-visualization[tenpy]"
-python -m pip install "tensor-network-visualization[einsum]"
-python -m pip install "tensor-network-visualization[jupyter]"
-```
-
-- **`tenpy`** extra installs **`physics-tenpy`** from PyPI.
-- **`einsum`** adds **PyTorch** for the traced `tensor_network_viz.einsum` helper. Rendering a
-  pre-built trace of `pair_tensor` entries does not require PyTorch if you only draw.
-- **`jupyter`** pulls in `ipympl`, `ipywidgets`, JupyterLab, and Notebook 7+ for interactive
-  figures.
-
-### Editable / dev install
-
-**Windows (PowerShell):**
-
-```powershell
-cd Tensor-Network-Visualization
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
-```
-
-**Linux / macOS:**
-
-```bash
-cd Tensor-Network-Visualization
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[dev]"
-```
-
-Runtime-only editable:
-
-```bash
-python -m pip install -e .
-```
-
-The repo also ships `requirements.txt` / `requirements.dev.txt` for conventional `-e` installs.
-
-<a id="toc-modes-and-parameters"></a>
-
-## Modes and parameters
-
-There are no hidden “modes”. Use this table as the user-facing map to the API (see also the
-[README modes table](../README.md#modes-and-api-knobs)):
-
-| Concept | API | Notes |
-|--------|-----|--------|
-| View | `view="2d"` or `"3d"` | Default is `"2d"` in `show_tensor_network`; interactive figures can switch views from the same window. |
-| Engine | `engine="tensorkrowch"` … `"einsum"` | Optional override. When omitted, `show_tensor_network` infers the backend from the received input. Invalid explicit values still raise `ValueError`. |
-| Display | `show=True` / `False` | If `True`: Jupyter **kernel** uses `IPython.display.display(fig)`; otherwise `plt.show()`. If `False`: no display call (for `savefig` / batch). |
-| Interactive controls | `interactive_controls=True` | `show_tensor_network` adds Matplotlib widgets for `2d/3d`, `Hover`, `Tensor labels`, and `Edge labels`. Set `False` for static exports. |
-| Labels | `PlotConfig` + call kwargs | Defaults are `show_tensor_labels=False` and `show_index_labels=False`; call kwargs still override them. |
-| Hover | `PlotConfig(hover_labels=True)` | Default is `True`; hover tooltips are independent from static labels. |
-| Einsum | trace vs list | `EinsumTrace` + `einsum()`, or ordered **`pair_tensor`** / **`einsum_trace_step`** list. |
-
-<a id="toc-core-usage"></a>
-
-## Core usage
-
-<a id="toc-generic-dispatcher"></a>
-
-### Generic dispatcher
+## Public API
 
 ```python
 show_tensor_network(
@@ -135,691 +25,213 @@ show_tensor_network(
     view=None,
     config=None,
     ax=None,
-    show_tensor_labels=None,
-    show_index_labels=None,
-    interactive_controls=True,
+    show_controls=True,
     show=True,
 )
 ```
 
-Returns **`(fig, ax)`** with `ax` either **2D** `Axes` or **3D** `Axes3D`.
-
-When `interactive_controls=True` (default), `show_tensor_network` adds Matplotlib widgets to the
-figure: `2d/3d` selection on figures it creates itself, plus `Hover`, `Tensor labels`, and
-`Edge labels` checkboxes. Passing an external `ax` keeps the same-view checkboxes but suppresses
-the `2d/3d` selector. The default widget state is `Hover=True`, `Tensor labels=False`,
-`Edge labels=False`.
-
-Use `interactive_controls=False` for clean static exports, notebook cells where you only want the
-raw plot area, or headless batch rendering.
-
-Use **`show=False`** when you want to add titles, **`savefig`**, embed in another app, or avoid
-popping a window.
-
-<a id="toc-notebook-snippet"></a>
-
-### Notebook snippet
-
-Install the **`jupyter`** extra. Select a **Matplotlib** backend **before** creating figures (first cell):
-
-```python
-%matplotlib widget
-
-from tensor_network_viz import PlotConfig, show_tensor_network
-
-# network = ...  # your backend object
-
-fig, ax = show_tensor_network(
-    network,
-    engine="quimb",
-    config=PlotConfig(figsize=(8, 6)),
-)
-```
-
-With **`show=True`** (default), `show_tensor_network` uses **`IPython.display.display(fig)`** in a
-Jupyter kernel instead of `plt.show()`, which works cleanly with interactive backends.
-From that figure you can switch between `2d` and `3d` and toggle `Hover`, `Tensor labels`, and
-`Edge labels` without rebuilding the network from Python.
-
-**Avoid double display:** if the **last line** of a cell is a bare call that returns `(fig, ax)`,
-some front ends render twice. Prefer **`fig, ax = show_tensor_network(...)`** or use **`show=False`**
-and **`display(fig)`** yourself.
-
-<a id="toc-headless-script"></a>
-
-### Headless script
-
-```python
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from tensor_network_viz import PlotConfig, show_tensor_network
-
-# network = ...  # your backend object
-
-fig, ax = show_tensor_network(
-    network,
-    engine="quimb",
-    view="2d",
-    config=PlotConfig(figsize=(8, 6)),
-    interactive_controls=False,
-    show=False,
-)
-fig.savefig("out.png", bbox_inches="tight")
-plt.close(fig)
-```
-
-That `interactive_controls=False` is the easiest way to save a plain figure without the widget
-panel.
-
-<a id="toc-subplot-embedding"></a>
-
-### Subplot embedding
-
-Backend plotters accept **`ax=`**. The axis dimension must match (**2D** vs **3d** projection):
-
-```python
-import matplotlib.pyplot as plt
-from tensor_network_viz import PlotConfig
-from tensor_network_viz.quimb import plot_quimb_network_2d
-
-# network = ...  # your quimb.TensorNetwork or iterable of tensors
-
-fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-plot_quimb_network_2d(network, ax=axes[0], config=PlotConfig(figsize=None))
-axes[0].set_title("Left")
-
-plot_quimb_network_2d(network, ax=axes[1], config=PlotConfig(figsize=None))
-axes[1].set_title("Right")
-
-fig.tight_layout()
-fig.savefig("two_panels.png", bbox_inches="tight")
-```
-
-When **`ax` is provided**, the renderer does not create a new figure; pass **`figsize`** only when
-you create **`fig`** yourself, or use **`PlotConfig(figsize=None)`** so auto figure sizing is not
-applied incorrectly (the code uses `config.figsize` only when it creates the figure).
-
-<a id="toc-backend-specific-plotters"></a>
-
-### Backend-specific plotters
-
-Each backend module exposes:
-
-```text
-plot_<backend>_network_2d(network, *, ax=None, config=None,
-    show_tensor_labels=None, show_index_labels=None, seed=0)
-plot_<backend>_network_3d(network, *, ax=None, config=None,
-    show_tensor_labels=None, show_index_labels=None, seed=0)
-```
-
-**`seed`** is passed into the shared layout pipeline for stochastic / force-directed phases so you
-can reproduce placements.
-
-These backend-specific helpers stay fixed-dimension on purpose: `plot_*_network_2d` always returns
-a native 2D axes, `plot_*_network_3d` always returns `Axes3D`, and they do not add the figure-level
-`2d/3d` selector from `show_tensor_network`.
-
-Imports:
-
-```python
-from tensor_network_viz.tensorkrowch import plot_tensorkrowch_network_2d, plot_tensorkrowch_network_3d
-from tensor_network_viz.tensornetwork import plot_tensornetwork_network_2d, plot_tensornetwork_network_3d
-from tensor_network_viz.quimb import plot_quimb_network_2d, plot_quimb_network_3d
-from tensor_network_viz.tenpy import (
-    make_tenpy_tensor_network,
-    plot_tenpy_network_2d,
-    plot_tenpy_network_3d,
-)
-from tensor_network_viz.einsum_module import plot_einsum_network_2d, plot_einsum_network_3d
-```
-
-<a id="toc-supported-inputs-by-engine"></a>
-
-## Supported inputs by engine
-
-### TensorKrowch
-
-- Network with **`nodes`** or **`leaf_nodes`**, or any iterable of TensorKrowch nodes.
-- Adapter reads **`edges`**, **`axes_names`**, **`name`**.
-- Subsets show missing neighbors as **dangling** legs; disconnected components supported.
-
-### TensorNetwork
-
-- Any iterable of **`tensornetwork.Node`** with **`edges`**, **`axis_names`**, **`name`**.
-- Unordered collections are normalized to a **stable** order before graph construction.
-
-### Quimb
-
-- **`TensorNetwork`** or iterable of **`Tensor`**.
-- Tags become names when useful; otherwise fallback names like **`T0`**, **`T1`**, ….
-- **Hyper-indices** (three or more tensors on one index) route through invisible **hub** nodes so
-  topology stays readable.
-
-### TeNPy
-
-- **`TenPyTensorNetwork`** / **`make_tenpy_tensor_network`:** ordered **`npc.Array`** tensors (each
-  with **`get_leg_labels()`**) plus **`bonds`**: each bond is a tuple of **two or more**
-  **`(tensor_id, leg_label)`** legs sharing one index. Binary bonds draw as ordinary edges;
-  **three or more** legs on one bond use a **virtual hub** (same idea as Quimb hyperedges). Unlisted
-  axes are **dangling**. TeNPy itself does not define this container; it lives in this package for
-  **`engine="tenpy"`** only.
-- Finite, segment, or infinite **`tenpy.networks.mps.MPS`** (including **`PurificationMPS`** and
-  **`UniformMPS`**, which share the **`get_B`** chain API). These are normalized internally through
-  the same explicit bond rules as a 1D chain.
-- Finite or infinite **`tenpy.networks.mpo.MPO`** (**`get_W`**).
-- **Momentum-style excitations:** objects with **`get_X(i)`** and **`uMPS_GS`** (same surface as
-  **`MomentumMPS`**); periodicity follows **`uMPS_GS.bc`** / **`finite`**.
-- **Not auto-wrapped:** TeNPy does not ship a stable **PEPS** class in **`tenpy.networks`**. You can
-  still draw PEPS-like or sandwich topologies by building a **`TenPyTensorNetwork`** from **`npc.Array`**
-  tensors (e.g. from **`get_B`** / **`get_W`** on bra, MPO, ket) and explicit bonds.
-
-Infinite structures render as one **periodic unit cell**.
-
-### `einsum`
-
-**Inputs:** `EinsumTrace`, or an ordered iterable of **`pair_tensor`** (binary steps) and/or
-**`einsum_trace_step`** (unary / ternary+ manual traces).
-
-**Auto tracing:**
-
-```python
-from tensor_network_viz import EinsumTrace, einsum, show_tensor_network
-
-trace = EinsumTrace()
-trace.bind("A0", a0)
-trace.bind("x0", x0)
-
-r0 = einsum("pa,p->a", a0, x0, trace=trace, backend="torch")
-
-fig, ax = show_tensor_network(trace, engine="einsum", view="2d", show=False)
-```
-
-**Manual trace:**
-
-```python
-from tensor_network_viz import pair_tensor, show_tensor_network
-
-trace = [
-    pair_tensor("A0", "x0", "r0", "pa,p->a"),
-    pair_tensor("r0", "A1", "r1", "a,apb->pb"),
-]
-
-fig, ax = show_tensor_network(trace, engine="einsum", view="2d", show=False)
-```
-
-**Manual traces with ellipsis:** each `pair_tensor(..., metadata=...)` should include
-**`left_shape`** and **`right_shape`** (tuple of ints) when the equation contains **`...`**, so the
-graph builder can expand indices. Auto-traced calls record these automatically.
-
-**Optional API:** `parse_equation_for_shapes` validates a **binary** subscript string against two
-operand ranks. **`parse_einsum_equation`** generalizes that to **any arity** (same NumPy rules for
-implicit output). Manual **n-ary** traces can use **`einsum_trace_step`** with **`operand_shapes`**
-metadata; **binary** auto-traces still produce **`pair_tensor`** rows. Traced **`out=`** is allowed
-when the buffer is **not** already on the trace; **implicit** subscripts without **`->`** are
-supported for **binary** steps (ellipsis still requires **`->`**).
-
-The diagram shows the **underlying** tensor network, not every intermediate result tensor. Trace
-order must match contraction order.
-
-**Drawing and layout:** ordinary pairwise contractions (one occurrence per operand, index not in the
-output) are **single bonds** between tensors. Indices repeated on the left or carried to the output
-are merged at **virtual hub** nodes (like Quimb hyperedges). The shared layout pass **spreads** hub
-nodes that share the same tensor neighbors, and **offsets** a hub off the chord between two tensors
-when those tensors also have a **direct** contraction (e.g. batch ellipsis hyperedge alongside a
-matmul leg) so bonds do not coincide visually. Hubs that attach to **only one** physical tensor
-(same-tensor traces such as **`ii->i`**) would otherwise sit on top of that tensor after the
-barycenter snap; in **2D** they receive an extra **perpendicular offset** from the tensor, while
-**3D** already separates overlapping hub/tensor pairs via **layer promotion** along the z axis.
-
-**Contraction scheme (execution order):** For the **einsum** engine, **`contraction_steps`** is a
-**running union** of physical lineages along the trace: each step adds the operands’ lineages to
-what was already grouped, so every new hull is a **superset** of the previous (cumulative contraction
-of the network so far). Example (MPS-style trace): early boxes grow as **A0∪x0**, then **A0∪x0∪A1**,
-then **all tensors**. Parallel **A–B** then **C–D** then merge: the second pair’s hull includes **A∪B∪C∪D**
-before the final merge. Highlights are **border-only** by default (**`contraction_scheme_alpha`** =
-**0**); use a small fill alpha if you want a tint. **Nested** sets get a little extra pad, and each
-step adds a small **order-dependent** pad so larger effective tensors read as larger hulls. Enable
-with **`PlotConfig(show_contraction_scheme=True)`**; **2D** rounded **`FancyBboxPatch`** around the
-axis-aligned bounding box of the tensors in that step (not per-tensor tight hulls); **later** steps
-drawn **under** earlier ones; **3D** wireframes (no fill). Other engines: **`contraction_scheme_by_name`**
-(each step should list the tensors you want in that hull; end with the full network if you want one
-global region). When a figure has usable contraction steps, it also gets Matplotlib toggles for
-**`Scheme`**, **`Playback`**, and **`Cost hover`**. If those flags start disabled in
-**`PlotConfig`**, the scheme geometry, playback viewer, and cost tooltips are built lazily on the
-first toggle that needs them, then reused for the rest of the figure lifetime.
-
-<a id="toc-plotconfig"></a>
-
-## PlotConfig
-
-Frozen dataclass in [`src/tensor_network_viz/config.py`](../src/tensor_network_viz/config.py).
-
-### Field reference
-
-| Field | Default | Meaning |
-|-------|---------|---------|
-| `node_color` | `"#E8EEF5"` | Node fill. |
-| `node_edge_color` | `"#1E293B"` | Node outline. |
-| `node_color_degree_one` | `"#FEE2E2"` | Fill when tensor has total degree 1. |
-| `node_edge_color_degree_one` | `"#7F1D1D"` | Outline for degree 1. |
-| `tensor_label_color` | `"#0F172A"` | Tensor name color. |
-| `label_color` | `"#334155"` | Index label color. |
-| `bond_edge_color` | `"#0369A1"` | Contraction bonds. |
-| `dangling_edge_color` | `"#BE123C"` | Open legs. |
-| `figsize` | `(8, 6)` | Inches; if `None` and the renderer **creates** a figure, fallback **`(14, 10)`**. |
-| `show_tensor_labels` | `False` | Draw tensor names. |
-| `show_index_labels` | `False` | Draw index names. |
-| `node_radius` | `None` | → **`0.08`** (`DEFAULT_NODE_RADIUS`); scales drawn radius. |
-| `stub_length` | `None` | → **`0.16`** (`DEFAULT_STUB_LENGTH`). |
-| `self_loop_radius` | `None` | → **`0.2`** (`DEFAULT_SELF_LOOP_RADIUS`). |
-| `line_width_2d` | `None` | → **`0.85`**. |
-| `line_width_3d` | `None` | → **`0.75`**. |
-| `layout_iterations` | `None` | See [Layout and draw scale](#layout-and-draw-scale). |
-| `positions` | `None` | Custom coords per normalized node id. |
-| `validate_positions` | `False` | Warn on bad ids / short tuples. |
-| `refine_tensor_labels` | `True` | Extra draw passes to shrink tensor names so they fit the node marker (2D or 3D). |
-| `hover_labels` | `True` | Enable hover tooltips independently from static labels (interactive). |
-| `show_contraction_scheme` | `False` | Highlight contraction steps (einsum auto or **`contraction_scheme_by_name`**). |
-| `contraction_scheme_alpha` | `0.0` | Fill alpha (2D); default is no fill (edges only). |
-| `contraction_scheme_edge_alpha` | `None` | Border alpha; **None** picks a visible stroke (independent of fill when fill is 0). |
-| `contraction_scheme_linewidth` | `None` | → **`DEFAULT_CONTRACTION_SCHEME_LINEWIDTH`** (scaled like other strokes). |
-| `contraction_scheme_colors` | `None` | Cycle of colors; built-in categorical palette if unset. |
-| `contraction_scheme_by_name` | `None` | Override schedule: per step, tuple of **`node.name`** strings for non-virtual tensors. |
-| `contraction_playback` | `False` | Start with the step slider and **Play/Pause/Reset** visible; still requires **`show_contraction_scheme=True`** in code. |
-| `contraction_scheme_cost_hover` | `False` | Show the naive dense contraction-cost tooltip when hovering a visible scheme hull. |
-
-### Recipe: publication palette
-
-```python
-from tensor_network_viz import PlotConfig
-
-config = PlotConfig(
-    figsize=(10, 6),
-    node_color="#F4F1EA",
-    node_edge_color="#2D3748",
-    bond_edge_color="#173F7A",
-    dangling_edge_color="#8B1E1E",
-    tensor_label_color="#111827",
-    label_color="#111827",
-    layout_iterations=300,
-)
-```
-
-### Recipe: large graphs (faster)
+### Parameters
+
+| Parameter | Meaning |
+| --- | --- |
+| `network` | Backend-native tensor network object or supported iterable/trace. |
+| `engine` | Optional explicit backend: `"tensorkrowch"`, `"tensornetwork"`, `"quimb"`, `"tenpy"`, or `"einsum"`. |
+| `view` | `"2d"` or `"3d"`. If omitted, the initial view is `"2d"`. |
+| `config` | A `PlotConfig` instance. If omitted, `PlotConfig()` is used. |
+| `ax` | Existing Matplotlib axis to draw into. |
+| `show_controls` | If `True`, add the figure control panel. If `False`, render only the network. |
+| `show` | If `True`, display the figure immediately. If `False`, just return `(fig, ax)`. |
+
+## `PlotConfig` in Practice
+
+`PlotConfig` is where visual behavior lives.
+
+### Labels and hover
 
 ```python
 config = PlotConfig(
-    figsize=(12, 10),
-    refine_tensor_labels=False,
+    show_tensor_labels=True,
+    show_index_labels=False,
+    hover_labels=True,
+)
+```
+
+### Contraction scheme
+
+```python
+config = PlotConfig(
+    show_contraction_scheme=True,
+    contraction_playback=True,
+    contraction_scheme_cost_hover=True,
+)
+```
+
+Important detail:
+
+- if `show_controls=True`, playback and scheme toggles are available on the figure;
+- if `show_controls=False`, the scheme can still be drawn statically, but no playback widgets are added.
+
+### Performance-oriented rendering
+
+```python
+config = PlotConfig(
+    tensor_label_refinement="never",
     layout_iterations=120,
 )
 ```
 
-Tune **`layout_iterations`** if the automatic default (when **`layout_iterations` is `None`**) is too heavy or too loose.
+`tensor_label_refinement` can be:
 
-### Recipe: hover labels in an interactive session
+- `"auto"`: default, balanced choice.
+- `"always"`: best label fitting, slowest on large figures.
+- `"never"`: skip the expensive post-draw label-fit passes.
 
-```python
-config = PlotConfig(figsize=(8, 6), hover_labels=True)
-```
-
-Use with a GUI or **`%matplotlib widget`**; useless for PNG-only **`--no-show`** runs.
-
-### Recipe: clean static export without widgets
-
-```python
-fig, ax = show_tensor_network(
-    network,
-    engine="quimb",
-    config=PlotConfig(figsize=(8, 6)),
-    interactive_controls=False,
-    show=False,
-)
-fig.savefig("network.png", bbox_inches="tight")
-```
-
-### Recipe: contraction scheme (einsum or manual names)
-
-```python
-from tensor_network_viz import PlotConfig, show_tensor_network
-
-# Einsum trace: steps come from the trace automatically.
-fig, ax = show_tensor_network(
-    trace,
-    engine="einsum",
-    view="2d",
-    config=PlotConfig(show_contraction_scheme=True),
-    show=False,
-)
-
-# Any engine: supply steps as tensor names (must be unique among visible tensors).
-fig, ax = show_tensor_network(
-    network,
-    engine="quimb",
-    view="2d",
-    config=PlotConfig(
-        show_contraction_scheme=True,
-        contraction_scheme_by_name=(("A", "B"), ("A", "B", "C")),
-    ),
-    show=False,
-)
-```
-
-Compatible figures show the three figure-level toggles even if you leave these flags off in
-**`PlotConfig`**. Turning on **`Playback`** or **`Cost hover`** from the UI auto-enables
-**`Scheme`**. Turning **`Scheme`** off hides the hulls and playback widgets, but remembered child
-states are restored instantly when you turn it back on.
-
-### Recipe: custom positions with validation
+### Custom positions
 
 ```python
 config = PlotConfig(
     positions={
         id(node_a): (0.0, 0.0),
-        id(node_b): (1.0, 0.0),
+        id(node_b): (1.5, 0.0),
     },
     validate_positions=True,
 )
 ```
 
-Use **`(x, y)`** for `view="2d"` and **`(x, y, z)`** for `view="3d"`. Missing keys still get
-automatic layout, then the cloud is centered/scaled.
+## Common Workflows
 
-<a id="toc-layout-and-draw-scale"></a>
-
-## Layout and draw scale
-
-### Pipeline (high level)
-
-Shared layout in **`tensor_network_viz._core.layout`**:
-
-1. Apply **`positions`** when provided (partial → layout for the rest, then normalize).
-2. Analyze contraction components for structure.
-3. Prefer specialized layouts when they match: **chains**, **2D grids**, **trees**, **planar**
-   embeddings.
-4. **Force-directed** fallback when no structural layout fits.
-5. In **3D**, start from planar structure and move nodes to parallel **layers** when needed.
-6. Compute **axis directions** for stubs, bonds, and labels.
-
-### Force iterations when `layout_iterations is None`
-
-Implementation [`_effective_layout_iterations`](../src/tensor_network_viz/_core/renderer.py):
-
-```text
-n = max(n_nodes, 1)
-iterations = int(min(220, max(45, 14 * sqrt(n))))
-```
-
-(Implemented as floats inside `int(...)` in [`_effective_layout_iterations`](../src/tensor_network_viz/_core/renderer.py).)
-
-If you set **`layout_iterations`** to an **int**, that value is used exactly.
-
-### Dense graphs and large node counts
-
-When the pipeline falls back to **force-directed** layout and the graph has more than about **72**
-nodes, pairwise repulsion uses **sampled** pairs instead of every \(O(n^2)\) interaction so the step
-cost stays closer to \(O(n)\)–\(O(n \log n)\) in practice. Results are still stochastic (use
-**`seed`**). Very dense graphs can remain expensive from attraction and iteration count; supplying
-**`positions`** or lowering **`layout_iterations`** remains the main lever for speed.
-
-### Draw scale and node size
-
-With default **`node_radius`**, the renderer targets node **radius ≈ 0.3 × d_min** where **`d_min`**
-is the shortest **contraction** edge (center-to-center). **`PlotConfig.node_radius`** multiplies that
-radius. Without usable contraction geometry, a **heuristic** from node count and extent applies.
-
-In **2D**, node patches live in **data** coordinates so zoom/pan keeps rims aligned with bonds;
-line widths and fonts stay in **points** (screen space). **3D** uses octahedra with the same metric
-radius idea.
-
-<a id="toc-custom-positions"></a>
-
-## Custom positions
-
-**Keys** are **`int` ids of normalized graph nodes** — typically **`id(...)`** of the Python objects
-the adapter used (TensorKrowch nodes, Quimb tensors, etc.). If you pass copies or rebuild objects,
-ids may not match: prefer positions keyed from the **same objects** you pass into **`show_tensor_network`**.
-
-- Unknown keys when **`validate_positions=True`** → **`UserWarning`** (and those coords ignored).
-- Too-short tuples → zero-filled extra dims with a warning when validating.
-
-<a id="toc-working-with-the-returned-figure"></a>
-
-## Working with the returned figure
-
-All paths return Matplotlib objects:
+### 1. Explore interactively
 
 ```python
-# network = ...  # your TeNPy MPS/MPO
-
 fig, ax = show_tensor_network(
     network,
-    engine="tenpy",
-    view="2d",
-    interactive_controls=False,
-    show=False,
+    config=PlotConfig(
+        hover_labels=True,
+        show_tensor_labels=False,
+        show_index_labels=False,
+    ),
 )
-ax.set_title("Finite MPO")
-fig.savefig("finite-mpo.png", bbox_inches="tight")
 ```
 
-For batch jobs: **`show=False`**, **`savefig`**, then **`plt.close(fig)`** if you create many
-figures. Use **`interactive_controls=False`** when you do not want the widget panel saved with the
-figure.
+Use this when you want the embedded controls and interactive hover behavior.
 
-<a id="toc-example-scripts"></a>
+### 2. Export a clean figure
 
-## Example scripts
+```python
+fig, ax = show_tensor_network(
+    network,
+    config=PlotConfig(
+        show_tensor_labels=True,
+        show_index_labels=False,
+    ),
+    show_controls=False,
+    show=False,
+)
+fig.savefig("network.png", bbox_inches="tight")
+```
 
-The [`examples/`](../examples/) directory includes:
+Use this for papers, reports, or batch generation.
 
-| Script | Role |
-|--------|------|
-| `run_demo.py` | Public CLI: `python examples/run_demo.py <engine> <example> [options]`. |
-| `demo_cli.py` | Shared typed helpers for parsing, save paths, plot config, and reusable topology builders. |
-| `tensorkrowch_demo.py` | TensorKrowch registry: MPS/TT, MPO, ladder, PEPS, cubic PEPS, MERA, MERA+TTN, weird, disconnected. |
-| `tensornetwork_demo.py` | TensorNetwork registry with the same structured graph examples. |
-| `quimb_demo.py` | Quimb registry with the same family plus a native hypergraph example. |
-| `tenpy_demo.py` | Native TeNPy MPS/MPO/iMPS/iMPO/purification/uniform/excitation plus explicit chain/hub/hyper demos. |
-| `einsum_demo.py` | Network-style traces and equation-pattern traces (`ellipsis`, `batch`, `trace`, `ternary`, `unary`, `nway`, `implicit_out`). |
-| `run_all_examples.py` | Batch runner that calls `run_demo.py` and saves PNGs headlessly. |
+### 3. Reuse an existing subplot
 
-Command catalog: [`examples/README.md`](../examples/README.md).
+```python
+import matplotlib.pyplot as plt
 
-<a id="toc-limitations"></a>
+fig, ax = plt.subplots(figsize=(8, 6))
+show_tensor_network(
+    network,
+    config=PlotConfig(figsize=None),
+    ax=ax,
+    show=False,
+)
+```
 
-## Limitations
+If you pass `ax`, the plot is rendered into that axis and the figure is not recreated.
 
-### `einsum` tracing
+## Supported Inputs
 
-With **`trace=`**, the helper records each step and validates subscripts against operand **shapes**
-using NumPy’s `einsum` (same rules as NumPy/PyTorch for duplicates, broadcasting batch indices, etc.):
+### TensorKrowch
 
-- **Arity:** **one**, **two**, or **more** operands per traced call. **Binary** steps are stored as
-  **`pair_tensor`**; **unary** / **ternary+** as **`einsum_trace_step`** (with **`operand_shapes`**
-  in metadata for manual lists).
-- **Explicit output:** **`->`** is required when the equation contains **`...`**. For equations
-  **without** ellipsis, **implicit** output (omitting **`->`**) is allowed; the trace stores a
-  canonical explicit string. Optional **`out=`** is supported (shape-checked; **`out`** must not
-  already be on the trace). PyTorch builds without native **`einsum(..., out=...)`** use **`copy_`**
-  into **`out`**.
-- **`...` (binary):** ranks come from the tensors; the graph expands ellipsis using metadata
-  **`left_shape`** / **`right_shape`** per step (auto-trace fills these).
-- **Visualization:** indices that appear **twice or more** on the LHS, or appear in the **output**
-  while touching more than one leg, use **virtual hub** nodes. A **single** pairwise summation (one
-  letter per operand, not in the output) is a **direct bond** (no hub). See
-  [`examples/einsum_demo.py`](../examples/einsum_demo.py).
-- **Graph build** rejects **unary index disappearance** (a label on only one operand, not in the
-  output, and summed away).
+- `TensorNetwork`
+- iterable of TensorKrowch nodes
 
-Without **`trace=`**, `tensor_network_viz.einsum` is a thin wrapper and does not record steps.
+### TensorNetwork
 
-### Subgraphs
+- iterable of `tensornetwork.Node`
 
-Omitted neighbors become **dangling** legs — intentional for inspection.
+### Quimb
 
-### Disconnected components
+- `quimb.tensor.TensorNetwork`
+- iterable of `quimb.tensor.Tensor`
 
-Supported; laid out **together** in one figure (with spacing heuristics).
+### TeNPy
 
-<a id="toc-troubleshooting"></a>
+- common native MPS/MPO-style objects
+- explicit `TenPyTensorNetwork`
+
+### `einsum`
+
+- `EinsumTrace`
+- ordered iterable of `pair_tensor(...)` / `einsum_trace_step(...)`
+
+More detailed copy-paste examples: [backends.md](backends.md)
+
+## Using the Returned Figure
+
+Every path returns ordinary Matplotlib objects.
+
+```python
+fig, ax = show_tensor_network(network, show=False)
+ax.set_title("My tensor network")
+fig.savefig("out.png", bbox_inches="tight")
+```
+
+That means you can:
+
+- add titles,
+- save to disk,
+- embed in larger figures,
+- continue styling with standard Matplotlib.
 
 ## Troubleshooting
 
-### Missing package / `ModuleNotFoundError`
+### Saved figure still shows controls
 
-Install the extra that matches **`engine=`**:
+Use:
 
-```bash
-python -m pip install "tensor-network-visualization[quimb]"
+```python
+show_tensor_network(..., show_controls=False, show=False)
 ```
 
-TeNPy maps to **`physics-tenpy`**. **`einsum`** tracing needs **`torch`**.
+### Hover does not work
 
-### Invalid `engine` or `view`
+Hover requires an interactive Matplotlib backend. It is not meaningful for pure PNG export flows.
 
-Allowed explicit engines: **`tensorkrowch`**, **`tensornetwork`**, **`quimb`**, **`tenpy`**, **`einsum`**.
-Views: **`2d`**, **`3d`**. Anything else raises **`ValueError`**. If you pass an external `ax`,
-its dimensionality must agree with `view` (`Axes3D` for `3d`, normal `Axes` for `2d`).
+### Large graph is slow
 
-### Wrong axis type for backend plotter
+Try this first:
 
-Pass a **2D** axis to `plot_*_2d` and an **Axes3D** to `plot_*_3d`. Mixed use raises a clear
-**`ValueError`** from [`_prepare_axes`](../src/tensor_network_viz/_core/renderer.py).
-
-### Headless servers / CI
-
-```bash
-export MPLBACKEND=Agg   # Linux/macOS
+```python
+config = PlotConfig(
+    tensor_label_refinement="never",
+    layout_iterations=120,
+)
 ```
 
-```powershell
-$env:MPLBACKEND = "Agg"  # Windows PowerShell
+Then consider passing `positions` if you already know the layout you want.
+
+### Jupyter shows duplicate output
+
+Prefer:
+
+```python
+fig, ax = show_tensor_network(...)
 ```
 
-Always use **`show=False`** for batch saves and **`plt.close(fig)`** when generating many images.
+instead of leaving the returned tuple as the last expression in the cell.
 
-### Jupyter quirks
+## Related Docs
 
-- **Double figures:** assign **`fig, ax = ...`** or **`show=False`** + explicit **`display`**. 
-- **`ipympl`:** needs JupyterLab/Notebook with widget extensions; start kernels after installing. 
-- **VS Code / Cursor notebook:** if widgets fail, use **`%matplotlib inline`** or set
-  **`MPLBACKEND=inline`** (or **`Agg`** for static files) before importing `pyplot`. This package
-  does not read custom env vars—only Matplotlib/Jupyter do. Alternatively run the notebook in the
-  **browser** with a full Jupyter stack and **`[jupyter]`** extras.
-
-### `hover_labels` never appears
-
-Requires an **interactive** figure with event handling. Does nothing for **`--no-show`** PNG-only
-CLI runs or **Agg** without a GUI loop. In widget-enabled figures, also check that the `Hover`
-checkbox is enabled.
-
-### Saved figure shows widget controls
-
-`show_tensor_network` includes the control strip by default, even if you later call `savefig`.
-For a plain exported figure, render with `interactive_controls=False`.
-
-<a id="toc-einsum-unary-2d-layout"></a>
-
-### Einsum unary / same-tensor trace in 2D
-
-Equations like **`ii->i`** use a **virtual hub** attached to a **single** tensor. The layout places
-that hub **off** the tensor disk in **2D** (after barycenter snap) so the tensor and hyperedge stay
-visible. If you still see overlap, try **`view="3d"`** or increase separation indirectly via
-**`layout_iterations`** and a larger **`figsize`**.
-
-### Slow rendering
-
-- Set **`refine_tensor_labels=False`**.
-- Lower **`layout_iterations`** or rely on the automatic cap for large **`n`** (see formula above).
-
-### Surprise figure size when `figsize=None`
-
-If the renderer creates a new figure and **`PlotConfig.figsize` is `None`**, Matplotlib gets
-**`(14, 10)`** inches by default in `_prepare_axes`. Set **`figsize=(w, h)`** explicitly if you need
-a fixed size.
-
-### Custom positions “ignored”
-
-Keys must match **normalized** node ids. Wrong **`id(...)`** → coords skipped (warnings when
-**`validate_positions=True`**).
-
-<a id="toc-internal-architecture"></a>
-
-## Internal architecture
-
-### Public surface
-
-Root package [**`__init__.py`**](../src/tensor_network_viz/__init__.py): `show_tensor_network`,
-`PlotConfig`, `EngineName`, `ViewName`, `EinsumTrace`, `einsum`, `einsum_trace_step`, `pair_tensor`.
-The [**`einsum_module`**](../src/tensor_network_viz/einsum_module/__init__.py) also exports
-`parse_einsum_equation`, `parse_equation_for_shapes`, `plot_einsum_network_2d`, and
-`plot_einsum_network_3d`.
-
-### Engine registry
-
-[**`_registry.py`**](../src/tensor_network_viz/_registry.py) maps each **`EngineName`** to a module
-and two callables (`plot_*_2d`, `plot_*_3d`). `show_tensor_network` **lazy-imports** that module.
-
-### Interactive controller
-
-[**`interactive_viewer.py`**](../src/tensor_network_viz/interactive_viewer.py) owns the figure-level
-widgets and lazy per-view caches used by `show_tensor_network`. Shared normalized graph data is
-reused across 2D/3D switches, while each view keeps its own cached geometry, hover payloads,
-label artists, and contraction-scheme state.
-
-### Graph model
-
-[**`_core/graph.py`**](../src/tensor_network_viz/_core/graph.py): `_NodeData`, `_EdgeData`, endpoints,
-`_GraphData`.
-
-### Adapters
-
-Each backend builds `_GraphData`:
-
-- TensorKrowch / TensorNetwork share [**`_nodes_edges_common`**](../src/tensor_network_viz/_core/_nodes_edges_common.py).
-- Quimb: [**`quimb/graph.py`**](../src/tensor_network_viz/quimb/graph.py).
-- TeNPy: [**`tenpy/graph.py`**](../src/tensor_network_viz/tenpy/graph.py).
-- Einsum: [**`einsum_module/graph.py`**](../src/tensor_network_viz/einsum_module/graph.py).
-
-### Drawing
-
-[**`renderer.py`**](../src/tensor_network_viz/_core/renderer.py) resolves `PlotConfig`, positions,
-scale, and calls [**`_draw_graph`**](../src/tensor_network_viz/_core/draw/graph_pipeline.py) (re-exported from [**`_draw_common.py`**](../src/tensor_network_viz/_core/_draw_common.py)).
-
-### Layout implementation
-
-The [**`layout` package**](../src/tensor_network_viz/_core/layout/__init__.py) together with
-[**`layout_structure.py`**](../src/tensor_network_viz/_core/layout_structure.py) implements
-structure detection, planar attempts, force layout, and 3D layering heuristics. Virtual (hyperedge)
-hubs: **barycenter snap** to neighbors, then **perpendicular spread** when several hubs share the same
-neighbor set, then **chord clearance** when a hub would sit on a tensor–tensor segment that also
-carries a direct contraction edge. In **2D**, a hub with **only one** physical neighbor (e.g. einsum
-**`ii->i`**) is **nudged** off that tensor so it is not drawn coincident with it; **3D** overlaps are
-handled by **z-layer promotion** (`_promote_3d_layers`).
-
-<a id="toc-development-notes"></a>
-
-## Development notes
-
-Verify from repo root:
-
-**Windows:**
-
-```powershell
-.\.venv\Scripts\python -m ruff check .
-.\.venv\Scripts\python -m pyright
-.\.venv\Scripts\python -m pytest
-```
-
-**Linux / macOS:**
-
-```bash
-ruff check .
-pyright
-pytest
-```
-
-Tests cover adapters, rendering, optional backends, and `einsum` tracing.
+- [README.md](../README.md): quick overview and install guide.
+- [backends.md](backends.md): backend-specific examples.
+- [examples/README.md](../examples/README.md): launcher usage.

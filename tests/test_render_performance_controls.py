@@ -31,7 +31,7 @@ def _chain_graph(n_nodes: int) -> _GraphData:
     return _GraphData(nodes=nodes, edges=tuple(edges))
 
 
-def test_auto_performance_mode_refines_below_threshold(monkeypatch) -> None:
+def test_auto_tensor_label_refinement_refines_below_threshold(monkeypatch) -> None:
     import tensor_network_viz._core.draw.render_prep as render_prep
 
     calls: list[int] = []
@@ -44,14 +44,14 @@ def test_auto_performance_mode_refines_below_threshold(monkeypatch) -> None:
     _plot_graph(
         _chain_graph(39),
         dimensions=2,
-        config=PlotConfig(performance_mode="auto"),
+        config=PlotConfig(tensor_label_refinement="auto"),
         renderer_name="test_auto_below",
     )
 
     assert calls == [1]
 
 
-def test_auto_performance_mode_skips_refine_at_threshold(monkeypatch) -> None:
+def test_auto_tensor_label_refinement_skips_refine_at_threshold(monkeypatch) -> None:
     import tensor_network_viz._core.draw.render_prep as render_prep
 
     calls: list[int] = []
@@ -64,14 +64,14 @@ def test_auto_performance_mode_skips_refine_at_threshold(monkeypatch) -> None:
     _plot_graph(
         _chain_graph(40),
         dimensions=2,
-        config=PlotConfig(performance_mode="auto"),
+        config=PlotConfig(tensor_label_refinement="auto"),
         renderer_name="test_auto_threshold",
     )
 
     assert calls == []
 
 
-def test_quality_performance_mode_forces_refine_at_threshold(monkeypatch) -> None:
+def test_always_tensor_label_refinement_forces_refine_at_threshold(monkeypatch) -> None:
     import tensor_network_viz._core.draw.render_prep as render_prep
 
     calls: list[int] = []
@@ -84,14 +84,14 @@ def test_quality_performance_mode_forces_refine_at_threshold(monkeypatch) -> Non
     _plot_graph(
         _chain_graph(40),
         dimensions=2,
-        config=PlotConfig(performance_mode="quality"),
+        config=PlotConfig(tensor_label_refinement="always"),
         renderer_name="test_quality_threshold",
     )
 
     assert calls == [1]
 
 
-def test_fast_performance_mode_skips_refine_even_below_threshold(monkeypatch) -> None:
+def test_never_tensor_label_refinement_skips_refine_even_below_threshold(monkeypatch) -> None:
     import tensor_network_viz._core.draw.render_prep as render_prep
 
     calls: list[int] = []
@@ -104,7 +104,7 @@ def test_fast_performance_mode_skips_refine_even_below_threshold(monkeypatch) ->
     _plot_graph(
         _chain_graph(12),
         dimensions=2,
-        config=PlotConfig(performance_mode="fast"),
+        config=PlotConfig(tensor_label_refinement="never"),
         renderer_name="test_fast_small",
     )
 

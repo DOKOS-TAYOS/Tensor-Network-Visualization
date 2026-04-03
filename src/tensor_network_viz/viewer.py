@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
 from itertools import tee
 from typing import Any, TypeAlias, cast
 
@@ -125,9 +126,7 @@ def show_tensor_network(
     view: ViewName | None = None,
     config: PlotConfig | None = None,
     ax: RenderedAxes | None = None,
-    show_tensor_labels: bool | None = None,
-    show_index_labels: bool | None = None,
-    interactive_controls: bool = True,
+    show_controls: bool = True,
     show: bool = True,
 ) -> tuple[Figure, RenderedAxes]:
     """Render a tensor network and optionally display the figure.
@@ -142,16 +141,13 @@ def show_tensor_network(
         view: "2d" or "3d" visualization mode. ``None`` defaults to ``"2d"``
             unless ``ax`` is a 3D axes, in which case the view is inferred.
         config: Optional styling; uses defaults if None. Use ``PlotConfig`` for
-            colors, layout, ``hover_labels`` (interactive hover tooltips), etc.
+            colors, labels, layout, ``hover_labels`` (interactive hover
+            tooltips), contraction highlighting, and related render behavior.
         ax: Optional Matplotlib axes to render into. When passed, the 2D/3D
             selector is suppressed and the view is fixed to that axes.
-        show_tensor_labels: Whether to display tensor names on nodes. ``None``
-            uses ``config.show_tensor_labels``.
-        show_index_labels: Whether to display axis names on edges. ``None``
-            uses ``config.show_index_labels``.
-        interactive_controls: If True, attach figure-level controls for view,
-            hover, and label toggles when the renderer exposes the required
-            scene cache. Set False for a static render without widgets.
+        show_controls: If True, attach figure-level controls for view, hover,
+            and label toggles when the renderer exposes the required scene
+            cache. Set False for a static render without widgets.
         show: If True, display the figure. In a Jupyter kernel this uses
             ``IPython.display.display(fig)`` (use ``pip install
             "tensor-network-visualization[jupyter]"`` and ``%matplotlib widget``
@@ -170,12 +166,6 @@ def show_tensor_network(
         >>> fig, ax = show_tensor_network(network, config=config)
     """
     style = config or PlotConfig()
-    resolved_tensor_labels = (
-        style.show_tensor_labels if show_tensor_labels is None else show_tensor_labels
-    )
-    resolved_index_labels = (
-        style.show_index_labels if show_index_labels is None else show_index_labels
-    )
     ax_view: ViewName | None = None
     if ax is not None:
         ax_view = "3d" if getattr(ax, "name", "") == "3d" else "2d"
@@ -190,22 +180,29 @@ def show_tensor_network(
     else:
         resolved_engine = engine
     plot_2d, plot_3d = _get_plotters(resolved_engine)
-    if not interactive_controls:
+    if not show_controls:
+        static_style = style
+        if style.contraction_playback or style.contraction_scheme_cost_hover:
+            static_style = replace(
+                static_style,
+                show_contraction_scheme=True,
+                contraction_playback=False,
+            )
         if resolved_view == "2d":
             fig, ax_out = plot_2d(
                 network_input,
                 ax=cast(Axes, ax) if ax is not None else None,
-                config=style,
-                show_tensor_labels=show_tensor_labels,
-                show_index_labels=show_index_labels,
+                config=static_style,
+                _build_contraction_controls=False,
+                _build_scene_state=False,
             )
         elif resolved_view == "3d":
             fig, ax_out = plot_3d(
                 network_input,
                 ax=ax,
-                config=style,
-                show_tensor_labels=show_tensor_labels,
-                show_index_labels=show_index_labels,
+                config=static_style,
+                _build_contraction_controls=False,
+                _build_scene_state=False,
             )
         else:
             raise ValueError(f"Unsupported tensor network view: {resolved_view}")
@@ -215,8 +212,6 @@ def show_tensor_network(
             engine=resolved_engine,
             view=resolved_view,
             config=style,
-            show_tensor_labels=resolved_tensor_labels,
-            show_index_labels=resolved_index_labels,
             ax=ax,
         )
     if show:

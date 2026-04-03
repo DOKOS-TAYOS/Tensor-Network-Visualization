@@ -270,14 +270,6 @@ def format_joined_names(values: tuple[str, ...]) -> str:
 def auto_save_path(*, engine: str, example: str) -> Path:
     return Path(".tmp") / "examples" / engine / f"{example}.png"
 
-
-def apply_labels_override(args: ExampleCliArgs) -> tuple[bool, bool]:
-    if args.labels is None:
-        return bool(args.labels_nodes), bool(args.labels_edges)
-    override = bool(args.labels)
-    return override, override
-
-
 def demo_runs_headless(args: ExampleCliArgs | argparse.Namespace) -> bool:
     return bool(getattr(args, "no_show", False) or getattr(args, "save", None) is not None)
 
@@ -335,17 +327,13 @@ def render_demo_tensor_network(
     engine: EngineName,
     view: ViewName,
     config: PlotConfig,
-    show_tensor_labels: bool,
-    show_index_labels: bool,
 ) -> tuple[Figure, RenderedAxes]:
     return show_tensor_network(
         network,
         engine=engine,
         view=view,
         config=config,
-        interactive_controls=not demo_runs_headless(args),
-        show_tensor_labels=show_tensor_labels,
-        show_index_labels=show_index_labels,
+        show_controls=not demo_runs_headless(args),
         show=False,
     )
 
@@ -673,7 +661,6 @@ __all__ = [
     "SizeKnob",
     "add_bool_flag",
     "apply_demo_caption",
-    "apply_labels_override",
     "auto_save_path",
     "available_examples",
     "axis_dimension",

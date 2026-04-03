@@ -17,7 +17,6 @@ from demo_cli import (
     ExampleCliArgs,
     ExampleDefinition,
     apply_demo_caption,
-    apply_labels_override,
     cumulative_prefix_contraction_scheme,
     demo_runs_headless,
     ensure_minimum,
@@ -698,7 +697,6 @@ def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
     import matplotlib.pyplot as plt
 
     built = definition.builder(args, definition)
-    show_tensor_labels, show_index_labels = apply_labels_override(args)
     config = finalize_demo_plot_config(
         args, engine="einsum", scheme_tensor_names=built.scheme_steps_by_name
     )
@@ -708,8 +706,6 @@ def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
         engine="einsum",
         view=args.view,
         config=config,
-        show_tensor_labels=show_tensor_labels,
-        show_index_labels=show_index_labels,
     )
     apply_demo_caption(fig, title=built.title, subtitle=built.subtitle, footer=built.footer)
     if args.save is not None:

@@ -94,7 +94,7 @@ def test_show_tensor_network_autodetects_tensorkrowch_engine() -> None:
     connect(left, 1, right, 0, name="bond")
     network = DummyTensorKrowchNetwork(nodes=[left, right])
 
-    fig, ax = show_tensor_network(network, show=False, interactive_controls=False)
+    fig, ax = show_tensor_network(network, show=False, show_controls=False)
 
     assert fig is ax.figure
     assert ax.name != "3d"
@@ -103,7 +103,7 @@ def test_show_tensor_network_autodetects_tensorkrowch_engine() -> None:
 def test_show_tensor_network_autodetects_einsum_engine() -> None:
     trace = [pair_tensor("A", "x", "r0", "ab,b->a")]
 
-    fig, ax = show_tensor_network(trace, show=False, interactive_controls=False)
+    fig, ax = show_tensor_network(trace, show=False, show_controls=False)
 
     assert fig is ax.figure
     assert ax.name != "3d"
@@ -112,7 +112,7 @@ def test_show_tensor_network_autodetects_einsum_engine() -> None:
 def test_show_tensor_network_autodetects_single_pass_iterable() -> None:
     trace = (step for step in [pair_tensor("A", "x", "r0", "ab,b->a")])
 
-    fig, ax = show_tensor_network(trace, show=False, interactive_controls=False)
+    fig, ax = show_tensor_network(trace, show=False, show_controls=False)
 
     assert fig is ax.figure
     assert ax.name != "3d"

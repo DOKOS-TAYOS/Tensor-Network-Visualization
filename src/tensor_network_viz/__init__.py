@@ -1,6 +1,10 @@
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from mpl_toolkits.mplot3d.axes3d import Axes3D
+
 from ._core.graph_cache import clear_tensor_network_graph_cache
 from .config import EngineName, PlotConfig, ViewName
 
@@ -11,10 +15,27 @@ if TYPE_CHECKING:
     from .viewer import show_tensor_network
 else:
 
-    def show_tensor_network(*args: Any, **kwargs: Any) -> Any:
+    def show_tensor_network(
+        network: Any,
+        *,
+        engine: EngineName | None = None,
+        view: ViewName | None = None,
+        config: PlotConfig | None = None,
+        ax: Axes | Axes3D | None = None,
+        show_controls: bool = True,
+        show: bool = True,
+    ) -> tuple[Figure, Axes | Axes3D]:
         from .viewer import show_tensor_network as _show_tensor_network
 
-        return _show_tensor_network(*args, **kwargs)
+        return _show_tensor_network(
+            network,
+            engine=engine,
+            view=view,
+            config=config,
+            ax=ax,
+            show_controls=show_controls,
+            show=show,
+        )
 
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {

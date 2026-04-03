@@ -13,7 +13,6 @@ if str(_EXAMPLES) not in sys.path:
 
 from demo_cli import (  # noqa: E402
     ExampleCliArgs,
-    apply_labels_override,
     auto_save_path,
     cubic_peps_tensor_names,
     cumulative_prefix_contraction_scheme,
@@ -58,60 +57,6 @@ def test_cubic_peps_names_match_grid_count() -> None:
 def test_cubic_peps_invalid_grid() -> None:
     with pytest.raises(ValueError, match="must be >="):
         cubic_peps_tensor_names(0, 1, 1)
-
-
-def test_apply_labels_override_keeps_specific_values_without_global_override() -> None:
-    args = ExampleCliArgs(
-        engine="quimb",
-        example="mps",
-        view="2d",
-        labels_nodes=False,
-        labels_edges=True,
-        labels=None,
-        hover_labels=True,
-        scheme=False,
-        playback=False,
-        hover_cost=False,
-        from_scratch=False,
-        from_list=False,
-        save=None,
-        no_show=False,
-        n_sites=6,
-        lx=3,
-        ly=4,
-        lz=3,
-        mera_log2=3,
-        tree_depth=4,
-    )
-
-    assert apply_labels_override(args) == (False, True)
-
-
-def test_apply_labels_override_overwrites_both_when_global_present() -> None:
-    args = ExampleCliArgs(
-        engine="quimb",
-        example="mps",
-        view="2d",
-        labels_nodes=False,
-        labels_edges=True,
-        labels=True,
-        hover_labels=True,
-        scheme=False,
-        playback=False,
-        hover_cost=False,
-        from_scratch=False,
-        from_list=False,
-        save=None,
-        no_show=False,
-        n_sites=6,
-        lx=3,
-        ly=4,
-        lz=3,
-        mera_log2=3,
-        tree_depth=4,
-    )
-
-    assert apply_labels_override(args) == (True, True)
 
 
 def test_auto_save_path_uses_engine_and_example() -> None:
@@ -202,15 +147,13 @@ def test_render_demo_tensor_network_disables_controls_for_headless_mode(
         config=finalize_demo_plot_config(
             _demo_args(), engine="tensornetwork", scheme_tensor_names=None
         ),
-        show_tensor_labels=True,
-        show_index_labels=False,
     )
 
     assert result == ("figure", "axes")
-    assert calls[0]["interactive_controls"] is False
+    assert calls[0]["show_controls"] is False
     assert calls[0]["show"] is False
-    assert calls[0]["show_tensor_labels"] is True
-    assert calls[0]["show_index_labels"] is False
+    assert "show_tensor_labels" not in calls[0]
+    assert "show_index_labels" not in calls[0]
 
 
 def test_render_demo_tensor_network_keeps_controls_for_interactive_mode(
@@ -232,15 +175,13 @@ def test_render_demo_tensor_network_keeps_controls_for_interactive_mode(
         config=finalize_demo_plot_config(
             _demo_args(), engine="tensornetwork", scheme_tensor_names=None
         ),
-        show_tensor_labels=False,
-        show_index_labels=True,
     )
 
     assert result == ("figure", "axes")
-    assert calls[0]["interactive_controls"] is True
+    assert calls[0]["show_controls"] is True
     assert calls[0]["show"] is False
-    assert calls[0]["show_tensor_labels"] is False
-    assert calls[0]["show_index_labels"] is True
+    assert "show_tensor_labels" not in calls[0]
+    assert "show_index_labels" not in calls[0]
 
 
 def test_run_demo_parser_defaults_match_cli_contract() -> None:

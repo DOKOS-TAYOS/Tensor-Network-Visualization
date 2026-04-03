@@ -57,7 +57,7 @@ def test_plot_graph_calls_group_contractions_once(monkeypatch: pytest.MonkeyPatc
     fig, _ax = _plot_graph(
         graph,
         dimensions=2,
-        config=PlotConfig(figsize=(6, 4), refine_tensor_labels=False),
+        config=PlotConfig(figsize=(6, 4), tensor_label_refinement="never"),
         renderer_name="test",
     )
     plt.close(fig)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import matplotlib
@@ -25,8 +26,7 @@ def test_plot_config_has_expected_defaults() -> None:
     assert config.layout_iterations is None
     assert config.positions is None
     assert config.validate_positions is False
-    assert config.refine_tensor_labels is True
-    assert config.performance_mode == "auto"
+    assert config.tensor_label_refinement == "auto"
     assert config.approximate_3d_tensor_disk_px is True
     assert config.hover_labels is True
 
@@ -47,12 +47,26 @@ def test_plot_config_accepts_overrides() -> None:
         figsize=(10, 5),
         show_tensor_labels=False,
         layout_iterations=100,
-        performance_mode="fast",
+        tensor_label_refinement="never",
     )
     assert config.figsize == (10, 5)
     assert config.show_tensor_labels is False
     assert config.layout_iterations == 100
-    assert config.performance_mode == "fast"
+    assert config.tensor_label_refinement == "never"
+
+
+def test_show_tensor_network_public_signature_is_config_centric() -> None:
+    signature = inspect.signature(show_tensor_network)
+
+    assert tuple(signature.parameters) == (
+        "network",
+        "engine",
+        "view",
+        "config",
+        "ax",
+        "show_controls",
+        "show",
+    )
 
 
 def test_show_tensor_network_rejects_invalid_view() -> None:

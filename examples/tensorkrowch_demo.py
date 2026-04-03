@@ -16,7 +16,6 @@ from demo_cli import (
     ExampleDefinition,
     GraphBlueprint,
     apply_demo_caption,
-    apply_labels_override,
     axis_dimension,
     build_cubic_peps_blueprint,
     build_disconnected_blueprint,
@@ -212,7 +211,6 @@ def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
     import matplotlib.pyplot as plt
 
     built = definition.builder(args, definition)
-    show_tensor_labels, show_index_labels = apply_labels_override(args)
     config = finalize_demo_plot_config(
         args,
         engine="tensorkrowch",
@@ -224,8 +222,6 @@ def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
         engine="tensorkrowch",
         view=args.view,
         config=config,
-        show_tensor_labels=show_tensor_labels,
-        show_index_labels=show_index_labels,
     )
     apply_demo_caption(fig, title=built.title, subtitle=built.subtitle, footer=built.footer)
     if args.save is not None:
