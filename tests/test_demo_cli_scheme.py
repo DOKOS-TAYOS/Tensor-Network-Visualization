@@ -12,7 +12,6 @@ if str(_EXAMPLES) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES))
 
 from demo_cli import (  # noqa: E402
-    ExampleCliArgs,
     auto_save_path,
     cubic_peps_tensor_names,
     cumulative_prefix_contraction_scheme,

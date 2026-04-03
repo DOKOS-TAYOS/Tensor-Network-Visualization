@@ -270,6 +270,7 @@ def format_joined_names(values: tuple[str, ...]) -> str:
 def auto_save_path(*, engine: str, example: str) -> Path:
     return Path(".tmp") / "examples" / engine / f"{example}.png"
 
+
 def demo_runs_headless(args: ExampleCliArgs | argparse.Namespace) -> bool:
     return bool(getattr(args, "no_show", False) or getattr(args, "save", None) is not None)
 

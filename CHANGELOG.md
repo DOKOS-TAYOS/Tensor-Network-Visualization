@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **API cleanup:** Streamlined and modernized the API by removing redundant and obsolete arguments, leading to a simpler and more intuitive interface.
+- **Codebase optimization:** Optimized internal logic and removed dead code for improved performance and maintainability.
+
+### Documentation
+- **Improved docs:** Updated and clarified documentation throughout the project to better reflect the current API and usage patterns.
+
+
 ## [1.5.0] — 2026-04-03
 
 ### Added

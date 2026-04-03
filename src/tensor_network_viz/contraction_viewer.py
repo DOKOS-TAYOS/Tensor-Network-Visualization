@@ -168,6 +168,7 @@ def _safe_set_linewidth(artist: Artist, lw: float) -> None:
         with suppress(AttributeError, TypeError, ValueError):
             setter2(lw)
 
+
 def _snapshot_style(artist: Artist) -> dict[str, Any]:
     snap: dict[str, Any] = {}
     for attr, key in (

@@ -54,6 +54,7 @@ _INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _INTERACTIVE_CHECK_MARK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
 _INTERACTIVE_RADIO_PROPS: dict[str, float] = {"s": 38.0, "linewidth": 0.9}
 
+
 @dataclass
 class _ViewCache:
     ax: RenderedAxes | None = None
@@ -64,6 +65,7 @@ def _set_artist_visible(artist: Artist, visible: bool) -> None:
     setter = getattr(artist, "set_visible", None)
     if callable(setter):
         setter(bool(visible))
+
 
 def _scene_from_axes(ax: RenderedAxes | None) -> _InteractiveSceneState | None:
     if ax is None:

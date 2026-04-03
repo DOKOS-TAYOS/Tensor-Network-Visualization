@@ -196,11 +196,7 @@ def _bundle_scheme_entries_2d(
 def _bundle_scheme_entries_3d(
     bundle: _ContractionSchemeBundle,
 ) -> tuple[tuple[tuple[float, float, float, float, float, float], str, Any], ...]:
-    if (
-        bundle.artists_by_step is None
-        or bundle.tooltips is None
-        or bundle.scheme_aabb is None
-    ):
+    if bundle.artists_by_step is None or bundle.tooltips is None or bundle.scheme_aabb is None:
         return ()
     out: list[tuple[tuple[float, float, float, float, float, float], str, Any]] = []
     for index, artist in enumerate(bundle.artists_by_step):

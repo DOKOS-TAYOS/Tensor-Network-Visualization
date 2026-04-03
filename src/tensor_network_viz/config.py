@@ -116,4 +116,5 @@ class PlotConfig:
     contraction_playback: bool = False
     contraction_scheme_cost_hover: bool = False
 
+
 __all__ = ["EngineName", "PlotConfig", "TensorLabelRefinement", "ViewName"]
