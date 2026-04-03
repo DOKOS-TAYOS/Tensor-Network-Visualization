@@ -7,13 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.5.1] — 2026-04-04
+
+### Added
+- **Tensor elements visualizer:** `show_tensor_elements` inspects tensor values in Matplotlib with optional group/mode controls (heatmap, magnitude, distribution, text summary, and complex/diagnostic views), `TensorElementsConfig` for modes and axis grouping, multi-tensor selection when applicable, and the same engine auto-detection as the network viewer.
+
 ### Changed
 - **API cleanup:** Streamlined and modernized the API by removing redundant and obsolete arguments, leading to a simpler and more intuitive interface.
 - **Codebase optimization:** Optimized internal logic and removed dead code for improved performance and maintainability.
 
 ### Documentation
 - **Improved docs:** Updated and clarified documentation throughout the project to better reflect the current API and usage patterns.
-
 
 ## [1.5.0] — 2026-04-03
 
@@ -96,6 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[1.5.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.0...v1.4.1
