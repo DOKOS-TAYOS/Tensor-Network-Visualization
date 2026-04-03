@@ -79,7 +79,7 @@ def main() -> None:
         ("chain_n72", _chain_graph(72)),
     ]
 
-    plot_config = PlotConfig(figsize=(6, 4), refine_tensor_labels=False)
+    plot_config = PlotConfig(figsize=(6, 4), tensor_label_refinement="never")
 
     print(f"warmup={args.warmup} repeats={args.repeats} backend=Agg\n")
 
