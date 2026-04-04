@@ -279,6 +279,85 @@ def test_tensornetwork_mera_ttn_saves_figure_without_showing() -> None:
     assert output_path.exists()
 
 
+def test_tensorkrowch_run_example_2d_calls_renderer_without_scope_patch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_example_module(
+        Path("examples/tensorkrowch_demo.py"), "tensorkrowch_demo_run_plain"
+    )
+    from matplotlib.figure import Figure
+
+    def fake_builder(
+        args: object,
+        definition: object,
+    ) -> object:
+        del args, definition
+        return module.BuiltExample(
+            network=object(),
+            plot_engine="tensorkrowch",
+            title="Title",
+        )
+
+    def fake_render_demo_tensor_network(
+        network: object,
+        *,
+        args: object,
+        engine: str,
+        view: str,
+        config: object,
+    ) -> tuple[Figure, object]:
+        del network, config
+        assert args is not None
+        assert engine == "tensorkrowch"
+        assert view == "2d"
+        return Figure(), object()
+
+    args = module.ExampleCliArgs(
+        engine="tensorkrowch",
+        example="mps",
+        view="2d",
+        labels_nodes=True,
+        labels_edges=False,
+        labels=None,
+        hover_labels=True,
+        scheme=False,
+        playback=False,
+        hover_cost=False,
+        tensor_inspector=False,
+        from_scratch=False,
+        from_list=False,
+        save=None,
+        no_show=True,
+        n_sites=2,
+        lx=1,
+        ly=1,
+        lz=1,
+        mera_log2=1,
+        tree_depth=1,
+    )
+
+    fake_definition = module.ExampleDefinition(
+        name="mps",
+        aliases=(),
+        size_knobs=frozenset({"n_sites"}),
+        supports_native_object=True,
+        supports_from_scratch=True,
+        supports_list=True,
+        builder=fake_builder,
+        description="fake",
+    )
+
+    monkeypatch.setattr(
+        module,
+        "resolve_example_definition",
+        lambda definitions, requested: fake_definition,
+    )
+    monkeypatch.setattr(module, "render_demo_tensor_network", fake_render_demo_tensor_network)
+    monkeypatch.setattr(module, "apply_demo_caption", lambda fig, **kwargs: None)
+
+    module.run_example(args)
+
+
 def test_run_all_examples_default_2d_matches_new_matrix() -> None:
     module = _load_example_module(Path("examples/run_all_examples.py"), "run_all_examples_default")
 
