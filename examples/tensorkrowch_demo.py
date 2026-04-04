@@ -46,6 +46,7 @@ TAGLINES: dict[str, str] = {
     "weird": "Irregular topology for layout fallback.",
 }
 
+
 def _build_blueprint(example: str, args: ExampleCliArgs) -> GraphBlueprint:
     if example == "mps":
         return build_mps_blueprint(args.n_sites)

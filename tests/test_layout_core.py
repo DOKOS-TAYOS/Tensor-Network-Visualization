@@ -199,8 +199,7 @@ def test_compute_axis_directions_chain_2d_allows_opposite_free_axes_on_same_node
         if axis_name.startswith("d1_")
     ]
     picked = [
-        np.asarray(directions[(1, axis_index)], dtype=float)
-        for axis_index in free_axis_indices
+        np.asarray(directions[(1, axis_index)], dtype=float) for axis_index in free_axis_indices
     ]
 
     assert np.allclose(picked[0], np.array([0.0, 1.0], dtype=float), atol=1e-6)
@@ -1206,6 +1205,176 @@ def test_compute_layout_3d_grid_uniform_nearest_neighbor_spacing() -> None:
     assert all(math.isclose(L, mean_len, rel_tol=1e-5, abs_tol=1e-8) for L in lengths)
 
 
+def test_compute_layout_2d_grid3d_depth_projects_with_positive_x_and_negative_y() -> None:
+    graph = _build_3d_grid_graph(2, 2, 3)
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    component = _analyze_layout_components_cached(graph)[0]
+    assert component.grid3d_mapping is not None
+
+    node_id_by_coords = {coords: node_id for node_id, coords in component.grid3d_mapping.items()}
+    p000 = positions[node_id_by_coords[(0, 0, 0)]]
+    p001 = positions[node_id_by_coords[(0, 0, 1)]]
+    p002 = positions[node_id_by_coords[(0, 0, 2)]]
+
+    assert float(p001[0]) > float(p000[0])
+    assert float(p001[1]) < float(p000[1])
+    assert float(p002[0]) > float(p001[0])
+    assert float(p002[1]) < float(p001[1])
+
+
+def test_layered_visible_order_2d_draws_grid3d_from_far_face_to_near_face() -> None:
+    import tensor_network_viz._core.draw.render_prep as render_prep
+
+    graph = _build_3d_grid_graph(2, 2, 3)
+
+    layered_order = render_prep._layered_visible_order_2d(graph)
+    component = _analyze_layout_components_cached(graph)[0]
+    k_sequence = [component.grid3d_mapping[node_id][2] for node_id in layered_order]
+
+    assert k_sequence == sorted(k_sequence)
+
+
+def test_layered_tensor_label_zorders_2d_stay_above_all_node_disks() -> None:
+    import tensor_network_viz._core.draw.render_prep as render_prep
+
+    graph = _build_3d_grid_graph(2, 2, 3)
+
+    visible_order = list(render_prep._layered_visible_order_2d(graph))
+    label_zorders = render_prep._layered_tensor_label_zorders_2d(visible_order)
+    max_disk_zorder = max(
+        render_prep._ZORDER_LAYER_BASE
+        + index * render_prep._ZORDER_LAYER_STRIDE
+        + render_prep._ZORDER_LAYER_DISK
+        for index, _node_id in enumerate(visible_order)
+    )
+
+    assert label_zorders
+    assert all(zorder > max_disk_zorder for zorder in label_zorders.values())
+
+
+def test_register_render_hover_2d_uses_layered_visible_order_for_grid3d(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    import tensor_network_viz._core.draw.render_prep as render_prep
+
+    graph = _build_3d_grid_graph(2, 2, 3)
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    directions = _compute_axis_directions(graph, positions, dimensions=2)
+    scale = _resolve_draw_scale(graph, positions)
+
+    fig = Figure()
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
+    try:
+        context = render_prep._prepare_render_context(
+            ax=ax,
+            graph=graph,
+            positions=positions,
+            config=PlotConfig(hover_labels=True),
+            dimensions=2,
+            scale=scale,
+            show_tensor_labels=True,
+            show_index_labels=False,
+        )
+        render_prep._draw_edges_nodes_and_labels(
+            ax=ax,
+            context=context,
+            directions=directions,
+            show_tensor_labels=True,
+            show_index_labels=False,
+            tensor_disk_radius_px_3d=None,
+        )
+
+        captured: dict[str, tuple[int, ...]] = {}
+
+        def _capture_hover_state(
+            state: render_prep._RenderHoverState,
+            *,
+            scheme_patches_2d: object | None = None,
+            scheme_aabbs_3d: object | None = None,
+        ) -> None:
+            del scheme_patches_2d, scheme_aabbs_3d
+            captured["visible_node_ids"] = state.visible_node_ids
+
+        monkeypatch.setattr(render_prep, "_apply_saved_hover_state", _capture_hover_state)
+
+        render_prep._register_render_hover(
+            ax=ax,
+            context=context,
+            show_tensor_labels=True,
+            show_index_labels=False,
+            scheme_patches_2d=[],
+            scheme_aabbs_3d=[],
+            tensor_disk_radius_px_3d=None,
+        )
+
+        assert captured["visible_node_ids"] == render_prep._layered_visible_order_2d(graph)
+    finally:
+        fig.clear()
+
+
+def test_build_interactive_scene_state_2d_uses_layered_visible_order_for_grid3d() -> None:
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    import tensor_network_viz._core.draw.render_prep as render_prep
+
+    graph = _build_3d_grid_graph(2, 2, 3)
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    directions = _compute_axis_directions(graph, positions, dimensions=2)
+    scale = _resolve_draw_scale(graph, positions)
+
+    fig = Figure()
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
+    try:
+        context = render_prep._prepare_render_context(
+            ax=ax,
+            graph=graph,
+            positions=positions,
+            config=PlotConfig(hover_labels=True),
+            dimensions=2,
+            scale=scale,
+            show_tensor_labels=True,
+            show_index_labels=False,
+        )
+        render_prep._draw_edges_nodes_and_labels(
+            ax=ax,
+            context=context,
+            directions=directions,
+            show_tensor_labels=True,
+            show_index_labels=False,
+            tensor_disk_radius_px_3d=None,
+        )
+        hover_state = render_prep._RenderHoverState(
+            ax=ax,
+            figure=ax.figure,
+            dimensions=2,
+            node_patch_coll=render_prep._node_patch_collection_from_plotter(context),
+            visible_node_ids=(),
+            tensor_hover=dict(context.tensor_hover_by_node or {}),
+            edge_hover=tuple(context.hover_edge_targets or ()),
+            line_width_px_hint=float(context.params.lw),
+        )
+
+        scene = render_prep._build_interactive_scene_state(
+            ax=ax,
+            context=context,
+            directions=directions,
+            scale=scale,
+            hover_state=hover_state,
+            tensor_disk_radius_px_3d=None,
+        )
+
+        assert scene.visible_node_ids == render_prep._layered_visible_order_2d(graph)
+    finally:
+        fig.clear()
+
+
 def test_compute_layout_planar_cycle_3d_stays_on_single_plane() -> None:
     graph = _build_planar_cycle_graph()
 
@@ -1456,8 +1625,9 @@ def test_tree_component_layout_2d_skips_force_layout_when_anchors_cover_all_node
     assert set(positions) == set(graph.nodes)
 
 
-def test_compute_axis_directions_tree_2d_leaf_phys_legs_prefer_south_when_corridor_is_free(
-) -> None:
+def test_compute_axis_directions_tree_2d_leaf_phys_legs_prefer_south_when_corridor_is_free() -> (
+    None
+):
     graph = _build_binary_tree_graph_with_leaf_phys()
 
     positions = _compute_layout(graph, dimensions=2, seed=0)

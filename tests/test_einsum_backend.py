@@ -12,11 +12,12 @@ import pytest
 
 from plotting_helpers import line_collection_segment_count
 from tensor_network_viz import PlotConfig, einsum_trace_step, pair_tensor
-from tensor_network_viz._core.layout.body import _compute_layout
+from tensor_network_viz._core.layout.body import _compute_axis_directions, _compute_layout
 from tensor_network_viz._core.layout.positions import (
     _analyze_layout_components_cached,
     _compute_component_layout_2d,
 )
+from tensor_network_viz._core.renderer import _resolve_draw_scale
 from tensor_network_viz.einsum_module import (
     plot_einsum_network_2d,
     plot_einsum_network_3d,
@@ -282,6 +283,45 @@ def test_build_einsum_graph_batch_equation_uses_virtual_hubs() -> None:
     assert sum(1 for e in graph.edges if e.kind == "contraction") == 4
     dangles = [e for e in graph.edges if e.kind == "dangling"]
     assert len(dangles) == 2
+
+
+def test_batch_virtual_hub_outputs_fan_out_per_shared_visible_neighbor_group() -> None:
+    graph = _build_graph(
+        [
+            pair_tensor(
+                "A",
+                "B",
+                "r0",
+                "ab,ab->ab",
+                metadata={"left_shape": (2, 3), "right_shape": (2, 3)},
+            ),
+        ]
+    )
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    draw_scale = _resolve_draw_scale(graph, positions)
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=draw_scale)
+    virtual_node_ids = [node_id for node_id, node in graph.nodes.items() if node.is_virtual]
+
+    assert len(virtual_node_ids) == 2
+    group_center = np.mean(
+        np.stack(
+            [
+                np.asarray(positions[node_id], dtype=float).reshape(-1)[:2]
+                for node_id in virtual_node_ids
+            ]
+        ),
+        axis=0,
+    )
+
+    for node_id in virtual_node_ids:
+        node = graph.nodes[node_id]
+        axis_index = len(node.axes_names) - 1
+        direction = np.asarray(directions[(node_id, axis_index)], dtype=float).reshape(-1)[:2]
+        direction /= np.linalg.norm(direction)
+        outward = np.asarray(positions[node_id], dtype=float).reshape(-1)[:2] - group_center
+        outward /= np.linalg.norm(outward)
+        assert float(np.dot(direction, outward)) > 0.9, (node.label, direction, outward)
 
 
 def test_build_einsum_graph_expands_ellipsis_with_metadata() -> None:

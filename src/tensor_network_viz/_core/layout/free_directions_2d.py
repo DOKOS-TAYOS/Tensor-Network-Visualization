@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections import deque
+from collections import defaultdict, deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
@@ -69,6 +69,8 @@ class _FreeDirectionContext2D:
     neighbor_ids_by_node: dict[int, tuple[int, ...]]
     second_neighbor_ids_by_node: dict[int, tuple[int, ...]]
     contraction_segments_by_node: dict[int, tuple[_ContractionSegment2D, ...]]
+    shared_virtual_hub_ids_by_node: dict[int, tuple[int, ...]]
+    shared_virtual_hub_center_by_node: dict[int, np.ndarray]
     dangling_axes: frozenset[tuple[int, int]]
     component_by_node: dict[int, _LayoutComponent]
 
@@ -224,6 +226,29 @@ def _build_context(
     component_by_node = {
         node_id: component for component in layout_components for node_id in component.node_ids
     }
+    shared_virtual_hub_ids_by_node: dict[int, tuple[int, ...]] = {}
+    shared_virtual_hub_center_by_node: dict[int, np.ndarray] = {}
+    for component in layout_components:
+        shared_virtual_groups: defaultdict[frozenset[int], list[int]] = defaultdict(list)
+        for node_id in component.virtual_node_ids:
+            visible_neighbor_ids = frozenset(
+                neighbor_id
+                for neighbor_id in component.contraction_graph.neighbors(node_id)
+                if not graph.nodes[neighbor_id].is_virtual
+            )
+            if visible_neighbor_ids:
+                shared_virtual_groups[visible_neighbor_ids].append(node_id)
+        for node_ids in shared_virtual_groups.values():
+            if len(node_ids) < 2:
+                continue
+            ordered_node_ids = tuple(sorted(node_ids))
+            center = np.mean(
+                np.stack([positions_xy[node_id] for node_id in ordered_node_ids]),
+                axis=0,
+            )
+            for node_id in ordered_node_ids:
+                shared_virtual_hub_ids_by_node[node_id] = ordered_node_ids
+                shared_virtual_hub_center_by_node[node_id] = center.copy()
     return _FreeDirectionContext2D(
         positions_xy=positions_xy,
         neighbor_ids_by_node={
@@ -235,6 +260,8 @@ def _build_context(
             node_id: tuple(segments)
             for node_id, segments in contraction_segments_by_node_lists.items()
         },
+        shared_virtual_hub_ids_by_node=shared_virtual_hub_ids_by_node,
+        shared_virtual_hub_center_by_node=shared_virtual_hub_center_by_node,
         dangling_axes=dangling_axes,
         component_by_node=component_by_node,
     )
@@ -316,11 +343,37 @@ def _node_candidate_directions_2d(
     *,
     node_id: int,
     behavior: _Behavior2D | None,
+    outward_reference: np.ndarray | None,
     rng: np.random.Generator,
 ) -> tuple[np.ndarray, ...]:
+    if outward_reference is not None:
+        deterministic = (
+            *_sort_bucket_by_reference_2d(outward_reference, _CARDINAL_DIRECTIONS_2D),
+            *_sort_bucket_by_reference_2d(outward_reference, _DIAGONAL_DIRECTIONS_2D),
+            *_sort_bucket_by_reference_2d(outward_reference, _SEMIDIAGONAL_DIRECTIONS_2D),
+        )
+        random_bucket = _sort_bucket_by_reference_2d(
+            outward_reference,
+            _random_direction_bucket_2d(blocked=deterministic, rng=rng),
+        )
+        return (*deterministic, *random_bucket)
     if behavior is not None:
         return _behavior_candidates_2d(behavior=behavior, rng=rng)
     return _outward_candidates_2d(component, positions, node_id=node_id, rng=rng)
+
+
+def _shared_virtual_hub_outward_reference_2d(
+    context: _FreeDirectionContext2D,
+    *,
+    node_id: int,
+) -> np.ndarray | None:
+    center = context.shared_virtual_hub_center_by_node.get(node_id)
+    if center is None:
+        return None
+    reference = context.positions_xy[node_id] - center
+    if float(np.linalg.norm(reference)) < 1e-9:
+        return None
+    return reference
 
 
 def _component_node_plans_2d(
@@ -371,8 +424,7 @@ def _grid_node_plans_2d(
                 key=lambda node_id: float(remaining[node_id][0]),
             )
             plans.extend(
-                _NodeDirectionPlan2D(node_id=node_id, behavior="north")
-                for node_id in node_ids
+                _NodeDirectionPlan2D(node_id=node_id, behavior="north") for node_id in node_ids
             )
             break
 
@@ -382,8 +434,7 @@ def _grid_node_plans_2d(
                 key=lambda node_id: float(remaining[node_id][1]),
             )
             plans.extend(
-                _NodeDirectionPlan2D(node_id=node_id, behavior="east")
-                for node_id in node_ids
+                _NodeDirectionPlan2D(node_id=node_id, behavior="east") for node_id in node_ids
             )
             break
 
@@ -483,8 +534,7 @@ def _grid3d_node_plans_2d(
                 key=lambda node_id: (float(pos_xy[node_id][0]), remaining[node_id][2]),
             )
             plans.extend(
-                _NodeDirectionPlan2D(node_id=node_id, behavior="north")
-                for node_id in row_nodes
+                _NodeDirectionPlan2D(node_id=node_id, behavior="north") for node_id in row_nodes
             )
             break
 
@@ -494,25 +544,16 @@ def _grid3d_node_plans_2d(
                 key=lambda node_id: (float(pos_xy[node_id][1]), remaining[node_id][2]),
             )
             plans.extend(
-                _NodeDirectionPlan2D(node_id=node_id, behavior="east")
-                for node_id in col_nodes
+                _NodeDirectionPlan2D(node_id=node_id, behavior="east") for node_id in col_nodes
             )
             break
 
         top_nodes = sorted(
-            (
-                node_id
-                for node_id, coord in pos_xy.items()
-                if round(float(coord[1]), 6) == max_y
-            ),
+            (node_id for node_id, coord in pos_xy.items() if round(float(coord[1]), 6) == max_y),
             key=lambda node_id: (float(pos_xy[node_id][0]), remaining[node_id][2]),
         )
         bottom_nodes = sorted(
-            (
-                node_id
-                for node_id, coord in pos_xy.items()
-                if round(float(coord[1]), 6) == min_y
-            ),
+            (node_id for node_id, coord in pos_xy.items() if round(float(coord[1]), 6) == min_y),
             key=lambda node_id: (float(pos_xy[node_id][0]), remaining[node_id][2]),
         )
         right_nodes = sorted(
@@ -625,24 +666,27 @@ def _neighbor_hops_for_component_2d(component: _LayoutComponent) -> int:
 def _candidate_conflicts_with_node_axes_2d(
     graph: _GraphData,
     directions: AxisDirections,
+    context: _FreeDirectionContext2D,
     *,
     node_id: int,
     axis_index: int,
     candidate: np.ndarray,
 ) -> bool:
-    axis_count = max(graph.nodes[node_id].degree, 1)
-    for other_axis_index in range(axis_count):
-        if other_axis_index == axis_index:
-            continue
-        other_direction = directions.get((node_id, other_axis_index))
-        if other_direction is None:
-            continue
-        if _direction_angle_conflicts_2d(
-            candidate,
-            other_direction,
-            treat_opposite_as_conflict=False,
-        ):
-            return True
+    grouped_node_ids = context.shared_virtual_hub_ids_by_node.get(node_id, (node_id,))
+    for grouped_node_id in grouped_node_ids:
+        axis_count = max(graph.nodes[grouped_node_id].degree, 1)
+        for other_axis_index in range(axis_count):
+            if grouped_node_id == node_id and other_axis_index == axis_index:
+                continue
+            other_direction = directions.get((grouped_node_id, other_axis_index))
+            if other_direction is None:
+                continue
+            if _direction_angle_conflicts_2d(
+                candidate,
+                other_direction,
+                treat_opposite_as_conflict=False,
+            ):
+                return True
     return False
 
 
@@ -684,9 +728,7 @@ def _candidate_tip_enters_neighbor_space_2d(
 ) -> bool:
     if component.structure_kind == "grid3d":
         blocked_neighbor_ids = {
-            other_id
-            for other_id in prohibited_neighbor_ids
-            if other_id not in processed_node_ids
+            other_id for other_id in prohibited_neighbor_ids if other_id not in processed_node_ids
         }
     else:
         blocked_neighbor_ids = set(prohibited_neighbor_ids)
@@ -753,6 +795,7 @@ def _candidate_is_valid_2d(
     if _candidate_conflicts_with_node_axes_2d(
         graph,
         directions,
+        context,
         node_id=node_id,
         axis_index=axis_index,
         candidate=candidate,
@@ -831,6 +874,10 @@ def _compute_free_directions_2d(
                     positions,
                     node_id=node_id,
                     behavior=node_plan.behavior,
+                    outward_reference=_shared_virtual_hub_outward_reference_2d(
+                        context,
+                        node_id=node_id,
+                    ),
                     rng=rng,
                 )
 

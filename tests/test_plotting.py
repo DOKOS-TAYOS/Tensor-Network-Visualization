@@ -817,8 +817,7 @@ def test_show_tensor_network_playback_and_cost_hover_keep_visual_checkboxes_in_s
     assert controls.cost_hover_on is True
 
 
-def test_show_tensor_network_einsum_trace_adds_tensor_inspector_checkbox_and_auto_enables_playback(
-) -> None:
+def test_show_tn_einsum_trace_inspector_checkbox_auto_enables_playback() -> None:
     trace = _build_einsum_trace_for_inspector()
 
     fig, _ax = show_tensor_network(

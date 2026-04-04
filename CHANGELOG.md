@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Tensor element diagnostics:** `show_tensor_elements` now supports `log_magnitude`, `sparsity`, and `nan_inf` views, richer `data` summaries with per-axis stats plus top-k coordinates, optional robust/shared color scaling, and outlier overlays for continuous heatmaps.
+- **Contraction-progress visualization:** Tensors can be inspected visually as contraction steps unfold (step-by-step alongside the network or scheme view).
+
+### Changed
+- **Free-index geometry & performance:** More reliable layout for free (dangling) index directions in 2D, with shorter runtimes; internal structure simplified and several bottlenecks removed in the layout/render path.
+- **Interactive UI:** Polished control menus and drawing regions; clearer, more useful detail in the computational complexity panel.
 
 ### Documentation
 - **Tensor inspection docs:** Refreshed the README, guide, backend examples, and demo configuration to cover the new tensor-element diagnostics and scaling controls.

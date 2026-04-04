@@ -11,7 +11,7 @@ from matplotlib.axes import Axes
 from ...config import PlotConfig
 from ..contractions import _ContractionGroups, _group_contractions
 from ..graph import _GraphData
-from ..layout import AxisDirections, NodePositions
+from ..layout import AxisDirections, NodePositions, _analyze_layout_components_cached
 from .constants import (
     _ZORDER_LAYER_BASE,
     _ZORDER_LAYER_DISK,
@@ -96,6 +96,66 @@ def _graph_render_state(
 
     weakref.finalize(graph, _evict)
     return state
+
+
+def _layered_visible_order_2d(graph: _GraphData) -> tuple[int, ...]:
+    base_order = tuple(_visible_node_ids_in_graph_order(graph))
+    if not base_order:
+        return ()
+
+    base_index = {node_id: index for index, node_id in enumerate(base_order)}
+    components = _analyze_layout_components_cached(graph)
+    ordered_components = sorted(
+        components,
+        key=lambda component: min(
+            (
+                base_index[node_id]
+                for node_id in component.visible_node_ids
+                if node_id in base_index
+            ),
+            default=len(base_order),
+        ),
+    )
+
+    layered_order: list[int] = []
+    seen: set[int] = set()
+    for component in ordered_components:
+        component_visible = [
+            node_id
+            for node_id in base_order
+            if node_id in component.visible_node_ids and node_id not in seen
+        ]
+        if component.structure_kind == "grid3d" and component.grid3d_mapping is not None:
+            component_visible.sort(
+                key=lambda node_id: (
+                    int(component.grid3d_mapping[node_id][2]),
+                    base_index[node_id],
+                )
+            )
+        layered_order.extend(component_visible)
+        seen.update(component_visible)
+
+    layered_order.extend(node_id for node_id in base_order if node_id not in seen)
+    return tuple(layered_order)
+
+
+def _layered_tensor_label_zorders_2d(
+    visible_order: Sequence[int],
+) -> dict[int, float]:
+    if not visible_order:
+        return {}
+    top_label_zorder = float(
+        _ZORDER_LAYER_BASE + len(visible_order) * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_TENSOR_NAME
+    )
+    return dict.fromkeys(visible_order, top_label_zorder)
+
+
+def _render_visible_order(
+    context: _RenderPrepContext,
+) -> tuple[int, ...]:
+    if context.dimensions == 2 and context.graph_state.visible_order:
+        return _layered_visible_order_2d(context.graph)
+    return tuple(context.graph_state.visible_order)
 
 
 def _should_refine_tensor_labels(
@@ -190,7 +250,7 @@ def _draw_edges_nodes_and_labels(
     show_index_labels: bool,
     tensor_disk_radius_px_3d: float | None,
 ) -> np.ndarray:
-    visible_order = list(context.graph_state.visible_order)
+    visible_order = list(_render_visible_order(context))
     node_degrees = context.graph_state.node_degrees
     tensor_z_by_node: dict[int, float] | None = None
     use_2d_layers = context.dimensions == 2 and bool(visible_order)
@@ -217,12 +277,7 @@ def _draw_edges_nodes_and_labels(
         if callable(flush):
             flush()
         draw_one = context.plotter.draw_tensor_node
-        tensor_z_by_node = {
-            node_id: float(
-                _ZORDER_LAYER_BASE + index * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_TENSOR_NAME
-            )
-            for index, node_id in enumerate(visible_order)
-        }
+        tensor_z_by_node = _layered_tensor_label_zorders_2d(visible_order)
         for index, node_id in enumerate(visible_order):
             z_disk = float(_ZORDER_LAYER_BASE + index * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_DISK)
             draw_one(
@@ -303,7 +358,7 @@ def _register_render_hover(
     scheme_aabbs_3d: list[tuple[tuple[float, float, float, float, float, float], str, Any]],
     tensor_disk_radius_px_3d: float | None,
 ) -> _RenderHoverState:
-    visible_ids = list(context.graph_state.visible_order)
+    visible_ids = list(_render_visible_order(context))
     if context.dimensions == 2:
         node_colls = getattr(context.plotter, "_node_disk_collections", None)
         node_collection = (
@@ -390,7 +445,7 @@ def _build_interactive_scene_state(
         params=context.params,
         contraction_groups=context.contraction_groups,
         plotter=context.plotter,
-        visible_node_ids=tuple(context.graph_state.visible_order),
+        visible_node_ids=_render_visible_order(context),
         node_patch_coll=_node_patch_collection_from_plotter(context),
         edge_geometry=tuple(context.edge_geometry_sink),
         hover_state=hover_state,
@@ -402,7 +457,10 @@ __all__ = [
     "_apply_render_hover_state",
     "_build_interactive_scene_state",
     "_graph_render_state",
+    "_layered_visible_order_2d",
+    "_layered_tensor_label_zorders_2d",
     "_node_patch_collection_from_plotter",
+    "_render_visible_order",
     "_should_refine_tensor_labels",
     "_prepare_render_context",
     "_draw_edges_nodes_and_labels",
