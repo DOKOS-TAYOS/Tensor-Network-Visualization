@@ -35,6 +35,7 @@ from tensor_network_viz._core.graph import (
     _make_node,
 )
 from tensor_network_viz._core.renderer import _plot_graph
+from tensor_network_viz.einsum_module.trace import pair_tensor
 from tensor_network_viz.tensorkrowch import (
     plot_tensorkrowch_network_2d,
     plot_tensorkrowch_network_3d,
@@ -657,6 +658,66 @@ def test_show_tensor_network_disables_hidden_view_slider_widgets_after_switch() 
     fig.canvas.callbacks.process("button_release_event", release)
 
 
+def test_show_tensor_network_hides_cost_panel_for_inactive_view_after_switch() -> None:
+    trace = [
+        pair_tensor(
+            "A0",
+            "x0",
+            "r0",
+            "pa,p->a",
+            metadata={
+                "left_shape": (5, 7),
+                "right_shape": (5,),
+                "result_shape": (7,),
+            },
+        ),
+        pair_tensor(
+            "r0",
+            "A1",
+            "r1",
+            "a,apb->pb",
+            metadata={
+                "left_shape": (7,),
+                "right_shape": (7, 11, 13),
+                "result_shape": (11, 13),
+            },
+        ),
+    ]
+
+    fig, _ax = show_tensor_network(
+        trace,
+        engine="einsum",
+        config=PlotConfig(
+            show_contraction_scheme=True,
+            contraction_playback=True,
+            contraction_scheme_cost_hover=True,
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    current_scene_controls = controls.current_scene.contraction_controls
+    assert current_scene_controls is not None
+    assert current_scene_controls._viewer is not None
+    assert current_scene_controls._viewer._cost_panel_ax is not None
+    assert current_scene_controls._viewer._cost_panel_ax.get_visible()
+
+    controls.set_view("3d")
+
+    current_scene_controls = controls.current_scene.contraction_controls
+    other_scene = controls._view_caches["2d"].scene
+    assert current_scene_controls is not None
+    assert current_scene_controls._viewer is not None
+    assert current_scene_controls._viewer._cost_panel_ax is not None
+    assert current_scene_controls._viewer._cost_panel_ax.get_visible()
+    assert other_scene is not None
+    assert other_scene.contraction_controls is not None
+    assert other_scene.contraction_controls._viewer is not None
+    assert other_scene.contraction_controls._viewer._cost_panel_ax is not None
+    assert not other_scene.contraction_controls._viewer._cost_panel_ax.get_visible()
+
+
 def test_show_tensor_network_scheme_checkbox_visual_state_matches_scheme_toggle() -> None:
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
@@ -709,6 +770,11 @@ def test_show_tensor_network_playback_and_cost_hover_keep_visual_checkboxes_in_s
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
+    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
+        "Scheme",
+        "Playback",
+        "Costs",
+    ]
 
     _click_checkbutton(controls._checkbuttons, 4)
 
@@ -722,8 +788,10 @@ def test_show_tensor_network_playback_and_cost_hover_keep_visual_checkboxes_in_s
 
     status_after_cost_hover = tuple(bool(v) for v in controls._checkbuttons.get_status())
     assert status_after_cost_hover[3] is True
+    assert status_after_cost_hover[4] is True
     assert status_after_cost_hover[5] is True
     assert controls.scheme_on is True
+    assert controls.playback_on is True
     assert controls.cost_hover_on is True
 
 

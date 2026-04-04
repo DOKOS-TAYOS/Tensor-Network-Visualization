@@ -21,10 +21,31 @@ from tensor_network_viz.einsum_module.graph import _build_graph
 
 def test_metrics_matrix_multiply() -> None:
     parsed = parse_einsum_equation("ij,jk->ik", ((2, 3), (3, 4)))
-    m = metrics_for_parsed_step(parsed, ((2, 3), (3, 4)), equation_snippet="ij,jk->ik")
+    m = metrics_for_parsed_step(
+        parsed,
+        ((2, 3), (3, 4)),
+        equation_snippet="ij,jk->ik",
+        operand_names=("A", "B"),
+    )
     assert m.multiplicative_cost == 2 * 3 * 4
     assert m.flop_mac == 2 * m.multiplicative_cost
     assert dict(m.label_dims) == {"i": 2, "j": 3, "k": 4}
+    assert m.operand_names == ("A", "B")
+    assert m.operand_shapes == ((2, 3), (3, 4))
+    assert m.output_labels == ("i", "k")
+    assert m.contracted_labels == ("j",)
+
+
+def test_metrics_flops_scale_with_operand_count() -> None:
+    parsed = parse_einsum_equation("ab,bc,cd->ad", ((2, 3), (3, 5), (5, 7)))
+    m = metrics_for_parsed_step(
+        parsed,
+        ((2, 3), (3, 5), (5, 7)),
+        equation_snippet="ab,bc,cd->ad",
+        operand_names=("A", "B", "C"),
+    )
+    assert m.multiplicative_cost == 2 * 3 * 5 * 7
+    assert m.flop_mac == 3 * m.multiplicative_cost
 
 
 def test_metrics_merge_dummy_one_with_real_extent() -> None:
@@ -46,19 +67,62 @@ def test_metrics_rejects_true_mismatch() -> None:
 
 def test_format_tooltip_contains_cost_lines() -> None:
     parsed = parse_einsum_equation("ij,jk->ik", ((2, 3), (3, 4)))
-    m = metrics_for_parsed_step(parsed, ((2, 3), (3, 4)), equation_snippet="ij,jk->ik")
+    m = metrics_for_parsed_step(
+        parsed,
+        ((2, 3), (3, 4)),
+        equation_snippet="ij,jk->ik",
+        operand_names=("A", "B"),
+    )
     t = format_contraction_step_tooltip(m)
-    assert "ij,jk->ik" in t
-    assert "FLOPs" in t
-    assert "24" in t.replace(",", "")
+    assert "Contraction: ij,jk->ik (contracts: j)" in t
+    assert "Index sizes: i=2, j=3, k=4" in t
+    assert "Tensor shapes: A=[2, 3], B=[3, 4]" in t
+    assert "Naive operations: 24 MACs (≈48 FLOPs)" in t
+    assert "Complexity: O(N_i N_j N_k)" in t
 
 
 def test_format_tooltip_omits_naive_footer() -> None:
     parsed = parse_einsum_equation("ij,jk->ik", ((2, 3), (3, 4)))
-    m = metrics_for_parsed_step(parsed, ((2, 3), (3, 4)), equation_snippet="ij,jk->ik")
+    m = metrics_for_parsed_step(
+        parsed,
+        ((2, 3), (3, 4)),
+        equation_snippet="ij,jk->ik",
+        operand_names=("A", "B"),
+    )
     t = format_contraction_step_tooltip(m)
     assert "Naive dense" not in t
     assert "optimized contraction order" not in t
+
+
+def test_format_tooltip_reports_flops_for_three_operands() -> None:
+    parsed = parse_einsum_equation("ab,bc,cd->ad", ((2, 3), (3, 5), (5, 7)))
+    m = metrics_for_parsed_step(
+        parsed,
+        ((2, 3), (3, 5), (5, 7)),
+        equation_snippet="ab,bc,cd->ad",
+        operand_names=("A", "B", "C"),
+    )
+    t = format_contraction_step_tooltip(m)
+    assert "210 MACs" in t
+    assert "630 FLOPs" in t
+
+
+def test_format_tooltip_wraps_long_lines_in_panel_text() -> None:
+    parsed = parse_einsum_equation(
+        "abcdef,defghi,ghijkl->abcjkl",
+        ((2, 3, 5, 7, 11, 13), (7, 11, 13, 17, 19, 23), (17, 19, 23, 29, 31, 37)),
+    )
+    m = metrics_for_parsed_step(
+        parsed,
+        ((2, 3, 5, 7, 11, 13), (7, 11, 13, 17, 19, 23), (17, 19, 23, 29, 31, 37)),
+        equation_snippet="abcdef,defghi,ghijkl->abcjkl",
+        operand_names=("A", "B", "C"),
+    )
+    t = format_contraction_step_tooltip(m)
+    assert "Complexity: O(" in t
+    assert "N_a" in t
+    assert "N_l" in t
+    assert "\n    " in t
 
 
 def test_build_graph_records_metrics_same_length_as_steps() -> None:
@@ -74,6 +138,41 @@ def test_build_graph_records_metrics_same_length_as_steps() -> None:
     first_metric = graph.contraction_step_metrics[0]
     assert first_metric is not None
     assert first_metric.multiplicative_cost == 1
+
+
+def test_build_graph_records_real_operand_shapes_for_intermediate_steps() -> None:
+    trace = [
+        pair_tensor(
+            "A0",
+            "x0",
+            "r0",
+            "pa,p->a",
+            metadata={
+                "left_shape": (5, 7),
+                "right_shape": (5,),
+                "result_shape": (7,),
+            },
+        ),
+        pair_tensor(
+            "r0",
+            "A1",
+            "r1",
+            "a,apb->pb",
+            metadata={
+                "left_shape": (7,),
+                "right_shape": (7, 11, 13),
+                "result_shape": (11, 13),
+            },
+        ),
+    ]
+    graph = _build_graph(trace)
+    assert graph.contraction_step_metrics is not None
+    second_metric = graph.contraction_step_metrics[1]
+    assert second_metric is not None
+    assert second_metric.operand_names == ("r0", "A1")
+    assert second_metric.operand_shapes == ((7,), (7, 11, 13))
+    assert second_metric.output_labels == ("p", "b")
+    assert second_metric.contracted_labels == ("a",)
 
 
 def test_metrics_for_draw_none_when_scheme_overridden_by_name() -> None:

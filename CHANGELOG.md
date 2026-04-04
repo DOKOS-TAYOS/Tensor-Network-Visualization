@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Tensor element diagnostics:** `show_tensor_elements` now supports `log_magnitude`, `sparsity`, and `nan_inf` views, richer `data` summaries with per-axis stats plus top-k coordinates, optional robust/shared color scaling, and outlier overlays for continuous heatmaps.
+
+### Documentation
+- **Tensor inspection docs:** Refreshed the README, guide, backend examples, and demo configuration to cover the new tensor-element diagnostics and scaling controls.
+
 
 ## [1.5.1] — 2026-04-04
 

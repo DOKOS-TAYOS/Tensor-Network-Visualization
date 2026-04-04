@@ -9,7 +9,7 @@ from ...contraction_viewer import (
     _ContractionSchemeBundle,
     attach_playback_to_tensor_network_figure,
 )
-from ...einsum_module.contraction_cost import format_contraction_step_tooltip
+from ...einsum_module.contraction_cost import format_contraction_step_panel_text
 from ..contractions import _ContractionGroups
 from ..graph import _GraphData
 from ..layout import AxisDirections, NodePositions
@@ -138,18 +138,19 @@ def _build_contraction_scheme_bundle(
         raise ValueError("contraction scheme requires at least one drawable contraction step.")
 
     metrics_row = _contraction_step_metrics_for_draw(graph, scheme_steps_eff)
-    tooltips_list: list[str | None] = []
+    step_details_list: list[str | None] = []
     for index in range(len(per_step_artists)):
-        tip: str | None = None
+        detail: str | None = None
         if metrics_row is not None and index < len(metrics_row):
             m = metrics_row[index]
             if m is not None:
-                tip = format_contraction_step_tooltip(m)
-        tooltips_list.append(tip)
-    tooltips = tuple(tooltips_list)
+                detail = format_contraction_step_panel_text(m)
+        step_details_list.append(detail)
+    step_details = tuple(step_details_list)
     viewer = (
         attach_playback_to_tensor_network_figure(
             artists_by_step=per_step_artists,
+            step_details_by_step=step_details,
             fig=ax.figure,
             ax=ax,
             config=config,
@@ -172,40 +173,11 @@ def _build_contraction_scheme_bundle(
         artists_by_step=per_step_artists,
         scheme_aabb=scheme_aabb,
         metrics_row=tuple(metrics_row) if metrics_row is not None else None,
-        tooltips=tooltips,
+        step_details=step_details,
         viewer=viewer,
         bounds_2d=bounds_2d,
         bounds_3d=bounds_3d,
     )
-
-
-def _bundle_scheme_entries_2d(
-    bundle: _ContractionSchemeBundle,
-) -> tuple[tuple[Any, str], ...]:
-    if bundle.artists_by_step is None or bundle.tooltips is None:
-        return ()
-    out: list[tuple[Any, str]] = []
-    for index, artist in enumerate(bundle.artists_by_step):
-        tooltip = bundle.tooltips[index] if index < len(bundle.tooltips) else None
-        if artist is None or not tooltip:
-            continue
-        out.append((artist, tooltip))
-    return tuple(out)
-
-
-def _bundle_scheme_entries_3d(
-    bundle: _ContractionSchemeBundle,
-) -> tuple[tuple[tuple[float, float, float, float, float, float], str, Any], ...]:
-    if bundle.artists_by_step is None or bundle.tooltips is None or bundle.scheme_aabb is None:
-        return ()
-    out: list[tuple[tuple[float, float, float, float, float, float], str, Any]] = []
-    for index, artist in enumerate(bundle.artists_by_step):
-        tooltip = bundle.tooltips[index] if index < len(bundle.tooltips) else None
-        bounds = bundle.scheme_aabb[index] if index < len(bundle.scheme_aabb) else None
-        if artist is None or not tooltip or bounds is None:
-            continue
-        out.append((bounds, tooltip, artist))
-    return tuple(out)
 
 
 def _draw_graph(
@@ -288,12 +260,12 @@ def _draw_graph(
                 ),
                 refresh_hover=lambda scheme_patches_2d, scheme_aabbs_3d: _apply_render_hover_state(
                     hover_state,
-                    scheme_patches_2d=scheme_patches_2d,
-                    scheme_aabbs_3d=scheme_aabbs_3d,
+                    scheme_patches_2d=(),
+                    scheme_aabbs_3d=(),
                 ),
             )
         elif config.show_contraction_scheme:
-            bundle = _build_contraction_scheme_bundle(
+            _build_contraction_scheme_bundle(
                 ax=ax,
                 graph=graph,
                 positions=positions,
@@ -304,12 +276,6 @@ def _draw_graph(
                 strict=False,
                 include_viewer=False,
             )
-            if config.contraction_scheme_cost_hover:
-                _apply_render_hover_state(
-                    hover_state,
-                    scheme_patches_2d=_bundle_scheme_entries_2d(bundle),
-                    scheme_aabbs_3d=_bundle_scheme_entries_3d(bundle),
-                )
     if build_scene_state:
         scene = _build_interactive_scene_state(
             ax=ax,

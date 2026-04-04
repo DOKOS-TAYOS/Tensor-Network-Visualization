@@ -401,6 +401,115 @@ def _format_float(value: float) -> str:
     return f"{value:.4g}"
 
 
+def _format_scalar(value: complex | float) -> str:
+    if np.iscomplexobj(value):
+        complex_value = complex(value)
+        real_text = _format_float(float(np.real(complex_value)))
+        imag_sign = "+" if float(np.imag(complex_value)) >= 0.0 else ""
+        imag_text = _format_float(float(np.imag(complex_value)))
+        return f"{real_text}{imag_sign}{imag_text}j"
+    return _format_float(float(np.real(value)))
+
+
+def _resolved_axis_names(record: _TensorRecord) -> tuple[str, ...]:
+    axis_names: list[str] = []
+    for axis_index in range(np.asarray(record.array).ndim):
+        if axis_index < len(record.axis_names) and record.axis_names[axis_index]:
+            axis_names.append(record.axis_names[axis_index])
+        else:
+            axis_names.append(f"axis{axis_index}")
+    return tuple(axis_names)
+
+
+def _format_range(values: NumericArray) -> str:
+    flat = np.ravel(np.asarray(values, dtype=float))
+    non_nan = flat[~np.isnan(flat)]
+    if non_nan.size == 0:
+        return "nan .. nan"
+    return (
+        f"{_format_float(float(np.min(non_nan)))} .. "
+        f"{_format_float(float(np.max(non_nan)))}"
+    )
+
+
+def _summary_metric_array(array: NumericArray) -> NumericArray:
+    return np.abs(array) if np.iscomplexobj(array) else np.real(array)
+
+
+def _build_axis_summary_lines(record: _TensorRecord) -> list[str]:
+    array = np.asarray(record.array)
+    shape = tuple(int(dimension) for dimension in array.shape)
+    if not shape:
+        return ["axis summary:", "- scalar tensor"]
+
+    metrics = np.asarray(_summary_metric_array(array), dtype=float)
+    axis_names = _resolved_axis_names(record)
+    mean_label = "mean|x|" if np.iscomplexobj(array) else "mean"
+    norm_label = "norm|x|" if np.iscomplexobj(array) else "norm"
+    lines = ["axis summary:"]
+    for axis_index, (axis_name, axis_size) in enumerate(zip(axis_names, shape, strict=True)):
+        other_axes = tuple(index for index in range(array.ndim) if index != axis_index)
+        if other_axes:
+            marginal_mean = np.nanmean(metrics, axis=other_axes)
+            marginal_norm = np.sqrt(np.nansum(np.square(metrics), axis=other_axes))
+        else:
+            marginal_mean = metrics
+            marginal_norm = np.abs(metrics)
+        lines.append(
+            f"- {axis_name} (size={axis_size}): "
+            f"{mean_label}={_format_range(np.asarray(marginal_mean))}, "
+            f"{norm_label}={_format_range(np.asarray(marginal_norm))}"
+        )
+    return lines
+
+
+def _topk_sort_key(magnitude: float, flat_index: int) -> tuple[float, int]:
+    sortable_magnitude = float(magnitude)
+    if np.isnan(sortable_magnitude):
+        sortable_magnitude = float("-inf")
+    return (-sortable_magnitude, flat_index)
+
+
+def _build_topk_lines(record: _TensorRecord, *, count: int) -> list[str]:
+    array = np.asarray(record.array)
+    requested_count = min(int(count), int(array.size))
+    lines = [f"top {int(count)} by magnitude:"]
+    if requested_count <= 0:
+        lines.append("- tensor is empty")
+        return lines
+
+    magnitudes = np.ravel(np.abs(array))
+    values = np.ravel(array)
+    axis_names = _resolved_axis_names(record)
+    ranked_indices = sorted(
+        range(int(magnitudes.size)),
+        key=lambda flat_index: _topk_sort_key(float(magnitudes[flat_index]), flat_index),
+    )
+    for rank, flat_index in enumerate(ranked_indices[:requested_count], start=1):
+        coordinates = np.unravel_index(flat_index, array.shape) if array.shape else ()
+        if coordinates:
+            coordinate_text = ", ".join(
+                f"{axis_name}={coordinate}"
+                for axis_name, coordinate in zip(axis_names, coordinates, strict=True)
+            )
+        else:
+            coordinate_text = "scalar"
+        lines.append(
+            f"{rank}. |x|={_format_float(float(magnitudes[flat_index]))}, "
+            f"value={_format_scalar(values[flat_index])}, at ({coordinate_text})"
+        )
+    return lines
+
+
+def _build_data_summary_text(record: _TensorRecord, *, topk_count: int) -> str:
+    sections = [
+        _build_stats(record).text,
+        "\n".join(_build_axis_summary_lines(record)),
+        "\n".join(_build_topk_lines(record, count=topk_count)),
+    ]
+    return "\n\n".join(sections)
+
+
 def _build_stats(record: _TensorRecord) -> _TensorStats:
     array = np.asarray(record.array)
     flat = np.ravel(array)
@@ -469,6 +578,9 @@ __all__ = [
     "_MatrixMetadata",
     "_TensorRecord",
     "_TensorStats",
+    "_build_axis_summary_lines",
+    "_build_data_summary_text",
     "_build_stats",
+    "_build_topk_lines",
     "_extract_tensor_records",
 ]

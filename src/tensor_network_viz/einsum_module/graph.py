@@ -42,9 +42,12 @@ def _operand_shape_for_step(
     step: pair_tensor | einsum_trace_step,
     *,
     live_tensors: dict[str, tuple[_AxisOrigin, ...]],
+    live_tensor_shapes: dict[str, tuple[int, ...]],
     operand_index: int,
 ) -> tuple[int, ...]:
     if tensor_name in live_tensors:
+        if tensor_name in live_tensor_shapes:
+            return live_tensor_shapes[tensor_name]
         n = len(live_tensors[tensor_name])
         return (1,) * n
     md = step.metadata or {}
@@ -79,6 +82,7 @@ def _build_graph(trace_input: Any) -> _GraphData:
     nodes: dict[int, Any] = {}
     node_ids_by_name: dict[str, int] = {}
     live_tensors: dict[str, tuple[_AxisOrigin, ...]] = {}
+    live_tensor_shapes: dict[str, tuple[int, ...]] = {}
     edges: list[Any] = []
     produced_names: set[str] = set()
     all_result_names = {_step_result_name(s) for s in trace}
@@ -99,19 +103,13 @@ def _build_graph(trace_input: Any) -> _GraphData:
                 operand_names[i],
                 step,
                 live_tensors=live_tensors,
+                live_tensor_shapes=live_tensor_shapes,
                 operand_index=i,
             )
             for i in range(len(operand_names))
         )
         eq_str = _equation_string(step)
         parsed = parse_einsum_equation(eq_str, shapes)
-        step_metrics_list.append(
-            metrics_for_parsed_step(
-                parsed,
-                shapes,
-                equation_snippet=eq_str.replace(" ", ""),
-            )
-        )
 
         res_name = _step_result_name(step)
         if res_name in node_ids_by_name or res_name in produced_names:
@@ -128,11 +126,20 @@ def _build_graph(trace_input: Any) -> _GraphData:
                     nodes=nodes,
                     node_ids_by_name=node_ids_by_name,
                     live_tensors=live_tensors,
+                    live_tensor_shapes=live_tensor_shapes,
                     produced_names=produced_names,
                     all_result_names=all_result_names,
                     physical_contributors=physical_contributors,
                 )
             )
+
+        metric = metrics_for_parsed_step(
+            parsed,
+            shapes,
+            equation_snippet=eq_str.replace(" ", ""),
+            operand_names=operand_names,
+        )
+        step_metrics_list.append(metric)
 
         step_lineage: set[int] = set()
         for name in operand_names:
@@ -215,6 +222,7 @@ def _build_graph(trace_input: Any) -> _GraphData:
             )
             for label in parsed.output_axes
         )
+        live_tensor_shapes[res_name] = _result_shape_from_metric(metric)
         merged_lineage: set[int] = set()
         for name in operand_names:
             merged_lineage.update(physical_contributors[name])
@@ -260,6 +268,11 @@ def _origin_for_output_label(
     )
 
 
+def _result_shape_from_metric(metric: _ContractionStepMetrics) -> tuple[int, ...]:
+    dim_by_label = dict(metric.label_dims)
+    return tuple(int(dim_by_label.get(label, 1)) for label in metric.output_labels)
+
+
 def _consume_or_create_tensor(
     tensor_name: str,
     axis_labels: tuple[str, ...],
@@ -267,12 +280,14 @@ def _consume_or_create_tensor(
     nodes: dict[int, Any],
     node_ids_by_name: dict[str, int],
     live_tensors: dict[str, tuple[_AxisOrigin, ...]],
+    live_tensor_shapes: dict[str, tuple[int, ...]],
     produced_names: set[str],
     all_result_names: set[str],
     physical_contributors: dict[str, frozenset[int]],
 ) -> tuple[_AxisOrigin, ...]:
     if tensor_name in live_tensors:
         origins = live_tensors.pop(tensor_name)
+        live_tensor_shapes.pop(tensor_name, None)
         if len(origins) != len(axis_labels):
             raise ValueError(
                 f"Tensor {tensor_name!r} exposes {len(origins)} live axes, but "

@@ -26,6 +26,9 @@ def _demo_config() -> Any:
         mode="auto",
         figsize=(7.4, 6.4),
         max_matrix_shape=(384, 384),
+        robust_percentiles=(1.0, 99.0),
+        topk_count=10,
+        shared_color_scale=True,
     )
 
 
@@ -97,9 +100,23 @@ def build_structured_network() -> list[_DemoTensorNetworkNode]:
     gy = g[np.newaxis, :]
     lattice = np.sin(gx * 2.1) * np.sin(gy * 2.3) + 0.45 * np.sin((gx + gy) * 1.7)
 
+    sparse = np.zeros((96, 96), dtype=np.float64)
+    sparse[::8, :] = 1.0
+    sparse[:, ::12] += 0.5
+    sparse[np.arange(96), np.arange(96)] = 2.0
+    sparse[np.arange(95), np.arange(1, 96)] = -1.5
+
+    specials = np.sin(gx[:96] * 1.7) + np.cos(gy[:, :96] * 1.1)
+    specials = np.asarray(specials, dtype=np.float64)
+    specials[8:16, 12:18] = np.nan
+    specials[28:34, 48:52] = np.inf
+    specials[60:66, 70:74] = -np.inf
+
     return [
         _DemoTensorNetworkNode("Psi", ("channel", "y", "x"), psi),
         _DemoTensorNetworkNode("Lattice", ("row", "col"), lattice),
+        _DemoTensorNetworkNode("SparseMask", ("row", "col"), sparse),
+        _DemoTensorNetworkNode("Specials", ("row", "col"), specials),
     ]
 
 
@@ -181,7 +198,7 @@ def _parse_args() -> argparse.Namespace:
         default="matvec",
         help=(
             "matvec: traced matrix-vector; batch: traced batched matmul; "
-            "structured: complex 3D tensor plus lattice."
+            "structured: complex, dense, sparse, and non-finite tensors."
         ),
     )
     return parser.parse_args()

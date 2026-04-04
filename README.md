@@ -120,13 +120,14 @@ show_tensor_elements(
 
 When several tensors are present, the figure keeps one tensor active at a time and uses a slider
 to switch between them. The interactive controls are grouped: `basic` (`elements`, `magnitude`,
-`distribution`, `data`), `complex` (`real`, `imag`, `phase`), and `diagnostic` (`sign`,
-`signed_value`).
+`log_magnitude`, `distribution`, `data`), `complex` (`real`, `imag`, `phase`), and
+`diagnostic` (`sign`, `signed_value`, `sparsity`, `nan_inf`).
 
 - `data`: single tensor, iterable of tensors, supported backend-native tensor collections, or an
   `EinsumTrace` with live tensor values.
 - `engine`: optional backend override. If omitted, the library auto-detects it.
 - `config`: tensor-inspection behavior lives here.
+- `data` mode now includes global stats, per-axis summaries, and top-k coordinates by magnitude.
 - `ax`: render a single tensor into an existing Matplotlib axis.
 - `show_controls`: if `True`, add compact Matplotlib `group + mode` controls and, when needed, a tensor slider.
 - `show`: if `False`, nothing is displayed automatically.
@@ -169,6 +170,10 @@ config = TensorElementsConfig(
     mode="auto",
     max_matrix_shape=(256, 256),
     histogram_bins=40,
+    topk_count=8,
+    robust_percentiles=(1.0, 99.0),
+    shared_color_scale=False,
+    highlight_outliers=False,
 )
 ```
 
@@ -177,10 +182,13 @@ This is where you configure:
 - the active inspection mode,
 - row/column axis grouping for rank > 2 tensors,
 - heatmap downsampling limits,
-- histogram sampling and bin count.
+- histogram sampling and bin count,
+- data-summary depth (`topk_count`),
+- optional robust/shared scaling and outlier overlays.
 
 If you want to start in a specific grouped view, pass `mode="real"`, `mode="imag"`,
-`mode="phase"`, `mode="sign"`, or `mode="signed_value"` directly in
+`mode="phase"`, `mode="log_magnitude"`, `mode="sparsity"`, `mode="nan_inf"`, `mode="sign"`, or
+`mode="signed_value"` directly in
 `TensorElementsConfig(...)`.
 
 ## Most Common Workflows
@@ -346,7 +354,7 @@ For fuller backend examples, see [docs/backends.md](docs/backends.md).
 | `hover_labels` | Enable hover tooltips in interactive sessions. |
 | `show_contraction_scheme` | Draw contraction-step regions. |
 | `contraction_playback` | Start with playback controls enabled when controls are shown. |
-| `contraction_scheme_cost_hover` | Show cost tooltip on scheme regions. |
+| `contraction_scheme_cost_hover` | Show contraction details in the playback panel. |
 | `tensor_label_refinement` | `"auto"`, `"always"`, or `"never"` for the expensive label-fit pass. |
 | `layout_iterations` | Force-layout effort. |
 | `positions` | Supply custom node coordinates. |

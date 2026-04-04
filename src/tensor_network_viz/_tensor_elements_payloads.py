@@ -8,7 +8,12 @@ from typing import Literal, TypeAlias
 
 import numpy as np
 
-from ._tensor_elements_data import NumericArray, _build_stats, _MatrixMetadata, _TensorRecord
+from ._tensor_elements_data import (
+    NumericArray,
+    _build_data_summary_text,
+    _MatrixMetadata,
+    _TensorRecord,
+)
 from .tensor_elements_config import TensorAxisSelector, TensorElementsConfig, TensorElementsMode
 
 TensorElementsGroup: TypeAlias = Literal["basic", "complex", "diagnostic"]
@@ -17,11 +22,12 @@ _PayloadBuilder: TypeAlias = Callable[
     [_TensorRecord, TensorElementsConfig],
     "_TensorElementsPayload",
 ]
+_HeatmapBuilder: TypeAlias = Callable[[NumericArray, TensorElementsConfig], "_HeatmapComputation"]
 
 _GROUP_MODES: dict[TensorElementsGroup, tuple[str, ...]] = {
-    "basic": ("elements", "magnitude", "distribution", "data"),
+    "basic": ("elements", "magnitude", "log_magnitude", "distribution", "data"),
     "complex": ("real", "imag", "phase"),
-    "diagnostic": ("sign", "signed_value"),
+    "diagnostic": ("sign", "signed_value", "sparsity", "nan_inf"),
 }
 _MODE_TO_GROUP: dict[str, TensorElementsGroup] = {
     mode: group for group, modes in _GROUP_MODES.items() for mode in modes
@@ -35,6 +41,8 @@ class _HeatmapPayload:
     mode_label: str
     colorbar_label: str
     style_key: str
+    color_limits: tuple[float, float] | None = None
+    outlier_mask: NumericArray | None = None
 
 
 @dataclass(frozen=True)
@@ -262,11 +270,14 @@ def _mode_supported_for_array(array: NumericArray, mode: str) -> bool:
     if mode in (
         "elements",
         "magnitude",
+        "log_magnitude",
         "distribution",
         "data",
         "real",
         "sign",
         "signed_value",
+        "sparsity",
+        "nan_inf",
     ):
         return True
     if mode in ("imag", "phase"):
@@ -352,7 +363,7 @@ def _phase_postprocess(matrix: NumericArray) -> NumericArray:
     return np.angle(matrix)
 
 
-def _elements_heatmap(matrix: NumericArray) -> _HeatmapComputation:
+def _elements_heatmap(matrix: NumericArray, _config: TensorElementsConfig) -> _HeatmapComputation:
     if np.iscomplexobj(matrix):
         return _HeatmapComputation(
             matrix=_real_component(matrix),
@@ -368,7 +379,7 @@ def _elements_heatmap(matrix: NumericArray) -> _HeatmapComputation:
     )
 
 
-def _magnitude_heatmap(matrix: NumericArray) -> _HeatmapComputation:
+def _magnitude_heatmap(matrix: NumericArray, _config: TensorElementsConfig) -> _HeatmapComputation:
     return _HeatmapComputation(
         matrix=np.abs(matrix),
         mode_label="magnitude",
@@ -377,7 +388,21 @@ def _magnitude_heatmap(matrix: NumericArray) -> _HeatmapComputation:
     )
 
 
-def _real_heatmap(matrix: NumericArray) -> _HeatmapComputation:
+def _log_magnitude_heatmap(
+    matrix: NumericArray,
+    config: TensorElementsConfig,
+) -> _HeatmapComputation:
+    magnitude = np.abs(matrix)
+    floored = np.maximum(magnitude, float(config.log_magnitude_floor))
+    return _HeatmapComputation(
+        matrix=np.log10(floored),
+        mode_label="log magnitude",
+        colorbar_label="log10(magnitude)",
+        style_key="log_magnitude",
+    )
+
+
+def _real_heatmap(matrix: NumericArray, _config: TensorElementsConfig) -> _HeatmapComputation:
     return _HeatmapComputation(
         matrix=_real_component(matrix),
         mode_label="real",
@@ -386,7 +411,7 @@ def _real_heatmap(matrix: NumericArray) -> _HeatmapComputation:
     )
 
 
-def _imag_heatmap(matrix: NumericArray) -> _HeatmapComputation:
+def _imag_heatmap(matrix: NumericArray, _config: TensorElementsConfig) -> _HeatmapComputation:
     return _HeatmapComputation(
         matrix=_imag_component(matrix),
         mode_label="imag",
@@ -395,7 +420,7 @@ def _imag_heatmap(matrix: NumericArray) -> _HeatmapComputation:
     )
 
 
-def _phase_heatmap(matrix: NumericArray) -> _HeatmapComputation:
+def _phase_heatmap(matrix: NumericArray, _config: TensorElementsConfig) -> _HeatmapComputation:
     return _HeatmapComputation(
         matrix=np.ascontiguousarray(np.exp(1j * np.angle(matrix))),
         mode_label="phase",
@@ -405,7 +430,7 @@ def _phase_heatmap(matrix: NumericArray) -> _HeatmapComputation:
     )
 
 
-def _sign_heatmap(matrix: NumericArray) -> _HeatmapComputation:
+def _sign_heatmap(matrix: NumericArray, _config: TensorElementsConfig) -> _HeatmapComputation:
     display_matrix = np.sign(_real_component(matrix) if np.iscomplexobj(matrix) else matrix)
     return _HeatmapComputation(
         matrix=np.asarray(display_matrix),
@@ -415,7 +440,10 @@ def _sign_heatmap(matrix: NumericArray) -> _HeatmapComputation:
     )
 
 
-def _signed_value_heatmap(matrix: NumericArray) -> _HeatmapComputation:
+def _signed_value_heatmap(
+    matrix: NumericArray,
+    _config: TensorElementsConfig,
+) -> _HeatmapComputation:
     display_matrix = (
         _real_component(matrix)
         if np.iscomplexobj(matrix)
@@ -432,13 +460,44 @@ def _signed_value_heatmap(matrix: NumericArray) -> _HeatmapComputation:
     )
 
 
-_HEATMAP_DEFINITIONS: dict[str, Callable[[NumericArray], _HeatmapComputation]] = {
+def _sparsity_heatmap(matrix: NumericArray, config: TensorElementsConfig) -> _HeatmapComputation:
+    display_matrix = (np.abs(matrix) <= float(config.zero_threshold)).astype(float)
+    return _HeatmapComputation(
+        matrix=np.asarray(display_matrix),
+        mode_label="sparsity",
+        colorbar_label="near-zero mask",
+        style_key="sparsity",
+    )
+
+
+def _nan_inf_heatmap(matrix: NumericArray, _config: TensorElementsConfig) -> _HeatmapComputation:
+    real_part = np.real(matrix)
+    imag_part = np.imag(matrix) if np.iscomplexobj(matrix) else np.zeros_like(real_part)
+    display_matrix = np.zeros(np.asarray(real_part).shape, dtype=float)
+    negative_inf = np.isneginf(real_part) | np.isneginf(imag_part)
+    positive_inf = np.isposinf(real_part) | np.isposinf(imag_part)
+    nan_mask = np.isnan(real_part) | np.isnan(imag_part)
+    display_matrix[negative_inf] = 3.0
+    display_matrix[positive_inf] = 2.0
+    display_matrix[nan_mask] = 1.0
+    return _HeatmapComputation(
+        matrix=np.asarray(display_matrix),
+        mode_label="nan/inf",
+        colorbar_label="value state",
+        style_key="nan_inf",
+    )
+
+
+_HEATMAP_DEFINITIONS: dict[str, _HeatmapBuilder] = {
     "elements": _elements_heatmap,
     "imag": _imag_heatmap,
+    "log_magnitude": _log_magnitude_heatmap,
     "magnitude": _magnitude_heatmap,
+    "nan_inf": _nan_inf_heatmap,
     "phase": _phase_heatmap,
     "real": _real_heatmap,
     "sign": _sign_heatmap,
+    "sparsity": _sparsity_heatmap,
     "signed_value": _signed_value_heatmap,
 }
 
@@ -450,7 +509,7 @@ def _build_heatmap_payload(
     mode: str,
 ) -> _HeatmapPayload:
     matrix, metadata = _prepare_heatmap_matrix(record, config=config)
-    computation = _HEATMAP_DEFINITIONS[mode](matrix)
+    computation = _HEATMAP_DEFINITIONS[mode](matrix, config)
     reduced = _downsample_matrix(computation.matrix, max_shape=config.max_matrix_shape)
     if computation.post_downsample is not None:
         reduced = computation.post_downsample(reduced)
@@ -477,9 +536,11 @@ def _build_distribution_payload(
 
 def _build_text_summary_payload(
     record: _TensorRecord,
-    _config: TensorElementsConfig,
+    config: TensorElementsConfig,
 ) -> _TextSummaryPayload:
-    return _TextSummaryPayload(text=_build_stats(record).text)
+    return _TextSummaryPayload(
+        text=_build_data_summary_text(record, topk_count=int(config.topk_count))
+    )
 
 
 def _build_elements_payload(
@@ -494,6 +555,13 @@ def _build_magnitude_payload(
     config: TensorElementsConfig,
 ) -> _HeatmapPayload:
     return _build_heatmap_payload(record, config, mode="magnitude")
+
+
+def _build_log_magnitude_payload(
+    record: _TensorRecord,
+    config: TensorElementsConfig,
+) -> _HeatmapPayload:
+    return _build_heatmap_payload(record, config, mode="log_magnitude")
 
 
 def _build_real_payload(
@@ -531,15 +599,32 @@ def _build_signed_value_payload(
     return _build_heatmap_payload(record, config, mode="signed_value")
 
 
+def _build_sparsity_payload(
+    record: _TensorRecord,
+    config: TensorElementsConfig,
+) -> _HeatmapPayload:
+    return _build_heatmap_payload(record, config, mode="sparsity")
+
+
+def _build_nan_inf_payload(
+    record: _TensorRecord,
+    config: TensorElementsConfig,
+) -> _HeatmapPayload:
+    return _build_heatmap_payload(record, config, mode="nan_inf")
+
+
 _MODE_PAYLOAD_BUILDERS: dict[str, _PayloadBuilder] = {
     "data": _build_text_summary_payload,
     "distribution": _build_distribution_payload,
     "elements": _build_elements_payload,
     "imag": _build_imag_payload,
+    "log_magnitude": _build_log_magnitude_payload,
     "magnitude": _build_magnitude_payload,
+    "nan_inf": _build_nan_inf_payload,
     "phase": _build_phase_payload,
     "real": _build_real_payload,
     "sign": _build_sign_payload,
+    "sparsity": _build_sparsity_payload,
     "signed_value": _build_signed_value_payload,
 }
 

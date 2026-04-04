@@ -166,7 +166,7 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
         parser,
         name="hover-cost",
         default=False,
-        help_text="Enable contraction-cost hover; also enables scheme rendering.",
+        help_text="Show contraction-cost details during playback; also enables scheme rendering.",
     )
     add_bool_flag(
         parser,

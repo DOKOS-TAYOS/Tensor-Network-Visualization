@@ -4,10 +4,6 @@ This file collects ideas that are intentionally out of scope for the current imp
 
 ## Potential Future Views
 
-- `log_magnitude`
-- `sparsity`
-- `nan_inf`
-- `topk`
 - `slice`
 - `reduce`
 - `profiles`
@@ -15,11 +11,9 @@ This file collects ideas that are intentionally out of scope for the current imp
 
 ## Potential Future Controls
 
-- shared color scale across tensors
-- robust scaling by percentiles
 - symmetric color scaling around zero
 - reference tensor comparison
-- outlier highlighting
+- bookmark/reference workflows for slider-based comparisons
 
 ## Notes
 

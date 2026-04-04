@@ -428,8 +428,28 @@ def test_playback_button_click_and_scheme_toggle_pause_and_hide_controls() -> No
 
 def test_cost_hover_click_auto_enables_scheme_and_registers_hover() -> None:
     trace = [
-        pair_tensor("A0", "x0", "r0", "pa,p->a"),
-        pair_tensor("r0", "A1", "r1", "a,apb->pb"),
+        pair_tensor(
+            "A0",
+            "x0",
+            "r0",
+            "pa,p->a",
+            metadata={
+                "left_shape": (5, 7),
+                "right_shape": (5,),
+                "result_shape": (7,),
+            },
+        ),
+        pair_tensor(
+            "r0",
+            "A1",
+            "r1",
+            "a,apb->pb",
+            metadata={
+                "left_shape": (7,),
+                "right_shape": (7, 11, 13),
+                "result_shape": (11, 13),
+            },
+        ),
     ]
     graph = _build_graph(trace)
     fig, _ax = _plot_graph(
@@ -440,6 +460,7 @@ def test_cost_hover_click_auto_enables_scheme_and_registers_hover() -> None:
             show_contraction_scheme=False,
             contraction_playback=False,
             contraction_scheme_cost_hover=False,
+            hover_labels=False,
         ),
         show_tensor_labels=False,
         show_index_labels=False,
@@ -453,8 +474,16 @@ def test_cost_hover_click_auto_enables_scheme_and_registers_hover() -> None:
     _click_checkbutton(controls._checkbuttons, 2)
 
     assert controls.scheme_on
+    assert controls.playback_on
     assert controls.cost_hover_on
-    assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+    assert getattr(fig, "_tensor_network_viz_hover_cid", None) is None
+    assert controls._viewer is not None
+    assert controls._viewer._cost_panel_ax is not None
+    assert controls._viewer._cost_text_artist is not None
+    assert controls._viewer._cost_panel_ax.get_visible()
+    assert "Contraction:" in controls._viewer._cost_text_artist.get_text()
+    controls._viewer.set_step(0)
+    assert not controls._viewer._cost_panel_ax.get_visible()
 
 
 def test_cost_hover_with_manual_scheme_and_no_metrics_does_not_crash() -> None:
@@ -481,6 +510,7 @@ def test_cost_hover_with_manual_scheme_and_no_metrics_does_not_crash() -> None:
             contraction_playback=False,
             contraction_scheme_cost_hover=False,
             contraction_scheme_by_name=(("A", "B"),),
+            hover_labels=False,
         ),
         show_tensor_labels=False,
         show_index_labels=False,
@@ -494,8 +524,12 @@ def test_cost_hover_with_manual_scheme_and_no_metrics_does_not_crash() -> None:
     _click_checkbutton(controls._checkbuttons, 2)
 
     assert controls.scheme_on
+    assert controls.playback_on
     assert controls.cost_hover_on
-    assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+    assert getattr(fig, "_tensor_network_viz_hover_cid", None) is None
+    assert controls._viewer is not None
+    assert controls._viewer._cost_panel_ax is not None
+    assert not controls._viewer._cost_panel_ax.get_visible()
 
 
 def test_scheme_reenable_restores_recorded_playback_without_recompute(

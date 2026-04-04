@@ -40,10 +40,21 @@ python examples/tensor_elements_demo.py --demo structured
 ```
 
 It uses fairly large NumPy tensors, keeps one tensor active at a time with a slider, and exposes a
-grouped control flow: `basic` (`elements`, `magnitude`, `distribution`, `data`), `complex`
-(`real`, `imag`, `phase`), and `diagnostic` (`sign`, `signed_value`). The optional demos are: `matvec`
-(default, traced matrix-vector), `batch` (traced batched matmul), and `structured` (3D complex
-tensor plus a lattice as TensorNetwork-style nodes).
+grouped control flow: `basic` (`elements`, `magnitude`, `log_magnitude`, `distribution`, `data`),
+`complex` (`real`, `imag`, `phase`), and `diagnostic` (`sign`, `signed_value`, `sparsity`,
+`nan_inf`). The optional demos are: `matvec` (default, traced matrix-vector), `batch` (traced
+batched matmul), and `structured` (3D complex, dense, sparse, and non-finite TensorNetwork-style
+nodes).
+
+If you want to inspect the new diagnostic-friendly tensors specifically, launch the structured demo
+and move the tensor slider until you reach `SparseMask` or `Specials`:
+
+```bash
+python examples/tensor_elements_demo.py --demo structured
+```
+
+- `SparseMask`: useful for the `sparsity` mode.
+- `Specials`: useful for the `nan_inf` mode because it contains `NaN`, `+Inf`, and `-Inf`.
 
 ## Common Workflows
 
@@ -83,7 +94,7 @@ python examples/run_demo.py tenpy chain --view 2d --scheme
 | `--hover-labels` | Enable hover tooltips. |
 | `--scheme` | Draw contraction-scheme overlays when available. |
 | `--playback` | Start with contraction playback enabled. |
-| `--hover-cost` | Show contraction-cost hover on scheme regions. |
+| `--hover-cost` | Show contraction-cost details in the playback panel. |
 | `--from-scratch` | Use the manual builder when that example supports it. |
 | `--from-list` | Pass list/iterable input when supported. |
 | `--save [PATH]` | Save the figure. If omitted, use the auto-generated path. |
@@ -164,6 +175,11 @@ This section lists every example command currently available from the command li
 ```bash
 python examples/tensor_elements_demo.py
 python examples/tensor_elements_demo.py --demo batch
+python examples/tensor_elements_demo.py --demo structured
+```
+
+```bash
+# Open the structured inspection demo, then use the slider to reach SparseMask / Specials
 python examples/tensor_elements_demo.py --demo structured
 ```
 

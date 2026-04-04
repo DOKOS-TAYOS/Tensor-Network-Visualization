@@ -187,6 +187,7 @@ def show_tensor_network(
                 static_style,
                 show_contraction_scheme=True,
                 contraction_playback=False,
+                contraction_scheme_cost_hover=False,
             )
         if resolved_view == "2d":
             fig, ax_out = plot_2d(

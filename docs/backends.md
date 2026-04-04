@@ -19,7 +19,7 @@ r0 = einsum("ab,b->a", a, x, trace=trace, backend="numpy")
 
 fig, ax = show_tensor_elements(
     trace,
-    config=TensorElementsConfig(mode="auto"),
+    config=TensorElementsConfig(mode="auto", robust_percentiles=(1.0, 99.0)),
     show=False,
 )
 fig.savefig("tensor-elements.png", bbox_inches="tight")
@@ -171,9 +171,10 @@ fig, ax = show_tensor_network(
 - Use `show_controls=False` when you want a clean saved figure with no embedded buttons/sliders.
 - Use `PlotConfig(...)` for labels, hover behavior, contraction schemes, and performance-related
   rendering choices.
-- Use `TensorElementsConfig(...)` for tensor-view mode, matrix grouping, and downsampling choices.
+- Use `TensorElementsConfig(...)` for tensor-view mode, matrix grouping, downsampling, top-k data
+  summaries, and optional robust/shared scaling controls.
 - When multiple tensors are present, `show_tensor_elements(...)` shows one tensor at a time and
   adds a slider to move between them. Interactive views are grouped into `basic`, `complex`, and
-  `diagnostic`, with diagnostic modes `sign` and `signed_value`.
+  `diagnostic`, including `log_magnitude`, `sparsity`, and `nan_inf`.
 - TensorKrowch shape-only nodes and manual `pair_tensor(...)` lists are intentionally unsupported
   for `show_tensor_elements(...)` because they do not expose inspectable tensor values.

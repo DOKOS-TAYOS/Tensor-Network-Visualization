@@ -43,6 +43,11 @@ class _ContractionStepMetrics:
     multiplicative_cost: int
     flop_mac: int
     equation_snippet: str | None = None
+    operand_names: tuple[str, ...] = ()
+    operand_shapes: tuple[tuple[int, ...], ...] = ()
+    output_labels: tuple[str, ...] = ()
+    contracted_labels: tuple[str, ...] = ()
+    label_order: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

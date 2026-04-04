@@ -93,6 +93,7 @@ config = PlotConfig(
 Important detail:
 
 - if `show_controls=True`, playback and scheme toggles are available on the figure;
+- if `contraction_scheme_cost_hover=True`, the current playback step shows a fixed detail panel;
 - if `show_controls=False`, the scheme can still be drawn statically, but no playback widgets are added.
 
 ### Performance-oriented rendering
@@ -133,6 +134,8 @@ config = TensorElementsConfig(
     mode="auto",
     max_matrix_shape=(256, 256),
     histogram_bins=40,
+    topk_count=8,
+    robust_percentiles=(1.0, 99.0),
 )
 ```
 
@@ -140,9 +143,13 @@ When multiple tensors are present, `show_tensor_elements(...)` keeps one tensor 
 The slider changes the active tensor. The controls are grouped so you first choose a family of
 views and then the concrete mode inside that family:
 
-- `basic`: `elements`, `magnitude`, `distribution`, `data`
+- `basic`: `elements`, `magnitude`, `log_magnitude`, `distribution`, `data`
 - `complex`: `real`, `imag`, `phase`
-- `diagnostic`: `sign`, `signed_value`
+- `diagnostic`: `sign`, `signed_value`, `sparsity`, `nan_inf`
+
+`data` mode combines the global tensor stats with a compact per-axis summary and the top-k entries
+by magnitude. Use `shared_color_scale=True` when you want slider-based tensor comparisons to reuse
+the same limits, and `highlight_outliers=True` to overlay extreme values on continuous heatmaps.
 
 ### Rank > 2 tensors
 

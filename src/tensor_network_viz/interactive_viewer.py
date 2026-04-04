@@ -48,7 +48,7 @@ _BASE_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.
 _SCHEME_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.028, 0.17, 0.142)
 _INTERACTIVE_CONTROLS_BOTTOM: float = 0.26
 _BASE_TOGGLE_LABELS: tuple[str, str, str] = ("Hover", "Tensor labels", "Edge labels")
-_SCHEME_TOGGLE_LABELS: tuple[str, str, str] = ("Scheme", "Playback", "Cost hover")
+_SCHEME_TOGGLE_LABELS: tuple[str, str, str] = ("Scheme", "Playback", "Costs")
 _INTERACTIVE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _INTERACTIVE_CHECK_MARK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
@@ -283,19 +283,10 @@ def _apply_scene_hover_state(
         tensor_disk_radius_px_3d=scene.hover_state.tensor_disk_radius_px_3d,
     )
     scene.hover_state = state
-    scheme_patches_2d: tuple[tuple[Any, str], ...] = ()
-    scheme_aabbs_3d: tuple[
-        tuple[tuple[float, float, float, float, float, float], str, Any],
-        ...,
-    ] = ()
-    controls = scene.contraction_controls
-    if controls is not None and controls.scheme_on and controls.cost_hover_on:
-        scheme_patches_2d = controls._scheme_entries_2d()
-        scheme_aabbs_3d = controls._scheme_entries_3d()
     _apply_render_hover_state(
         scene.hover_state,
-        scheme_patches_2d=scheme_patches_2d,
-        scheme_aabbs_3d=scheme_aabbs_3d,
+        scheme_patches_2d=(),
+        scheme_aabbs_3d=(),
     )
 
 
@@ -319,6 +310,11 @@ class _InteractiveTensorFigureController:
         self.scheme_on: bool = bool(config.show_contraction_scheme)
         self.playback_on: bool = bool(config.contraction_playback)
         self.cost_hover_on: bool = bool(config.contraction_scheme_cost_hover)
+        if self.cost_hover_on:
+            self.scheme_on = True
+            self.playback_on = True
+        elif self.playback_on:
+            self.scheme_on = True
         self._initial_ax = initial_ax
         self._external_ax = initial_ax is not None
         self._plot_2d, self._plot_3d = _get_plotters(engine)

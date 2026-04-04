@@ -4,6 +4,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 _EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
@@ -340,3 +341,19 @@ def test_tensor_elements_demo_saves_figure_without_showing(tmp_path: Path) -> No
 
     assert output_path.exists()
     assert output_path.stat().st_size > 0
+
+
+def test_tensor_elements_structured_demo_includes_sparse_and_nonfinite_cases() -> None:
+    module = _load_example_module(Path("examples/tensor_elements_demo.py"), "tensor_elements_demo_cases")
+
+    nodes = module.build_structured_network()
+    sparse_node = next(node for node in nodes if node.name == "SparseMask")
+    special_node = next(node for node in nodes if node.name == "Specials")
+
+    sparse_array = np.asarray(sparse_node.tensor)
+    special_array = np.asarray(special_node.tensor)
+
+    assert np.count_nonzero(sparse_array) < sparse_array.size // 4
+    assert np.isnan(special_array).any()
+    assert np.isposinf(special_array).any()
+    assert np.isneginf(special_array).any()

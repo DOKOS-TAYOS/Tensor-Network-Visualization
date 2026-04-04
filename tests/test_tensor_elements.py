@@ -95,12 +95,39 @@ def test_tensor_elements_config_has_expected_defaults() -> None:
     assert config.max_matrix_shape == (256, 256)
     assert config.histogram_bins == 40
     assert config.histogram_max_samples == 100_000
+    assert config.topk_count == 8
+    assert config.zero_threshold == pytest.approx(1e-12)
+    assert config.log_magnitude_floor == pytest.approx(1e-12)
+    assert config.robust_percentiles is None
+    assert config.shared_color_scale is False
+    assert config.highlight_outliers is False
+    assert config.outlier_zscore == pytest.approx(3.5)
 
 
 def test_tensor_elements_config_supports_grouped_modes() -> None:
-    config = TensorElementsConfig(mode="phase")
+    config = TensorElementsConfig(mode="log_magnitude")
 
-    assert config.mode == "phase"
+    assert config.mode == "log_magnitude"
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"topk_count": 0}, "topk_count"),
+        ({"zero_threshold": 0.0}, "zero_threshold"),
+        ({"log_magnitude_floor": 0.0}, "log_magnitude_floor"),
+        ({"outlier_zscore": 0.0}, "outlier_zscore"),
+        ({"robust_percentiles": (-1.0, 90.0)}, "robust_percentiles"),
+        ({"robust_percentiles": (90.0, 90.0)}, "robust_percentiles"),
+        ({"robust_percentiles": (20.0, 101.0)}, "robust_percentiles"),
+    ],
+)
+def test_tensor_elements_config_validates_numeric_inputs(
+    kwargs: dict[str, object],
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        TensorElementsConfig(**kwargs)
 
 
 def test_show_tensor_elements_public_signature_matches_config_centric_style() -> None:
@@ -439,6 +466,92 @@ def test_show_tensor_elements_signed_value_mode_is_continuous() -> None:
     assert "signed value" in ax.get_title().lower()
 
 
+def test_show_tensor_elements_log_magnitude_mode_uses_log_scaled_magnitude() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[1.0, 100.0]], dtype=float),
+        name="LogMag",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="log_magnitude"),
+        show=False,
+        show_controls=False,
+    )
+    image_array = np.asarray(ax.images[0].get_array(), dtype=float)
+
+    assert fig is ax.figure
+    assert "log" in ax.get_title().lower()
+    np.testing.assert_allclose(image_array, np.array([[0.0, 2.0]]))
+
+
+def test_show_tensor_elements_sparsity_mode_marks_near_zero_entries() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[0.0, 1e-14, 1e-3]], dtype=float),
+        name="Sparse",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="sparsity", zero_threshold=1e-12),
+        show=False,
+        show_controls=False,
+    )
+    image_array = np.asarray(ax.images[0].get_array(), dtype=float)
+
+    assert fig is ax.figure
+    assert "sparsity" in ax.get_title().lower()
+    np.testing.assert_array_equal(image_array, np.array([[1.0, 1.0, 0.0]]))
+
+
+def test_show_tensor_elements_nan_inf_mode_marks_special_values() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[0.0, np.nan, np.inf, -np.inf]], dtype=float),
+        name="Specials",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="nan_inf"),
+        show=False,
+        show_controls=False,
+    )
+    image_array = np.asarray(ax.images[0].get_array(), dtype=float)
+
+    assert fig is ax.figure
+    np.testing.assert_array_equal(image_array, np.array([[0.0, 1.0, 2.0, 3.0]]))
+
+
+def test_show_tensor_elements_nan_inf_mode_marks_complex_nonfinite_components() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array(
+            [[
+                complex(1.0, 0.0),
+                complex(np.nan, 0.0),
+                complex(1.0, np.inf),
+                complex(-np.inf, 0.0),
+            ]],
+            dtype=np.complex128,
+        ),
+        name="ComplexSpecials",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="nan_inf"),
+        show=False,
+        show_controls=False,
+    )
+    image_array = np.asarray(ax.images[0].get_array(), dtype=float)
+
+    assert fig is ax.figure
+    np.testing.assert_array_equal(image_array, np.array([[0.0, 1.0, 2.0, 3.0]]))
+
+
 def test_show_tensor_elements_data_mode_uses_main_axis_for_textual_summary() -> None:
     tensor = DummyTensorNetworkNode(
         np.arange(6, dtype=float).reshape(2, 3),
@@ -459,6 +572,50 @@ def test_show_tensor_elements_data_mode_uses_main_axis_for_textual_summary() -> 
     assert not ax.images
     assert "shape:" in all_text.lower()
     assert "dtype:" in all_text.lower()
+
+
+def test_show_tensor_elements_data_mode_includes_axis_summary_and_topk() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[1.0, 9.0, 3.0], [7.0, 2.0, 8.0]], dtype=float),
+        name="DetailedInfo",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="data", topk_count=3),
+        show=False,
+        show_controls=False,
+    )
+    text_blob = "\n".join(text.get_text() for text in ax.texts)
+
+    assert fig is ax.figure
+    assert "axis summary:" in text_blob.lower()
+    assert "top 3 by magnitude:" in text_blob.lower()
+    assert "row (size=2)" in text_blob
+    assert "col (size=3)" in text_blob
+    assert "row=0, col=1" in text_blob
+    assert "row=1, col=2" in text_blob
+
+
+def test_show_tensor_elements_data_mode_uses_magnitude_for_complex_topk() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[3.0 + 4.0j, 6.0 + 0.0j]], dtype=np.complex128),
+        name="ComplexInfo",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="data", topk_count=1),
+        show=False,
+        show_controls=False,
+    )
+    text_blob = "\n".join(text.get_text() for text in ax.texts)
+
+    assert fig is ax.figure
+    assert "mean|x|" in text_blob
+    assert "row=0, col=1" in text_blob
 
 
 def test_show_tensor_elements_downsamples_large_heatmaps() -> None:
@@ -513,6 +670,139 @@ def test_show_tensor_elements_phase_mode_labels_colorbar() -> None:
     colorbar_ax = next(axis for axis in fig.axes if axis is not ax)
 
     assert "phase" in colorbar_ax.get_ylabel().lower()
+
+
+def test_show_tensor_elements_nan_inf_mode_labels_colorbar_states() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[0.0, np.nan, np.inf, -np.inf]], dtype=float),
+        name="SpecialColorbar",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="nan_inf"),
+        show=False,
+        show_controls=False,
+    )
+    colorbar_ax = next(axis for axis in fig.axes if axis is not ax)
+    labels = [tick.get_text() for tick in colorbar_ax.get_yticklabels()]
+
+    assert labels == ["finite", "NaN", "+Inf", "-Inf"]
+
+
+def test_show_tensor_elements_robust_scaling_ignores_outliers_and_nonfinite_values() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 1000.0, np.nan, np.inf]]),
+        name="Robust",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="elements", robust_percentiles=(5.0, 95.0)),
+        show=False,
+        show_controls=False,
+    )
+    low, high = ax.images[0].get_clim()
+
+    assert fig is ax.figure
+    assert np.isfinite(low)
+    assert np.isfinite(high)
+    assert high < 1000.0
+
+
+def test_show_tensor_elements_shared_color_scale_reuses_limits_across_slider() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.array([[0.0, 1.0]], dtype=float),
+            name="Small",
+            axis_names=("row", "col"),
+        ),
+        DummyTensorNetworkNode(
+            np.array([[0.0, 100.0]], dtype=float),
+            name="Large",
+            axis_names=("row", "col"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements(
+        tensors,
+        config=TensorElementsConfig(mode="elements", shared_color_scale=True),
+        show=False,
+        show_controls=True,
+    )
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+    first_clim = ax.images[0].get_clim()
+
+    controller._slider.set_val(1.0)
+    second_clim = ax.images[0].get_clim()
+
+    assert first_clim == pytest.approx(second_clim)
+
+
+def test_show_tensor_elements_signed_value_robust_scaling_stays_symmetric() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[-1.0, 0.0, 2.0, 100.0]], dtype=float),
+        name="SymmetricRobust",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="signed_value", robust_percentiles=(0.0, 75.0)),
+        show=False,
+        show_controls=False,
+    )
+    low, high = ax.images[0].get_clim()
+
+    assert fig is ax.figure
+    assert high < 100.0
+    assert low == pytest.approx(-high)
+
+
+def test_show_tensor_elements_outlier_overlay_appears_for_continuous_heatmaps() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[0.0, 0.0, 1.0, 10.0]], dtype=float),
+        name="OutlierOverlay",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(
+            mode="elements",
+            highlight_outliers=True,
+            outlier_zscore=3.5,
+        ),
+        show=False,
+        show_controls=False,
+    )
+
+    assert fig is ax.figure
+    assert len(ax.collections) == 1
+
+
+def test_show_tensor_elements_outlier_overlay_skips_discrete_heatmaps() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[0.0, 0.0, 1.0, 10.0]], dtype=float),
+        name="DiscreteOverlay",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(
+            mode="sparsity",
+            highlight_outliers=True,
+            outlier_zscore=3.5,
+        ),
+        show=False,
+        show_controls=False,
+    )
+
+    assert fig is ax.figure
+    assert not ax.collections
 
 
 def test_show_tensor_elements_rejects_shape_only_tensorkrowch_nodes() -> None:
@@ -571,7 +861,7 @@ def test_show_tensor_elements_widgets_switch_modes() -> None:
 
     fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
     controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
-    _click_radio_label(controller._mode_radio, 2)
+    _click_radio_label(controller._mode_radio, 3)
 
     assert fig is ax.figure
     assert "distribution" in ax.get_title().lower()
@@ -586,12 +876,31 @@ def test_show_tensor_elements_widgets_offer_data_mode() -> None:
 
     fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
     controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
-    _click_radio_label(controller._mode_radio, 3)
+    _click_radio_label(controller._mode_radio, 4)
     text_blob = "\n".join(text.get_text() for text in ax.texts)
 
     assert fig is ax.figure
     assert "data" in ax.get_title().lower()
     assert "shape:" in text_blob.lower()
+
+
+def test_show_tensor_elements_widgets_offer_new_basic_and_diagnostic_modes() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(6, dtype=float).reshape(2, 3),
+        name="WidgetModes",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+    basic_modes = tuple(text.get_text() for text in controller._mode_radio.labels)
+
+    _click_radio_label(controller._group_radio, 2)
+    diagnostic_modes = tuple(text.get_text() for text in controller._mode_radio.labels)
+
+    assert fig is ax.figure
+    assert basic_modes == ("elements", "magnitude", "log_magnitude", "distribution", "data")
+    assert diagnostic_modes == ("sign", "signed_value", "sparsity", "nan_inf")
 
 
 def test_show_tensor_elements_widgets_switch_group_then_mode() -> None:
