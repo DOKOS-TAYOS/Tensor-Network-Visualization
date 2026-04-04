@@ -35,6 +35,9 @@ from .layout_structure import _LayoutComponent
 RenderedAxes: TypeAlias = Axes | Axes3D
 _Dimensions = Literal[2, 3]
 _LayoutCacheKey: TypeAlias = tuple[int, int, int]
+# Main axes: use almost the full figure width (interactive widgets sit in the bottom margin).
+_FIGURE_ADJUST_LEFT: float = 0.006
+_FIGURE_ADJUST_RIGHT: float = 0.994
 
 _layout_positions_by_id: dict[
     int,
@@ -423,7 +426,12 @@ def _plot_graph(
         build_scene_state=build_scene_state,
     )
     reserved_bottom = get_reserved_bottom(fig)
-    fig.subplots_adjust(left=0.02, right=0.98, bottom=reserved_bottom, top=0.98)
+    fig.subplots_adjust(
+        left=_FIGURE_ADJUST_LEFT,
+        right=_FIGURE_ADJUST_RIGHT,
+        bottom=reserved_bottom,
+        top=0.98,
+    )
     return fig, resolved_ax
 
 

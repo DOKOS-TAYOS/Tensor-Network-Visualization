@@ -40,17 +40,41 @@ _SchemeAvailability = Literal["not_computed", "computed", "unavailable"]
 _TNV_CONTRACTION_SCHEME_PATCH_GID: Final[str] = "tnv_contraction_scheme"
 
 _TRANSPARENT: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
-_PLAYBACK_MAIN_BOTTOM: float = 0.40
 _PLAYBACK_DETAILS_BOUNDS: tuple[float, float, float, float] = (0.25, 0.116, 0.68, 0.12)
-_PLAYBACK_SLIDER_BOUNDS: tuple[float, float, float, float] = (0.33, 0.067, 0.345, 0.024)
+# Top of the cost / step-details axis; interactive chrome (checkboxes, 2d/3d) aligns to this y.
+_PLAYBACK_DETAILS_TOP: float = _PLAYBACK_DETAILS_BOUNDS[1] + _PLAYBACK_DETAILS_BOUNDS[3]
+# Aligned with the top of the cost / scheme chrome (no extra gap above the widgets).
+_MAIN_FIGURE_BOTTOM_RESERVED: float = _PLAYBACK_DETAILS_TOP
+_PLAYBACK_MAIN_BOTTOM: float = _MAIN_FIGURE_BOTTOM_RESERVED
+_CONTROLS_MAIN_BOTTOM: float = _MAIN_FIGURE_BOTTOM_RESERVED
+_PLAYBACK_SLIDER_HEIGHT: float = 0.058
+_PLAYBACK_SLIDER_BOUNDS: tuple[float, float, float, float] = (
+    0.33,
+    0.062,
+    0.345,
+    _PLAYBACK_SLIDER_HEIGHT,
+)
+_PLAYBACK_SLIDER_HANDLE_STYLE: dict[str, Any] = {
+    "facecolor": "#2563eb",
+    "edgecolor": "#1d4ed8",
+    "size": 11,
+}
 _PLAYBACK_BUTTON_START_X: float = 0.73
 _PLAYBACK_BUTTON_Y: float = 0.058
 _PLAYBACK_BUTTON_WIDTH: float = 0.055
 _PLAYBACK_BUTTON_HEIGHT: float = 0.038
 _PLAYBACK_BUTTON_GAP: float = 0.012
 _PLAYBACK_RESET_WIDTH: float = 0.065
-_CONTROLS_MAIN_BOTTOM: float = _PLAYBACK_MAIN_BOTTOM
-_CONTROLS_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.045, 0.13, 0.10)
+_CONTROLS_CHECKBOX_TOP: float = _PLAYBACK_DETAILS_TOP
+_CONTROLS_CHECKBOX_HEIGHT: float = 0.10
+_CONTROLS_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (
+    0.02,
+    _CONTROLS_CHECKBOX_TOP - _CONTROLS_CHECKBOX_HEIGHT,
+    0.13,
+    _CONTROLS_CHECKBOX_HEIGHT,
+)
+_PLAYBACK_TRAY_FACE: tuple[float, float, float] = (0.96, 0.96, 0.98)
+_PLAYBACK_TRAY_FRAME: tuple[float, float, float] = (0.78, 0.78, 0.82)
 _SCHEME_LABELS: tuple[str, str, str] = ("Scheme", "Playback", "Costs")
 _CONTROL_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _CONTROL_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
@@ -452,9 +476,15 @@ class _ContractionViewerBase:
         ax_details = self.figure.add_axes(_PLAYBACK_DETAILS_BOUNDS)
         ax_details.set_xticks([])
         ax_details.set_yticks([])
-        ax_details.patch.set_alpha(0.0)
+        ax_details.set_navigate(False)
+        ax_details.patch.set_facecolor(_PLAYBACK_TRAY_FACE)
+        ax_details.patch.set_alpha(0.92)
+        ax_details.patch.set_edgecolor(_PLAYBACK_TRAY_FRAME)
+        ax_details.patch.set_linewidth(0.6)
         for spine in ax_details.spines.values():
-            spine.set_visible(False)
+            spine.set_visible(True)
+            spine.set_linewidth(0.6)
+            spine.set_color(_PLAYBACK_TRAY_FRAME)
         text = ax_details.text(
             0.0,
             1.0,
@@ -507,6 +537,7 @@ class _ContractionViewerBase:
             float(max(0, n)),
             valinit=float(self._initial_step if self._initial_step is not None else n),
             valstep=1,
+            handle_style=_PLAYBACK_SLIDER_HANDLE_STYLE,
         )
         self.slider = slider
 
@@ -687,6 +718,17 @@ class _ContractionControls:
 
     def _build_controls(self) -> None:
         controls_ax = self.figure.add_axes(_CONTROLS_CHECKBOX_BOUNDS)
+        controls_ax.set_xticks([])
+        controls_ax.set_yticks([])
+        controls_ax.set_navigate(False)
+        controls_ax.patch.set_facecolor((0.97, 0.97, 0.99))
+        controls_ax.patch.set_alpha(0.88)
+        controls_ax.patch.set_edgecolor(_PLAYBACK_TRAY_FRAME)
+        controls_ax.patch.set_linewidth(0.6)
+        for spine in controls_ax.spines.values():
+            spine.set_visible(True)
+            spine.set_linewidth(0.6)
+            spine.set_color(_PLAYBACK_TRAY_FRAME)
         self._controls_ax = controls_ax
         self._checkbuttons = CheckButtons(
             controls_ax,

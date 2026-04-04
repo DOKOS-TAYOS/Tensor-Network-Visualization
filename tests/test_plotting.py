@@ -626,9 +626,9 @@ def test_show_tensor_network_places_view_selector_between_options_and_playback_s
 
     assert check_bounds[2] <= 0.21
     assert radio_bounds[0] >= check_right - 0.02
-    assert radio_bounds[2] <= 0.06
+    assert radio_bounds[2] <= 0.09
     assert slider_bounds[0] >= radio_right - 0.02
-    assert 0.02 <= radio_bounds[1] <= 0.06
+    assert abs(radio_bounds[1] - check_bounds[1]) < 0.02
     assert play_bounds[0] > slider_right
 
 

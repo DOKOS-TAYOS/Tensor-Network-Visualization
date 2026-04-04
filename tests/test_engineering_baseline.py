@@ -153,7 +153,7 @@ def test_compute_axis_directions_dense_dangling_chain_completes_quickly() -> Non
 def test_pyproject_declares_smoke_and_perf_markers() -> None:
     content = Path("pyproject.toml").read_text(encoding="utf-8")
 
-    assert 'markers = [' in content
+    assert "markers = [" in content
     assert '"perf: runtime-sensitive regression checks and throughput guards"' in content
     assert '"smoke: lightweight render smoke checks"' in content
 

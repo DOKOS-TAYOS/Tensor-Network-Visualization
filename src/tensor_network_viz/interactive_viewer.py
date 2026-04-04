@@ -32,25 +32,38 @@ from ._tensor_elements_data import (
 )
 from ._tensor_elements_support import _TensorRecord
 from ._typing import root_figure
-from ._ui_utils import _reserve_figure_bottom, _set_axes_visible
+from ._ui_utils import _set_axes_visible, _set_figure_bottom_reserved
 from .config import EngineName, PlotConfig, ViewName
+from .contraction_viewer import _MAIN_FIGURE_BOTTOM_RESERVED, _PLAYBACK_DETAILS_TOP
 from .einsum_module.trace import EinsumTrace
 from .tensor_elements import _show_tensor_records
 from .tensor_elements_config import TensorElementsConfig
 
 RenderedAxes = Axes | Axes3D
 
-# 2d/3d: width 0.053 (= 60% of 0.088); height 0.063; bottom lowered ~0.03 vs earlier slider-row alignment.
-_VIEW_SELECTOR_BOUNDS: tuple[float, float, float, float] = (0.213, 0.025, 0.053, 0.063)
-_BASE_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.028, 0.19, 0.09)
-_SCHEME_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.028, 0.19, 0.142)
-_SCHEME_INSPECTOR_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (
+# Menu column: fixed bottom = tallest stack (inspector + scheme). Without playback, checkboxes/radio
+# stay as low as when the bottom row exists. Top aligned with cost-details top.
+_VIEW_SELECTOR_LEFT: float = 0.213
+_VIEW_SELECTOR_WIDTH: float = 0.053
+_VIEW_SELECTOR_HEIGHT: float = 0.063
+# Manual axes positions: 2D extends slightly below *base*, 3D starts higher (base + lift).
+_INTERACTIVE_2D_BOTTOM_EXTRA: float = 0.022
+_INTERACTIVE_3D_BOTTOM_LIFT: float = 0.084
+_BASE_INTERACTIVE_HEIGHT: float = 0.09
+_SCHEME_INSPECTOR_INTERACTIVE_HEIGHT: float = 0.172
+_INTERACTIVE_MENU_COLUMN_HEIGHT: float = _SCHEME_INSPECTOR_INTERACTIVE_HEIGHT
+_INTERACTIVE_MENU_COLUMN_BOTTOM: float = _PLAYBACK_DETAILS_TOP - _INTERACTIVE_MENU_COLUMN_HEIGHT
+_INTERACTIVE_CHECKBOX_AXES_BOUNDS: tuple[float, float, float, float] = (
     0.02,
-    0.028,
+    _INTERACTIVE_MENU_COLUMN_BOTTOM,
     0.19,
-    0.172,
+    _INTERACTIVE_MENU_COLUMN_HEIGHT,
 )
-_INTERACTIVE_CONTROLS_BOTTOM: float = 0.26
+# When Scheme is off, main axes bottom (not tied to menu column bottom after unifying menus).
+_SCHEME_OFF_FIGURE_BOTTOM_PAD: float = 0.02
+_MAIN_FIGURE_BOTTOM_SCHEME_OFF: float = (
+    _PLAYBACK_DETAILS_TOP - _BASE_INTERACTIVE_HEIGHT + _SCHEME_OFF_FIGURE_BOTTOM_PAD
+)
 _BASE_TOGGLE_LABELS: tuple[str, str, str] = ("Hover", "Tensor labels", "Edge labels")
 _SCHEME_TOGGLE_LABELS: tuple[str, str, str] = ("Scheme", "Playback", "Costs")
 _TENSOR_INSPECTOR_LABEL: str = "Tensor inspector"
@@ -58,6 +71,22 @@ _INTERACTIVE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _INTERACTIVE_CHECK_MARK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
 _INTERACTIVE_RADIO_PROPS: dict[str, float] = {"s": 38.0, "linewidth": 0.9}
+_CONTROL_TRAY_FACE: tuple[float, float, float] = (0.97, 0.97, 0.99)
+_CONTROL_TRAY_FRAME: tuple[float, float, float] = (0.78, 0.78, 0.82)
+
+
+def _style_interactive_control_axes(ax: Axes) -> None:
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_navigate(False)
+    ax.patch.set_facecolor(_CONTROL_TRAY_FACE)
+    ax.patch.set_alpha(0.88)
+    ax.patch.set_edgecolor(_CONTROL_TRAY_FRAME)
+    ax.patch.set_linewidth(0.6)
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_linewidth(0.6)
+        spine.set_color(_CONTROL_TRAY_FRAME)
 
 
 @dataclass
@@ -222,11 +251,8 @@ def _interactive_checkbox_bounds(
     include_scheme_toggles: bool,
     include_tensor_inspector: bool,
 ) -> tuple[float, float, float, float]:
-    if include_scheme_toggles and include_tensor_inspector:
-        return _SCHEME_INSPECTOR_INTERACTIVE_CHECKBOX_BOUNDS
-    if include_scheme_toggles:
-        return _SCHEME_INTERACTIVE_CHECKBOX_BOUNDS
-    return _BASE_INTERACTIVE_CHECKBOX_BOUNDS
+    _ = include_scheme_toggles, include_tensor_inspector
+    return _INTERACTIVE_CHECKBOX_AXES_BOUNDS
 
 
 class _InteractiveTensorFigureController:
@@ -290,8 +316,6 @@ class _InteractiveTensorFigureController:
         self.figure = figure
         if self._view_caches[self.current_view].scene is None:
             return figure, ax
-        if not self._external_ax:
-            _reserve_figure_bottom(figure, _INTERACTIVE_CONTROLS_BOTTOM)
         self._build_controls()
         self._apply_scene_state(self.current_scene)
         set_interactive_controls(figure, self)
@@ -346,6 +370,60 @@ class _InteractiveTensorFigureController:
             scene.contraction_controls = get_contraction_controls(rendered_ax)
         return fig, rendered_ax
 
+    def _shared_data_axes_top(self) -> float:
+        ax3 = self._view_caches["3d"].ax
+        if ax3 is not None:
+            p = ax3.get_position()
+            return float(p.y0 + p.height)
+        ax2 = self._view_caches["2d"].ax
+        if ax2 is not None:
+            p = ax2.get_position()
+            return float(p.y0 + p.height)
+        return 0.9
+
+    def _interactive_scheme_chrome_on(self) -> bool:
+        return self.current_scene.contraction_controls is not None and self.scheme_on
+
+    def _interactive_main_axes_bottom(self) -> float:
+        return float(
+            _MAIN_FIGURE_BOTTOM_RESERVED
+            if self._interactive_scheme_chrome_on()
+            else _MAIN_FIGURE_BOTTOM_SCHEME_OFF
+        )
+
+    def _figure_bottom_margin(self) -> float:
+        base = self._interactive_main_axes_bottom()
+        lows: list[float] = []
+        if self._view_caches["2d"].ax is not None:
+            lows.append(base - float(_INTERACTIVE_2D_BOTTOM_EXTRA))
+        if self._view_caches["3d"].ax is not None:
+            lows.append(base + float(_INTERACTIVE_3D_BOTTOM_LIFT))
+        return min(lows) if lows else base
+
+    def _apply_interactive_figure_layout(self) -> None:
+        if self.figure is None or self._external_ax:
+            return
+        _set_figure_bottom_reserved(self.figure, self._figure_bottom_margin())
+        self._sync_data_axes_vertical_layout()
+
+    def _sync_data_axes_vertical_layout(self) -> None:
+        if self.figure is None or self._external_ax:
+            return
+        base = self._interactive_main_axes_bottom()
+        top = self._shared_data_axes_top()
+        ax2 = self._view_caches["2d"].ax
+        ax3 = self._view_caches["3d"].ax
+        if ax2 is not None:
+            bottom_2d = base - float(_INTERACTIVE_2D_BOTTOM_EXTRA)
+            pos = ax2.get_position()
+            height = max(top - bottom_2d, 0.08)
+            ax2.set_position([pos.x0, bottom_2d, pos.width, height])
+        if ax3 is not None:
+            bottom_3d = base + float(_INTERACTIVE_3D_BOTTOM_LIFT)
+            pos = ax3.get_position()
+            height = max(top - bottom_3d, 0.08)
+            ax3.set_position([pos.x0, bottom_3d, pos.width, height])
+
     def _build_controls(self) -> None:
         assert self.figure is not None
         labels = list(_BASE_TOGGLE_LABELS)
@@ -355,8 +433,23 @@ class _InteractiveTensorFigureController:
             labels.extend(_SCHEME_TOGGLE_LABELS)
         if has_tensor_inspector:
             labels.append(_TENSOR_INSPECTOR_LABEL)
+        cb_bounds = _interactive_checkbox_bounds(
+            include_scheme_toggles=has_scheme_toggles,
+            include_tensor_inspector=has_tensor_inspector,
+        )
+        cb_bottom = float(cb_bounds[1])
+        check_ax = self.figure.add_axes(cb_bounds)
+        _style_interactive_control_axes(check_ax)
+        self._check_ax = check_ax
         if not self._external_ax:
-            radio_ax = self.figure.add_axes(_VIEW_SELECTOR_BOUNDS)
+            radio_bounds: tuple[float, float, float, float] = (
+                _VIEW_SELECTOR_LEFT,
+                cb_bottom,
+                _VIEW_SELECTOR_WIDTH,
+                _VIEW_SELECTOR_HEIGHT,
+            )
+            radio_ax = self.figure.add_axes(radio_bounds)
+            _style_interactive_control_axes(radio_ax)
             self._radio_ax = radio_ax
             active_index = 0 if self.current_view == "2d" else 1
             self._radio = RadioButtons(
@@ -367,13 +460,6 @@ class _InteractiveTensorFigureController:
                 radio_props=_INTERACTIVE_RADIO_PROPS,
             )
             self._radio.on_clicked(self._on_view_clicked)
-        check_ax = self.figure.add_axes(
-            _interactive_checkbox_bounds(
-                include_scheme_toggles=has_scheme_toggles,
-                include_tensor_inspector=has_tensor_inspector,
-            )
-        )
-        self._check_ax = check_ax
         statuses = [
             self.hover_on,
             self.tensor_labels_on,
@@ -489,6 +575,8 @@ class _InteractiveTensorFigureController:
             self._tensor_inspector.set_enabled(self.tensor_inspector_on)
         _apply_scene_hover_state(scene, hover_on=self.hover_on)
         self._sync_checkbuttons()
+        if not self._external_ax:
+            self._apply_interactive_figure_layout()
         scene.ax.figure.canvas.draw_idle()
 
     def set_view(self, view: ViewName) -> None:

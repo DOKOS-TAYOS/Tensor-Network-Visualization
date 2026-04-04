@@ -15,6 +15,14 @@ def _reserve_figure_bottom(fig: Figure, bottom: float) -> None:
     fig.subplots_adjust(bottom=target)
 
 
+def _set_figure_bottom_reserved(fig: Figure, bottom: float) -> None:
+    """Store and apply *bottom*; unlike `_reserve_figure_bottom`, can shrink the reserved strip."""
+    b = float(bottom)
+    set_reserved_bottom(fig, b)
+    p = fig.subplotpars
+    fig.subplots_adjust(left=p.left, right=p.right, top=p.top, bottom=b)
+
+
 def _set_axes_visible(ax: Any, visible: bool) -> None:
     ax.set_visible(visible)
     ax.patch.set_visible(visible)
@@ -32,4 +40,9 @@ def _set_widget_active(widget: Any, active: bool) -> None:
             setter(bool(active))
 
 
-__all__ = ["_reserve_figure_bottom", "_set_axes_visible", "_set_widget_active"]
+__all__ = [
+    "_reserve_figure_bottom",
+    "_set_figure_bottom_reserved",
+    "_set_axes_visible",
+    "_set_widget_active",
+]

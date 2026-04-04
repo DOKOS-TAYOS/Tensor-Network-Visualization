@@ -51,6 +51,7 @@ class _EinsumPlaybackStepRecord:
     result_name: str
     record: _TensorRecord | None
 
+
 def _detect_tensor_elements_engine(data: Any) -> tuple[EngineName, Any]:
     return _detect_tensor_engine_with_input(data)
 

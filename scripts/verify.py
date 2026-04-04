@@ -44,9 +44,7 @@ def _command_groups() -> dict[str, VerificationGroup]:
                 ),
             ),
         ),
-        "package": (
-            VerificationStep("build-dist", (python, "-m", "build", "--sdist", "--wheel")),
-        ),
+        "package": (VerificationStep("build-dist", (python, "-m", "build", "--sdist", "--wheel")),),
     }
 
 
