@@ -589,7 +589,7 @@ def test_show_tensor_network_discards_stale_hover_annotations_when_switching_vie
     assert "stale-3d" not in texts_3d
 
 
-def test_show_tensor_network_places_view_menu_above_options_and_keeps_playback_clear() -> None:
+def test_show_tensor_network_places_view_selector_between_options_and_playback_slider() -> None:
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
@@ -623,12 +623,12 @@ def test_show_tensor_network_places_view_menu_above_options_and_keeps_playback_c
     radio_right = radio_bounds[0] + radio_bounds[2]
     check_right = check_bounds[0] + check_bounds[2]
     slider_right = slider_bounds[0] + slider_bounds[2]
-    check_top = check_bounds[1] + check_bounds[3]
 
-    assert radio_bounds[1] >= check_top
-    assert check_bounds[2] <= 0.19
-    assert radio_bounds[2] <= 0.10
-    assert slider_bounds[0] >= max(radio_right, check_right)
+    assert check_bounds[2] <= 0.21
+    assert radio_bounds[0] >= check_right - 0.02
+    assert radio_bounds[2] <= 0.06
+    assert slider_bounds[0] >= radio_right - 0.02
+    assert 0.02 <= radio_bounds[1] <= 0.06
     assert play_bounds[0] > slider_right
 
 

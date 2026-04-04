@@ -40,13 +40,14 @@ from .tensor_elements_config import TensorElementsConfig
 
 RenderedAxes = Axes | Axes3D
 
-_VIEW_SELECTOR_BOUNDS: tuple[float, float, float, float] = (0.02, 0.182, 0.09, 0.055)
-_BASE_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.028, 0.17, 0.09)
-_SCHEME_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.028, 0.17, 0.142)
+# 2d/3d: width 0.053 (= 60% of 0.088); height 0.063; bottom lowered ~0.03 vs earlier slider-row alignment.
+_VIEW_SELECTOR_BOUNDS: tuple[float, float, float, float] = (0.213, 0.025, 0.053, 0.063)
+_BASE_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.028, 0.19, 0.09)
+_SCHEME_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.028, 0.19, 0.142)
 _SCHEME_INSPECTOR_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (
     0.02,
     0.028,
-    0.17,
+    0.19,
     0.172,
 )
 _INTERACTIVE_CONTROLS_BOTTOM: float = 0.26
