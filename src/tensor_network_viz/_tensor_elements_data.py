@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
-from itertools import tee
 from typing import Any, TypeAlias
 
 import numpy as np
 
 from ._engine_specs import EngineName
+from ._input_inspection import (
+    _detect_tensor_engine_with_input,
+    _is_tenpy_tensor,
+    _is_unordered_collection,
+)
+from .einsum_module._equation import parse_einsum_equation
 from .einsum_module.trace import EinsumTrace, einsum_trace_step, pair_tensor
 from .quimb.graph import _quimb_tensor_parsed, _tensors_sorted_with_meta
 from .tenpy.explicit import TenPyTensorNetwork
@@ -42,95 +46,13 @@ class _MatrixMetadata:
     row_names: tuple[str, ...]
 
 
-def _first_non_none(items: Iterable[Any]) -> Any | None:
-    for item in items:
-        if item is not None:
-            return item
-    return None
-
-
-def _peek_item(source: Any) -> tuple[Any | None, Any]:
-    if isinstance(source, dict):
-        return _first_non_none(source.values()), source
-    if isinstance(source, (str, bytes, bytearray)) or not isinstance(source, Iterable):
-        return None, source
-
-    iterator = iter(source)
-    if iterator is source:
-        probe_iter, runtime_iter = tee(iterator)
-        return _first_non_none(probe_iter), runtime_iter
-    return _first_non_none(iterator), source
-
-
-def _is_unordered_collection(value: Any) -> bool:
-    return isinstance(value, AbstractSet) and not isinstance(value, (str, bytes, bytearray))
-
-
-def _is_tenpy_tensor(value: Any) -> bool:
-    return callable(getattr(value, "get_leg_labels", None)) and callable(
-        getattr(value, "to_ndarray", None)
-    )
-
-
-def _is_tenpy_like(value: Any) -> bool:
-    return (
-        isinstance(value, TenPyTensorNetwork)
-        or callable(getattr(value, "get_W", None))
-        or (callable(getattr(value, "get_X", None)) and hasattr(value, "uMPS_GS"))
-        or callable(getattr(value, "get_B", None))
-        or _is_tenpy_tensor(value)
-    )
-
-
-def _detect_engine_from_sample(sample_item: Any | None) -> EngineName | None:
-    if isinstance(sample_item, (pair_tensor, einsum_trace_step)):
-        return "einsum"
-    if _is_tenpy_like(sample_item):
-        return "tenpy"
-    if hasattr(sample_item, "data") and hasattr(sample_item, "inds"):
-        return "quimb"
-    if hasattr(sample_item, "axes_names"):
-        return "tensorkrowch"
-    if hasattr(sample_item, "axis_names") and hasattr(sample_item, "tensor"):
-        return "tensornetwork"
-    return None
-
+@dataclass(frozen=True)
+class _EinsumPlaybackStepRecord:
+    result_name: str
+    record: _TensorRecord | None
 
 def _detect_tensor_elements_engine(data: Any) -> tuple[EngineName, Any]:
-    if isinstance(data, EinsumTrace):
-        return "einsum", data
-    if _is_tenpy_like(data):
-        return "tenpy", data
-
-    direct_engine = _detect_engine_from_sample(data)
-    if direct_engine is not None:
-        return direct_engine, data
-
-    if hasattr(data, "tensors"):
-        tensor_sample, _ = _peek_item(data.tensors)
-        if tensor_sample is None or hasattr(tensor_sample, "inds"):
-            return "quimb", data
-
-    if hasattr(data, "leaf_nodes"):
-        sample, _ = _peek_item(data.leaf_nodes)
-        if sample is None or hasattr(sample, "axes_names"):
-            return "tensorkrowch", data
-    if hasattr(data, "nodes"):
-        sample, _ = _peek_item(data.nodes)
-        if sample is None or hasattr(sample, "axes_names"):
-            return "tensorkrowch", data
-        if sample is None or hasattr(sample, "axis_names"):
-            return "tensornetwork", data
-
-    sample_item, sampled_input = _peek_item(data)
-    detected_engine = _detect_engine_from_sample(sample_item)
-    if detected_engine is not None:
-        return detected_engine, sampled_input
-
-    raise ValueError(
-        "Could not infer tensor engine from input of type "
-        f"{type(data).__name__!r}. Pass engine= explicitly or provide a supported tensor input."
-    )
+    return _detect_tensor_engine_with_input(data)
 
 
 def _name_sort_key(item: Any) -> tuple[str, tuple[str, ...], str, str]:
@@ -367,6 +289,74 @@ def _extract_einsum_records(data: Any) -> list[_TensorRecord]:
     return records
 
 
+def _operand_shapes_for_einsum_step(
+    step: pair_tensor | einsum_trace_step,
+) -> tuple[tuple[int, ...], ...] | None:
+    metadata = step.metadata or {}
+    operand_shapes = metadata.get("operand_shapes")
+    if operand_shapes is not None:
+        return tuple(tuple(int(dim) for dim in shape) for shape in operand_shapes)
+    if isinstance(step, pair_tensor):
+        left_shape = metadata.get("left_shape")
+        right_shape = metadata.get("right_shape")
+        if left_shape is not None and right_shape is not None:
+            return (
+                tuple(int(dim) for dim in left_shape),
+                tuple(int(dim) for dim in right_shape),
+            )
+    return None
+
+
+def _axis_names_for_einsum_step(step: pair_tensor | einsum_trace_step) -> tuple[str, ...]:
+    operand_shapes = _operand_shapes_for_einsum_step(step)
+    if operand_shapes is None:
+        return ()
+    try:
+        parsed = parse_einsum_equation(str(step.equation), operand_shapes)
+    except Exception:
+        return ()
+    return tuple(str(axis_name) for axis_name in parsed.output_axes)
+
+
+def _extract_einsum_playback_step_records(data: Any) -> tuple[_EinsumPlaybackStepRecord, ...]:
+    if not isinstance(data, EinsumTrace):
+        raise TypeError("Playback tensor inspection only supports real EinsumTrace objects.")
+
+    state = data._state
+    state._sweep_dead_records()
+    live_tensors_by_name: dict[str, Any] = {}
+    for tracked in state._records.values():
+        tensor = tracked.ref()
+        if tensor is None:
+            continue
+        live_tensors_by_name[str(tracked.name)] = tensor
+
+    step_records: list[_EinsumPlaybackStepRecord] = []
+    for step in state.pairs:
+        result_name = str(step.result_name)
+        tensor = live_tensors_by_name.get(result_name)
+        if tensor is None:
+            step_records.append(
+                _EinsumPlaybackStepRecord(
+                    result_name=result_name,
+                    record=None,
+                )
+            )
+            continue
+        step_records.append(
+            _EinsumPlaybackStepRecord(
+                result_name=result_name,
+                record=_TensorRecord(
+                    array=_to_numpy_array(tensor),
+                    axis_names=_axis_names_for_einsum_step(step),
+                    engine="einsum",
+                    name=result_name,
+                ),
+            )
+        )
+    return tuple(step_records)
+
+
 def _extract_tensor_records(
     data: Any,
     *,
@@ -572,6 +562,7 @@ def _build_stats(record: _TensorRecord) -> _TensorStats:
 
 __all__ = [
     "NumericArray",
+    "_EinsumPlaybackStepRecord",
     "_MatrixMetadata",
     "_TensorRecord",
     "_TensorStats",
@@ -579,5 +570,6 @@ __all__ = [
     "_build_data_summary_text",
     "_build_stats",
     "_build_topk_lines",
+    "_extract_einsum_playback_step_records",
     "_extract_tensor_records",
 ]

@@ -65,7 +65,11 @@ def test_auto_save_path_uses_engine_and_example() -> None:
 
 
 def _demo_args(
-    *, scheme: bool = False, playback: bool = False, hover_cost: bool = False
+    *,
+    scheme: bool = False,
+    playback: bool = False,
+    hover_cost: bool = False,
+    tensor_inspector: bool = False,
 ) -> argparse.Namespace:
     return argparse.Namespace(
         labels_nodes=True,
@@ -75,6 +79,7 @@ def _demo_args(
         scheme=scheme,
         playback=playback,
         hover_cost=hover_cost,
+        tensor_inspector=tensor_inspector,
     )
 
 
@@ -113,6 +118,16 @@ def test_finalize_contraction_cost_hover_auto_enables_scheme() -> None:
     )
     assert cfg.show_contraction_scheme is True
     assert cfg.contraction_scheme_cost_hover is True
+
+
+def test_finalize_contraction_tensor_inspector_auto_enables_scheme() -> None:
+    cfg = finalize_demo_plot_config(
+        _demo_args(tensor_inspector=True),
+        engine="einsum",
+        scheme_tensor_names=None,
+    )
+    assert cfg.show_contraction_scheme is True
+    assert cfg.contraction_tensor_inspector is True
 
 
 def test_demo_runs_headless_false_without_save_or_no_show() -> None:
@@ -198,6 +213,7 @@ def test_run_demo_parser_defaults_match_cli_contract() -> None:
     assert args.scheme is False
     assert args.playback is False
     assert args.hover_cost is False
+    assert args.tensor_inspector is False
     assert args.from_scratch is False
     assert args.from_list is False
     assert args.save is None

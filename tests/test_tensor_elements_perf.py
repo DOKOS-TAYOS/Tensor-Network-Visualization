@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 import numpy as np
+import pytest
 
 from tensor_network_viz._tensor_elements_support import (
     _downsample_matrix,
@@ -55,6 +56,7 @@ def test_downsample_matrix_matches_contiguous_real_view() -> None:
     np.testing.assert_allclose(reduced_view, reduced_contiguous)
 
 
+@pytest.mark.perf
 def test_prepare_mode_payload_real_and_imag_stay_close_to_magnitude_runtime() -> None:
     record = _complex_record((128, 96, 24))
     config = TensorElementsConfig(max_matrix_shape=(64, 48))

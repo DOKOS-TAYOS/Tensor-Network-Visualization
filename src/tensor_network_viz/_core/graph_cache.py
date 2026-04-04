@@ -15,9 +15,55 @@ from .graph import _GraphData
 _graph_weak_cache: weakref.WeakKeyDictionary[Any, dict[int, _GraphData]] = (
     weakref.WeakKeyDictionary()
 )
+_builtin_container_cache: dict[tuple[int, int], tuple[tuple[Any, ...], _GraphData]] = {}
+_MAX_BUILTIN_CONTAINER_CACHE_ENTRIES: int = 128
 
 # On objects without weak-key support (e.g. plain list), fall back to an instance attribute dict.
 _CACHE_ATTR: str = "_tensor_network_viz_graph_cache_by_builder"
+
+
+def _builtin_container_signature(network: Any) -> tuple[Any, ...] | None:
+    if isinstance(network, list):
+        return ("list", tuple(id(item) for item in network))
+    if isinstance(network, tuple):
+        return ("tuple", tuple(id(item) for item in network))
+    if isinstance(network, dict):
+        return ("dict", tuple(id(item) for item in network.values()))
+    return None
+
+
+def _builtin_container_cache_get(
+    network: Any,
+    *,
+    builder_id: int,
+) -> _GraphData | None:
+    signature = _builtin_container_signature(network)
+    if signature is None:
+        return None
+    hit = _builtin_container_cache.get((id(network), builder_id))
+    if hit is None:
+        return None
+    cached_signature, graph = hit
+    if cached_signature != signature:
+        return None
+    return graph
+
+
+def _builtin_container_cache_put(
+    network: Any,
+    *,
+    builder_id: int,
+    graph: _GraphData,
+) -> bool:
+    signature = _builtin_container_signature(network)
+    if signature is None:
+        return False
+    cache_key = (id(network), builder_id)
+    _builtin_container_cache[cache_key] = (signature, graph)
+    while len(_builtin_container_cache) > _MAX_BUILTIN_CONTAINER_CACHE_ENTRIES:
+        oldest_key = next(iter(_builtin_container_cache))
+        del _builtin_container_cache[oldest_key]
+    return True
 
 
 def _get_or_build_graph(
@@ -35,6 +81,10 @@ def _get_or_build_graph(
     except TypeError:
         pass
 
+    builtin_hit = _builtin_container_cache_get(network, builder_id=b_id)
+    if builtin_hit is not None:
+        return builtin_hit
+
     attr_bucket = getattr(network, _CACHE_ATTR, None)
     if isinstance(attr_bucket, dict):
         hit = attr_bucket.get(b_id)
@@ -50,6 +100,8 @@ def _get_or_build_graph(
             _graph_weak_cache[network] = bucket
         bucket[b_id] = graph
     except TypeError:
+        if _builtin_container_cache_put(network, builder_id=b_id, graph=graph):
+            return graph
         try:
             if not isinstance(attr_bucket, dict):
                 attr_bucket = {}
@@ -82,6 +134,14 @@ def clear_tensor_network_graph_cache(
                 del _graph_weak_cache[network]
     except (TypeError, KeyError):
         pass
+
+    builtin_key_prefix = id(network)
+    if b_id is None:
+        for key in tuple(_builtin_container_cache):
+            if key[0] == builtin_key_prefix:
+                del _builtin_container_cache[key]
+    else:
+        _builtin_container_cache.pop((builtin_key_prefix, b_id), None)
 
     attr_bucket = getattr(network, _CACHE_ATTR, None)
     if not isinstance(attr_bucket, dict):

@@ -11,7 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from matplotlib.backend_bases import MouseButton, MouseEvent
+from matplotlib.backend_bases import CloseEvent, MouseButton, MouseEvent
 from matplotlib.collections import LineCollection
 
 import tensor_network_viz._core.renderer as core_renderer_module
@@ -25,7 +25,7 @@ from plotting_helpers import (
     line_collection_segments,
     patch_collection_circle_count,
 )
-from tensor_network_viz import PlotConfig, show_tensor_network
+from tensor_network_viz import EinsumTrace, PlotConfig, einsum, show_tensor_network
 from tensor_network_viz._core import _draw_common
 from tensor_network_viz._core.graph import (
     _EdgeEndpoint,
@@ -93,6 +93,28 @@ def _widget_center_event(fig: matplotlib.figure.Figure, artist: object) -> Mouse
 def _click_checkbutton(checkbuttons: Any, index: int) -> None:
     event = _widget_center_event(checkbuttons.ax.figure, checkbuttons.labels[index])
     checkbuttons._clicked(event)
+
+
+def _fire_close_event(fig: matplotlib.figure.Figure) -> None:
+    fig.canvas.callbacks.process("close_event", CloseEvent("close_event", fig.canvas))
+
+
+def _build_einsum_trace_for_inspector(*, keep_intermediates: bool = True) -> EinsumTrace:
+    trace = EinsumTrace()
+    left = np.arange(6, dtype=float).reshape(2, 3)
+    mid = np.arange(12, dtype=float).reshape(3, 4)
+    right = np.arange(8, dtype=float).reshape(4, 2)
+
+    trace.bind("Left", left)
+    trace.bind("Mid", mid)
+    trace.bind("Right", right)
+    r0 = einsum("ab,bc->ac", left, mid, trace=trace, backend="numpy")
+    r1 = einsum("ac,cd->ad", r0, right, trace=trace, backend="numpy")
+    keepalive = [left, mid, right, r1]
+    if keep_intermediates:
+        keepalive.append(r0)
+    trace._test_keepalive = keepalive  # type: ignore[attr-defined]
+    return trace
 
 
 def connect(
@@ -793,6 +815,203 @@ def test_show_tensor_network_playback_and_cost_hover_keep_visual_checkboxes_in_s
     assert controls.scheme_on is True
     assert controls.playback_on is True
     assert controls.cost_hover_on is True
+
+
+def test_show_tensor_network_einsum_trace_adds_tensor_inspector_checkbox_and_auto_enables_playback(
+) -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(
+            contraction_tensor_inspector=False,
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    assert [label.get_text() for label in controls._checkbuttons.labels][-4:] == [
+        "Scheme",
+        "Playback",
+        "Costs",
+        "Tensor inspector",
+    ]
+
+    _click_checkbutton(controls._checkbuttons, 6)
+
+    status_after_enable = tuple(bool(v) for v in controls._checkbuttons.get_status())
+    assert status_after_enable[3] is True
+    assert status_after_enable[4] is True
+    assert status_after_enable[6] is True
+    assert controls.scheme_on is True
+    assert controls.playback_on is True
+    assert controls.tensor_inspector_on is True
+    assert getattr(fig, "_tensor_network_viz_tensor_inspector", None) is not None
+
+
+def test_show_tensor_network_non_einsum_inputs_do_not_expose_tensor_inspector_checkbox() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
+        "Scheme",
+        "Playback",
+        "Costs",
+    ]
+    assert "Tensor inspector" not in [label.get_text() for label in controls._checkbuttons.labels]
+
+
+def test_show_tensor_network_show_controls_false_does_not_create_tensor_inspector_window() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show_controls=False,
+        show=False,
+    )
+
+    assert getattr(fig, "_tensor_network_viz_interactive_controls", None) is None
+    assert getattr(fig, "_tensor_network_viz_tensor_inspector", None) is None
+
+
+def test_show_tensor_network_einsum_tensor_inspector_tracks_playback_and_view_switch() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+    assert "r1" in inspector_controls._panel.main_ax.get_title()
+
+    assert controls.current_scene.contraction_controls is not None
+    viewer = controls.current_scene.contraction_controls._viewer
+    assert viewer is not None
+    viewer.set_step(1)
+    assert "r0" in inspector_controls._panel.main_ax.get_title()
+
+    viewer.reset()
+    assert inspector_controls._panel.main_ax.texts
+    assert inspector_controls._panel.main_ax.texts[0].get_text() == "No contraction selected yet."
+
+    viewer.play()
+    viewer._tick_playback()
+    assert "r0" in inspector_controls._panel.main_ax.get_title()
+    viewer._tick_playback()
+    assert "r1" in inspector_controls._panel.main_ax.get_title()
+
+    controls.set_view("3d")
+    assert controls.current_scene.contraction_controls is not None
+    viewer_3d = controls.current_scene.contraction_controls._viewer
+    assert viewer_3d is not None
+    viewer_3d.set_step(1)
+    assert "r0" in inspector_controls._panel.main_ax.get_title()
+
+
+def test_show_tensor_network_manual_close_of_tensor_inspector_clears_toggle_state() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+
+    _fire_close_event(inspector._figure)
+
+    status_after_close = tuple(bool(v) for v in controls._checkbuttons.get_status())
+    assert status_after_close[6] is False
+    assert controls.tensor_inspector_on is False
+
+
+def test_show_tensor_network_costs_and_tensor_inspector_can_coexist() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(
+            contraction_scheme_cost_hover=True,
+            contraction_tensor_inspector=True,
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls.cost_hover_on is True
+    assert controls.tensor_inspector_on is True
+
+    assert controls.current_scene.contraction_controls is not None
+    viewer = controls.current_scene.contraction_controls._viewer
+    assert viewer is not None
+    assert viewer._cost_panel_ax is not None
+    assert viewer._cost_text_artist is not None
+    assert viewer._cost_panel_ax.get_visible()
+    assert "Contraction:" in viewer._cost_text_artist.get_text()
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+    assert "r1" in inspector_controls._panel.main_ax.get_title()
+
+
+def test_show_tensor_network_main_figure_close_closes_tensor_inspector() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+
+    _fire_close_event(fig)
+
+    assert inspector._figure is None
 
 
 def test_show_tensor_network_with_external_ax_hides_view_selector() -> None:

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
+
+from tensor_network_viz import EinsumTrace
+from tensor_network_viz._tensor_elements_data import _extract_einsum_playback_step_records
 
 _EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 if str(_EXAMPLES) not in sys.path:
@@ -233,6 +237,23 @@ def test_einsum_ellipsis_saves_figure_without_showing() -> None:
 
     assert exit_code == 0
     assert output_path.exists()
+
+
+@pytest.mark.parametrize("example_name", ["mps", "ellipsis"])
+def test_einsum_auto_examples_keep_tensors_alive_for_tensor_inspector(example_name: str) -> None:
+    _require_torch()
+    run_demo = _load_example_module(Path("examples/run_demo.py"), f"run_demo_{example_name}_args")
+    einsum_demo = importlib.import_module("einsum_demo")
+
+    args = run_demo.parse_args(
+        ["einsum", example_name, "--view", "2d", "--tensor-inspector", "--no-show"]
+    )
+    trace = einsum_demo._trace_steps_for(example_name, args)
+
+    assert isinstance(trace, EinsumTrace)
+    step_records = _extract_einsum_playback_step_records(trace)
+    assert step_records
+    assert all(step.record is not None for step in step_records)
 
 
 def test_tensornetwork_mera_ttn_saves_figure_without_showing() -> None:

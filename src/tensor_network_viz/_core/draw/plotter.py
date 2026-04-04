@@ -14,7 +14,15 @@ from ...config import PlotConfig
 from ..graph import (
     _GraphData,
 )
-from .constants import *
+from .constants import (
+    _EDGE_LINE_CAP_STYLE,
+    _EDGE_LINE_JOIN_STYLE,
+    _OCTAHEDRON_EDGE_LINEWIDTH_FACTOR,
+    _OCTAHEDRON_EDGE_LINEWIDTH_MIN,
+    _OCTAHEDRON_TRI_COUNT,
+    _UNIT_NODE_TRIS,
+    _ZORDER_NODE_DISK,
+)
 from .fonts_and_scale import _DrawScaleParams
 from .viewport_geometry import (
     _apply_axis_limits_with_outset,

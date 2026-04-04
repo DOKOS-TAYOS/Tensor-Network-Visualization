@@ -3,6 +3,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
+from ..._matplotlib_state import (
+    clear_contraction_controls,
+    clear_scene,
+    set_contraction_controls,
+    set_scene,
+)
 from ...config import PlotConfig
 from ...contraction_viewer import (
     _ContractionControls,
@@ -286,14 +292,12 @@ def _draw_graph(
             tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
         )
         scene.contraction_controls = controls
-        ax._tensor_network_viz_scene = scene  # type: ignore[attr-defined]
+        set_scene(ax, scene)
         if controls is not None:
-            ax._tensor_network_viz_contraction_controls = controls  # type: ignore[attr-defined]
+            set_contraction_controls(ax, controls)
     else:
-        if hasattr(ax, "_tensor_network_viz_scene"):
-            delattr(ax, "_tensor_network_viz_scene")
-        if hasattr(ax, "_tensor_network_viz_contraction_controls"):
-            delattr(ax, "_tensor_network_viz_contraction_controls")
+        clear_scene(ax)
+        clear_contraction_controls(ax)
     if not _has_contraction_scheme_source(graph, config):
         return
 

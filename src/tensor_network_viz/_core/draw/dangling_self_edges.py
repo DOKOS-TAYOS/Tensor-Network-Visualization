@@ -10,7 +10,10 @@ from .._label_format import format_tensor_node_label
 from ..curves import _ellipse_points, _ellipse_points_3d, _require_self_endpoints
 from ..graph import _EdgeData, _endpoint_index_caption, _GraphData
 from ..layout import AxisDirections, NodePositions, _orthogonal_unit
-from .constants import *
+from .constants import (
+    _EDGE_INDEX_LABEL_ALONG_FRAC,
+    _PHYS_DANGLING_2D_FRAC_FROM_TIP,
+)
 from .fonts_and_scale import _DrawScaleParams
 from .labels_misc import (
     _curve_index_outside_disk,

@@ -37,6 +37,7 @@ def _quimb_linear_chain_network(n: int) -> object:
     return qtn.TensorNetwork(tensors)
 
 
+@pytest.mark.perf
 def test_quimb_graph_cache_second_lookup_is_cheap() -> None:
     """Extraction time: second ``_get_or_build_graph`` hit should be negligible vs cold build."""
     pytest.importorskip("quimb.tensor")

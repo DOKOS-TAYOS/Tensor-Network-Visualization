@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import replace
-from itertools import tee
 from typing import Any, TypeAlias, cast
 
 import matplotlib.pyplot as plt
@@ -10,12 +8,11 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
+from ._input_inspection import _detect_network_engine_with_input
 from ._registry import _get_plotters
 from ._typing import FigureLike, root_figure
 from .config import EngineName, PlotConfig, ViewName
-from .einsum_module.trace import EinsumTrace, einsum_trace_step, pair_tensor
 from .interactive_viewer import show_tensor_network_interactive
-from .tenpy.explicit import TenPyTensorNetwork
 
 RenderedAxes: TypeAlias = Axes | Axes3D
 
@@ -36,81 +33,9 @@ def _show_figure(fig: FigureLike) -> None:
     plt.show()
 
 
-def _first_non_none(items: Iterable[Any]) -> Any | None:
-    """Return the first non-None item from an iterable, if any."""
-    for item in items:
-        if item is not None:
-            return item
-    return None
-
-
-def _peek_network_item(source: Any) -> tuple[Any | None, Any]:
-    """Peek one item from iterable input while preserving single-pass iterators."""
-    if isinstance(source, dict):
-        return _first_non_none(source.values()), source
-    if isinstance(source, (str, bytes, bytearray)) or not isinstance(source, Iterable):
-        return None, source
-
-    iterator = iter(source)
-    if iterator is source:
-        probe_iter, runtime_iter = tee(iterator)
-        return _first_non_none(probe_iter), runtime_iter
-    return _first_non_none(iterator), source
-
-
-def _is_tenpy_like(network: Any) -> bool:
-    """Return True when *network* matches one of the supported TeNPy entry points."""
-    return (
-        isinstance(network, TenPyTensorNetwork)
-        or callable(getattr(network, "get_W", None))
-        or (callable(getattr(network, "get_X", None)) and hasattr(network, "uMPS_GS"))
-        or callable(getattr(network, "get_B", None))
-    )
-
-
-def _detect_engine_from_sample(sample_item: Any | None) -> EngineName | None:
-    """Infer an engine from one representative item when possible."""
-    if isinstance(sample_item, (pair_tensor, einsum_trace_step)):
-        return "einsum"
-    if hasattr(sample_item, "inds"):
-        return "quimb"
-    if hasattr(sample_item, "axes_names"):
-        return "tensorkrowch"
-    if hasattr(sample_item, "axis_names"):
-        return "tensornetwork"
-    return None
-
-
 def _detect_engine_with_network(network: Any) -> tuple[EngineName, Any]:
     """Infer the backend engine and preserve single-pass iterables when needed."""
-    if isinstance(network, EinsumTrace):
-        return "einsum", network
-    if _is_tenpy_like(network):
-        return "tenpy", network
-
-    if hasattr(network, "tensors"):
-        tensor_sample, _ = _peek_network_item(network.tensors)
-        if tensor_sample is None or hasattr(tensor_sample, "inds"):
-            return "quimb", network
-
-    if hasattr(network, "leaf_nodes"):
-        leaf_sample, _ = _peek_network_item(network.leaf_nodes)
-        if leaf_sample is None or hasattr(leaf_sample, "axes_names"):
-            return "tensorkrowch", network
-    if hasattr(network, "nodes"):
-        node_sample, _ = _peek_network_item(network.nodes)
-        if node_sample is None or hasattr(node_sample, "axes_names"):
-            return "tensorkrowch", network
-
-    sample_item, sampled_network = _peek_network_item(network)
-    detected_engine = _detect_engine_from_sample(sample_item)
-    if detected_engine is not None:
-        return detected_engine, sampled_network
-
-    raise ValueError(
-        "Could not infer tensor network engine from input of type "
-        f"{type(network).__name__!r}. Pass engine= explicitly or provide a supported backend input."
-    )
+    return _detect_network_engine_with_input(network)
 
 
 def _detect_engine(network: Any) -> EngineName:
@@ -155,8 +80,11 @@ def show_tensor_network(
 
     Note:
         Repeated calls with the **same** ``network`` instance reuse the normalized
-        graph structure until the object is collected or you call
-        ``clear_tensor_network_graph_cache(network)`` after in-place changes.
+        graph structure for regular objects and for re-iterable builtin containers
+        such as ``list``, ``tuple``, and ``dict``. One-shot iterators are rebuilt on
+        each call. After in-place changes, call
+        ``clear_tensor_network_graph_cache(network)`` so the next draw re-extracts the
+        structure.
 
     Returns:
         Tuple of (Figure, Axes) for further customization.

@@ -44,7 +44,9 @@ def _command_groups() -> dict[str, VerificationGroup]:
                 ),
             ),
         ),
-        "wheel": (VerificationStep("build-wheel", (python, "-m", "build", "--wheel")),),
+        "package": (
+            VerificationStep("build-dist", (python, "-m", "build", "--sdist", "--wheel")),
+        ),
     }
 
 
@@ -55,7 +57,7 @@ def _ordered_steps(mode: str) -> VerificationGroup:
             *command_groups["quality"],
             *command_groups["tests"],
             *command_groups["smoke"],
-            *command_groups["wheel"],
+            *command_groups["package"],
         )
     return command_groups[mode]
 
@@ -77,7 +79,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "mode",
         nargs="?",
-        choices=("all", "quality", "tests", "smoke", "wheel"),
+        choices=("all", "quality", "tests", "smoke", "package"),
         default="all",
         help="Verification slice to run. Defaults to the full pre-merge suite.",
     )

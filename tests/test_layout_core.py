@@ -13,6 +13,7 @@ from tensor_network_viz._core.graph import (
     _make_contraction_edge,
     _make_dangling_edge,
     _make_node,
+    _NodeData,
 )
 from tensor_network_viz._core.layout import (
     _analyze_layout_components_cached,
@@ -637,7 +638,7 @@ def _build_grid_with_leaf_nodes() -> _GraphData:
 
 
 def _build_peps_grid_with_leaf_vectors(rows: int, cols: int) -> tuple[_GraphData, dict[int, int]]:
-    nodes: dict[int, object] = {}
+    nodes: dict[int, _NodeData] = {}
     edges = []
     leaf_parent_by_id: dict[int, int] = {}
 

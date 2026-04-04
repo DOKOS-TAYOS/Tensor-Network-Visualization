@@ -11,9 +11,17 @@ from matplotlib.axes import Axes
 from matplotlib.collections import PatchCollection
 from mpl_toolkits.mplot3d import proj3d
 
+from ..._matplotlib_state import (
+    clear_hover_annotation,
+    clear_hover_cid,
+    get_hover_annotation,
+    get_hover_cid,
+    set_hover_annotation,
+    set_hover_cid,
+)
 from ..._typing import FigureLike, root_figure
 from ..layout import NodePositions
-from .constants import *
+from .constants import _HOVER_EDGE_PICK_RADIUS_PX
 from .fonts_and_scale import _DrawScaleParams
 from .pick_distance import (
     _min_sqdist_point_to_polyline_display,
@@ -80,12 +88,12 @@ def _display_point_in_projected_aabb(
 
 def _disconnect_tensor_network_hover(fig: FigureLike) -> None:
     resolved_figure = root_figure(fig)
-    cid = getattr(resolved_figure, "_tensor_network_viz_hover_cid", None)
+    cid = get_hover_cid(resolved_figure)
     if cid is not None:
         with suppress(ValueError, KeyError):
             resolved_figure.canvas.mpl_disconnect(int(cid))
-        resolved_figure._tensor_network_viz_hover_cid = None
-    ann = getattr(resolved_figure, "_tensor_network_viz_hover_ann", None)
+        clear_hover_cid(resolved_figure)
+    ann = get_hover_annotation(resolved_figure)
     if ann is not None:
         setter = getattr(ann, "set_visible", None)
         if callable(setter):
@@ -95,7 +103,7 @@ def _disconnect_tensor_network_hover(fig: FigureLike) -> None:
         if callable(remover):
             with suppress(AttributeError, NotImplementedError, TypeError, ValueError):
                 remover()
-        resolved_figure._tensor_network_viz_hover_ann = None
+        clear_hover_annotation(resolved_figure)
         draw_idle = getattr(resolved_figure.canvas, "draw_idle", None)
         if callable(draw_idle):
             draw_idle()
@@ -140,7 +148,7 @@ def _register_2d_hover_labels(
         zorder=10_000,
         clip_on=False,
     )
-    fig._tensor_network_viz_hover_ann = ann
+    set_hover_annotation(fig, ann)
 
     def on_move(event: Any) -> None:
         if event.inaxes != ax or event.x is None or event.y is None:
@@ -230,7 +238,7 @@ def _register_2d_hover_labels(
         ann.set_visible(True)
         fig.canvas.draw_idle()
 
-    fig._tensor_network_viz_hover_cid = fig.canvas.mpl_connect("motion_notify_event", on_move)
+    set_hover_cid(fig, fig.canvas.mpl_connect("motion_notify_event", on_move))
 
 
 def _register_3d_hover_labels(
@@ -277,7 +285,7 @@ def _register_3d_hover_labels(
         zorder=1_000_000,
         clip_on=False,
     )
-    resolved_figure._tensor_network_viz_hover_ann = ann
+    set_hover_annotation(resolved_figure, ann)
 
     def on_move(event: Any) -> None:
         if event.inaxes != ax or event.x is None or event.y is None:
@@ -353,9 +361,12 @@ def _register_3d_hover_labels(
         ann.set_visible(True)
         resolved_figure.canvas.draw_idle()
 
-    resolved_figure._tensor_network_viz_hover_cid = resolved_figure.canvas.mpl_connect(
-        "motion_notify_event",
-        on_move,
+    set_hover_cid(
+        resolved_figure,
+        resolved_figure.canvas.mpl_connect(
+            "motion_notify_event",
+            on_move,
+        ),
     )
 
 

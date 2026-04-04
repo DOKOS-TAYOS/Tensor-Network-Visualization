@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from tensor_network_viz import PlotConfig
 from tensor_network_viz._core.graph import (
@@ -89,6 +90,16 @@ def test_dev_requirements_pin_verification_tools_and_use_editable_install() -> N
     assert "numpy==" in content
 
 
+def test_pyright_config_escalates_active_type_checks_to_errors() -> None:
+    content = Path("pyrightconfig.json").read_text(encoding="utf-8")
+
+    assert '"reportMissingImports": "error"' in content
+    assert '"reportArgumentType": "error"' in content
+    assert '"reportAssignmentType": "error"' in content
+    assert '"reportReturnType": "error"' in content
+    assert '"reportCallIssue": "error"' in content
+
+
 def test_layout_module_compatibility_exports_survive_internal_split() -> None:
     layout_body = importlib.import_module("tensor_network_viz._core.layout.body")
     draw_edges = importlib.import_module("tensor_network_viz._core.draw.edges")
@@ -126,6 +137,7 @@ def test_compute_axis_directions_chain_2d_is_stable_for_dense_dangling_case() ->
         )
 
 
+@pytest.mark.perf
 def test_compute_axis_directions_dense_dangling_chain_completes_quickly() -> None:
     graph = _build_dense_dangling_chain(60)
     positions = {node_id: np.array([float(node_id), 0.0], dtype=float) for node_id in range(60)}
@@ -136,3 +148,30 @@ def test_compute_axis_directions_dense_dangling_chain_completes_quickly() -> Non
 
     assert len(directions) == 178
     assert elapsed < 0.35, f"_compute_axis_directions took {elapsed:.4f}s"
+
+
+def test_pyproject_declares_smoke_and_perf_markers() -> None:
+    content = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'markers = [' in content
+    assert '"perf: runtime-sensitive regression checks and throughput guards"' in content
+    assert '"smoke: lightweight render smoke checks"' in content
+
+
+def test_contributing_references_engine_module_map_instead_of_legacy_engine_config() -> None:
+    content = Path("CONTRIBUTING.md").read_text(encoding="utf-8")
+
+    assert "_engine_specs.py" in content
+    assert "ENGINE_MODULE_MAP" in content
+    assert "_ENGINE_CONFIG" not in content
+
+
+def test_render_benchmark_script_covers_cache_and_control_scenarios() -> None:
+    content = Path("scripts/bench_render_workflows.py").read_text(encoding="utf-8")
+
+    assert "first render" in content
+    assert "repeated render" in content
+    assert "network-object" in content
+    assert "tensor-list" in content
+    assert "interactive-controls" in content
+    assert "static-render" in content

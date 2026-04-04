@@ -13,7 +13,13 @@ from ...config import PlotConfig
 from .._label_format import format_tensor_node_label
 from ..graph import _GraphData
 from ..layout import NodePositions
-from .constants import *
+from .constants import (
+    _LABEL_FONT_3D_SCALE,
+    _TENSOR_LABEL_GID,
+    _TENSOR_LABEL_INSIDE_FILL,
+    _TEXT_RENDER_DIAGONAL_FACTOR,
+    _ZORDER_TENSOR_NAME,
+)
 from .disk_metrics import _tensor_disk_radius_px
 from .fonts_and_scale import _DrawScaleParams
 from .plotter import _PlotAdapter, _visible_degree_one_mask

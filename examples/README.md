@@ -80,8 +80,13 @@ When `--no-show` or `--save` is used, the launcher calls
 ```bash
 python examples/run_demo.py einsum ellipsis --view 2d --scheme
 python examples/run_demo.py einsum mps --view 2d --scheme --playback
+python examples/run_demo.py einsum mps --view 2d --tensor-inspector
 python examples/run_demo.py tenpy chain --view 2d --scheme
 ```
+
+For the linked tensor inspector, use an auto-traced `EinsumTrace` example such as `mps`, `mpo`,
+`peps`, `ellipsis`, or `nway`. Manual `--from-scratch` / `--from-list` variants do not carry the
+live tensor values needed by the inspector.
 
 ## Useful Options
 
@@ -95,6 +100,7 @@ python examples/run_demo.py tenpy chain --view 2d --scheme
 | `--scheme` | Draw contraction-scheme overlays when available. |
 | `--playback` | Start with contraction playback enabled. |
 | `--hover-cost` | Show contraction-cost details in the playback panel. |
+| `--tensor-inspector` | Open the linked tensor inspector for `EinsumTrace` playback. |
 | `--from-scratch` | Use the manual builder when that example supports it. |
 | `--from-list` | Pass list/iterable input when supported. |
 | `--save [PATH]` | Save the figure. If omitted, use the auto-generated path. |

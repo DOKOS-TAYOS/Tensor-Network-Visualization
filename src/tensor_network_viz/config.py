@@ -75,6 +75,8 @@ class PlotConfig:
             panel while playback is active. Requires metrics on ``graph`` (einsum traces with
             shapes). Independent of ``hover_labels`` and kept under the old name for API
             compatibility.
+        contraction_tensor_inspector: If True, and the input is an ``EinsumTrace``, enable a
+            linked tensor inspector window that follows contraction playback step by step.
     """
 
     DEFAULT_NODE_RADIUS: ClassVar[float] = 0.08
@@ -115,6 +117,7 @@ class PlotConfig:
     contraction_scheme_by_name: tuple[tuple[str, ...], ...] | None = None
     contraction_playback: bool = False
     contraction_scheme_cost_hover: bool = False
+    contraction_tensor_inspector: bool = False
 
 
 __all__ = ["EngineName", "PlotConfig", "TensorLabelRefinement", "ViewName"]

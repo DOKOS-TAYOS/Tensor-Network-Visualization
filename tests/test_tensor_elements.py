@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import inspect
 from collections.abc import Iterator
 from typing import Any
@@ -14,7 +15,14 @@ import pytest
 from matplotlib.axes import Axes
 from matplotlib.backend_bases import MouseButton, MouseEvent
 
-from tensor_network_viz import TensorElementsConfig, pair_tensor, show_tensor_elements
+from tensor_network_viz import (
+    EinsumTrace,
+    TensorElementsConfig,
+    einsum,
+    pair_tensor,
+    show_tensor_elements,
+)
+from tensor_network_viz._tensor_elements_data import _extract_einsum_playback_step_records
 from tensor_network_viz._tensor_elements_support import (
     _HeatmapPayload,
     _HistogramPayload,
@@ -123,7 +131,7 @@ def test_tensor_elements_config_supports_grouped_modes() -> None:
     ],
 )
 def test_tensor_elements_config_validates_numeric_inputs(
-    kwargs: dict[str, object],
+    kwargs: dict[str, Any],
     match: str,
 ) -> None:
     with pytest.raises(ValueError, match=match):
@@ -169,6 +177,54 @@ def test_show_tensor_elements_supports_single_quimb_like_tensor() -> None:
     assert fig is ax.figure
     assert ax.images
     assert "quimb" in ax.get_title().lower()
+
+
+def test_extract_einsum_playback_step_records_follow_trace_order_and_output_axes() -> None:
+    trace = EinsumTrace()
+    left = np.arange(6, dtype=float).reshape(2, 3)
+    mid = np.arange(12, dtype=float).reshape(3, 4)
+    right = np.arange(8, dtype=float).reshape(4, 2)
+
+    trace.bind("Left", left)
+    trace.bind("Mid", mid)
+    trace.bind("Right", right)
+    r0 = einsum("ab,bc->ac", left, mid, trace=trace, backend="numpy")
+    r1 = einsum("ac,cd->ad", r0, right, trace=trace, backend="numpy")
+    trace._test_keepalive = [left, mid, right, r0, r1]  # type: ignore[attr-defined]
+
+    step_records = _extract_einsum_playback_step_records(trace)
+
+    assert [step.result_name for step in step_records] == ["r0", "r1"]
+    assert [step.record.name if step.record is not None else None for step in step_records] == [
+        "r0",
+        "r1",
+    ]
+    assert step_records[0].record is not None
+    assert step_records[1].record is not None
+    assert step_records[0].record.axis_names == ("a", "c")
+    assert step_records[1].record.axis_names == ("a", "d")
+    assert tuple(step_records[0].record.array.shape) == (2, 4)
+    assert tuple(step_records[1].record.array.shape) == (2, 2)
+
+
+def test_extract_einsum_playback_step_records_marks_missing_intermediate_tensors() -> None:
+    trace = EinsumTrace()
+    left = np.arange(6, dtype=float).reshape(2, 3)
+    mid = np.arange(12, dtype=float).reshape(3, 4)
+    right = np.arange(8, dtype=float).reshape(4, 2)
+
+    r0 = einsum("ab,bc->ac", left, mid, trace=trace, backend="numpy")
+    r1 = einsum("ac,cd->ad", r0, right, trace=trace, backend="numpy")
+    trace._test_keepalive = [left, mid, right, r1]  # type: ignore[attr-defined]
+    del r0
+    gc.collect()
+
+    step_records = _extract_einsum_playback_step_records(trace)
+
+    assert [step.result_name for step in step_records] == ["r0", "r1"]
+    assert step_records[0].record is None
+    assert step_records[1].record is not None
+    assert step_records[1].record.name == "r1"
 
 
 def test_prepare_mode_payload_returns_typed_heatmap_payload() -> None:

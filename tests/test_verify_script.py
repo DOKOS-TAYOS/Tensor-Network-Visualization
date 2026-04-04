@@ -21,4 +21,4 @@ def test_verify_script_exists_and_lists_supported_modes() -> None:
     assert "quality" in result.stdout
     assert "tests" in result.stdout
     assert "smoke" in result.stdout
-    assert "wheel" in result.stdout
+    assert "package" in result.stdout

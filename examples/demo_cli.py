@@ -32,6 +32,7 @@ class ExampleCliArgs:
     scheme: bool
     playback: bool
     hover_cost: bool
+    tensor_inspector: bool
     from_scratch: bool
     from_list: bool
     save: Path | None
@@ -170,6 +171,12 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
     )
     add_bool_flag(
         parser,
+        name="tensor-inspector",
+        default=False,
+        help_text="Open the linked tensor inspector for EinsumTrace playback examples.",
+    )
+    add_bool_flag(
+        parser,
         name="from-scratch",
         default=False,
         help_text="Force the manual construction path when the example supports it.",
@@ -235,6 +242,7 @@ def namespace_to_cli_args(namespace: argparse.Namespace) -> ExampleCliArgs:
         scheme=bool(namespace.scheme),
         playback=bool(namespace.playback),
         hover_cost=bool(namespace.hover_cost),
+        tensor_inspector=bool(namespace.tensor_inspector),
         from_scratch=bool(namespace.from_scratch),
         from_list=bool(namespace.from_list),
         save=namespace.save,
@@ -309,6 +317,7 @@ def finalize_demo_plot_config(
         getattr(args, "scheme", False)
         or getattr(args, "playback", False)
         or getattr(args, "hover_cost", False)
+        or getattr(args, "tensor_inspector", False)
     )
     return PlotConfig(
         show_tensor_labels=labels_nodes,
@@ -318,6 +327,7 @@ def finalize_demo_plot_config(
         contraction_scheme_by_name=scheme_tensor_names if scheme_enabled else None,
         contraction_playback=bool(getattr(args, "playback", False)),
         contraction_scheme_cost_hover=bool(getattr(args, "hover_cost", False)),
+        contraction_tensor_inspector=bool(getattr(args, "tensor_inspector", False)),
     )
 
 

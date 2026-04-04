@@ -14,6 +14,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
+from .._matplotlib_state import get_reserved_bottom
 from .._typing import PositionMapping, root_figure
 from ..config import PlotConfig
 from ._draw_common import _draw_graph
@@ -421,7 +422,7 @@ def _plot_graph(
         register_contraction_controls_on_figure=register_contraction_controls_on_figure,
         build_scene_state=build_scene_state,
     )
-    reserved_bottom = float(getattr(fig, "_tensor_network_viz_reserved_bottom", 0.02))
+    reserved_bottom = get_reserved_bottom(fig)
     fig.subplots_adjust(left=0.02, right=0.98, bottom=reserved_bottom, top=0.98)
     return fig, resolved_ax
 

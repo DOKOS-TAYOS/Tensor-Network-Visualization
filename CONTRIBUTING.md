@@ -49,6 +49,26 @@ With the project venv (Windows):
 
 Add tests for new features or bug fixes. All tests must pass before opening a PR.
 
+### Optional: focused smoke and performance runs
+
+Pytest markers are available for the render-specific regression checks:
+
+```bash
+pytest -m smoke
+pytest -m perf
+```
+
+Use `smoke` for lightweight draw sanity checks and `perf` for runtime-sensitive guards.
+For larger local comparisons outside CI, run:
+
+```bash
+python scripts/bench_render_workflows.py
+```
+
+That benchmark compares first render vs repeated render, network object vs list input,
+and static render vs interactive controls through the public `show_tensor_network(...)`
+entry point.
+
 ### Optional: manual example smoke checks
 
 Automated tests do not open interactive Matplotlib windows. After **`pytest`** passes, sanity-check **layout and drawing** by running the examples below from the **repository root** (with **`pip install -r requirements.dev.txt`** or the matching optional extras). Run **one command at a time** (each line is a separate invocation).
@@ -163,7 +183,10 @@ Adding a new engine (e.g. a new tensor-network library) requires:
   - `graph.py` — convert backend-native objects to `_GraphData` (see `_core/graph.py`)
   - `renderer.py` — implement `plot_<engine>_network_2d` and `plot_<engine>_network_3d` using the shared `_core` drawing layer
   - `__init__.py` — export the two plot functions
-2. **Registration** in `config.py` (add to `EngineName`) and `_registry.py` (add to `_ENGINE_CONFIG`).
+2. **Registration** in `config.py` / `_engine_specs.py`:
+  - add the new literal to `EngineName`
+  - add the module/function triple to `ENGINE_MODULE_MAP` in `src/tensor_network_viz/_engine_specs.py`
+  - `_registry.py` reads that map to resolve the public plotters
 3. **Optional dependency** in `pyproject.toml` under `[project.optional-dependencies]`.
 4. **Tests** in `tests/test_integration_<engine>.py` and optional `tests/test_<engine>_backend.py`.
 5. **Example script** in `examples/<engine>_demo.py` and an entry in `examples/README.md`.

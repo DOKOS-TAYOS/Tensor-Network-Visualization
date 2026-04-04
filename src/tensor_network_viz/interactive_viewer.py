@@ -1,54 +1,58 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, replace
 from typing import Any, cast
 
-from matplotlib.artist import Artist
+import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.widgets import CheckButtons, RadioButtons
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
-from ._core.draw.constants import (
-    _EDGE_INDEX_LABEL_GID,
-    _TENSOR_LABEL_GID,
-    _ZORDER_LAYER_BASE,
-    _ZORDER_LAYER_EDGE_INDEX,
-    _ZORDER_LAYER_STRIDE,
-    _ZORDER_LAYER_TENSOR_NAME,
-)
-from ._core.draw.contraction_edges import _draw_contraction_edge_labels
-from ._core.draw.dangling_self_edges import (
-    _draw_dangling_edge_labels,
-    _draw_self_loop_edge_labels,
-)
-from ._core.draw.fonts_and_scale import _register_2d_zoom_font_scaling
-from ._core.draw.hover import _RenderHoverState
-from ._core.draw.labels_misc import (
-    _contraction_hover_label_text,
-    _dangling_hover_label_text,
-    _self_loop_hover_label_text,
-)
-from ._core.draw.render_prep import (
-    _apply_render_hover_state,
-    _should_refine_tensor_labels,
-)
 from ._core.draw.scene_state import _InteractiveSceneState
-from ._core.draw.tensors import _draw_labels, _refit_tensor_labels_to_disks
+from ._interactive_scene import (
+    _apply_scene_hover_state,
+    _ensure_edge_label_artists,
+    _ensure_tensor_label_artists,
+    _scene_from_axes,
+    _set_artist_visible,
+)
+from ._matplotlib_state import (
+    get_contraction_controls,
+    set_active_axes,
+    set_interactive_controls,
+)
 from ._registry import _get_plotters
+from ._tensor_elements_data import (
+    _EinsumPlaybackStepRecord,
+    _extract_einsum_playback_step_records,
+)
+from ._tensor_elements_support import _TensorRecord
 from ._typing import root_figure
 from ._ui_utils import _reserve_figure_bottom, _set_axes_visible
 from .config import EngineName, PlotConfig, ViewName
+from .einsum_module.trace import EinsumTrace
+from .tensor_elements import _show_tensor_records
+from .tensor_elements_config import TensorElementsConfig
 
 RenderedAxes = Axes | Axes3D
 
 _VIEW_SELECTOR_BOUNDS: tuple[float, float, float, float] = (0.02, 0.182, 0.09, 0.055)
 _BASE_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.028, 0.17, 0.09)
 _SCHEME_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.028, 0.17, 0.142)
+_SCHEME_INSPECTOR_INTERACTIVE_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (
+    0.02,
+    0.028,
+    0.17,
+    0.172,
+)
 _INTERACTIVE_CONTROLS_BOTTOM: float = 0.26
 _BASE_TOGGLE_LABELS: tuple[str, str, str] = ("Hover", "Tensor labels", "Edge labels")
 _SCHEME_TOGGLE_LABELS: tuple[str, str, str] = ("Scheme", "Playback", "Costs")
+_TENSOR_INSPECTOR_LABEL: str = "Tensor inspector"
 _INTERACTIVE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _INTERACTIVE_CHECK_MARK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
@@ -61,233 +65,167 @@ class _ViewCache:
     scene: _InteractiveSceneState | None = None
 
 
-def _set_artist_visible(artist: Artist, visible: bool) -> None:
-    setter = getattr(artist, "set_visible", None)
-    if callable(setter):
-        setter(bool(visible))
+class _LinkedTensorInspectorController:
+    def __init__(
+        self,
+        *,
+        trace: EinsumTrace,
+        on_closed: Callable[[], None],
+    ) -> None:
+        self._step_records: tuple[_EinsumPlaybackStepRecord, ...] = (
+            _extract_einsum_playback_step_records(trace)
+        )
+        self._on_closed = on_closed
+        self._config = TensorElementsConfig()
+        self._enabled: bool = False
+        self._viewer: Any = None
+        self._figure: Figure | None = None
+        self._elements_controller: Any = None
+        self._saved_mode: str | None = None
+        self._closing_programmatically: bool = False
+        self._close_cid: int | None = None
 
+    def bind_viewer(self, viewer: Any) -> None:
+        if self._viewer is viewer:
+            if self._enabled and self._viewer is not None:
+                self._viewer.add_step_changed_callback(
+                    self._sync_to_step,
+                    call_immediately=True,
+                )
+            return
+        if self._viewer is not None:
+            self._viewer.remove_step_changed_callback(self._sync_to_step)
+        self._viewer = viewer
+        if self._viewer is not None:
+            self._viewer.add_step_changed_callback(
+                self._sync_to_step,
+                call_immediately=self._enabled,
+            )
 
-def _scene_from_axes(ax: RenderedAxes | None) -> _InteractiveSceneState | None:
-    if ax is None:
-        return None
-    scene = getattr(ax, "_tensor_network_viz_scene", None)
-    if isinstance(scene, _InteractiveSceneState):
-        return scene
-    return None
+    def set_enabled(self, enabled: bool) -> None:
+        target = bool(enabled)
+        if target == self._enabled:
+            if target and self._viewer is not None:
+                self._sync_to_step(int(self._viewer.current_step))
+            return
+        self._enabled = target
+        if not target:
+            self._close_figure()
+            return
+        self._ensure_figure()
+        if self._viewer is not None:
+            self._sync_to_step(int(self._viewer.current_step))
+        else:
+            self._render_placeholder("No contraction selected yet.")
+
+    def close_from_owner(self) -> None:
+        self._enabled = False
+        if self._viewer is not None:
+            self._viewer.remove_step_changed_callback(self._sync_to_step)
+            self._viewer = None
+        self._close_figure()
+
+    def _placeholder_record(self) -> _TensorRecord:
+        return _TensorRecord(
+            array=np.zeros((1, 1), dtype=float),
+            axis_names=(),
+            engine="einsum",
+            name="Tensor inspector",
+        )
+
+    def _ensure_figure(self) -> None:
+        if self._figure is not None:
+            return
+        initial_step = int(self._viewer.current_step) if self._viewer is not None else 0
+        record = self._record_for_step(initial_step)
+        if record is None:
+            record = self._placeholder_record()
+        figure, _ax, controller = _show_tensor_records(
+            [record],
+            config=self._config,
+            ax=None,
+            show_controls=True,
+            show=False,
+        )
+        self._figure = figure
+        self._elements_controller = controller
+        if self._saved_mode is not None:
+            with suppress(ValueError):
+                controller.set_mode(self._saved_mode, redraw=False)
+        self._close_cid = figure.canvas.mpl_connect("close_event", self._on_figure_closed)
+
+    def _record_for_step(self, step: int) -> _TensorRecord | None:
+        if step <= 0:
+            return None
+        index = step - 1
+        if index < 0 or index >= len(self._step_records):
+            return None
+        return self._step_records[index].record
+
+    def _render_placeholder(self, text: str) -> None:
+        if self._elements_controller is None:
+            return
+        self._elements_controller.render_placeholder(text)
+
+    def _sync_to_step(self, step: int) -> None:
+        if not self._enabled:
+            return
+        self._ensure_figure()
+        if self._elements_controller is None:
+            return
+        if step <= 0:
+            self._render_placeholder("No contraction selected yet.")
+            return
+        index = step - 1
+        if index < 0 or index >= len(self._step_records):
+            self._render_placeholder(f"Tensor for step {step} is not available.")
+            return
+        step_record = self._step_records[index]
+        if step_record.record is None:
+            self._render_placeholder(f"Tensor for step {step} is not available.")
+            return
+        self._elements_controller.set_single_record(step_record.record)
+        self._saved_mode = str(self._elements_controller.selected_mode)
+
+    def _close_figure(self) -> None:
+        if self._elements_controller is not None:
+            self._saved_mode = str(self._elements_controller.selected_mode)
+        figure = self._figure
+        if figure is None:
+            self._elements_controller = None
+            self._close_cid = None
+            return
+        if self._close_cid is not None:
+            figure.canvas.mpl_disconnect(self._close_cid)
+        self._closing_programmatically = True
+        self._figure = None
+        self._elements_controller = None
+        self._close_cid = None
+        plt.close(figure)
+        self._closing_programmatically = False
+
+    def _on_figure_closed(self, _event: Any) -> None:
+        if self._elements_controller is not None:
+            self._saved_mode = str(self._elements_controller.selected_mode)
+        self._figure = None
+        self._elements_controller = None
+        self._close_cid = None
+        if self._closing_programmatically:
+            return
+        self._enabled = False
+        self._on_closed()
 
 
 def _interactive_checkbox_bounds(
     *,
     include_scheme_toggles: bool,
+    include_tensor_inspector: bool,
 ) -> tuple[float, float, float, float]:
+    if include_scheme_toggles and include_tensor_inspector:
+        return _SCHEME_INSPECTOR_INTERACTIVE_CHECKBOX_BOUNDS
     if include_scheme_toggles:
         return _SCHEME_INTERACTIVE_CHECKBOX_BOUNDS
     return _BASE_INTERACTIVE_CHECKBOX_BOUNDS
-
-
-def _last_edge_label_zorder(scene: _InteractiveSceneState) -> float | None:
-    if scene.dimensions == 2 and scene.visible_node_ids:
-        return float(
-            _ZORDER_LAYER_BASE
-            + (len(scene.visible_node_ids) - 1) * _ZORDER_LAYER_STRIDE
-            + _ZORDER_LAYER_EDGE_INDEX
-        )
-    return None
-
-
-def _tensor_label_zorders(scene: _InteractiveSceneState) -> dict[int, float] | None:
-    if scene.dimensions != 2:
-        return None
-    return {
-        node_id: float(
-            _ZORDER_LAYER_BASE + index * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_TENSOR_NAME
-        )
-        for index, node_id in enumerate(scene.visible_node_ids)
-    }
-
-
-def _refresh_2d_zoom_scaling(scene: _InteractiveSceneState) -> None:
-    if scene.dimensions == 2:
-        _register_2d_zoom_font_scaling(cast(Axes, scene.ax))
-
-
-def _ensure_tensor_label_artists(scene: _InteractiveSceneState) -> None:
-    if scene.tensor_label_artists:
-        return
-    before = len(scene.ax.texts)
-    _draw_labels(
-        plotter=scene.plotter,
-        ax=scene.ax,
-        graph=scene.graph,
-        positions=scene.positions,
-        show_tensor_labels=True,
-        config=scene.config,
-        p=scene.params,
-        dimensions=scene.dimensions,
-        tensor_hover_by_node=None,
-        visible_draw_order=list(scene.visible_node_ids),
-        tensor_label_zorder_by_node=_tensor_label_zorders(scene),
-        tensor_disk_radius_px_3d=scene.tensor_disk_radius_px_3d,
-    )
-    if _should_refine_tensor_labels(scene.config, visible_tensor_count=len(scene.visible_node_ids)):
-        _refit_tensor_labels_to_disks(
-            ax=scene.ax,
-            p=scene.params,
-            dimensions=scene.dimensions,
-            tensor_disk_radius_px_3d=scene.tensor_disk_radius_px_3d,
-        )
-    scene.tensor_label_artists = [
-        text
-        for text in scene.ax.texts[before:]
-        if getattr(text, "get_gid", lambda: None)() == _TENSOR_LABEL_GID
-    ]
-    for node_id, artist in zip(scene.visible_node_ids, scene.tensor_label_artists, strict=False):
-        artist._tensor_network_viz_node_id = int(node_id)  # type: ignore[attr-defined]
-    scene.tensor_hover_payload = None
-    _refresh_2d_zoom_scaling(scene)
-
-
-def _ensure_edge_label_artists(scene: _InteractiveSceneState) -> None:
-    if scene.edge_label_artists:
-        return
-    before = len(scene.ax.texts)
-    zorder_label = _last_edge_label_zorder(scene)
-    for entry in scene.edge_geometry:
-        edge = entry.edge
-        if edge.kind == "contraction":
-            left_id, right_id = edge.node_ids
-            _draw_contraction_edge_labels(
-                plotter=scene.plotter,
-                curve=entry.polyline,
-                edge=edge,
-                graph=scene.graph,
-                positions=scene.positions,
-                left_id=left_id,
-                right_id=right_id,
-                show_index_labels=True,
-                config=scene.config,
-                p=scene.params,
-                dimensions=scene.dimensions,
-                ax=scene.ax,
-                scale=scene.scale,
-                zorder_label=zorder_label,
-            )
-        elif edge.kind == "dangling":
-            _draw_dangling_edge_labels(
-                plotter=scene.plotter,
-                edge=edge,
-                graph=scene.graph,
-                start=entry.polyline[0],
-                end=entry.polyline[-1],
-                show_index_labels=True,
-                config=scene.config,
-                dimensions=scene.dimensions,
-                p=scene.params,
-                ax=scene.ax,
-                scale=scene.scale,
-                zorder_label=zorder_label,
-            )
-        elif edge.kind == "self":
-            _draw_self_loop_edge_labels(
-                plotter=scene.plotter,
-                edge=edge,
-                graph=scene.graph,
-                curve=entry.polyline,
-                positions=scene.positions,
-                directions=scene.directions,
-                show_index_labels=True,
-                config=scene.config,
-                dimensions=scene.dimensions,
-                p=scene.params,
-                ax=scene.ax,
-                scale=scene.scale,
-                zorder_label=zorder_label,
-            )
-    scene.edge_label_artists = [
-        text
-        for text in scene.ax.texts[before:]
-        if getattr(text, "get_gid", lambda: None)() == _EDGE_INDEX_LABEL_GID
-    ]
-    _refresh_2d_zoom_scaling(scene)
-
-
-def _build_tensor_hover_payload(scene: _InteractiveSceneState) -> dict[int, tuple[str, float]]:
-    if scene.tensor_hover_payload is not None:
-        return dict(scene.tensor_hover_payload)
-    payload: dict[int, tuple[str, float]] = {}
-    for artist in scene.tensor_label_artists:
-        node_id = getattr(artist, "_tensor_network_viz_node_id", None)
-        if node_id is None:
-            continue
-        payload[int(node_id)] = (str(artist.get_text()), float(artist.get_fontsize()))
-    if payload:
-        scene.tensor_hover_payload = dict(payload)
-        return payload
-
-    hover_data: dict[int, tuple[str, float]] = {}
-    _draw_labels(
-        plotter=scene.plotter,
-        ax=scene.ax,
-        graph=scene.graph,
-        positions=scene.positions,
-        show_tensor_labels=False,
-        config=scene.config,
-        p=scene.params,
-        dimensions=scene.dimensions,
-        tensor_hover_by_node=hover_data,
-        visible_draw_order=list(scene.visible_node_ids),
-        tensor_label_zorder_by_node=None,
-        tensor_disk_radius_px_3d=scene.tensor_disk_radius_px_3d,
-    )
-    scene.tensor_hover_payload = dict(hover_data)
-    return hover_data
-
-
-def _build_edge_hover_payload(scene: _InteractiveSceneState) -> tuple[tuple[Any, str], ...]:
-    if scene.edge_hover_payload is not None:
-        return tuple(scene.edge_hover_payload)
-    payload: list[tuple[Any, str]] = []
-    for entry in scene.edge_geometry:
-        edge = entry.edge
-        text = ""
-        if edge.kind == "contraction":
-            text = _contraction_hover_label_text(edge, scene.graph)
-        elif edge.kind == "dangling":
-            text = _dangling_hover_label_text(edge)
-        elif edge.kind == "self":
-            text = _self_loop_hover_label_text(edge, scene.graph)
-        if text:
-            payload.append((entry.polyline, text))
-    scene.edge_hover_payload = tuple(payload)
-    return tuple(payload)
-
-
-def _apply_scene_hover_state(
-    scene: _InteractiveSceneState,
-    *,
-    hover_on: bool,
-) -> None:
-    tensor_hover = _build_tensor_hover_payload(scene) if hover_on else {}
-    edge_hover = _build_edge_hover_payload(scene) if hover_on else ()
-    state = _RenderHoverState(
-        ax=scene.hover_state.ax,
-        figure=scene.hover_state.figure,
-        dimensions=scene.hover_state.dimensions,
-        node_patch_coll=scene.node_patch_coll if tensor_hover else None,
-        visible_node_ids=scene.hover_state.visible_node_ids,
-        tensor_hover=dict(tensor_hover),
-        edge_hover=tuple(edge_hover),
-        line_width_px_hint=float(scene.hover_state.line_width_px_hint),
-        positions=scene.hover_state.positions,
-        params=scene.hover_state.params,
-        tensor_disk_radius_px_3d=scene.hover_state.tensor_disk_radius_px_3d,
-    )
-    scene.hover_state = state
-    _apply_render_hover_state(
-        scene.hover_state,
-        scheme_patches_2d=(),
-        scheme_aabbs_3d=(),
-    )
 
 
 class _InteractiveTensorFigureController:
@@ -310,7 +248,11 @@ class _InteractiveTensorFigureController:
         self.scheme_on: bool = bool(config.show_contraction_scheme)
         self.playback_on: bool = bool(config.contraction_playback)
         self.cost_hover_on: bool = bool(config.contraction_scheme_cost_hover)
-        if self.cost_hover_on:
+        self.tensor_inspector_available: bool = isinstance(network, EinsumTrace)
+        self.tensor_inspector_on: bool = bool(
+            config.contraction_tensor_inspector and self.tensor_inspector_available
+        )
+        if self.cost_hover_on or self.tensor_inspector_on:
             self.scheme_on = True
             self.playback_on = True
         elif self.playback_on:
@@ -328,6 +270,13 @@ class _InteractiveTensorFigureController:
         self._checkbuttons: CheckButtons | None = None
         self._callback_guard: bool = False
         self.figure: Figure | None = None
+        self._tensor_inspector: _LinkedTensorInspectorController | None = None
+        self._figure_close_cid: int | None = None
+        if self.tensor_inspector_available:
+            self._tensor_inspector = _LinkedTensorInspectorController(
+                trace=cast(EinsumTrace, network),
+                on_closed=self._on_tensor_inspector_closed,
+            )
 
     @property
     def current_scene(self) -> _InteractiveSceneState:
@@ -344,8 +293,10 @@ class _InteractiveTensorFigureController:
             _reserve_figure_bottom(figure, _INTERACTIVE_CONTROLS_BOTTOM)
         self._build_controls()
         self._apply_scene_state(self.current_scene)
-        figure._tensor_network_viz_interactive_controls = self  # type: ignore[attr-defined]
-        figure._tensor_network_viz_active_axes = ax  # type: ignore[attr-defined]
+        set_interactive_controls(figure, self)
+        set_active_axes(figure, ax)
+        figure._tensor_network_viz_tensor_inspector = self._tensor_inspector  # type: ignore[attr-defined]
+        self._figure_close_cid = figure.canvas.mpl_connect("close_event", self._on_figure_closed)
         return figure, ax
 
     def _base_config(self) -> PlotConfig:
@@ -357,6 +308,7 @@ class _InteractiveTensorFigureController:
             show_contraction_scheme=False,
             contraction_playback=False,
             contraction_scheme_cost_hover=False,
+            contraction_tensor_inspector=False,
         )
 
     def _render_view(
@@ -390,19 +342,18 @@ class _InteractiveTensorFigureController:
         cache.ax = rendered_ax
         cache.scene = scene
         if scene is not None:
-            scene.contraction_controls = getattr(
-                rendered_ax,
-                "_tensor_network_viz_contraction_controls",
-                None,
-            )
+            scene.contraction_controls = get_contraction_controls(rendered_ax)
         return fig, rendered_ax
 
     def _build_controls(self) -> None:
         assert self.figure is not None
         labels = list(_BASE_TOGGLE_LABELS)
         has_scheme_toggles = self.current_scene.contraction_controls is not None
+        has_tensor_inspector = bool(has_scheme_toggles and self.tensor_inspector_available)
         if has_scheme_toggles:
             labels.extend(_SCHEME_TOGGLE_LABELS)
+        if has_tensor_inspector:
+            labels.append(_TENSOR_INSPECTOR_LABEL)
         if not self._external_ax:
             radio_ax = self.figure.add_axes(_VIEW_SELECTOR_BOUNDS)
             self._radio_ax = radio_ax
@@ -416,7 +367,10 @@ class _InteractiveTensorFigureController:
             )
             self._radio.on_clicked(self._on_view_clicked)
         check_ax = self.figure.add_axes(
-            _interactive_checkbox_bounds(include_scheme_toggles=has_scheme_toggles)
+            _interactive_checkbox_bounds(
+                include_scheme_toggles=has_scheme_toggles,
+                include_tensor_inspector=has_tensor_inspector,
+            )
         )
         self._check_ax = check_ax
         statuses = [
@@ -426,6 +380,8 @@ class _InteractiveTensorFigureController:
         ]
         if has_scheme_toggles:
             statuses.extend([self.scheme_on, self.playback_on, self.cost_hover_on])
+        if has_tensor_inspector:
+            statuses.append(self.tensor_inspector_on)
         self._checkbuttons = CheckButtons(
             check_ax,
             labels,
@@ -442,6 +398,8 @@ class _InteractiveTensorFigureController:
         desired = [self.hover_on, self.tensor_labels_on, self.edge_labels_on]
         if len(self._checkbuttons.labels) > len(_BASE_TOGGLE_LABELS):
             desired.extend([self.scheme_on, self.playback_on, self.cost_hover_on])
+            if self.tensor_inspector_available and len(self._checkbuttons.labels) > 6:
+                desired.append(self.tensor_inspector_on)
         current = [bool(value) for value in self._checkbuttons.get_status()]
         self._callback_guard = True
         try:
@@ -467,6 +425,8 @@ class _InteractiveTensorFigureController:
             self.scheme_on = status[3]
             self.playback_on = status[4]
             self.cost_hover_on = status[5]
+        if len(status) >= 7 and self.tensor_inspector_available:
+            self.tensor_inspector_on = status[6]
         self._apply_scene_state(self.current_scene)
 
     def _deactivate_non_current_views(self) -> None:
@@ -483,6 +443,19 @@ class _InteractiveTensorFigureController:
                 viewer.pause()
                 viewer.set_playback_widgets_visible(False)
 
+    def _on_tensor_inspector_closed(self) -> None:
+        self.tensor_inspector_on = False
+        self._sync_checkbuttons()
+        if self.figure is not None:
+            self.figure.canvas.draw_idle()
+
+    def _on_figure_closed(self, _event: Any) -> None:
+        if self._figure_close_cid is not None and self.figure is not None:
+            self.figure.canvas.mpl_disconnect(self._figure_close_cid)
+            self._figure_close_cid = None
+        if self._tensor_inspector is not None:
+            self._tensor_inspector.close_from_owner()
+
     def _apply_scene_state(self, scene: _InteractiveSceneState) -> None:
         if self.tensor_labels_on:
             _ensure_tensor_label_artists(scene)
@@ -492,6 +465,13 @@ class _InteractiveTensorFigureController:
             _ensure_edge_label_artists(scene)
         for artist in scene.edge_label_artists:
             _set_artist_visible(artist, self.edge_labels_on)
+
+        if self.cost_hover_on or self.tensor_inspector_on:
+            self.scheme_on = True
+            self.playback_on = True
+        elif self.playback_on:
+            self.scheme_on = True
+
         controls = scene.contraction_controls
         if controls is not None:
             controls.set_states(
@@ -502,6 +482,10 @@ class _InteractiveTensorFigureController:
             self.scheme_on = bool(controls.scheme_on)
             self.playback_on = bool(controls.playback_on)
             self.cost_hover_on = bool(controls.cost_hover_on)
+            if self._tensor_inspector is not None:
+                self._tensor_inspector.bind_viewer(controls._viewer)
+        if self._tensor_inspector is not None:
+            self._tensor_inspector.set_enabled(self.tensor_inspector_on)
         _apply_scene_hover_state(scene, hover_on=self.hover_on)
         self._sync_checkbuttons()
         scene.ax.figure.canvas.draw_idle()
@@ -527,7 +511,7 @@ class _InteractiveTensorFigureController:
         self.current_view = view
         self._deactivate_non_current_views()
         self._apply_scene_state(self.current_scene)
-        fig._tensor_network_viz_active_axes = ax  # type: ignore[attr-defined]
+        set_active_axes(fig, ax)
 
     def set_hover_enabled(self, enabled: bool) -> None:
         self.hover_on = bool(enabled)

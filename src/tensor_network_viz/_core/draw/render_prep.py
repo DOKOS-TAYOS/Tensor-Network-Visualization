@@ -12,7 +12,12 @@ from ...config import PlotConfig
 from ..contractions import _ContractionGroups, _group_contractions
 from ..graph import _GraphData
 from ..layout import AxisDirections, NodePositions
-from .constants import *
+from .constants import (
+    _ZORDER_LAYER_BASE,
+    _ZORDER_LAYER_DISK,
+    _ZORDER_LAYER_STRIDE,
+    _ZORDER_LAYER_TENSOR_NAME,
+)
 from .edges import _draw_edges, _draw_edges_2d_layered
 from .fonts_and_scale import (
     _draw_scale_params,

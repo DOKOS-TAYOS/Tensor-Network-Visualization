@@ -5,11 +5,13 @@ from typing import Any
 
 from matplotlib.figure import Figure
 
+from ._matplotlib_state import get_reserved_bottom, set_reserved_bottom
+
 
 def _reserve_figure_bottom(fig: Figure, bottom: float) -> None:
-    current = float(getattr(fig, "_tensor_network_viz_reserved_bottom", 0.02))
+    current = get_reserved_bottom(fig)
     target = max(current, float(bottom))
-    fig._tensor_network_viz_reserved_bottom = target  # type: ignore[attr-defined]
+    set_reserved_bottom(fig, target)
     fig.subplots_adjust(bottom=target)
 
 

@@ -62,6 +62,10 @@ tensor_network_viz = ["py.typed"]
 testpaths = ["tests"]
 addopts = "-p no:cacheprovider"
 pythonpath = ["src"]
+markers = [
+    "perf: runtime-sensitive regression checks and throughput guards",
+    "smoke: lightweight render smoke checks",
+]
 
 [tool.ruff]
 line-length = 100
@@ -77,6 +81,4 @@ select = ["E", "F", "I", "B", "UP", "C4", "SIM", "RUF100"]
 "examples/**/*.py" = ["E402"]
 # Repo-root bench helpers insert ``src`` on sys.path before third-party imports.
 "scripts/**/*.py" = ["E402"]
-# Draw/layout splits mirror the old monolith: submodule star-import of tuning constants.
-"src/tensor_network_viz/_core/draw/*.py" = ["F403", "F405"]
 "src/tensor_network_viz/_core/layout/body.py" = ["F403", "F405"]

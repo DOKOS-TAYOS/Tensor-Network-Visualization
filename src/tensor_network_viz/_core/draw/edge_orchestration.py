@@ -7,7 +7,13 @@ from ...config import PlotConfig
 from ..contractions import _ContractionGroups
 from ..graph import _EdgeData, _GraphData
 from ..layout import AxisDirections, NodePositions
-from .constants import *
+from .constants import (
+    _ZORDER_LAYER_BASE,
+    _ZORDER_LAYER_BOND,
+    _ZORDER_LAYER_DANGLING,
+    _ZORDER_LAYER_EDGE_INDEX,
+    _ZORDER_LAYER_STRIDE,
+)
 from .contraction_edges import _draw_contraction_edge
 from .dangling_self_edges import _draw_dangling_edge, _draw_self_loop_edge
 from .fonts_and_scale import _DrawScaleParams

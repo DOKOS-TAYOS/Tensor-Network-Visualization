@@ -2,5 +2,8 @@
 
 from __future__ import annotations
 
-from .draw import *  # noqa: F403
-from .draw import __all__ as __all__
+from . import draw as _draw
+
+__all__ = _draw.__all__
+
+globals().update({name: getattr(_draw, name) for name in __all__})

@@ -28,6 +28,7 @@ from matplotlib.widgets import Button, CheckButtons, Slider
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
+from ._matplotlib_state import set_contraction_controls, set_contraction_viewer
 from ._typing import root_figure
 from ._ui_utils import _reserve_figure_bottom, _set_axes_visible, _set_widget_active
 from .config import PlotConfig
@@ -320,6 +321,7 @@ class _ContractionViewerBase:
         self._cid_close: int | None = None
         self._cost_panel_ax: Axes | None = None
         self._cost_text_artist: Text | None = None
+        self._step_changed_callbacks: list[Callable[[int], None]] = []
 
     @property
     def num_steps(self) -> int:
@@ -421,7 +423,24 @@ class _ContractionViewerBase:
                 self._slider_callback_guard = False
 
         self._refresh_step_details_panel()
+        for callback in tuple(self._step_changed_callbacks):
+            callback(k_clamped)
         self.figure.canvas.draw_idle()
+
+    def add_step_changed_callback(
+        self,
+        callback: Callable[[int], None],
+        *,
+        call_immediately: bool = False,
+    ) -> None:
+        if callback not in self._step_changed_callbacks:
+            self._step_changed_callbacks.append(callback)
+        if call_immediately:
+            callback(self.current_step)
+
+    def remove_step_changed_callback(self, callback: Callable[[int], None]) -> None:
+        if callback in self._step_changed_callbacks:
+            self._step_changed_callbacks.remove(callback)
 
     def set_step_details_enabled(self, enabled: bool) -> None:
         self._details_enabled = bool(enabled)
@@ -659,8 +678,8 @@ class _ContractionControls:
             _reserve_figure_bottom(fig, _CONTROLS_MAIN_BOTTOM)
             self._build_controls()
         if self._register_on_figure:
-            fig._tensor_network_viz_contraction_controls = self  # type: ignore[attr-defined]
-        ax._tensor_network_viz_contraction_controls = self  # type: ignore[attr-defined]
+            set_contraction_controls(fig, self)
+        set_contraction_controls(ax, self)
         if self.scheme_on:
             self._ensure_bundle(strict=self.playback_on, swallow_errors=False)
         self._apply_visual_state()
@@ -776,7 +795,7 @@ class _ContractionControls:
             self._viewer.build_ui(initialize_step=False)
             self._viewer.set_step_details_enabled(self.cost_hover_on)
             self._viewer.set_playback_widgets_visible(False)
-            self.figure._tensor_network_viz_contraction_viewer = self._viewer  # type: ignore[attr-defined]
+            set_contraction_viewer(self.figure, self._viewer)
         return bundle
 
     def _scheme_entries_2d(self) -> tuple[tuple[Artist, str], ...]:
@@ -970,7 +989,7 @@ def attach_playback_to_tensor_network_figure(
         )
     if build_ui:
         v.build_ui()
-    fig._tensor_network_viz_contraction_viewer = v  # type: ignore[attr-defined]
+    set_contraction_viewer(fig, v)
     return v
 
 

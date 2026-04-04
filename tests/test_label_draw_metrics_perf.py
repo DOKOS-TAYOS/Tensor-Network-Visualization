@@ -21,6 +21,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 import numpy as np
+import pytest
 
 from tensor_network_viz._core.draw.disk_metrics import (
     _display_disk_radius_px_3d,
@@ -33,6 +34,7 @@ from tensor_network_viz._core.draw.fonts_and_scale import (
 )
 
 
+@pytest.mark.perf
 def test_textpath_width_cache_speedup_on_repeat() -> None:
     labels = [f"bond{i}" for i in range(120)]
     _textpath_width_pts_cached.cache_clear()
@@ -56,6 +58,7 @@ def test_textpath_width_cache_speedup_on_repeat() -> None:
     )
 
 
+@pytest.mark.perf
 def test_3d_nominal_disk_px_cheaper_than_many_projections() -> None:
     import matplotlib.pyplot as plt
 

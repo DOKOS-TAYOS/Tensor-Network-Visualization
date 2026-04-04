@@ -15,7 +15,11 @@ from ..graph import (
     _GraphData,
     _require_contraction_endpoints,
 )
-from .constants import *
+from .constants import (
+    _EDGE_INDEX_LABEL_GID,
+    _NODE_LABEL_MARGIN_FACTOR,
+    _ZORDER_EDGE_INDEX_LABEL,
+)
 from .fonts_and_scale import _DrawScaleParams
 
 

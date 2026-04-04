@@ -29,6 +29,7 @@ def test_plot_config_has_expected_defaults() -> None:
     assert config.tensor_label_refinement == "auto"
     assert config.approximate_3d_tensor_disk_px is True
     assert config.hover_labels is True
+    assert config.contraction_tensor_inspector is False
 
 
 def test_effective_layout_iterations_respects_explicit_setting() -> None:
