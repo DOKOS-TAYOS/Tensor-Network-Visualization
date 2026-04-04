@@ -344,7 +344,9 @@ def test_tensor_elements_demo_saves_figure_without_showing(tmp_path: Path) -> No
 
 
 def test_tensor_elements_structured_demo_includes_sparse_and_nonfinite_cases() -> None:
-    module = _load_example_module(Path("examples/tensor_elements_demo.py"), "tensor_elements_demo_cases")
+    module = _load_example_module(
+        Path("examples/tensor_elements_demo.py"), "tensor_elements_demo_cases"
+    )
 
     nodes = module.build_structured_network()
     sparse_node = next(node for node in nodes if node.name == "SparseMask")

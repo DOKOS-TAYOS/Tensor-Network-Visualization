@@ -452,7 +452,11 @@ class _ContractionViewerBase:
         text.set_visible(False)
 
     def _current_step_details_text(self) -> str | None:
-        if not self._details_enabled or not self._playback_widgets_visible or self.current_step <= 0:
+        if (
+            not self._details_enabled
+            or not self._playback_widgets_visible
+            or self.current_step <= 0
+        ):
             return None
         step_index = self.current_step - 1
         if step_index >= len(self._step_details_by_step):

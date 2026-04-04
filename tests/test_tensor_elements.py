@@ -528,12 +528,14 @@ def test_show_tensor_elements_nan_inf_mode_marks_special_values() -> None:
 def test_show_tensor_elements_nan_inf_mode_marks_complex_nonfinite_components() -> None:
     tensor = DummyTensorNetworkNode(
         np.array(
-            [[
-                complex(1.0, 0.0),
-                complex(np.nan, 0.0),
-                complex(1.0, np.inf),
-                complex(-np.inf, 0.0),
-            ]],
+            [
+                [
+                    complex(1.0, 0.0),
+                    complex(np.nan, 0.0),
+                    complex(1.0, np.inf),
+                    complex(-np.inf, 0.0),
+                ]
+            ],
             dtype=np.complex128,
         ),
         name="ComplexSpecials",

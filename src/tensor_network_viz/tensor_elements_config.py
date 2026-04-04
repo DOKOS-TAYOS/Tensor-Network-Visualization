@@ -53,9 +53,7 @@ class TensorElementsConfig:
             return
         low, high = (float(self.robust_percentiles[0]), float(self.robust_percentiles[1]))
         if not (0.0 <= low < high <= 100.0):
-            raise ValueError(
-                "robust_percentiles must satisfy 0 <= low < high <= 100."
-            )
+            raise ValueError("robust_percentiles must satisfy 0 <= low < high <= 100.")
         object.__setattr__(self, "robust_percentiles", (low, high))
 
 

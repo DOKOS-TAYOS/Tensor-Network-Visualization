@@ -322,7 +322,9 @@ class _TensorElementsFigureController:
             payload = self._finalize_heatmap_payload(resolved_mode, payload)
         return resolved_mode, payload
 
-    def _shared_color_limits_for_mode(self, mode: str, style_key: str) -> tuple[float, float] | None:
+    def _shared_color_limits_for_mode(
+        self, mode: str, style_key: str
+    ) -> tuple[float, float] | None:
         if mode in self._shared_color_scale_cache:
             return self._shared_color_scale_cache[mode]
         matrices: list[np.ndarray[Any, Any]] = []

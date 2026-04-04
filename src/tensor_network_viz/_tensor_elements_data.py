@@ -426,10 +426,7 @@ def _format_range(values: NumericArray) -> str:
     non_nan = flat[~np.isnan(flat)]
     if non_nan.size == 0:
         return "nan .. nan"
-    return (
-        f"{_format_float(float(np.min(non_nan)))} .. "
-        f"{_format_float(float(np.max(non_nan)))}"
-    )
+    return f"{_format_float(float(np.min(non_nan)))} .. {_format_float(float(np.max(non_nan)))}"
 
 
 def _summary_metric_array(array: NumericArray) -> NumericArray:
