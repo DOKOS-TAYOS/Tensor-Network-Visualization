@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+import numpy as np
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
+from ._core._label_format import format_tensor_node_label
 from ._core.draw.constants import (
     _EDGE_INDEX_LABEL_GID,
+    _LABEL_FONT_3D_SCALE,
     _TENSOR_LABEL_GID,
     _ZORDER_LAYER_BASE,
     _ZORDER_LAYER_EDGE_INDEX,
@@ -21,9 +24,16 @@ from ._core.draw.dangling_self_edges import (
 )
 from ._core.draw.fonts_and_scale import _register_2d_zoom_font_scaling
 from ._core.draw.hover import _RenderHoverState
+from ._core.draw.label_descriptors import (
+    _AnyLabelDescriptor,
+    _DeferredBondLabelDescriptor,
+    _DeferredSelfLoopLabelDescriptor,
+    _TextLabelDescriptor,
+)
 from ._core.draw.labels_misc import (
     _contraction_hover_label_text,
     _dangling_hover_label_text,
+    _edge_index_text_kwargs,
     _self_loop_hover_label_text,
 )
 from ._core.draw.render_prep import (
@@ -31,7 +41,17 @@ from ._core.draw.render_prep import (
     _should_refine_tensor_labels,
 )
 from ._core.draw.scene_state import _InteractiveSceneState
-from ._core.draw.tensors import _draw_labels, _refit_tensor_labels_to_disks
+from ._core.draw.tensors import (
+    _refit_tensor_labels_to_disks,
+    _tensor_label_fontsize_to_fit,
+)
+from ._core.draw.viewport_geometry import (
+    _bond_index_label_perp_offset,
+    _contraction_edge_index_label_2d_placement,
+    _contraction_edge_index_label_3d_placement,
+    _edge_index_along_bond_text_kw,
+    _edge_index_fontsize_for_bond,
+)
 from ._matplotlib_state import get_artist_node_id, get_scene, set_artist_node_id
 
 RenderedAxes = Axes | Axes3D
@@ -78,46 +98,204 @@ def _refresh_2d_zoom_scaling(scene: _InteractiveSceneState) -> None:
         _register_2d_zoom_font_scaling(cast(Axes, scene.ax))
 
 
-def _ensure_tensor_label_artists(scene: _InteractiveSceneState) -> None:
-    if scene.tensor_label_artists:
-        return
-    before = len(scene.ax.texts)
-    _draw_labels(
-        plotter=scene.plotter,
+def _resolve_bond_label_descriptor(
+    scene: _InteractiveSceneState,
+    descriptor: _DeferredBondLabelDescriptor,
+) -> _TextLabelDescriptor:
+    fontsize = _edge_index_fontsize_for_bond(
+        descriptor.text,
+        bond_start=descriptor.bond_start,
+        bond_end=descriptor.bond_end,
         ax=scene.ax,
-        graph=scene.graph,
-        positions=scene.positions,
-        show_tensor_labels=True,
-        config=scene.config,
-        p=scene.params,
         dimensions=scene.dimensions,
-        tensor_hover_by_node=None,
-        visible_draw_order=list(scene.visible_node_ids),
-        tensor_label_zorder_by_node=_tensor_label_zorders(scene),
-        tensor_disk_radius_px_3d=scene.tensor_disk_radius_px_3d,
+        is_physical=descriptor.is_physical,
+        peer_captions_for_width=descriptor.peer_captions_for_width,
     )
-    if _should_refine_tensor_labels(scene.config, visible_tensor_count=len(scene.visible_node_ids)):
-        _refit_tensor_labels_to_disks(
-            ax=scene.ax,
+    text_kwargs = _edge_index_text_kwargs(
+        scene.config,
+        fontsize=fontsize,
+        stub_kind=descriptor.stub_kind,
+        bbox_pad=scene.params.index_bbox_pad,
+        zorder=descriptor.zorder,
+    )
+    if scene.dimensions == 2:
+        position, align_kwargs = _contraction_edge_index_label_2d_placement(
+            Q=descriptor.point,
+            t_geom_2d=np.asarray(descriptor.tangent_geom[:2], dtype=float),
+            t_align_2d=np.asarray(descriptor.tangent_align[:2], dtype=float),
+            text_ep=descriptor.text_endpoint,
             p=scene.params,
-            dimensions=scene.dimensions,
-            tensor_disk_radius_px_3d=scene.tensor_disk_radius_px_3d,
+            ax=cast(Axes, scene.ax),
+            scale=scene.scale,
+            fontsize_pt=float(fontsize),
         )
-    scene.tensor_label_artists = [
-        text
-        for text in scene.ax.texts[before:]
-        if getattr(text, "get_gid", lambda: None)() == _TENSOR_LABEL_GID
-    ]
-    for node_id, artist in zip(scene.visible_node_ids, scene.tensor_label_artists, strict=False):
-        set_artist_node_id(artist, node_id)
-    scene.tensor_hover_payload = None
-    _refresh_2d_zoom_scaling(scene)
+    else:
+        position, align_kwargs = _contraction_edge_index_label_3d_placement(
+            Q=np.asarray(descriptor.point, dtype=float).reshape(3),
+            t_geom_3d=np.asarray(descriptor.tangent_geom, dtype=float).reshape(3),
+            t_align_3d=np.asarray(descriptor.tangent_align, dtype=float).reshape(3),
+            text_ep=descriptor.text_endpoint,
+            p=scene.params,
+            ax=scene.ax,
+            scale=scene.scale,
+            fontsize_pt=float(fontsize),
+        )
+    return _TextLabelDescriptor(
+        position=np.asarray(position, dtype=float).copy(),
+        text=descriptor.text,
+        kwargs={**text_kwargs, **align_kwargs},
+    )
 
 
-def _ensure_edge_label_artists(scene: _InteractiveSceneState) -> None:
-    if scene.edge_label_artists:
-        return
+def _resolve_self_loop_label_descriptor(
+    scene: _InteractiveSceneState,
+    descriptor: _DeferredSelfLoopLabelDescriptor,
+) -> _TextLabelDescriptor:
+    fontsize = _edge_index_fontsize_for_bond(
+        descriptor.text,
+        bond_start=descriptor.bond_start,
+        bond_end=descriptor.bond_end,
+        ax=scene.ax,
+        dimensions=scene.dimensions,
+        is_physical=False,
+        peer_captions_for_width=descriptor.peer_captions_for_width,
+    )
+    world_perp = descriptor.offset_direction if scene.dimensions == 3 else None
+    offset = (
+        np.asarray(descriptor.offset_direction, dtype=float)
+        * float(descriptor.offset_scale)
+        * _bond_index_label_perp_offset(
+            descriptor.text,
+            p=scene.params,
+            scale=scene.scale,
+            dimensions=scene.dimensions,
+            ax=scene.ax,
+            anchor=descriptor.point,
+            world_perp_dir=world_perp,
+        )
+    )
+    text_kwargs = {
+        **_edge_index_text_kwargs(
+            scene.config,
+            fontsize=fontsize,
+            bbox_pad=scene.params.index_bbox_pad,
+            zorder=descriptor.zorder,
+        ),
+        **_edge_index_along_bond_text_kw(
+            endpoint=descriptor.text_endpoint,
+            tangent=descriptor.tangent,
+            ax=scene.ax,
+            dimensions=scene.dimensions,
+        ),
+    }
+    return _TextLabelDescriptor(
+        position=np.asarray(descriptor.point, dtype=float).copy() + offset,
+        text=descriptor.text,
+        kwargs=text_kwargs,
+    )
+
+
+def _materialize_label_descriptors(
+    scene: _InteractiveSceneState,
+    descriptors: tuple[_AnyLabelDescriptor, ...],
+) -> tuple[_TextLabelDescriptor, ...]:
+    materialized: list[_TextLabelDescriptor] = []
+    for descriptor in descriptors:
+        if isinstance(descriptor, _TextLabelDescriptor):
+            materialized.append(descriptor)
+            continue
+        if isinstance(descriptor, _DeferredBondLabelDescriptor):
+            materialized.append(_resolve_bond_label_descriptor(scene, descriptor))
+            continue
+        materialized.append(_resolve_self_loop_label_descriptor(scene, descriptor))
+    return tuple(materialized)
+
+
+def _plot_label_descriptors(
+    scene: _InteractiveSceneState,
+    descriptors: tuple[_TextLabelDescriptor, ...],
+) -> list[Artist]:
     before = len(scene.ax.texts)
+    for descriptor in descriptors:
+        kwargs = dict(descriptor.kwargs)
+        if (
+            descriptor.node_id is not None
+            and kwargs.get("gid") == _TENSOR_LABEL_GID
+            and "fontsize" not in kwargs
+        ):
+            node_position = scene.positions[descriptor.node_id]
+            if scene.tensor_disk_radius_px_3d is not None and scene.dimensions == 3:
+                pixel_radius = float(scene.tensor_disk_radius_px_3d)
+            else:
+                from ._core.draw.disk_metrics import _tensor_disk_radius_px
+
+                pixel_radius = _tensor_disk_radius_px(
+                    scene.ax,
+                    node_position,
+                    scene.params,
+                    scene.dimensions,
+                )
+            fontsize = _tensor_label_fontsize_to_fit(
+                text=descriptor.text,
+                cap_pt=scene.params.font_tensor_label_max,
+                pixel_radius=pixel_radius,
+                fig=scene.ax.figure,
+            )
+            if scene.dimensions == 3:
+                cap_tensor = float(scene.params.font_tensor_label_max) * _LABEL_FONT_3D_SCALE
+                kwargs["fontsize"] = min(
+                    float(fontsize) * _LABEL_FONT_3D_SCALE,
+                    cap_tensor,
+                )
+            else:
+                kwargs["fontsize"] = float(fontsize)
+        scene.plotter.plot_text(
+            np.asarray(descriptor.position, dtype=float),
+            descriptor.text,
+            **kwargs,
+        )
+    return list(scene.ax.texts[before:])
+
+
+def _build_tensor_label_descriptors(
+    scene: _InteractiveSceneState,
+) -> tuple[_AnyLabelDescriptor, ...]:
+    if scene.tensor_label_descriptors is not None:
+        return tuple(scene.tensor_label_descriptors)
+    zorder_by_node = _tensor_label_zorders(scene)
+    descriptors = []
+    for node_id in scene.visible_node_ids:
+        node = scene.graph.nodes.get(node_id)
+        if node is None or node.is_virtual:
+            continue
+        if zorder_by_node is None:
+            zorder = float(_ZORDER_LAYER_TENSOR_NAME)
+        else:
+            zorder = float(zorder_by_node.get(node_id, _ZORDER_LAYER_TENSOR_NAME))
+        descriptors.append(
+            _TextLabelDescriptor(
+                position=np.asarray(scene.positions[node_id], dtype=float).copy(),
+                text=format_tensor_node_label(node.name),
+                kwargs={
+                    "color": scene.config.tensor_label_color,
+                    "ha": "center",
+                    "va": "center",
+                    "zorder": zorder,
+                    "gid": _TENSOR_LABEL_GID,
+                },
+                node_id=int(node_id),
+            )
+        )
+    scene.tensor_label_descriptors = tuple(descriptors)
+    return tuple(scene.tensor_label_descriptors)
+
+
+def _build_edge_label_descriptors(
+    scene: _InteractiveSceneState,
+) -> tuple[_AnyLabelDescriptor, ...]:
+    if scene.edge_label_descriptors is not None:
+        return tuple(scene.edge_label_descriptors)
+    descriptors: list[_AnyLabelDescriptor] = []
     zorder_label = _last_edge_label_zorder(scene)
     for entry in scene.edge_geometry:
         edge = entry.edge
@@ -138,8 +316,10 @@ def _ensure_edge_label_artists(scene: _InteractiveSceneState) -> None:
                 ax=scene.ax,
                 scale=scene.scale,
                 zorder_label=zorder_label,
+                label_sink=descriptors,
             )
-        elif edge.kind == "dangling":
+            continue
+        if edge.kind == "dangling":
             _draw_dangling_edge_labels(
                 plotter=scene.plotter,
                 edge=edge,
@@ -153,8 +333,10 @@ def _ensure_edge_label_artists(scene: _InteractiveSceneState) -> None:
                 ax=scene.ax,
                 scale=scene.scale,
                 zorder_label=zorder_label,
+                label_sink=descriptors,
             )
-        elif edge.kind == "self":
+            continue
+        if edge.kind == "self":
             _draw_self_loop_edge_labels(
                 plotter=scene.plotter,
                 edge=edge,
@@ -169,10 +351,56 @@ def _ensure_edge_label_artists(scene: _InteractiveSceneState) -> None:
                 ax=scene.ax,
                 scale=scene.scale,
                 zorder_label=zorder_label,
+                label_sink=descriptors,
             )
+    scene.edge_label_descriptors = tuple(descriptors)
+    return tuple(scene.edge_label_descriptors)
+
+
+def _ensure_scene_label_descriptors(scene: _InteractiveSceneState) -> None:
+    _build_tensor_label_descriptors(scene)
+    _build_edge_label_descriptors(scene)
+
+
+def _ensure_tensor_label_artists(scene: _InteractiveSceneState) -> None:
+    if scene.tensor_label_artists:
+        return
+    descriptors = tuple(scene.tensor_label_descriptors or ())
+    if not descriptors:
+        descriptors = _build_tensor_label_descriptors(scene)
+    concrete_descriptors = _materialize_label_descriptors(scene, descriptors)
+    scene.tensor_label_descriptors = concrete_descriptors
+    scene.tensor_label_artists = _plot_label_descriptors(scene, concrete_descriptors)
+    if _should_refine_tensor_labels(scene.config, visible_tensor_count=len(scene.visible_node_ids)):
+        _refit_tensor_labels_to_disks(
+            ax=scene.ax,
+            p=scene.params,
+            dimensions=scene.dimensions,
+            tensor_disk_radius_px_3d=scene.tensor_disk_radius_px_3d,
+        )
+    scene.tensor_label_artists = [
+        text
+        for text in scene.tensor_label_artists
+        if getattr(text, "get_gid", lambda: None)() == _TENSOR_LABEL_GID
+    ]
+    for descriptor, artist in zip(concrete_descriptors, scene.tensor_label_artists, strict=False):
+        if descriptor.node_id is not None:
+            set_artist_node_id(artist, descriptor.node_id)
+    scene.tensor_hover_payload = None
+    _refresh_2d_zoom_scaling(scene)
+
+
+def _ensure_edge_label_artists(scene: _InteractiveSceneState) -> None:
+    if scene.edge_label_artists:
+        return
+    descriptors = tuple(scene.edge_label_descriptors or ())
+    if not descriptors:
+        descriptors = _build_edge_label_descriptors(scene)
+    concrete_descriptors = _materialize_label_descriptors(scene, descriptors)
+    scene.edge_label_descriptors = concrete_descriptors
     scene.edge_label_artists = [
         text
-        for text in scene.ax.texts[before:]
+        for text in _plot_label_descriptors(scene, concrete_descriptors)
         if getattr(text, "get_gid", lambda: None)() == _EDGE_INDEX_LABEL_GID
     ]
     _refresh_2d_zoom_scaling(scene)
@@ -191,23 +419,19 @@ def _build_tensor_hover_payload(scene: _InteractiveSceneState) -> dict[int, tupl
         scene.tensor_hover_payload = dict(payload)
         return payload
 
-    hover_data: dict[int, tuple[str, float]] = {}
-    _draw_labels(
-        plotter=scene.plotter,
-        ax=scene.ax,
-        graph=scene.graph,
-        positions=scene.positions,
-        show_tensor_labels=False,
-        config=scene.config,
-        p=scene.params,
-        dimensions=scene.dimensions,
-        tensor_hover_by_node=hover_data,
-        visible_draw_order=list(scene.visible_node_ids),
-        tensor_label_zorder_by_node=None,
-        tensor_disk_radius_px_3d=scene.tensor_disk_radius_px_3d,
-    )
-    scene.tensor_hover_payload = dict(hover_data)
-    return hover_data
+    for descriptor in _build_tensor_label_descriptors(scene):
+        if not isinstance(descriptor, _TextLabelDescriptor) or descriptor.node_id is None:
+            continue
+        fontsize_raw = descriptor.kwargs.get("fontsize")
+        if fontsize_raw is None:
+            fontsize_raw = (
+                float(scene.params.font_tensor_label_max) * _LABEL_FONT_3D_SCALE
+                if scene.dimensions == 3
+                else float(scene.params.font_tensor_label_max)
+            )
+        payload[int(descriptor.node_id)] = (descriptor.text, float(fontsize_raw))
+    scene.tensor_hover_payload = dict(payload)
+    return payload
 
 
 def _build_edge_hover_payload(scene: _InteractiveSceneState) -> tuple[tuple[Any, str], ...]:
@@ -259,7 +483,10 @@ def _apply_scene_hover_state(
 
 __all__ = [
     "_apply_scene_hover_state",
+    "_build_edge_label_descriptors",
+    "_build_tensor_label_descriptors",
     "_ensure_edge_label_artists",
+    "_ensure_scene_label_descriptors",
     "_ensure_tensor_label_artists",
     "_scene_from_axes",
     "_set_artist_visible",

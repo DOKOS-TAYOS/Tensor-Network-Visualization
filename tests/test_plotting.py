@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -1071,6 +1072,103 @@ def test_show_tensor_network_show_controls_false_hides_all_figure_controls() -> 
     assert getattr(fig, "_tensor_network_viz_contraction_viewer", None) is None
     assert len(fig.axes) == 1
     assert getattr(ax, "_tensor_network_viz_scene", None) is None
+
+
+def test_viewer_static_render_keeps_interactive_viewer_module_lazy() -> None:
+    sys.modules.pop("tensor_network_viz.viewer", None)
+    sys.modules.pop("tensor_network_viz.interactive_viewer", None)
+
+    viewer_runtime = importlib.import_module("tensor_network_viz.viewer")
+
+    assert "tensor_network_viz.interactive_viewer" not in sys.modules
+
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig_static, _ax_static = viewer_runtime.show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show_controls=False,
+        show=False,
+    )
+    try:
+        assert "tensor_network_viz.interactive_viewer" not in sys.modules
+    finally:
+        plt.close(fig_static)
+
+    fig_interactive, _ax_interactive = viewer_runtime.show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show_controls=True,
+        show=False,
+    )
+    try:
+        assert "tensor_network_viz.interactive_viewer" in sys.modules
+    finally:
+        plt.close(fig_interactive)
+
+
+def test_show_tensor_network_precomputes_label_descriptors_for_menu_toggles() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    scene = controls.current_scene
+
+    assert scene.tensor_label_descriptors is not None
+    assert len(scene.tensor_label_descriptors) == 2
+    assert scene.edge_label_descriptors is not None
+    assert len(scene.edge_label_descriptors) == 2
+    assert scene.tensor_label_artists == []
+    assert scene.edge_label_artists == []
+
+
+def test_show_tensor_network_menu_toggles_reuse_precomputed_label_descriptors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._interactive_scene as interactive_scene_module
+
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+
+    def _unexpected_rebuild(*args: object, **kwargs: object) -> object:
+        raise AssertionError("label descriptors should already be cached in the scene")
+
+    monkeypatch.setattr(
+        interactive_scene_module,
+        "_build_tensor_label_descriptors",
+        _unexpected_rebuild,
+    )
+    monkeypatch.setattr(
+        interactive_scene_module,
+        "_build_edge_label_descriptors",
+        _unexpected_rebuild,
+    )
+
+    controls.set_tensor_labels_enabled(True)
+    controls.set_edge_labels_enabled(True)
+
+    assert len(controls.current_scene.tensor_label_artists) == 2
+    assert len(controls.current_scene.edge_label_artists) == 2
 
 
 def test_plot_tensorkrowch_network_2d_draws_tensor_nodes_as_circle_patches() -> None:

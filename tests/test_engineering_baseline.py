@@ -150,6 +150,22 @@ def test_compute_axis_directions_dense_dangling_chain_completes_quickly() -> Non
     assert elapsed < 0.35, f"_compute_axis_directions took {elapsed:.4f}s"
 
 
+@pytest.mark.perf
+def test_compute_axis_directions_dense_dangling_chain_3d_completes_quickly() -> None:
+    graph = _build_dense_dangling_chain(160)
+    positions = {
+        node_id: np.array([float(node_id) * 0.35, 0.0, 0.0], dtype=float)
+        for node_id in range(160)
+    }
+
+    started = time.perf_counter()
+    directions = _compute_axis_directions(graph, positions, dimensions=3, draw_scale=1.0)
+    elapsed = time.perf_counter() - started
+
+    assert len(directions) == 478
+    assert elapsed < 0.10, f"_compute_axis_directions(..., dimensions=3) took {elapsed:.4f}s"
+
+
 def test_pyproject_declares_smoke_and_perf_markers() -> None:
     content = Path("pyproject.toml").read_text(encoding="utf-8")
 

@@ -12,6 +12,7 @@ from ..graph import _EdgeData, _GraphData
 from ..layout import AxisDirections, NodePositions
 from .fonts_and_scale import _DrawScaleParams
 from .hover import _RenderHoverState
+from .label_descriptors import _AnyLabelDescriptor, _TextLabelDescriptor
 from .plotter import _PlotAdapter
 
 
@@ -40,6 +41,8 @@ class _InteractiveSceneState:
     tensor_disk_radius_px_3d: float | None
     tensor_label_artists: list[Artist] = field(default_factory=list)
     edge_label_artists: list[Artist] = field(default_factory=list)
+    tensor_label_descriptors: tuple[_AnyLabelDescriptor, ...] | None = None
+    edge_label_descriptors: tuple[_AnyLabelDescriptor, ...] | None = None
     tensor_hover_payload: dict[int, tuple[str, float]] | None = None
     edge_hover_payload: tuple[tuple[np.ndarray, str], ...] | None = None
     contraction_controls: Any = None
@@ -48,4 +51,6 @@ class _InteractiveSceneState:
 __all__ = [
     "_InteractiveSceneState",
     "_RenderedEdgeGeometry",
+    "_AnyLabelDescriptor",
+    "_TextLabelDescriptor",
 ]

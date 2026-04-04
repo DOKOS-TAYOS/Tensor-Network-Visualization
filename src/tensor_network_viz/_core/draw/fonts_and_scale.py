@@ -152,15 +152,16 @@ def _on_2d_limits_changed(ax: Axes) -> None:
 
 
 def _register_2d_zoom_font_scaling(ax: Axes) -> None:
-    old_cids = get_zoom_cids(ax)
-    for cid in old_cids:
-        with suppress(ValueError, KeyError):
-            ax.callbacks.disconnect(cid)
     x0, x1 = ax.get_xlim()
     y0, y1 = ax.get_ylim()
     ref_span = max(float(x1 - x0), float(y1 - y0), 1e-9)
     sizes = {t: float(t.get_fontsize()) for t in ax.texts}
     set_zoom_font_state(ax, ref_span=ref_span, sizes=sizes)
+
+    old_cids = get_zoom_cids(ax)
+    if old_cids:
+        _on_2d_limits_changed(ax)
+        return
 
     def _cb(_: object) -> None:
         _on_2d_limits_changed(ax)

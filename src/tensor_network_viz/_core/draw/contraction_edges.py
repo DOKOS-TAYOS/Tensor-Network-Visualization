@@ -13,6 +13,7 @@ from ..layout import NodePositions
 from .constants import _CURVE_NEAR_PAIR_REF, _CURVE_OFFSET_FACTOR
 from .edge_labels import _plot_contraction_index_captions
 from .fonts_and_scale import _DrawScaleParams
+from .label_descriptors import _TextLabelDescriptor
 from .labels_misc import _contraction_hover_label_text
 from .plotter import _PlotAdapter
 from .scene_state import _RenderedEdgeGeometry
@@ -113,6 +114,7 @@ def _draw_contraction_edge_labels(
     ax: Any,
     scale: float,
     zorder_label: float | None = None,
+    label_sink: list[_TextLabelDescriptor] | None = None,
 ) -> None:
     hover_targets = getattr(plotter, "_hover_edge_targets", None)
     if config.hover_labels and hover_targets is not None:
@@ -139,6 +141,7 @@ def _draw_contraction_edge_labels(
         ax=ax,
         scale=scale,
         zorder_label=zorder_label,
+        label_sink=label_sink,
     )
 
 

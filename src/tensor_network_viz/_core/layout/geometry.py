@@ -77,6 +77,26 @@ def _segment_point_min_distance_sq_3d(a: np.ndarray, b: np.ndarray, c: np.ndarra
     return float(np.sum((c3 - closest) ** 2))
 
 
+def _segment_point_min_distance_sq_3d_many(
+    a: np.ndarray,
+    b: np.ndarray,
+    points: np.ndarray,
+) -> np.ndarray:
+    a3 = np.asarray(a, dtype=float).reshape(1, 3)
+    b3 = np.asarray(b, dtype=float).reshape(1, 3)
+    pts = np.asarray(points, dtype=float).reshape(-1, 3)
+    ab = b3 - a3
+    denom = float(np.dot(ab[0], ab[0]))
+    if denom < 1e-18:
+        delta = pts - a3
+        return np.einsum("ij,ij->i", delta, delta)
+    t = ((pts - a3) @ ab[0]) / denom
+    t = np.clip(t, 0.0, 1.0)
+    closest = a3 + t[:, np.newaxis] * ab
+    delta = pts - closest
+    return np.einsum("ij,ij->i", delta, delta)
+
+
 def _segment_segment_min_distance_2d(
     start_a: np.ndarray,
     end_a: np.ndarray,
@@ -376,6 +396,7 @@ __all__ = [
     "_segment_point_min_distance_sq_2d",
     "_segment_point_min_distance_sq_2d_many",
     "_segment_point_min_distance_sq_3d",
+    "_segment_point_min_distance_sq_3d_many",
     "_segment_segment_min_distance_2d",
     "_segment_segment_min_distance_sq_3d",
     "_segments_cross_2d",

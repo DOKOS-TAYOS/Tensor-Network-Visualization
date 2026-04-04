@@ -12,7 +12,6 @@ from ._input_inspection import _detect_network_engine_with_input
 from ._registry import _get_plotters
 from ._typing import FigureLike, root_figure
 from .config import EngineName, PlotConfig, ViewName
-from .interactive_viewer import show_tensor_network_interactive
 
 RenderedAxes: TypeAlias = Axes | Axes3D
 
@@ -136,6 +135,8 @@ def show_tensor_network(
         else:
             raise ValueError(f"Unsupported tensor network view: {resolved_view}")
     else:
+        from .interactive_viewer import show_tensor_network_interactive
+
         fig, ax_out = show_tensor_network_interactive(
             network_input,
             engine=resolved_engine,

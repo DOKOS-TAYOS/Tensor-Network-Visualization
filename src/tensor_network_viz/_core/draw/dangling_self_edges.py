@@ -22,6 +22,7 @@ from .labels_misc import (
     _node_label_clearance,
     _self_loop_hover_label_text,
 )
+from .label_descriptors import _TextLabelDescriptor
 from .plotter import _PlotAdapter
 from .scene_state import _RenderedEdgeGeometry
 from .vectors import _perpendicular_2d
@@ -119,6 +120,7 @@ def _draw_dangling_edge_labels(
     ax: Any,
     scale: float,
     zorder_label: float | None = None,
+    label_sink: list[_TextLabelDescriptor] | None = None,
 ) -> None:
     if not edge.label and not config.hover_labels:
         return
@@ -151,6 +153,11 @@ def _draw_dangling_edge_labels(
         return
 
     raw_label = edge.label
+    stub_segment = np.stack([np.asarray(start, dtype=float), np.asarray(end, dtype=float)], axis=0)
+    stub_length = _polyline_arc_length_total(stub_segment)
+    distance_from_tip = float(_PHYS_DANGLING_2D_FRAC_FROM_TIP) * stub_length
+    point, tangent = _point_tangent_along_polyline_from_end(stub_segment, distance_from_tip)
+
     fontsize = _edge_index_fontsize_for_bond(
         raw_label,
         bond_start=start,
@@ -166,10 +173,6 @@ def _draw_dangling_edge_labels(
         bbox_pad=p.index_bbox_pad,
         zorder=zorder_label,
     )
-    stub_segment = np.stack([np.asarray(start, dtype=float), np.asarray(end, dtype=float)], axis=0)
-    stub_length = _polyline_arc_length_total(stub_segment)
-    distance_from_tip = float(_PHYS_DANGLING_2D_FRAC_FROM_TIP) * stub_length
-    point, tangent = _point_tangent_along_polyline_from_end(stub_segment, distance_from_tip)
     if dimensions == 2:
         start_2d = np.asarray(start[:2], dtype=float)
         end_2d = np.asarray(end[:2], dtype=float)
@@ -203,11 +206,18 @@ def _draw_dangling_edge_labels(
             scale=scale,
             fontsize_pt=float(fontsize),
         )
-    plotter.plot_text(
-        label_pos,
-        format_tensor_node_label(raw_label),
-        **{**text_kwargs, **align_kwargs},
-    )
+    formatted = format_tensor_node_label(raw_label)
+    kwargs = {**text_kwargs, **align_kwargs}
+    if label_sink is not None:
+        label_sink.append(
+            _TextLabelDescriptor(
+                position=np.asarray(label_pos, dtype=float).copy(),
+                text=formatted,
+                kwargs=dict(kwargs),
+            )
+        )
+        return
+    plotter.plot_text(label_pos, formatted, **kwargs)
 
 
 def _draw_self_loop_edge(
@@ -302,6 +312,7 @@ def _draw_self_loop_edge_labels(
     ax: Any,
     scale: float,
     zorder_label: float | None = None,
+    label_sink: list[_TextLabelDescriptor] | None = None,
 ) -> None:
     hover_targets = getattr(plotter, "_hover_edge_targets", None)
     if config.hover_labels and hover_targets is not None:
@@ -391,11 +402,22 @@ def _draw_self_loop_edge_labels(
                 dimensions=dimensions,
             ),
         }
-        plotter.plot_text(
-            np.asarray(q_a, dtype=float) + offset_a,
-            format_tensor_node_label(caption_a),
-            **text_kwargs_a,
-        )
+        position_a = np.asarray(q_a, dtype=float) + offset_a
+        formatted_a = format_tensor_node_label(caption_a)
+        if label_sink is not None:
+            label_sink.append(
+                _TextLabelDescriptor(
+                    position=np.asarray(position_a, dtype=float).copy(),
+                    text=formatted_a,
+                    kwargs=dict(text_kwargs_a),
+                )
+            )
+        else:
+            plotter.plot_text(
+                position_a,
+                formatted_a,
+                **text_kwargs_a,
+            )
     if caption_b:
         offset_b = (
             -direction_unit
@@ -433,9 +455,20 @@ def _draw_self_loop_edge_labels(
                 dimensions=dimensions,
             ),
         }
+        formatted_b = format_tensor_node_label(caption_b)
+        position_b = np.asarray(q_b, dtype=float) + offset_b
+        if label_sink is not None:
+            label_sink.append(
+                _TextLabelDescriptor(
+                    position=np.asarray(position_b, dtype=float).copy(),
+                    text=formatted_b,
+                    kwargs=dict(text_kwargs_b),
+                )
+            )
+            return
         plotter.plot_text(
-            np.asarray(q_b, dtype=float) + offset_b,
-            format_tensor_node_label(caption_b),
+            position_b,
+            formatted_b,
             **text_kwargs_b,
         )
 

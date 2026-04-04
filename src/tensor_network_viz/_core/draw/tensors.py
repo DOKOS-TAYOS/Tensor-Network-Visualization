@@ -22,6 +22,7 @@ from .constants import (
 )
 from .disk_metrics import _tensor_disk_radius_px
 from .fonts_and_scale import _DrawScaleParams
+from .label_descriptors import _TextLabelDescriptor
 from .plotter import _PlotAdapter, _visible_degree_one_mask
 from .viewport_geometry import _stack_visible_tensor_coords
 
@@ -97,8 +98,9 @@ def _draw_labels(
     visible_draw_order: list[int] | None = None,
     tensor_label_zorder_by_node: dict[int, float] | None = None,
     tensor_disk_radius_px_3d: float | None = None,
+    label_sink: list[_TextLabelDescriptor] | None = None,
 ) -> None:
-    if show_tensor_labels or tensor_hover_by_node is not None:
+    if show_tensor_labels or tensor_hover_by_node is not None or label_sink is not None:
         fig = ax.figure
         ordered_ids: list[int]
         if visible_draw_order is not None:
@@ -124,14 +126,30 @@ def _draw_labels(
             if dimensions == 3:
                 cap_tensor = float(p.font_tensor_label_max) * _LABEL_FONT_3D_SCALE
                 fs = min(float(fs) * _LABEL_FONT_3D_SCALE, cap_tensor)
-            if tensor_hover_by_node is not None:
-                tensor_hover_by_node[node_id] = (display_name, float(fs))
-            if not show_tensor_labels:
-                continue
             if tensor_label_zorder_by_node is None:
                 z_lbl = float(_ZORDER_TENSOR_NAME)
             else:
                 z_lbl = float(tensor_label_zorder_by_node.get(node_id, _ZORDER_TENSOR_NAME))
+            if tensor_hover_by_node is not None:
+                tensor_hover_by_node[node_id] = (display_name, float(fs))
+            if label_sink is not None:
+                label_sink.append(
+                    _TextLabelDescriptor(
+                        position=np.asarray(pos, dtype=float).copy(),
+                        text=display_name,
+                        kwargs={
+                            "color": config.tensor_label_color,
+                            "ha": "center",
+                            "va": "center",
+                            "fontsize": float(fs),
+                            "zorder": float(z_lbl),
+                            "gid": _TENSOR_LABEL_GID,
+                        },
+                        node_id=int(node_id),
+                    )
+                )
+            if not show_tensor_labels:
+                continue
             plotter.plot_text(
                 pos,
                 display_name,

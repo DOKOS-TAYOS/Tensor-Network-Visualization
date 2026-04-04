@@ -16,6 +16,7 @@ from ._core.draw.scene_state import _InteractiveSceneState
 from ._interactive_scene import (
     _apply_scene_hover_state,
     _ensure_edge_label_artists,
+    _ensure_scene_label_descriptors,
     _ensure_tensor_label_artists,
     _scene_from_axes,
     _set_artist_visible,
@@ -368,6 +369,7 @@ class _InteractiveTensorFigureController:
         cache.scene = scene
         if scene is not None:
             scene.contraction_controls = get_contraction_controls(rendered_ax)
+            _ensure_scene_label_descriptors(scene)
         return fig, rendered_ax
 
     def _shared_data_axes_top(self) -> float:
