@@ -30,7 +30,7 @@ class _ContractionSchemeBundle:
     artists_by_step: list[Artist | None] | None = None
     scheme_aabb: list[tuple[float, float, float, float, float, float] | None] | None = None
     metrics_row: tuple[Any | None, ...] | None = None
-    step_details: tuple[str | None] | None = None
+    step_details: tuple[str | None, ...] | None = None
     viewer: Any = None
     bounds_2d: tuple[float, float, float, float] | None = None
     bounds_3d: tuple[float, float, float, float, float, float] | None = None

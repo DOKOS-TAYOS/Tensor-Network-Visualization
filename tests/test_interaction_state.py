@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -7,6 +9,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.text import Text
 
+from tensor_network_viz._core.draw.scene_state import _InteractiveSceneState
 from tensor_network_viz._interaction.bridge import (
     clear_contraction_controls,
     clear_hover_annotation,
@@ -48,7 +51,7 @@ def test_bridge_round_trips_matplotlib_attrs() -> None:
         set_reserved_bottom(fig, 0.3)
         assert get_reserved_bottom(fig) == 0.3
 
-        scene = object()
+        scene = cast(_InteractiveSceneState, object())
         controls = object()
         viewer = object()
         interactive_controls = object()

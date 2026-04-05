@@ -8,6 +8,7 @@ from typing import Any, cast
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
+from matplotlib.backend_bases import NonGuiException
 from matplotlib.figure import Figure
 from matplotlib.widgets import CheckButtons, RadioButtons
 from mpl_toolkits.mplot3d.axes3d import Axes3D
@@ -79,12 +80,12 @@ def _reveal_auxiliary_figure(figure: Figure) -> None:
     manager = getattr(figure.canvas, "manager", None)
     manager_show = getattr(manager, "show", None)
     if callable(manager_show):
-        with suppress(AttributeError, RuntimeError, TypeError, ValueError):
+        with suppress(AttributeError, NonGuiException, RuntimeError, TypeError, ValueError):
             manager_show()
     else:
         figure_show = getattr(figure, "show", None)
         if callable(figure_show):
-            with suppress(AttributeError, RuntimeError, TypeError, ValueError):
+            with suppress(AttributeError, NonGuiException, RuntimeError, TypeError, ValueError):
                 figure_show()
     draw_idle = getattr(figure.canvas, "draw_idle", None)
     if callable(draw_idle):
