@@ -56,6 +56,16 @@ def _hover_commands(commands: Sequence[ExampleCommand]) -> tuple[ExampleCommand,
 def _contraction_commands(view: Literal["2d", "3d"]) -> tuple[ExampleCommand, ...]:
     return (
         _command(
+            "tensorkrowch",
+            "mps",
+            view,
+            "--contracted",
+            "--n-sites",
+            "6",
+            "--scheme",
+            slug=f"tensorkrowch_mps_{view}_contracted_scheme",
+        ),
+        _command(
             "tensornetwork",
             "mera_ttn",
             view,

@@ -1082,7 +1082,7 @@ def test_show_tn_reenabling_tensor_inspector_reveals_auxiliary_window(
     assert revealed == [revealed[0], inspector._figure]
 
 
-def test_show_tensor_network_non_einsum_inputs_do_not_expose_tensor_inspector_checkbox() -> None:
+def test_non_playback_tensorkrowch_inputs_hide_tensor_inspector_checkbox() -> None:
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")

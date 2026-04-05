@@ -16,6 +16,7 @@ from .einsum_module._equation import parse_einsum_equation
 from .einsum_module.trace import EinsumTrace, einsum_trace_step, pair_tensor
 from .quimb.graph import _quimb_tensor_parsed, _tensors_sorted_with_meta
 from .tenpy.explicit import TenPyTensorNetwork
+from .tensorkrowch._history import _recover_contraction_history
 
 NumericArray: TypeAlias = np.ndarray[Any, Any]
 
@@ -47,9 +48,12 @@ class _MatrixMetadata:
 
 
 @dataclass(frozen=True)
-class _EinsumPlaybackStepRecord:
+class _PlaybackStepRecord:
     result_name: str
     record: _TensorRecord | None
+
+
+_EinsumPlaybackStepRecord = _PlaybackStepRecord
 
 
 def _detect_tensor_elements_engine(data: Any) -> tuple[EngineName, Any]:
@@ -175,7 +179,7 @@ def _extract_tensornetwork_records(data: Any) -> list[_TensorRecord]:
 def _extract_tensorkrowch_records(data: Any) -> list[_TensorRecord]:
     items = _collect_items(
         data,
-        attr_sources=("leaf_nodes", "nodes"),
+        attr_sources=_tensorkrowch_attr_sources(data),
         direct_predicate=lambda item: hasattr(item, "axes_names"),
     )
     records: list[_TensorRecord] = []
@@ -199,6 +203,16 @@ def _extract_tensorkrowch_records(data: Any) -> list[_TensorRecord]:
             )
         )
     return records
+
+
+def _tensorkrowch_attr_sources(data: Any) -> tuple[str, ...]:
+    leaf_nodes = getattr(data, "leaf_nodes", None)
+    if isinstance(leaf_nodes, dict):
+        if leaf_nodes:
+            return ("leaf_nodes",)
+    elif leaf_nodes:
+        return ("leaf_nodes",)
+    return ("leaf_nodes", "nodes")
 
 
 def _extract_quimb_records(data: Any) -> list[_TensorRecord]:
@@ -319,7 +333,7 @@ def _axis_names_for_einsum_step(step: pair_tensor | einsum_trace_step) -> tuple[
     return tuple(str(axis_name) for axis_name in parsed.output_axes)
 
 
-def _extract_einsum_playback_step_records(data: Any) -> tuple[_EinsumPlaybackStepRecord, ...]:
+def _extract_einsum_playback_step_records(data: Any) -> tuple[_PlaybackStepRecord, ...]:
     if not isinstance(data, EinsumTrace):
         raise TypeError("Playback tensor inspection only supports real EinsumTrace objects.")
 
@@ -332,20 +346,20 @@ def _extract_einsum_playback_step_records(data: Any) -> tuple[_EinsumPlaybackSte
             continue
         live_tensors_by_name[str(tracked.name)] = tensor
 
-    step_records: list[_EinsumPlaybackStepRecord] = []
+    step_records: list[_PlaybackStepRecord] = []
     for step in state.pairs:
         result_name = str(step.result_name)
         tensor = live_tensors_by_name.get(result_name)
         if tensor is None:
             step_records.append(
-                _EinsumPlaybackStepRecord(
+                _PlaybackStepRecord(
                     result_name=result_name,
                     record=None,
                 )
             )
             continue
         step_records.append(
-            _EinsumPlaybackStepRecord(
+            _PlaybackStepRecord(
                 result_name=result_name,
                 record=_TensorRecord(
                     array=_to_numpy_array(tensor),
@@ -356,6 +370,51 @@ def _extract_einsum_playback_step_records(data: Any) -> tuple[_EinsumPlaybackSte
             )
         )
     return tuple(step_records)
+
+
+def _extract_tensorkrowch_playback_step_records(
+    data: Any,
+) -> tuple[_PlaybackStepRecord, ...] | None:
+    if not hasattr(data, "resultant_nodes") or not hasattr(data, "leaf_nodes"):
+        return None
+
+    recovered = _recover_contraction_history(data)
+    if recovered is None or not recovered.step_result_nodes:
+        return None
+
+    step_records: list[_PlaybackStepRecord] = []
+    for index, node in enumerate(recovered.step_result_nodes):
+        tensor = getattr(node, "tensor", None)
+        if tensor is None:
+            return None
+        name = "" if getattr(node, "name", None) is None else str(node.name)
+        step_name = name or f"step_{index}"
+        step_records.append(
+            _PlaybackStepRecord(
+                result_name=step_name,
+                record=_TensorRecord(
+                    array=_to_numpy_array(tensor),
+                    axis_names=_stringify_sequence(getattr(node, "axes_names", ())),
+                    engine="tensorkrowch",
+                    name=step_name,
+                ),
+            )
+        )
+    return tuple(step_records)
+
+
+def _extract_playback_step_records(data: Any) -> tuple[_PlaybackStepRecord, ...] | None:
+    if isinstance(data, EinsumTrace):
+        return _extract_einsum_playback_step_records(data)
+
+    try:
+        resolved_engine, prepared_input = _detect_tensor_elements_engine(data)
+    except (TypeError, ValueError):
+        return None
+
+    if resolved_engine == "tensorkrowch":
+        return _extract_tensorkrowch_playback_step_records(prepared_input)
+    return None
 
 
 def _extract_tensor_records(
@@ -565,12 +624,14 @@ __all__ = [
     "NumericArray",
     "_EinsumPlaybackStepRecord",
     "_MatrixMetadata",
+    "_PlaybackStepRecord",
     "_TensorRecord",
     "_TensorStats",
     "_build_axis_summary_lines",
     "_build_data_summary_text",
     "_build_stats",
     "_build_topk_lines",
+    "_extract_playback_step_records",
     "_extract_einsum_playback_step_records",
     "_extract_tensor_records",
 ]

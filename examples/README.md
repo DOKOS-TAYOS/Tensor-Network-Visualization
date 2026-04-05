@@ -82,11 +82,20 @@ python examples/run_demo.py einsum ellipsis --view 2d --scheme
 python examples/run_demo.py einsum mps --view 2d --scheme --playback
 python examples/run_demo.py einsum mps --view 2d --tensor-inspector
 python examples/run_demo.py tenpy chain --view 2d --scheme
+python examples/run_demo.py tensorkrowch mps --view 2d --n-sites 6 --scheme
+python examples/run_demo.py tensorkrowch mps --view 2d --n-sites 6 --hover-cost --tensor-inspector
 ```
 
 For the linked tensor inspector, use an auto-traced `EinsumTrace` example such as `mps`, `mpo`,
 `peps`, `ellipsis`, or `nway`. Manual `--from-scratch` / `--from-list` variants do not carry the
-live tensor values needed by the inspector.
+live tensor values needed by the inspector. Contracted TensorKrowch demos can also drive the
+linked inspector and cost panel when the native network still preserves recoverable result nodes.
+
+For TensorKrowch, `--contracted` is intentionally limited to small native demos so the example can
+perform a real contraction first and then let the library recover the contraction history
+automatically. Right now the safe documented path is `mps` / `mpo` with `--n-sites 6`, and those
+small demos enable the contracted path by default. Use `--no-contracted` if you want to inspect
+the uncontracted native network instead.
 
 ## Useful Options
 
@@ -100,7 +109,8 @@ live tensor values needed by the inspector.
 | `--scheme` | Draw contraction-scheme overlays when available. |
 | `--playback` | Start with contraction playback enabled. |
 | `--hover-cost` | Show contraction-cost details in the playback panel. |
-| `--tensor-inspector` | Open the linked tensor inspector for `EinsumTrace` playback. |
+| `--tensor-inspector` | Open the linked tensor inspector for `EinsumTrace` playback or contracted TensorKrowch playback with recoverable step tensors. |
+| `--contracted` | For small TensorKrowch demos, contract the native network first and show the recovered scheme. |
 | `--from-scratch` | Use the manual builder when that example supports it. |
 | `--from-list` | Pass list/iterable input when supported. |
 | `--save [PATH]` | Save the figure. If omitted, use the auto-generated path. |
@@ -282,6 +292,7 @@ Outputs are written to `.tmp/run-all-examples/` by default.
 
 ```bash
 python examples/run_demo.py tensorkrowch mps --view 2d
+python examples/run_demo.py tensorkrowch mps --view 2d --n-sites 6 --scheme
 python examples/run_demo.py quimb hyper --view 2d --save
 python examples/run_demo.py tenpy imps --view 2d --save tenpy_imps.png --no-show
 python examples/run_demo.py einsum ellipsis --view 3d

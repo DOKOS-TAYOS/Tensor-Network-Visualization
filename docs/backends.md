@@ -46,6 +46,14 @@ fig, ax = show_tensor_network(
 )
 ```
 
+If you pass a TensorKrowch network **after** real contractions have been performed and the network
+still keeps usable `leaf_nodes` plus `resultant_nodes` history, `PlotConfig(show_contraction_scheme=True)`
+can reconstruct the contraction steps automatically. This recovery is conservative: unusual
+mutations or broken history simply disable the automatic scheme instead of guessing. When the
+recovered steps still expose result tensors and metric data, the same playback extras used by
+`einsum` also work here: `contraction_scheme_cost_hover=True` and
+`contraction_tensor_inspector=True`.
+
 ## TensorNetwork
 
 ```python

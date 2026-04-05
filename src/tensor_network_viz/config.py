@@ -75,11 +75,14 @@ class PlotConfig:
             contraction highlights interactively. Requires ``show_contraction_scheme=True`` and a
             non-empty contraction step list.
         contraction_scheme_cost_hover: If True, show contraction-step details in a fixed text
-            panel while playback is active. Requires metrics on ``graph`` (einsum traces with
-            shapes). Independent of ``hover_labels`` and kept under the old name for API
-            compatibility.
-        contraction_tensor_inspector: If True, and the input is an ``EinsumTrace``, enable a
-            linked tensor inspector window that follows contraction playback step by step.
+            panel while playback is active. Requires metrics on ``graph`` (for example
+            ``EinsumTrace`` inputs with shapes or contracted TensorKrowch networks with
+            recoverable step metrics). Independent of ``hover_labels`` and kept under the old
+            name for API compatibility.
+        contraction_tensor_inspector: If True, and the input exposes recoverable playback tensors
+            (currently ``EinsumTrace`` and contracted TensorKrowch networks with usable result
+            history), enable a linked tensor inspector window that follows contraction playback
+            step by step.
     """
 
     DEFAULT_NODE_RADIUS: ClassVar[float] = 0.08

@@ -33,6 +33,7 @@ from demo_cli import (
     render_demo_tensor_network,
     resolve_example_definition,
 )
+from demo_tensors import build_demo_torch_tensor
 
 TAGLINES: dict[str, str] = {
     "cubic_peps": "Cubic lattice created directly with TensorKrowch nodes.",
@@ -45,6 +46,7 @@ TAGLINES: dict[str, str] = {
     "peps": "2D PEPS grid.",
     "weird": "Irregular topology for layout fallback.",
 }
+_SMALL_CONTRACTED_EXAMPLES = frozenset({"mps", "mpo"})
 
 
 def _build_blueprint(example: str, args: ExampleCliArgs) -> GraphBlueprint:
@@ -69,15 +71,33 @@ def _build_blueprint(example: str, args: ExampleCliArgs) -> GraphBlueprint:
     raise ValueError(f"Unsupported TensorKrowch example: {example}")
 
 
-def _build_tensorkrowch_network(blueprint: GraphBlueprint) -> tuple[Any, list[Any]]:
+def _build_tensorkrowch_network(
+    blueprint: GraphBlueprint,
+    *,
+    materialize_tensors: bool = True,
+) -> tuple[Any, list[Any]]:
     import tensorkrowch as tk
+
+    torch = None
+    if materialize_tensors:
+        import torch as _torch
+
+        torch = _torch
 
     network = tk.TensorNetwork(name="demo")
     nodes: dict[str, Any] = {}
     ordered_nodes: list[Any] = []
     for node in blueprint.nodes:
         shape = tuple(axis_dimension(axis) for axis in node.axes)
-        created = tk.Node(shape=shape, axes_names=node.axes, name=node.name, network=network)
+        if torch is None:
+            created = tk.Node(shape=shape, axes_names=node.axes, name=node.name, network=network)
+        else:
+            created = tk.Node(
+                tensor=build_demo_torch_tensor(name=node.name, shape=shape, dtype=torch.float32),
+                axes_names=node.axes,
+                name=node.name,
+                network=network,
+            )
         nodes[node.name] = created
         ordered_nodes.append(created)
     for bond in blueprint.bonds:
@@ -88,6 +108,15 @@ def _build_tensorkrowch_network(blueprint: GraphBlueprint) -> tuple[Any, list[An
     return network, ordered_nodes
 
 
+def _contract_small_chain(nodes: list[Any]) -> Any:
+    if len(nodes) < 2:
+        raise ValueError("Small contracted demos need at least two tensors.")
+    current = nodes[0]
+    for next_node in nodes[1:]:
+        current = current @ next_node
+    return current
+
+
 def _scheme_steps(example: str, blueprint: GraphBlueprint) -> tuple[tuple[str, ...], ...] | None:
     if example in {"mps", "mpo", "ladder", "peps", "cubic_peps"}:
         return cumulative_prefix_contraction_scheme(graph_tensor_names(blueprint))
@@ -96,15 +125,30 @@ def _scheme_steps(example: str, blueprint: GraphBlueprint) -> tuple[tuple[str, .
 
 def _build_example(args: ExampleCliArgs, definition: ExampleDefinition) -> BuiltExample:
     blueprint = _build_blueprint(definition.name, args)
-    network, nodes = _build_tensorkrowch_network(blueprint)
-    network_input: Any = nodes if args.from_list else network
+    use_auto_contracted_demo = args.contracted and definition.name in _SMALL_CONTRACTED_EXAMPLES
+    network, nodes = _build_tensorkrowch_network(
+        blueprint,
+        materialize_tensors=True,
+    )
+    if use_auto_contracted_demo:
+        _contract_small_chain(nodes)
+        network_input: Any = network
+        footer = (
+            "Small native TensorKrowch demo contracted in advance to expose "
+            "auto-recovered contraction history."
+        )
+        scheme_steps_by_name = None
+    else:
+        network_input = nodes if args.from_list else network
+        footer = "Render the native TensorNetwork or a list of TensorKrowch nodes."
+        scheme_steps_by_name = _scheme_steps(definition.name, blueprint)
     return BuiltExample(
         network=network_input,
         plot_engine="tensorkrowch",
         title=f"TensorKrowch · {definition.name.upper()} · {args.view.upper()}",
         subtitle=TAGLINES.get(definition.name),
-        footer="Render the native TensorNetwork or a list of TensorKrowch nodes.",
-        scheme_steps_by_name=_scheme_steps(definition.name, blueprint),
+        footer=footer,
+        scheme_steps_by_name=scheme_steps_by_name,
     )
 
 

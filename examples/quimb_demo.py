@@ -34,6 +34,7 @@ from demo_cli import (
     render_demo_tensor_network,
     resolve_example_definition,
 )
+from demo_tensors import build_demo_numpy_tensor
 
 TAGLINES: dict[str, str] = {
     "cubic_peps": "Cubic lattice encoded through shared index names.",
@@ -74,7 +75,6 @@ def _build_blueprint(example: str, args: ExampleCliArgs) -> GraphBlueprint:
 
 
 def _build_quimb_network(blueprint: GraphBlueprint) -> tuple[Any, list[Any]]:
-    import numpy as np
     import quimb.tensor as qtn
 
     bonded_axes: dict[tuple[str, str], str] = {}
@@ -91,7 +91,7 @@ def _build_quimb_network(blueprint: GraphBlueprint) -> tuple[Any, list[Any]]:
         shape = tuple(axis_dimension(axis) for axis in node.axes)
         tensors.append(
             qtn.Tensor(
-                data=np.ones(shape, dtype=float),
+                data=build_demo_numpy_tensor(name=node.name, shape=shape, dtype=float),
                 inds=inds,
                 tags={node.name},
             )

@@ -24,6 +24,7 @@ from demo_cli import (
     render_demo_tensor_network,
     resolve_example_definition,
 )
+from demo_tensors import build_demo_torch_tensor
 
 TAGLINES: dict[str, str] = {
     "batch": "Hadamard-style batch contraction with kept indices.",
@@ -87,15 +88,14 @@ def _site_bond_dims(n_sites: int) -> list[int]:
 
 def _build_mps_auto(n_sites: int) -> Any:
     ensure_minimum("n_sites", n_sites)
-    torch = _torch()
     EinsumTrace, einsum, _einsum_trace_step, _pair_tensor = _einsum_api()
     trace = EinsumTrace()
     phys_dim = 2
     bond_dims = _site_bond_dims(n_sites)
 
     if n_sites == 1:
-        a0 = torch.ones((phys_dim,))
-        x0 = torch.ones((phys_dim,))
+        a0 = build_demo_torch_tensor(name="A0", shape=(phys_dim,))
+        x0 = build_demo_torch_tensor(name="x0", shape=(phys_dim,))
         trace.bind("A0", a0)
         trace.bind("x0", x0)
         _keep_trace_tensors_alive(trace, a0, x0)
@@ -103,16 +103,19 @@ def _build_mps_auto(n_sites: int) -> Any:
         _keep_trace_tensors_alive(trace, result)
         return trace
 
-    a0 = torch.ones((phys_dim, bond_dims[0]))
-    x0 = torch.ones((phys_dim,))
+    a0 = build_demo_torch_tensor(name="A0", shape=(phys_dim, bond_dims[0]))
+    x0 = build_demo_torch_tensor(name="x0", shape=(phys_dim,))
     trace.bind("A0", a0)
     trace.bind("x0", x0)
     _keep_trace_tensors_alive(trace, a0, x0)
     current = einsum("pa,p->a", a0, x0, trace=trace, backend="torch")
     _keep_trace_tensors_alive(trace, current)
     for index in range(1, n_sites - 1):
-        tensor = torch.ones((bond_dims[index - 1], phys_dim, bond_dims[index]))
-        vector = torch.ones((phys_dim,))
+        tensor = build_demo_torch_tensor(
+            name=f"A{index}",
+            shape=(bond_dims[index - 1], phys_dim, bond_dims[index]),
+        )
+        vector = build_demo_torch_tensor(name=f"x{index}", shape=(phys_dim,))
         trace.bind(f"A{index}", tensor)
         trace.bind(f"x{index}", vector)
         _keep_trace_tensors_alive(trace, tensor, vector)
@@ -125,8 +128,8 @@ def _build_mps_auto(n_sites: int) -> Any:
             backend="torch",
         )
         _keep_trace_tensors_alive(trace, current)
-    last = torch.ones((bond_dims[n_sites - 2], phys_dim))
-    last_vec = torch.ones((phys_dim,))
+    last = build_demo_torch_tensor(name=f"A{n_sites - 1}", shape=(bond_dims[n_sites - 2], phys_dim))
+    last_vec = build_demo_torch_tensor(name=f"x{n_sites - 1}", shape=(phys_dim,))
     trace.bind(f"A{n_sites - 1}", last)
     trace.bind(f"x{n_sites - 1}", last_vec)
     _keep_trace_tensors_alive(trace, last, last_vec)
@@ -183,16 +186,15 @@ def _build_mps_manual(n_sites: int) -> list[Any]:
 
 def _build_mpo_auto(n_sites: int) -> Any:
     ensure_minimum("n_sites", n_sites)
-    torch = _torch()
     EinsumTrace, einsum, _einsum_trace_step, _pair_tensor = _einsum_api()
     trace = EinsumTrace()
     phys_dim = 2
     bond_dims = _site_bond_dims(n_sites)
 
     if n_sites == 1:
-        w0 = torch.ones((phys_dim, phys_dim))
-        d0 = torch.ones((phys_dim,))
-        u0 = torch.ones((phys_dim,))
+        w0 = build_demo_torch_tensor(name="W0", shape=(phys_dim, phys_dim))
+        d0 = build_demo_torch_tensor(name="d0", shape=(phys_dim,))
+        u0 = build_demo_torch_tensor(name="u0", shape=(phys_dim,))
         trace.bind("W0", w0)
         trace.bind("d0", d0)
         trace.bind("u0", u0)
@@ -201,9 +203,9 @@ def _build_mpo_auto(n_sites: int) -> Any:
         _keep_trace_tensors_alive(trace, result)
         return trace
 
-    w0 = torch.ones((phys_dim, phys_dim, bond_dims[0]))
-    d0 = torch.ones((phys_dim,))
-    u0 = torch.ones((phys_dim,))
+    w0 = build_demo_torch_tensor(name="W0", shape=(phys_dim, phys_dim, bond_dims[0]))
+    d0 = build_demo_torch_tensor(name="d0", shape=(phys_dim,))
+    u0 = build_demo_torch_tensor(name="u0", shape=(phys_dim,))
     trace.bind("W0", w0)
     trace.bind("d0", d0)
     trace.bind("u0", u0)
@@ -211,9 +213,12 @@ def _build_mpo_auto(n_sites: int) -> Any:
     current = einsum("dub,d,u->b", w0, d0, u0, trace=trace, backend="torch")
     _keep_trace_tensors_alive(trace, current)
     for index in range(1, n_sites - 1):
-        tensor = torch.ones((bond_dims[index - 1], phys_dim, phys_dim, bond_dims[index]))
-        d_vec = torch.ones((phys_dim,))
-        u_vec = torch.ones((phys_dim,))
+        tensor = build_demo_torch_tensor(
+            name=f"W{index}",
+            shape=(bond_dims[index - 1], phys_dim, phys_dim, bond_dims[index]),
+        )
+        d_vec = build_demo_torch_tensor(name=f"d{index}", shape=(phys_dim,))
+        u_vec = build_demo_torch_tensor(name=f"u{index}", shape=(phys_dim,))
         trace.bind(f"W{index}", tensor)
         trace.bind(f"d{index}", d_vec)
         trace.bind(f"u{index}", u_vec)
@@ -228,9 +233,12 @@ def _build_mpo_auto(n_sites: int) -> Any:
             backend="torch",
         )
         _keep_trace_tensors_alive(trace, current)
-    last = torch.ones((bond_dims[n_sites - 2], phys_dim, phys_dim))
-    last_d = torch.ones((phys_dim,))
-    last_u = torch.ones((phys_dim,))
+    last = build_demo_torch_tensor(
+        name=f"W{n_sites - 1}",
+        shape=(bond_dims[n_sites - 2], phys_dim, phys_dim),
+    )
+    last_d = build_demo_torch_tensor(name=f"d{n_sites - 1}", shape=(phys_dim,))
+    last_u = build_demo_torch_tensor(name=f"u{n_sites - 1}", shape=(phys_dim,))
     trace.bind(f"W{n_sites - 1}", last)
     trace.bind(f"d{n_sites - 1}", last_d)
     trace.bind(f"u{n_sites - 1}", last_u)
@@ -311,13 +319,12 @@ def _build_mpo_manual(n_sites: int) -> list[Any]:
 
 
 def _build_disconnected_auto() -> Any:
-    torch = _torch()
     EinsumTrace, einsum, _einsum_trace_step, _pair_tensor = _einsum_api()
     trace = EinsumTrace()
-    a = torch.ones((5, 3))
-    x = torch.ones((3,))
-    b = torch.ones((7, 2))
-    y = torch.ones((2,))
+    a = build_demo_torch_tensor(name="A", shape=(5, 3))
+    x = build_demo_torch_tensor(name="x", shape=(3,))
+    b = build_demo_torch_tensor(name="B", shape=(7, 2))
+    y = build_demo_torch_tensor(name="y", shape=(2,))
     trace.bind("A", a)
     trace.bind("x", x)
     trace.bind("B", b)
@@ -392,14 +399,13 @@ def _build_peps_site_data(lx: int, ly: int) -> list[_PepsSiteData]:
 
 
 def _build_peps_auto(lx: int, ly: int) -> Any:
-    torch = _torch()
     EinsumTrace, einsum, _einsum_trace_step, _pair_tensor = _einsum_api()
     trace = EinsumTrace()
     sites = _build_peps_site_data(lx, ly)
     tensors: dict[str, Any] = {}
     for site in sites:
-        tensor = torch.ones(site.tensor_shape)
-        vector = torch.ones(site.vector_shape)
+        tensor = build_demo_torch_tensor(name=site.tensor_name, shape=site.tensor_shape)
+        vector = build_demo_torch_tensor(name=site.vector_name, shape=site.vector_shape)
         tensors[site.tensor_name] = tensor
         tensors[site.vector_name] = vector
         trace.bind(site.tensor_name, tensor)
@@ -499,8 +505,8 @@ def _build_pattern_trace(example: str) -> Any:
     EinsumTrace, einsum, _einsum_trace_step, _pair_tensor = _einsum_api()
     trace = EinsumTrace()
     if example == "ellipsis":
-        a = torch.ones((2, 3, 4))
-        b = torch.ones((2, 4, 5))
+        a = build_demo_torch_tensor(name="A", shape=(2, 3, 4))
+        b = build_demo_torch_tensor(name="B", shape=(2, 4, 5))
         trace.bind("A", a)
         trace.bind("B", b)
         _keep_trace_tensors_alive(trace, a, b)
@@ -508,8 +514,8 @@ def _build_pattern_trace(example: str) -> Any:
         _keep_trace_tensors_alive(trace, result)
         return trace
     if example == "batch":
-        u = torch.ones((3, 4))
-        v = torch.ones((3, 4))
+        u = build_demo_torch_tensor(name="U", shape=(3, 4))
+        v = build_demo_torch_tensor(name="V", shape=(3, 4))
         trace.bind("U", u)
         trace.bind("V", v)
         _keep_trace_tensors_alive(trace, u, v)
@@ -517,8 +523,8 @@ def _build_pattern_trace(example: str) -> Any:
         _keep_trace_tensors_alive(trace, result)
         return trace
     if example == "trace":
-        matrix = torch.ones((4, 4))
-        vector = torch.ones((4,))
+        matrix = build_demo_torch_tensor(name="M", shape=(4, 4))
+        vector = build_demo_torch_tensor(name="x", shape=(4,))
         trace.bind("M", matrix)
         trace.bind("x", vector)
         _keep_trace_tensors_alive(trace, matrix, vector)
@@ -526,9 +532,9 @@ def _build_pattern_trace(example: str) -> Any:
         _keep_trace_tensors_alive(trace, result)
         return trace
     if example == "ternary":
-        a = torch.ones((2, 3))
-        b = torch.ones((3, 4))
-        c = torch.ones((4, 5))
+        a = build_demo_torch_tensor(name="A", shape=(2, 3))
+        b = build_demo_torch_tensor(name="B", shape=(3, 4))
+        c = build_demo_torch_tensor(name="C", shape=(4, 5))
         trace.bind("A", a)
         trace.bind("B", b)
         trace.bind("C", c)
@@ -537,16 +543,16 @@ def _build_pattern_trace(example: str) -> Any:
         _keep_trace_tensors_alive(trace, result)
         return trace
     if example == "unary":
-        matrix = torch.ones((4, 4))
+        matrix = build_demo_torch_tensor(name="M", shape=(4, 4))
         trace.bind("M", matrix)
         _keep_trace_tensors_alive(trace, matrix)
         result = einsum("ii->i", matrix, trace=trace, backend="torch")
         _keep_trace_tensors_alive(trace, result)
         return trace
     if example == "nway":
-        t = torch.ones((3, 4, 5))
-        u = torch.ones((3, 4, 6))
-        v = torch.ones((5, 6, 7))
+        t = build_demo_torch_tensor(name="T", shape=(3, 4, 5))
+        u = build_demo_torch_tensor(name="U", shape=(3, 4, 6))
+        v = build_demo_torch_tensor(name="V", shape=(5, 6, 7))
         trace.bind("T", t)
         trace.bind("U", u)
         trace.bind("V", v)
@@ -557,8 +563,8 @@ def _build_pattern_trace(example: str) -> Any:
         _keep_trace_tensors_alive(trace, result)
         return trace
     if example == "implicit_out":
-        a = torch.ones((2, 3))
-        b = torch.ones((3,))
+        a = build_demo_torch_tensor(name="A", shape=(2, 3))
+        b = build_demo_torch_tensor(name="b", shape=(3,))
         out = torch.empty((2,))
         trace.bind("A", a)
         trace.bind("b", b)

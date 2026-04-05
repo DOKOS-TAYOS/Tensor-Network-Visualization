@@ -22,7 +22,10 @@ from tensor_network_viz import (
     pair_tensor,
     show_tensor_elements,
 )
-from tensor_network_viz._tensor_elements_data import _extract_einsum_playback_step_records
+from tensor_network_viz._tensor_elements_data import (
+    _extract_einsum_playback_step_records,
+    _extract_playback_step_records,
+)
 from tensor_network_viz._tensor_elements_support import (
     _HeatmapPayload,
     _HistogramPayload,
@@ -62,6 +65,19 @@ class DummyTensorKrowchNode:
 class DummyTensorKrowchNetwork:
     def __init__(self, nodes: list[DummyTensorKrowchNode]) -> None:
         self.nodes = nodes
+
+
+class DummyTensorKrowchContractedNetwork:
+    def __init__(
+        self,
+        *,
+        nodes: list[DummyTensorKrowchNode],
+        leaf_nodes: list[DummyTensorKrowchNode],
+        resultant_nodes: list[DummyTensorKrowchNode],
+    ) -> None:
+        self.nodes = nodes
+        self.leaf_nodes = leaf_nodes
+        self.resultant_nodes = resultant_nodes
 
 
 class DummyQuimbTensor:
@@ -874,6 +890,88 @@ def test_show_tensor_elements_rejects_shape_only_tensorkrowch_nodes() -> None:
 
     with pytest.raises(ValueError, match="materialized"):
         show_tensor_elements(network, show=False)
+
+
+def test_extract_playback_step_records_keeps_einsum_behavior() -> None:
+    trace = EinsumTrace()
+    left = np.arange(6, dtype=float).reshape(2, 3)
+    right = np.arange(15, dtype=float).reshape(3, 5)
+    trace.bind("A", left)
+    trace.bind("B", right)
+    result = einsum("ab,bc->ac", left, right, trace=trace, backend="numpy")
+    trace._test_keepalive = [left, right, result]  # type: ignore[attr-defined]
+
+    records = _extract_playback_step_records(trace)
+
+    assert records is not None
+    assert len(records) == 1
+    assert records[0].record is not None
+    assert records[0].result_name == "r0"
+
+
+def test_extract_playback_step_records_returns_none_for_tensorless_tensorkrowch_history() -> None:
+    left = DummyTensorKrowchNode(
+        name="A",
+        axes_names=("a", "b"),
+        tensor=np.ones((2, 3)),
+        shape=(2, 3),
+    )
+    right = DummyTensorKrowchNode(
+        name="B",
+        axes_names=("b", "c"),
+        tensor=np.ones((3, 5)),
+        shape=(3, 5),
+    )
+    result = DummyTensorKrowchNode(
+        name="contract_edges",
+        axes_names=("a", "c"),
+        tensor=None,
+        shape=(2, 5),
+    )
+    left.successors = {  # type: ignore[attr-defined]
+        "contract_edges": {
+            (left, right): type("S", (), {"node_ref": (left, right), "child": result})()
+        }
+    }
+    right.successors = {}  # type: ignore[attr-defined]
+    network = DummyTensorKrowchContractedNetwork(
+        nodes=[left, right, result],
+        leaf_nodes=[left, right],
+        resultant_nodes=[result],
+    )
+
+    records = _extract_playback_step_records(network)
+
+    assert records is None
+
+
+def test_extract_playback_step_records_supports_contracted_tensorkrowch_network() -> None:
+    tk = pytest.importorskip("tensorkrowch")
+    torch = pytest.importorskip("torch")
+
+    network = tk.TensorNetwork(name="demo")
+    left = tk.Node(
+        tensor=torch.arange(6, dtype=torch.float32).reshape(2, 3),
+        axes_names=("input", "bond"),
+        name="left",
+        network=network,
+    )
+    right = tk.Node(
+        tensor=torch.arange(15, dtype=torch.float32).reshape(3, 5),
+        axes_names=("bond", "output"),
+        name="right",
+        network=network,
+    )
+    left["bond"] ^ right["bond"]
+    _ = left @ right
+
+    records = _extract_playback_step_records(network)
+
+    assert records is not None
+    assert len(records) == 1
+    assert records[0].record is not None
+    assert records[0].record.engine == "tensorkrowch"
+    assert records[0].record.axis_names == ("input", "output")
 
 
 def test_show_tensor_elements_rejects_manual_pair_tensor_iterables() -> None:

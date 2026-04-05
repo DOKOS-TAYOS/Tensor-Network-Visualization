@@ -31,15 +31,14 @@ from .._matplotlib_state import (
 )
 from .._registry import _get_plotters
 from .._tensor_elements_data import (
-    _EinsumPlaybackStepRecord,
-    _extract_einsum_playback_step_records,
+    _extract_playback_step_records,
+    _PlaybackStepRecord,
 )
 from .._tensor_elements_support import _TensorRecord
 from .._typing import root_figure
 from .._ui_utils import _set_axes_visible, _set_figure_bottom_reserved, _style_control_tray_axes
 from ..config import EngineName, PlotConfig, ViewName
 from ..contraction_viewer import _MAIN_FIGURE_BOTTOM_RESERVED, _PLAYBACK_DETAILS_TOP
-from ..einsum_module.trace import EinsumTrace
 from ..tensor_elements import _show_tensor_records
 from ..tensor_elements_config import TensorElementsConfig
 from .state import InteractiveViewCache
@@ -112,12 +111,12 @@ class _LinkedTensorInspectorController:
     def __init__(
         self,
         *,
-        trace: EinsumTrace,
+        step_records: tuple[_PlaybackStepRecord, ...],
+        placeholder_engine: EngineName,
         on_closed: Callable[[], None],
     ) -> None:
-        self._step_records: tuple[_EinsumPlaybackStepRecord, ...] = (
-            _extract_einsum_playback_step_records(trace)
-        )
+        self._step_records = step_records
+        self._placeholder_engine = placeholder_engine
         self._on_closed = on_closed
         self._config = TensorElementsConfig()
         self._enabled: bool = False
@@ -180,7 +179,7 @@ class _LinkedTensorInspectorController:
         return _TensorRecord(
             array=np.zeros((1, 1), dtype=float),
             axis_names=(),
-            engine="einsum",
+            engine=self._placeholder_engine,
             name="Tensor inspector",
         )
 
@@ -297,7 +296,8 @@ class _InteractiveTensorFigureController:
         self.scheme_on: bool = bool(config.show_contraction_scheme)
         self.playback_on: bool = bool(config.contraction_playback)
         self.cost_hover_on: bool = bool(config.contraction_scheme_cost_hover)
-        self.tensor_inspector_available: bool = isinstance(network, EinsumTrace)
+        self._playback_step_records = _extract_playback_step_records(network)
+        self.tensor_inspector_available: bool = self._playback_step_records is not None
         self.tensor_inspector_on: bool = bool(
             config.contraction_tensor_inspector and self.tensor_inspector_available
         )
@@ -324,7 +324,8 @@ class _InteractiveTensorFigureController:
         self._initialized: bool = False
         if self.tensor_inspector_available:
             self._tensor_inspector = _LinkedTensorInspectorController(
-                trace=cast(EinsumTrace, network),
+                step_records=cast(tuple[_PlaybackStepRecord, ...], self._playback_step_records),
+                placeholder_engine=engine,
                 on_closed=self._on_tensor_inspector_closed,
             )
 

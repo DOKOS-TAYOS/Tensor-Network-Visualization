@@ -70,6 +70,7 @@ def _demo_args(
     playback: bool = False,
     hover_cost: bool = False,
     tensor_inspector: bool = False,
+    contracted: bool = False,
 ) -> argparse.Namespace:
     return argparse.Namespace(
         labels_nodes=True,
@@ -80,6 +81,7 @@ def _demo_args(
         playback=playback,
         hover_cost=hover_cost,
         tensor_inspector=tensor_inspector,
+        contracted=contracted,
     )
 
 
@@ -214,6 +216,7 @@ def test_run_demo_parser_defaults_match_cli_contract() -> None:
     assert args.playback is False
     assert args.hover_cost is False
     assert args.tensor_inspector is False
+    assert args.contracted is False
     assert args.from_scratch is False
     assert args.from_list is False
     assert args.save is None
@@ -224,3 +227,71 @@ def test_run_demo_parser_defaults_match_cli_contract() -> None:
     assert args.lz == 3
     assert args.mera_log2 == 3
     assert args.tree_depth == 4
+
+
+def test_run_demo_defaults_to_contracted_for_small_tensorkrowch_demo() -> None:
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_parser_default_tk")
+
+    args = module.parse_args(["tensorkrowch", "mps"])
+
+    assert args.engine == "tensorkrowch"
+    assert args.example == "mps"
+    assert args.contracted is True
+
+
+def test_run_demo_allows_disabling_default_contracted_mode() -> None:
+    module = _load_example_module(
+        Path("examples/run_demo.py"),
+        "run_demo_parser_default_tk_disabled",
+    )
+
+    args = module.parse_args(["tensorkrowch", "mps", "--no-contracted"])
+
+    assert args.engine == "tensorkrowch"
+    assert args.example == "mps"
+    assert args.contracted is False
+
+
+def test_run_demo_rejects_contracted_for_non_tensorkrowch_engine(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_contracted_non_tk")
+
+    with pytest.raises(SystemExit, match="2"):
+        module.main(["quimb", "mps", "--contracted"])
+
+    captured = capsys.readouterr()
+    assert "only supports --contracted for engine 'tensorkrowch'" in captured.err
+
+
+def test_run_demo_rejects_contracted_for_large_tensorkrowch_example(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_contracted_large_tk")
+
+    with pytest.raises(SystemExit, match="2"):
+        module.main(["tensorkrowch", "mps", "--contracted", "--n-sites", "7"])
+
+    captured = capsys.readouterr()
+    assert "--contracted is limited to small TensorKrowch demos" in captured.err
+
+
+def test_run_demo_accepts_contracted_for_six_site_tensorkrowch_demo() -> None:
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_contracted_six_tk")
+
+    args = module.parse_args(["tensorkrowch", "mps", "--contracted", "--n-sites", "6"])
+
+    assert args.engine == "tensorkrowch"
+    assert args.example == "mps"
+    assert args.contracted is True
+    assert args.n_sites == 6
+
+
+def test_run_demo_rejects_contracted_with_from_list(capsys: pytest.CaptureFixture[str]) -> None:
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_contracted_from_list")
+
+    with pytest.raises(SystemExit, match="2"):
+        module.main(["tensorkrowch", "mps", "--contracted", "--from-list"])
+
+    captured = capsys.readouterr()
+    assert "--contracted requires the native TensorKrowch network object" in captured.err

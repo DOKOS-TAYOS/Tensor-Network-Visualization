@@ -8,22 +8,23 @@ from .._core.graph import _ContractionStepMetrics
 from ._equation import _ParsedNaryEquation
 
 
-def metrics_for_parsed_step(
-    parsed: _ParsedNaryEquation,
-    operand_shapes: tuple[tuple[int, ...], ...],
+def metrics_for_labeled_operands(
     *,
+    operand_axes: tuple[tuple[str, ...], ...],
+    operand_shapes: tuple[tuple[int, ...], ...],
+    output_axes: tuple[str, ...],
     equation_snippet: str | None = None,
     operand_names: tuple[str, ...] | None = None,
 ) -> _ContractionStepMetrics:
-    """Return naive dense cost metadata for one einsum contraction step."""
-    if len(parsed.operand_axes) != len(operand_shapes):
+    """Return naive dense cost metadata for one labeled contraction step."""
+    if len(operand_axes) != len(operand_shapes):
         raise ValueError("operand_axes length must match operand_shapes length.")
     resolved_operand_names = tuple(operand_names or ())
     if resolved_operand_names and len(resolved_operand_names) != len(operand_shapes):
         raise ValueError("operand_names length must match operand_shapes length.")
 
     dim_by_label: dict[str, int] = {}
-    for axes, shape in zip(parsed.operand_axes, operand_shapes, strict=True):
+    for axes, shape in zip(operand_axes, operand_shapes, strict=True):
         if len(axes) != len(shape):
             raise ValueError("Each operand must have one shape entry per axis label.")
         for ch, d in zip(axes, shape, strict=True):
@@ -42,9 +43,9 @@ def metrics_for_parsed_step(
             else:
                 raise ValueError(f"Inconsistent dimension for label {ch!r}: {prev} vs {d_int}.")
 
-    label_order = _labels_in_first_occurrence_order(parsed)
+    label_order = _labels_in_first_occurrence_order_from_axes(operand_axes)
     label_dims = tuple((ch, dim_by_label[ch]) for ch in label_order)
-    output_set = set(parsed.output_axes)
+    output_set = set(output_axes)
     contracted_labels = tuple(ch for ch in label_order if ch not in output_set)
 
     prod = 1
@@ -59,9 +60,26 @@ def metrics_for_parsed_step(
         equation_snippet=equation_snippet,
         operand_names=resolved_operand_names,
         operand_shapes=tuple(tuple(int(dim) for dim in shape) for shape in operand_shapes),
-        output_labels=tuple(parsed.output_axes),
+        output_labels=tuple(output_axes),
         contracted_labels=contracted_labels,
         label_order=label_order,
+    )
+
+
+def metrics_for_parsed_step(
+    parsed: _ParsedNaryEquation,
+    operand_shapes: tuple[tuple[int, ...], ...],
+    *,
+    equation_snippet: str | None = None,
+    operand_names: tuple[str, ...] | None = None,
+) -> _ContractionStepMetrics:
+    """Return naive dense cost metadata for one einsum contraction step."""
+    return metrics_for_labeled_operands(
+        operand_axes=parsed.operand_axes,
+        operand_shapes=operand_shapes,
+        output_axes=parsed.output_axes,
+        equation_snippet=equation_snippet,
+        operand_names=operand_names,
     )
 
 
@@ -97,10 +115,12 @@ def format_contraction_step_tooltip(m: _ContractionStepMetrics) -> str:
     return format_contraction_step_panel_text(m)
 
 
-def _labels_in_first_occurrence_order(parsed: _ParsedNaryEquation) -> tuple[str, ...]:
+def _labels_in_first_occurrence_order_from_axes(
+    operand_axes: tuple[tuple[str, ...], ...],
+) -> tuple[str, ...]:
     seen: set[str] = set()
     ordered: list[str] = []
-    for axes in parsed.operand_axes:
+    for axes in operand_axes:
         for ch in axes:
             if ch in seen:
                 continue

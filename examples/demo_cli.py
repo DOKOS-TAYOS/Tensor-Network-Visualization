@@ -33,6 +33,7 @@ class ExampleCliArgs:
     playback: bool
     hover_cost: bool
     tensor_inspector: bool
+    contracted: bool | None
     from_scratch: bool
     from_list: bool
     save: Path | None
@@ -173,7 +174,20 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
         parser,
         name="tensor-inspector",
         default=False,
-        help_text="Open the linked tensor inspector for EinsumTrace playback examples.",
+        help_text=(
+            "Open the linked tensor inspector for EinsumTrace playback examples and for "
+            "contracted TensorKrowch playback when the result tensors can be recovered."
+        ),
+    )
+    add_bool_flag(
+        parser,
+        name="contracted",
+        default=None,
+        help_text=(
+            "For small TensorKrowch demos, contract the native network first so the "
+            "auto-recovered contraction history can be visualized. Supported small "
+            "TensorKrowch demos enable this by default; use --no-contracted to disable it."
+        ),
     )
     add_bool_flag(
         parser,
@@ -243,6 +257,7 @@ def namespace_to_cli_args(namespace: argparse.Namespace) -> ExampleCliArgs:
         playback=bool(namespace.playback),
         hover_cost=bool(namespace.hover_cost),
         tensor_inspector=bool(namespace.tensor_inspector),
+        contracted=namespace.contracted,
         from_scratch=bool(namespace.from_scratch),
         from_list=bool(namespace.from_list),
         save=namespace.save,
