@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
+from ..._interaction.scheme import _ContractionControls, _ContractionSchemeBundle
 from ..._matplotlib_state import (
     clear_contraction_controls,
     clear_scene,
@@ -10,11 +11,7 @@ from ..._matplotlib_state import (
     set_scene,
 )
 from ...config import PlotConfig
-from ...contraction_viewer import (
-    _ContractionControls,
-    _ContractionSchemeBundle,
-    attach_playback_to_tensor_network_figure,
-)
+from ...contraction_viewer import attach_playback_to_tensor_network_figure
 from ...einsum_module.contraction_cost import format_contraction_step_panel_text
 from ..contractions import _ContractionGroups
 from ..graph import _GraphData
