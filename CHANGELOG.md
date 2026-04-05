@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.2] — 2026-04-05
+
 ### Added
 - **Tensor element diagnostics:** `show_tensor_elements` now supports `log_magnitude`, `sparsity`, and `nan_inf` views, richer `data` summaries with per-axis stats plus top-k coordinates, optional robust/shared color scaling, and outlier overlays for continuous heatmaps.
 - **Contraction-progress visualization:** Tensors can be inspected visually as contraction steps unfold (step-by-step alongside the network or scheme view).
@@ -17,7 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 - **Tensor inspection docs:** Refreshed the README, guide, backend examples, and demo configuration to cover the new tensor-element diagnostics and scaling controls.
-
 
 ## [1.5.1] — 2026-04-04
 
@@ -112,6 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[1.5.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.1...v1.4.2
