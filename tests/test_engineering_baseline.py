@@ -190,3 +190,10 @@ def test_render_benchmark_script_covers_cache_and_control_scenarios() -> None:
     assert "tensor-list" in content
     assert "interactive-controls" in content
     assert "static-render" in content
+
+
+def test_tensorkrowch_integration_test_skips_when_torch_is_missing() -> None:
+    content = Path("tests/test_integration_tensorkrowch.py").read_text(encoding="utf-8")
+
+    assert 'torch = pytest.importorskip("torch")' in content
+    assert "\nimport torch\n" not in content

@@ -3,7 +3,6 @@ import matplotlib
 matplotlib.use("Agg")
 
 import pytest
-import torch
 from matplotlib.patches import FancyBboxPatch
 
 from tensor_network_viz import PlotConfig, show_tensor_network
@@ -13,6 +12,7 @@ from tensor_network_viz.tensorkrowch import (
 )
 from tensor_network_viz.tensorkrowch.graph import _build_graph as _build_tensorkrowch_graph
 
+torch = pytest.importorskip("torch")
 tk = pytest.importorskip("tensorkrowch")
 
 
