@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from contextlib import suppress
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any, cast
 
-import matplotlib.pyplot as plt
-import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.backend_bases import NonGuiException
 from matplotlib.figure import Figure
 from matplotlib.widgets import CheckButtons, RadioButtons
 from mpl_toolkits.mplot3d.axes3d import Axes3D
@@ -24,6 +20,7 @@ from .._interactive_scene import (
     _set_artist_visible,
     _set_scene_node_mode,
 )
+from .._logging import package_logger
 from .._matplotlib_state import (
     get_contraction_controls,
     set_active_axes,
@@ -34,14 +31,12 @@ from .._tensor_elements_data import (
     _extract_playback_step_records,
     _PlaybackStepRecord,
 )
-from .._tensor_elements_support import _TensorRecord
 from .._typing import root_figure
 from .._ui_utils import _set_axes_visible, _set_figure_bottom_reserved, _style_control_tray_axes
 from ..config import EngineName, PlotConfig, ViewName
 from ..contraction_viewer import _MAIN_FIGURE_BOTTOM_RESERVED, _PLAYBACK_DETAILS_TOP
-from ..tensor_elements import _show_tensor_records
-from ..tensor_elements_config import TensorElementsConfig
 from .state import InteractiveViewCache
+from .tensor_inspector import _LinkedTensorInspectorController
 
 RenderedAxes = Axes | Axes3D
 
@@ -86,186 +81,6 @@ _TOGGLE_INDEX_TENSOR_LABELS: int = 2
 _TOGGLE_INDEX_EDGE_LABELS: int = 3
 
 
-def _reveal_auxiliary_figure(figure: Figure) -> None:
-    manager = getattr(figure.canvas, "manager", None)
-    manager_show = getattr(manager, "show", None)
-    if callable(manager_show):
-        with suppress(AttributeError, NonGuiException, RuntimeError, TypeError, ValueError):
-            manager_show()
-    else:
-        figure_show = getattr(figure, "show", None)
-        if callable(figure_show):
-            with suppress(AttributeError, NonGuiException, RuntimeError, TypeError, ValueError):
-                figure_show()
-    draw_idle = getattr(figure.canvas, "draw_idle", None)
-    if callable(draw_idle):
-        with suppress(AttributeError, RuntimeError, TypeError, ValueError):
-            draw_idle()
-    flush_events = getattr(figure.canvas, "flush_events", None)
-    if callable(flush_events):
-        with suppress(AttributeError, RuntimeError, TypeError, ValueError):
-            flush_events()
-
-
-class _LinkedTensorInspectorController:
-    def __init__(
-        self,
-        *,
-        step_records: tuple[_PlaybackStepRecord, ...],
-        placeholder_engine: EngineName,
-        on_closed: Callable[[], None],
-    ) -> None:
-        self._step_records = step_records
-        self._placeholder_engine = placeholder_engine
-        self._on_closed = on_closed
-        self._config = TensorElementsConfig()
-        self._enabled: bool = False
-        self._viewer: Any = None
-        self._figure: Figure | None = None
-        self._elements_controller: Any = None
-        self._saved_mode: str | None = None
-        self._closing_programmatically: bool = False
-        self._close_cid: int | None = None
-
-    @property
-    def is_enabled(self) -> bool:
-        return self._enabled
-
-    def bind_viewer(self, viewer: Any) -> None:
-        if self._viewer is viewer:
-            if self._enabled and self._viewer is not None:
-                self._viewer.add_step_changed_callback(
-                    self._sync_to_step,
-                    call_immediately=True,
-                )
-            return
-        if self._viewer is not None:
-            self._viewer.remove_step_changed_callback(self._sync_to_step)
-        self._viewer = viewer
-        if self._viewer is not None:
-            self._viewer.add_step_changed_callback(
-                self._sync_to_step,
-                call_immediately=self._enabled,
-            )
-
-    def set_enabled(self, enabled: bool, *, reveal: bool = False) -> None:
-        target = bool(enabled)
-        if target == self._enabled:
-            if target and reveal and self._figure is not None:
-                _reveal_auxiliary_figure(self._figure)
-            if target and self._viewer is not None:
-                self._sync_to_step(int(self._viewer.current_step))
-            return
-        self._enabled = target
-        if not target:
-            self._close_figure()
-            return
-        self._ensure_figure()
-        if reveal and self._figure is not None:
-            _reveal_auxiliary_figure(self._figure)
-        if self._viewer is not None:
-            self._sync_to_step(int(self._viewer.current_step))
-        else:
-            self._render_placeholder("No contraction selected yet.")
-
-    def close_from_owner(self) -> None:
-        self._enabled = False
-        if self._viewer is not None:
-            self._viewer.remove_step_changed_callback(self._sync_to_step)
-            self._viewer = None
-        self._close_figure()
-
-    def _placeholder_record(self) -> _TensorRecord:
-        return _TensorRecord(
-            array=np.zeros((1, 1), dtype=float),
-            axis_names=(),
-            engine=self._placeholder_engine,
-            name="Tensor inspector",
-        )
-
-    def _ensure_figure(self) -> None:
-        if self._figure is not None:
-            return
-        initial_step = int(self._viewer.current_step) if self._viewer is not None else 0
-        record = self._record_for_step(initial_step)
-        if record is None:
-            record = self._placeholder_record()
-        figure, _ax, controller = _show_tensor_records(
-            [record],
-            config=self._config,
-            ax=None,
-            show_controls=True,
-            show=False,
-        )
-        self._figure = figure
-        self._elements_controller = controller
-        if self._saved_mode is not None:
-            with suppress(ValueError):
-                controller.set_mode(self._saved_mode, redraw=False)
-        self._close_cid = figure.canvas.mpl_connect("close_event", self._on_figure_closed)
-
-    def _record_for_step(self, step: int) -> _TensorRecord | None:
-        if step <= 0:
-            return None
-        index = step - 1
-        if index < 0 or index >= len(self._step_records):
-            return None
-        return self._step_records[index].record
-
-    def _render_placeholder(self, text: str) -> None:
-        if self._elements_controller is None:
-            return
-        self._elements_controller.render_placeholder(text)
-
-    def _sync_to_step(self, step: int) -> None:
-        if not self._enabled:
-            return
-        self._ensure_figure()
-        if self._elements_controller is None:
-            return
-        if step <= 0:
-            self._render_placeholder("No contraction selected yet.")
-            return
-        index = step - 1
-        if index < 0 or index >= len(self._step_records):
-            self._render_placeholder(f"Tensor for step {step} is not available.")
-            return
-        step_record = self._step_records[index]
-        if step_record.record is None:
-            self._render_placeholder(f"Tensor for step {step} is not available.")
-            return
-        self._elements_controller.set_single_record(step_record.record)
-        self._saved_mode = str(self._elements_controller.selected_mode)
-
-    def _close_figure(self) -> None:
-        if self._elements_controller is not None:
-            self._saved_mode = str(self._elements_controller.selected_mode)
-        figure = self._figure
-        if figure is None:
-            self._elements_controller = None
-            self._close_cid = None
-            return
-        if self._close_cid is not None:
-            figure.canvas.mpl_disconnect(self._close_cid)
-        self._closing_programmatically = True
-        self._figure = None
-        self._elements_controller = None
-        self._close_cid = None
-        plt.close(figure)
-        self._closing_programmatically = False
-
-    def _on_figure_closed(self, _event: Any) -> None:
-        if self._elements_controller is not None:
-            self._saved_mode = str(self._elements_controller.selected_mode)
-        self._figure = None
-        self._elements_controller = None
-        self._close_cid = None
-        if self._closing_programmatically:
-            return
-        self._enabled = False
-        self._on_closed()
-
-
 def _interactive_checkbox_bounds(
     *,
     include_scheme_toggles: bool,
@@ -288,6 +103,11 @@ class _InteractiveTensorFigureController:
         self.network = network
         self.engine = engine
         self.config = config
+        package_logger.debug(
+            "Initializing interactive tensor figure controller engine=%s initial_view=%s.",
+            engine,
+            initial_view,
+        )
         self.current_view: ViewName = initial_view
         self.hover_on: bool = bool(config.hover_labels)
         self.nodes_on: bool = bool(config.show_nodes)
@@ -644,6 +464,11 @@ class _InteractiveTensorFigureController:
     def set_view(self, view: ViewName) -> None:
         if view == self.current_view:
             return
+        package_logger.debug(
+            "Switching interactive tensor view from %s to %s.",
+            self.current_view,
+            view,
+        )
         if self._radio is not None and self._radio.value_selected != view:
             self._callback_guard = True
             try:
@@ -666,21 +491,25 @@ class _InteractiveTensorFigureController:
 
     def set_hover_enabled(self, enabled: bool) -> None:
         self.hover_on = bool(enabled)
+        package_logger.debug("Interactive hover enabled=%s.", self.hover_on)
         self._sync_checkbuttons()
         self._apply_scene_state(self.current_scene)
 
     def set_nodes_enabled(self, enabled: bool) -> None:
         self.nodes_on = bool(enabled)
+        package_logger.debug("Interactive node visibility enabled=%s.", self.nodes_on)
         self._sync_checkbuttons()
         self._apply_scene_state(self.current_scene)
 
     def set_tensor_labels_enabled(self, enabled: bool) -> None:
         self.tensor_labels_on = bool(enabled)
+        package_logger.debug("Interactive tensor labels enabled=%s.", self.tensor_labels_on)
         self._sync_checkbuttons()
         self._apply_scene_state(self.current_scene)
 
     def set_edge_labels_enabled(self, enabled: bool) -> None:
         self.edge_labels_on = bool(enabled)
+        package_logger.debug("Interactive edge labels enabled=%s.", self.edge_labels_on)
         self._sync_checkbuttons()
         self._apply_scene_state(self.current_scene)
 

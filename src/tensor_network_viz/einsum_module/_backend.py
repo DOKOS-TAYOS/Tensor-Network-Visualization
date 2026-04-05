@@ -6,28 +6,38 @@ import importlib
 import weakref
 from typing import Any
 
+from .._logging import package_logger
+from ..exceptions import (
+    MissingOptionalDependencyError,
+    UnsupportedEngineError,
+    VisualizationTypeError,
+)
+
 
 def _load_backend_einsum(backend: str) -> Any:
+    package_logger.debug("Resolving einsum backend=%r.", backend)
     if backend == "torch":
         try:
             torch = importlib.import_module("torch")
         except ImportError as exc:
-            raise ImportError("torch is required for backend='torch'.") from exc
+            raise MissingOptionalDependencyError("torch is required for backend='torch'.") from exc
         return torch.einsum
     if backend == "numpy":
         try:
             np = importlib.import_module("numpy")
         except ImportError as exc:
-            raise ImportError("numpy is required for backend='numpy'.") from exc
+            raise MissingOptionalDependencyError("numpy is required for backend='numpy'.") from exc
         return np.einsum
-    raise ValueError(f"Unsupported einsum backend: {backend}")
+    raise UnsupportedEngineError(f"Unsupported einsum backend: {backend}")
 
 
 def _make_weakref(tensor: Any) -> weakref.ReferenceType[Any]:
     try:
         return weakref.ref(tensor)
     except TypeError as exc:
-        raise TypeError("Traced einsum operands must support weak references.") from exc
+        raise VisualizationTypeError(
+            "Traced einsum operands must support weak references."
+        ) from exc
 
 
 def _shape_tuple(tensor: Any) -> tuple[int, ...] | None:

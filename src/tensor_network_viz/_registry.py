@@ -10,7 +10,9 @@ from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from ._engine_specs import ENGINE_MODULE_MAP
+from ._logging import package_logger
 from .config import EngineName, PlotConfig
+from .exceptions import UnsupportedEngineError, VisualizationTypeError
 
 
 class _Plot2D(Protocol):
@@ -48,11 +50,12 @@ def _get_plotters(engine: EngineName) -> tuple[_Plot2D, _Plot3D]:
     try:
         module_path, name_2d, name_3d = ENGINE_MODULE_MAP[engine]
     except KeyError as exc:
-        raise ValueError(f"Unsupported tensor network engine: {engine}") from exc
+        raise UnsupportedEngineError(f"Unsupported tensor network engine: {engine}") from exc
 
+    package_logger.debug("Loading plotters for engine='%s' from module='%s'.", engine, module_path)
     module = importlib.import_module(module_path)
     plot_2d = getattr(module, name_2d)
     plot_3d = getattr(module, name_3d)
     if not callable(plot_2d) or not callable(plot_3d):
-        raise TypeError(f"Engine {engine!r} does not expose callable plotters.")
+        raise VisualizationTypeError(f"Engine {engine!r} does not expose callable plotters.")
     return cast(_Plot2D, plot_2d), cast(_Plot3D, plot_3d)

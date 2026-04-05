@@ -31,3 +31,14 @@ def test_ci_workflow_covers_python_3_13_for_packaging() -> None:
     content = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert 'python-version: ["3.12", "3.13"]' in content
+
+
+def test_ci_workflow_locks_windows_package_smoke_commands() -> None:
+    content = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "Create wheel test venv" in content
+    assert "Create sdist test venv" in content
+    assert ".wheel-venv\\Scripts\\python -m pip install" in content
+    assert ".sdist-venv\\Scripts\\python -m pip install" in content
+    assert "Smoke import and render (Windows)" in content
+    assert "Smoke sdist import and render (Windows)" in content

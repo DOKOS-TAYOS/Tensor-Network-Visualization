@@ -49,6 +49,24 @@ With the project venv (Windows):
 
 Add tests for new features or bug fixes. All tests must pass before opening a PR.
 
+Preferred full verification flow from the project `.venv`:
+
+```powershell
+.\.venv\Scripts\python scripts\verify.py quality
+.\.venv\Scripts\python scripts\verify.py tests
+.\.venv\Scripts\python scripts\verify.py smoke
+.\.venv\Scripts\python scripts\verify.py package
+```
+
+On Linux/macOS with the venv activated:
+
+```bash
+python scripts/verify.py quality
+python scripts/verify.py tests
+python scripts/verify.py smoke
+python scripts/verify.py package
+```
+
 ### Optional: focused smoke and performance runs
 
 Pytest markers are available for the render-specific regression checks:
@@ -149,8 +167,17 @@ python scripts/verify.py
 - **Target:** Python 3.11+
 - **Ruff rules:** E, F, I, B, UP, C4, SIM
 - **Typing:** Use type hints on public functions and modules; the codebase is `py.typed`
+- **Exceptions:** prefer `tensor_network_viz.exceptions` classes at public boundaries instead of raw `ValueError` / `ImportError` when you are surfacing user-facing library errors
+- **Logging:** use the `tensor_network_viz` logger; never call `logging.basicConfig()` from library code
 
 Run `python scripts/verify.py` before committing. If you prefer, you can still run `ruff`, `pyright`, and `pytest` individually.
+
+When you finish a Python task locally, run:
+
+```powershell
+.\.venv\Scripts\python -m ruff check . --fix
+.\.venv\Scripts\python -m ruff format .
+```
 
 ## Opening Useful Issues
 
@@ -210,6 +237,8 @@ Before opening a pull request, confirm:
 - `ruff check .` and `ruff format .` pass
 - `pyright` passes
 - `pytest` passes
+- `scripts/verify.py smoke` passes
+- `scripts/verify.py package` passes
 - New code has type hints and tests where appropriate
 - Documentation and examples are updated if behavior changed
 - PR description explains the change and links related issues

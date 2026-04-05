@@ -45,6 +45,29 @@ python -m pip install tensor-network-visualization
 
 Base dependencies are only `numpy`, `matplotlib`, and `networkx`.
 
+## Errors and Logging
+
+Public entry points now raise package-specific exceptions while remaining compatible with the
+built-in exception families they refine:
+
+- `VisualizationInputError`: unsupported or ambiguous network input.
+- `AxisConfigurationError`: incompatible `ax` / `view` combinations.
+- `UnsupportedEngineError`: unknown engine or backend name.
+- `TensorDataError`: unsupported or missing tensor data for `show_tensor_elements(...)`.
+- `MissingOptionalDependencyError`: missing optional backend dependency.
+
+All of them inherit from `TensorNetworkVizError`.
+
+The package logger name is `tensor_network_viz`. It installs a `logging.NullHandler()` by default,
+so importing the library does not change your application's logging configuration.
+
+```python
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logging.getLogger("tensor_network_viz").setLevel(logging.DEBUG)
+```
+
 ### Optional extras
 
 | Need | Install |
@@ -393,6 +416,7 @@ python examples/tensor_elements_demo.py
 | Hover tooltips do nothing | Use an interactive Matplotlib backend; hover is not useful for PNG-only runs. |
 | Big graphs are slow | Set `tensor_label_refinement="never"`, reduce `layout_iterations`, or pass `positions`. |
 | `Unsupported tensor network engine` | Install the matching extra or pass the correct backend object. |
+| `AxisConfigurationError` when passing `ax` | Use a 2D axis for `view="2d"`, a 3D axis for `view="3d"`, and only pass `ax` to `show_tensor_elements(...)` for a single tensor. |
 | `show_tensor_elements(...)` fails on TensorKrowch nodes | Materialize the node tensors first; shape-only nodes do not expose element values. |
 | `show_tensor_elements(...)` fails on manual `pair_tensor(...)` lists | Use an `EinsumTrace` with live tensors instead; manual trace steps only describe contractions. |
 | Blank / duplicate Jupyter figure | Assign `fig, ax = show_tensor_network(...)` instead of leaving the tuple as the last line. |
@@ -420,4 +444,13 @@ Run the project checks:
 
 ```powershell
 .\.venv\Scripts\python scripts\verify.py
+```
+
+Useful slices:
+
+```powershell
+.\.venv\Scripts\python scripts\verify.py quality
+.\.venv\Scripts\python scripts\verify.py tests
+.\.venv\Scripts\python scripts\verify.py smoke
+.\.venv\Scripts\python scripts\verify.py package
 ```
