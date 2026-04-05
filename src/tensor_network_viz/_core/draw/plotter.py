@@ -9,7 +9,7 @@ from matplotlib import patheffects
 from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection, PatchCollection, PathCollection
 from matplotlib.patches import Circle
-from mpl_toolkits.mplot3d.art3d import Path3DCollection, Poly3DCollection
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from ...config import PlotConfig
 from ..graph import (

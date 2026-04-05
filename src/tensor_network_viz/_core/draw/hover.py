@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.collections import PatchCollection
+from matplotlib.collections import PatchCollection, PathCollection
 from mpl_toolkits.mplot3d import proj3d
 
 from ..._matplotlib_state import (
@@ -35,7 +35,9 @@ class _RenderHoverState:
     ax: Any
     figure: FigureLike
     dimensions: int
-    node_patch_coll: PatchCollection | Sequence[PatchCollection] | None
+    node_patch_coll: (
+        PatchCollection | PathCollection | Sequence[PatchCollection | PathCollection] | None
+    )
     visible_node_ids: tuple[int, ...]
     tensor_hover: dict[int, tuple[str, float]]
     edge_hover: tuple[tuple[np.ndarray, str], ...]
@@ -112,7 +114,9 @@ def _disconnect_tensor_network_hover(fig: FigureLike) -> None:
 def _register_2d_hover_labels(
     ax: Axes,
     *,
-    node_patch_coll: PatchCollection | Sequence[PatchCollection] | None,
+    node_patch_coll: (
+        PatchCollection | PathCollection | Sequence[PatchCollection | PathCollection] | None
+    ),
     visible_node_ids: list[int],
     tensor_hover: dict[int, tuple[str, float]],
     edge_hover: list[tuple[np.ndarray, str]],
@@ -161,7 +165,7 @@ def _register_2d_hover_labels(
         fs_hint = 10.0
 
         if tensor_hover and node_patch_coll is not None:
-            if isinstance(node_patch_coll, PatchCollection):
+            if isinstance(node_patch_coll, (PatchCollection, PathCollection)):
                 hit, props = node_patch_coll.contains(event)
                 if hit:
                     inds = props.get("ind")

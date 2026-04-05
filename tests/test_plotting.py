@@ -26,13 +26,13 @@ import tensor_network_viz.viewer as viewer_module
 from plotting_helpers import (
     line_collection_segment_count,
     line_collection_segments,
+    patch_collection_circle_count,
     path3d_collection_facecolors,
     path3d_collection_point_count,
     path3d_collection_sizes,
     path_collection_point_count,
     point_collection_facecolors,
     point_collection_sizes,
-    patch_collection_circle_count,
     poly3d_node_collection_count,
 )
 from tensor_network_viz import EinsumTrace, PlotConfig, einsum, show_tensor_network
@@ -103,6 +103,11 @@ def _widget_center_event(fig: matplotlib.figure.Figure, artist: object) -> Mouse
 def _click_checkbutton(checkbuttons: Any, index: int) -> None:
     event = _widget_center_event(checkbuttons.ax.figure, checkbuttons.labels[index])
     checkbuttons._clicked(event)
+
+
+def _checkbutton_index(checkbuttons: Any, label_text: str) -> int:
+    labels = [label.get_text() for label in checkbuttons.labels]
+    return labels.index(label_text)
 
 
 def _fire_close_event(fig: matplotlib.figure.Figure) -> None:
@@ -450,6 +455,29 @@ def test_show_tensor_network_default_interactive_controls_start_in_2d() -> None:
     assert controls.edge_labels_on is False
 
 
+def test_show_tensor_network_interactive_controls_include_nodes_toggle() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    assert [label.get_text() for label in controls._checkbuttons.labels][:4] == [
+        "Hover",
+        "Nodes",
+        "Tensor labels",
+        "Edge labels",
+    ]
+    assert controls.nodes_on is True
+
+
 def test_show_tensor_network_builds_3d_view_lazily_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -561,6 +589,114 @@ def test_show_tensor_network_reuses_tensor_and_edge_label_artists_when_toggled()
     assert edge_label_ids_before == tuple(
         id(text) for text in controls.current_scene.edge_label_artists
     )
+
+
+def test_show_tensor_network_nodes_toggle_reuses_cached_view_and_label_artists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._interactive_scene as interactive_scene_module
+
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+
+    controls.set_tensor_labels_enabled(True)
+    controls.set_edge_labels_enabled(True)
+    scene_before = controls.current_scene
+    tensor_label_ids_before = tuple(id(text) for text in scene_before.tensor_label_artists)
+    edge_label_ids_before = tuple(id(text) for text in scene_before.edge_label_artists)
+
+    def _unexpected_rebuild(*args: object, **kwargs: object) -> object:
+        raise AssertionError("node toggle should not rebuild label descriptors")
+
+    def _unexpected_render(*args: object, **kwargs: object) -> object:
+        raise AssertionError("node toggle should not rerender the view")
+
+    monkeypatch.setattr(
+        interactive_scene_module,
+        "_build_tensor_label_descriptors",
+        _unexpected_rebuild,
+    )
+    monkeypatch.setattr(
+        interactive_scene_module,
+        "_build_edge_label_descriptors",
+        _unexpected_rebuild,
+    )
+    monkeypatch.setattr(controls, "_render_view", _unexpected_render)
+
+    controls.set_nodes_enabled(False)
+    controls.set_nodes_enabled(True)
+
+    assert controls.current_scene is scene_before
+    assert tensor_label_ids_before == tuple(
+        id(text) for text in controls.current_scene.tensor_label_artists
+    )
+    assert edge_label_ids_before == tuple(
+        id(text) for text in controls.current_scene.edge_label_artists
+    )
+
+
+def test_show_tensor_network_builds_compact_node_artists_once_per_view() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+
+    controls.set_nodes_enabled(False)
+    scene = controls.current_scene
+    compact_bundle = scene.node_artist_bundles["compact"]
+    assert scene.active_node_mode == "compact"
+
+    controls.set_nodes_enabled(True)
+    controls.set_nodes_enabled(False)
+
+    assert scene.node_artist_bundles["compact"] is compact_bundle
+    assert scene.active_node_mode == "compact"
+
+
+def test_show_tensor_network_nodes_toggle_persists_across_2d_and_3d_views() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+
+    controls.set_nodes_enabled(False)
+    controls.set_view("3d")
+    scene_3d = controls.current_scene
+    compact_bundle_3d = scene_3d.node_artist_bundles["compact"]
+    assert scene_3d.active_node_mode == "compact"
+
+    controls.set_nodes_enabled(True)
+    controls.set_nodes_enabled(False)
+    assert scene_3d.node_artist_bundles["compact"] is compact_bundle_3d
+
+    controls.set_view("2d")
+    assert controls.current_scene.active_node_mode == "compact"
 
 
 def test_show_tensor_network_discards_stale_hover_annotations_when_switching_views() -> None:
@@ -771,19 +907,20 @@ def test_show_tensor_network_scheme_checkbox_visual_state_matches_scheme_toggle(
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
+    scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
 
-    _click_checkbutton(controls._checkbuttons, 3)
+    _click_checkbutton(controls._checkbuttons, scheme_index)
 
     status_after_enable = tuple(bool(v) for v in controls._checkbuttons.get_status())
-    assert status_after_enable[3] is True
+    assert status_after_enable[scheme_index] is True
     assert controls.scheme_on is True
     assert controls.current_scene.contraction_controls is not None
     assert controls.current_scene.contraction_controls.scheme_on is True
 
-    _click_checkbutton(controls._checkbuttons, 3)
+    _click_checkbutton(controls._checkbuttons, scheme_index)
 
     status_after_disable = tuple(bool(v) for v in controls._checkbuttons.get_status())
-    assert status_after_disable[3] is False
+    assert status_after_disable[scheme_index] is False
     assert controls.scheme_on is False
     assert controls.current_scene.contraction_controls is not None
     assert controls.current_scene.contraction_controls.scheme_on is False
@@ -811,21 +948,24 @@ def test_show_tensor_network_playback_and_cost_hover_keep_visual_checkboxes_in_s
         "Playback",
         "Costs",
     ]
+    scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
+    playback_index = _checkbutton_index(controls._checkbuttons, "Playback")
+    cost_index = _checkbutton_index(controls._checkbuttons, "Costs")
 
-    _click_checkbutton(controls._checkbuttons, 4)
+    _click_checkbutton(controls._checkbuttons, playback_index)
 
     status_after_playback = tuple(bool(v) for v in controls._checkbuttons.get_status())
-    assert status_after_playback[3] is True
-    assert status_after_playback[4] is True
+    assert status_after_playback[scheme_index] is True
+    assert status_after_playback[playback_index] is True
     assert controls.scheme_on is True
     assert controls.playback_on is True
 
-    _click_checkbutton(controls._checkbuttons, 5)
+    _click_checkbutton(controls._checkbuttons, cost_index)
 
     status_after_cost_hover = tuple(bool(v) for v in controls._checkbuttons.get_status())
-    assert status_after_cost_hover[3] is True
-    assert status_after_cost_hover[4] is True
-    assert status_after_cost_hover[5] is True
+    assert status_after_cost_hover[scheme_index] is True
+    assert status_after_cost_hover[playback_index] is True
+    assert status_after_cost_hover[cost_index] is True
     assert controls.scheme_on is True
     assert controls.playback_on is True
     assert controls.cost_hover_on is True
@@ -851,13 +991,16 @@ def test_show_tn_einsum_trace_inspector_checkbox_auto_enables_playback() -> None
         "Costs",
         "Tensor inspector",
     ]
+    scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
+    playback_index = _checkbutton_index(controls._checkbuttons, "Playback")
+    inspector_index = _checkbutton_index(controls._checkbuttons, "Tensor inspector")
 
-    _click_checkbutton(controls._checkbuttons, 6)
+    _click_checkbutton(controls._checkbuttons, inspector_index)
 
     status_after_enable = tuple(bool(v) for v in controls._checkbuttons.get_status())
-    assert status_after_enable[3] is True
-    assert status_after_enable[4] is True
-    assert status_after_enable[6] is True
+    assert status_after_enable[scheme_index] is True
+    assert status_after_enable[playback_index] is True
+    assert status_after_enable[inspector_index] is True
     assert controls.scheme_on is True
     assert controls.playback_on is True
     assert controls.tensor_inspector_on is True
@@ -887,18 +1030,19 @@ def test_show_tn_reenabling_tensor_inspector_reveals_auxiliary_window(
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
+    inspector_index = _checkbutton_index(controls._checkbuttons, "Tensor inspector")
 
-    _click_checkbutton(controls._checkbuttons, 6)
+    _click_checkbutton(controls._checkbuttons, inspector_index)
 
     inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
     assert inspector is not None
     assert inspector._figure is not None
     assert revealed == [inspector._figure]
 
-    _click_checkbutton(controls._checkbuttons, 6)
+    _click_checkbutton(controls._checkbuttons, inspector_index)
     assert inspector._figure is None
 
-    _click_checkbutton(controls._checkbuttons, 6)
+    _click_checkbutton(controls._checkbuttons, inspector_index)
 
     assert inspector._figure is not None
     assert revealed == [revealed[0], inspector._figure]

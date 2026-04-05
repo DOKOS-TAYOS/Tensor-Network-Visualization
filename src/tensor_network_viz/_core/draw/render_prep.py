@@ -421,6 +421,11 @@ def _apply_render_hover_state(
 
 
 def _node_patch_collection_from_plotter(context: _RenderPrepContext) -> Any:
+    get_bundle = getattr(context.plotter, "get_node_artist_bundle", None)
+    if callable(get_bundle):
+        bundle = get_bundle()
+        if bundle is not None:
+            return bundle.hover_target
     node_colls = getattr(context.plotter, "_node_disk_collections", None)
     if isinstance(node_colls, list) and len(node_colls) > 0:
         return node_colls
@@ -436,6 +441,8 @@ def _build_interactive_scene_state(
     hover_state: _RenderHoverState,
     tensor_disk_radius_px_3d: float | None,
 ) -> _InteractiveSceneState:
+    initial_bundle = context.plotter.get_node_artist_bundle()
+    active_node_mode = "normal" if context.config.show_nodes else "compact"
     return _InteractiveSceneState(
         ax=ax,
         graph=context.graph,
@@ -449,6 +456,10 @@ def _build_interactive_scene_state(
         plotter=context.plotter,
         visible_node_ids=_render_visible_order(context),
         node_patch_coll=_node_patch_collection_from_plotter(context),
+        node_artist_bundles=(
+            {initial_bundle.mode: initial_bundle} if initial_bundle is not None else {}
+        ),
+        active_node_mode=active_node_mode,
         edge_geometry=tuple(context.edge_geometry_sink),
         hover_state=hover_state,
         tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,

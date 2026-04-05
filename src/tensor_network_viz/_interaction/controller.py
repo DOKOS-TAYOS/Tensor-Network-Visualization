@@ -19,8 +19,10 @@ from .._interactive_scene import (
     _ensure_edge_label_artists,
     _ensure_scene_label_descriptors,
     _ensure_tensor_label_artists,
+    _node_mode_from_show_nodes,
     _scene_from_axes,
     _set_artist_visible,
+    _set_scene_node_mode,
 )
 from .._matplotlib_state import (
     get_contraction_controls,
@@ -67,13 +69,22 @@ _SCHEME_OFF_FIGURE_BOTTOM_PAD: float = 0.02
 _MAIN_FIGURE_BOTTOM_SCHEME_OFF: float = (
     _PLAYBACK_DETAILS_TOP - _BASE_INTERACTIVE_HEIGHT + _SCHEME_OFF_FIGURE_BOTTOM_PAD
 )
-_BASE_TOGGLE_LABELS: tuple[str, str, str] = ("Hover", "Tensor labels", "Edge labels")
+_BASE_TOGGLE_LABELS: tuple[str, str, str, str] = (
+    "Hover",
+    "Nodes",
+    "Tensor labels",
+    "Edge labels",
+)
 _SCHEME_TOGGLE_LABELS: tuple[str, str, str] = ("Scheme", "Playback", "Costs")
 _TENSOR_INSPECTOR_LABEL: str = "Tensor inspector"
 _INTERACTIVE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _INTERACTIVE_CHECK_MARK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
 _INTERACTIVE_RADIO_PROPS: dict[str, float] = {"s": 38.0, "linewidth": 0.9}
+_TOGGLE_INDEX_HOVER: int = 0
+_TOGGLE_INDEX_NODES: int = 1
+_TOGGLE_INDEX_TENSOR_LABELS: int = 2
+_TOGGLE_INDEX_EDGE_LABELS: int = 3
 
 
 def _reveal_auxiliary_figure(figure: Figure) -> None:
@@ -280,6 +291,7 @@ class _InteractiveTensorFigureController:
         self.config = config
         self.current_view: ViewName = initial_view
         self.hover_on: bool = bool(config.hover_labels)
+        self.nodes_on: bool = bool(config.show_nodes)
         self.tensor_labels_on: bool = bool(config.show_tensor_labels)
         self.edge_labels_on: bool = bool(config.show_index_labels)
         self.scheme_on: bool = bool(config.show_contraction_scheme)
@@ -475,6 +487,7 @@ class _InteractiveTensorFigureController:
             self._radio.on_clicked(self._on_view_clicked)
         statuses = [
             self.hover_on,
+            self.nodes_on,
             self.tensor_labels_on,
             self.edge_labels_on,
         ]
@@ -495,7 +508,7 @@ class _InteractiveTensorFigureController:
     def _sync_checkbuttons(self) -> None:
         if self._checkbuttons is None:
             return
-        desired = [self.hover_on, self.tensor_labels_on, self.edge_labels_on]
+        desired = [self.hover_on, self.nodes_on, self.tensor_labels_on, self.edge_labels_on]
         if len(self._checkbuttons.labels) > len(_BASE_TOGGLE_LABELS):
             desired.extend([self.scheme_on, self.playback_on, self.cost_hover_on])
             if self.tensor_inspector_available and len(self._checkbuttons.labels) > 6:
@@ -518,15 +531,17 @@ class _InteractiveTensorFigureController:
         if self._callback_guard or self._checkbuttons is None:
             return
         status = [bool(value) for value in self._checkbuttons.get_status()]
-        self.hover_on = status[0]
-        self.tensor_labels_on = status[1]
-        self.edge_labels_on = status[2]
-        if len(status) >= 6:
-            self.scheme_on = status[3]
-            self.playback_on = status[4]
-            self.cost_hover_on = status[5]
-        if len(status) >= 7 and self.tensor_inspector_available:
-            self.tensor_inspector_on = status[6]
+        self.hover_on = status[_TOGGLE_INDEX_HOVER]
+        self.nodes_on = status[_TOGGLE_INDEX_NODES]
+        self.tensor_labels_on = status[_TOGGLE_INDEX_TENSOR_LABELS]
+        self.edge_labels_on = status[_TOGGLE_INDEX_EDGE_LABELS]
+        scheme_index = len(_BASE_TOGGLE_LABELS)
+        if len(status) >= scheme_index + 3:
+            self.scheme_on = status[scheme_index]
+            self.playback_on = status[scheme_index + 1]
+            self.cost_hover_on = status[scheme_index + 2]
+        if len(status) >= scheme_index + 4 and self.tensor_inspector_available:
+            self.tensor_inspector_on = status[scheme_index + 3]
         self._apply_scene_state(self.current_scene)
 
     def _deactivate_non_current_views(self) -> None:
@@ -557,6 +572,7 @@ class _InteractiveTensorFigureController:
             self._tensor_inspector.close_from_owner()
 
     def _apply_scene_state(self, scene: _InteractiveSceneState) -> None:
+        _set_scene_node_mode(scene, mode=_node_mode_from_show_nodes(self.nodes_on))
         if self.tensor_labels_on:
             _ensure_tensor_label_artists(scene)
         for artist in scene.tensor_label_artists:
@@ -625,6 +641,11 @@ class _InteractiveTensorFigureController:
 
     def set_hover_enabled(self, enabled: bool) -> None:
         self.hover_on = bool(enabled)
+        self._sync_checkbuttons()
+        self._apply_scene_state(self.current_scene)
+
+    def set_nodes_enabled(self, enabled: bool) -> None:
+        self.nodes_on = bool(enabled)
         self._sync_checkbuttons()
         self._apply_scene_state(self.current_scene)
 

@@ -13,7 +13,7 @@ from ..layout import AxisDirections, NodePositions
 from .fonts_and_scale import _DrawScaleParams
 from .hover import _RenderHoverState
 from .label_descriptors import _AnyLabelDescriptor, _TextLabelDescriptor
-from .plotter import _PlotAdapter
+from .plotter import NodeRenderMode, _NodeArtistBundle, _PlotAdapter
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,8 @@ class _InteractiveSceneState:
     edge_geometry: tuple[_RenderedEdgeGeometry, ...]
     hover_state: _RenderHoverState
     tensor_disk_radius_px_3d: float | None
+    node_artist_bundles: dict[NodeRenderMode, _NodeArtistBundle] = field(default_factory=dict)
+    active_node_mode: NodeRenderMode = "normal"
     tensor_label_artists: list[Artist] = field(default_factory=list)
     edge_label_artists: list[Artist] = field(default_factory=list)
     tensor_label_descriptors: tuple[_AnyLabelDescriptor, ...] | None = None

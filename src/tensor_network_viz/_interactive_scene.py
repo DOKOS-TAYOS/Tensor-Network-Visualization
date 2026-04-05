@@ -13,6 +13,7 @@ from ._core.draw.constants import (
     _LABEL_FONT_3D_SCALE,
     _TENSOR_LABEL_GID,
     _ZORDER_LAYER_BASE,
+    _ZORDER_LAYER_DISK,
     _ZORDER_LAYER_EDGE_INDEX,
     _ZORDER_LAYER_STRIDE,
     _ZORDER_LAYER_TENSOR_NAME,
@@ -35,6 +36,12 @@ from ._core.draw.labels_misc import (
     _dangling_hover_label_text,
     _edge_index_text_kwargs,
     _self_loop_hover_label_text,
+)
+from ._core.draw.plotter import (
+    NodeRenderMode,
+    _node_edge_degrees,
+    _NodeArtistBundle,
+    _visible_degree_one_mask,
 )
 from ._core.draw.render_prep import (
     _apply_render_hover_state,
@@ -61,6 +68,89 @@ def _set_artist_visible(artist: Artist, visible: bool) -> None:
     setter = getattr(artist, "set_visible", None)
     if callable(setter):
         setter(bool(visible))
+
+
+def _node_mode_from_show_nodes(show_nodes: bool) -> NodeRenderMode:
+    return "normal" if bool(show_nodes) else "compact"
+
+
+def _set_node_bundle_visible(bundle: _NodeArtistBundle, visible: bool) -> None:
+    for artist in bundle.artists:
+        _set_artist_visible(cast(Artist, artist), visible)
+
+
+def _build_scene_node_artists(
+    scene: _InteractiveSceneState,
+    *,
+    mode: NodeRenderMode,
+) -> _NodeArtistBundle:
+    if not scene.visible_node_ids:
+        return _NodeArtistBundle(mode=mode, artists=(), hover_target=None)
+
+    node_degrees = _node_edge_degrees(scene.graph)
+    if scene.dimensions == 2:
+        clear_nodes = getattr(scene.plotter, "clear_node_disk_collections", None)
+        if callable(clear_nodes):
+            clear_nodes()
+        draw_one = scene.plotter.draw_tensor_node
+        for index, node_id in enumerate(scene.visible_node_ids):
+            z_disk = float(_ZORDER_LAYER_BASE + index * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_DISK)
+            draw_one(
+                np.asarray(scene.positions[node_id], dtype=float),
+                config=scene.config,
+                p=scene.params,
+                degree_one=node_degrees.get(int(node_id), 0) == 1,
+                mode=mode,
+                zorder=z_disk,
+            )
+    else:
+        coords = np.stack(
+            [
+                np.asarray(scene.positions[node_id], dtype=float)
+                for node_id in scene.visible_node_ids
+            ]
+        )
+        degree_one_mask = _visible_degree_one_mask(
+            scene.graph,
+            list(scene.visible_node_ids),
+            node_degrees=node_degrees,
+        )
+        scene.plotter.draw_tensor_nodes(
+            coords,
+            config=scene.config,
+            p=scene.params,
+            degree_one_mask=degree_one_mask,
+            mode=mode,
+        )
+    bundle = scene.plotter.get_node_artist_bundle()
+    if bundle is None:
+        return _NodeArtistBundle(mode=mode, artists=(), hover_target=None)
+    return bundle
+
+
+def _ensure_scene_node_artists(
+    scene: _InteractiveSceneState,
+    *,
+    mode: NodeRenderMode,
+) -> _NodeArtistBundle:
+    bundle = scene.node_artist_bundles.get(mode)
+    if bundle is not None:
+        return bundle
+    bundle = _build_scene_node_artists(scene, mode=mode)
+    scene.node_artist_bundles[mode] = bundle
+    return bundle
+
+
+def _set_scene_node_mode(
+    scene: _InteractiveSceneState,
+    *,
+    mode: NodeRenderMode,
+) -> None:
+    target_bundle = _ensure_scene_node_artists(scene, mode=mode)
+    for bundle_mode, bundle in scene.node_artist_bundles.items():
+        _set_node_bundle_visible(bundle, bundle_mode == mode)
+    scene.active_node_mode = mode
+    scene.node_patch_coll = target_bundle.hover_target
 
 
 def _scene_from_axes(ax: RenderedAxes | None) -> _InteractiveSceneState | None:
@@ -484,10 +574,14 @@ def _apply_scene_hover_state(
 __all__ = [
     "_apply_scene_hover_state",
     "_build_edge_label_descriptors",
+    "_build_scene_node_artists",
     "_build_tensor_label_descriptors",
+    "_ensure_scene_node_artists",
     "_ensure_edge_label_artists",
     "_ensure_scene_label_descriptors",
     "_ensure_tensor_label_artists",
+    "_node_mode_from_show_nodes",
     "_scene_from_axes",
+    "_set_scene_node_mode",
     "_set_artist_visible",
 ]
