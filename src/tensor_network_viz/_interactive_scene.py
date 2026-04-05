@@ -259,9 +259,9 @@ def _plot_label_descriptors(
 
 def _build_tensor_label_descriptors(
     scene: _InteractiveSceneState,
-) -> tuple[_AnyLabelDescriptor, ...]:
+) -> tuple[_TextLabelDescriptor, ...]:
     if scene.tensor_label_descriptors is not None:
-        return tuple(scene.tensor_label_descriptors)
+        return cast(tuple[_TextLabelDescriptor, ...], tuple(scene.tensor_label_descriptors))
     zorder_by_node = _tensor_label_zorders(scene)
     descriptors = []
     for node_id in scene.visible_node_ids:
@@ -287,15 +287,15 @@ def _build_tensor_label_descriptors(
             )
         )
     scene.tensor_label_descriptors = tuple(descriptors)
-    return tuple(scene.tensor_label_descriptors)
+    return cast(tuple[_TextLabelDescriptor, ...], tuple(scene.tensor_label_descriptors))
 
 
 def _build_edge_label_descriptors(
     scene: _InteractiveSceneState,
-) -> tuple[_AnyLabelDescriptor, ...]:
+) -> tuple[_TextLabelDescriptor, ...]:
     if scene.edge_label_descriptors is not None:
-        return tuple(scene.edge_label_descriptors)
-    descriptors: list[_AnyLabelDescriptor] = []
+        return cast(tuple[_TextLabelDescriptor, ...], tuple(scene.edge_label_descriptors))
+    descriptors: list[_TextLabelDescriptor] = []
     zorder_label = _last_edge_label_zorder(scene)
     for entry in scene.edge_geometry:
         edge = entry.edge
@@ -354,7 +354,7 @@ def _build_edge_label_descriptors(
                 label_sink=descriptors,
             )
     scene.edge_label_descriptors = tuple(descriptors)
-    return tuple(scene.edge_label_descriptors)
+    return cast(tuple[_TextLabelDescriptor, ...], tuple(scene.edge_label_descriptors))
 
 
 def _ensure_scene_label_descriptors(scene: _InteractiveSceneState) -> None:

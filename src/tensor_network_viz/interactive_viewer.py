@@ -419,12 +419,12 @@ class _InteractiveTensorFigureController:
             bottom_2d = base - float(_INTERACTIVE_2D_BOTTOM_EXTRA)
             pos = ax2.get_position()
             height = max(top - bottom_2d, 0.08)
-            ax2.set_position([pos.x0, bottom_2d, pos.width, height])
+            ax2.set_position((pos.x0, bottom_2d, pos.width, height))
         if ax3 is not None:
             bottom_3d = base + float(_INTERACTIVE_3D_BOTTOM_LIFT)
             pos = ax3.get_position()
             height = max(top - bottom_3d, 0.08)
-            ax3.set_position([pos.x0, bottom_3d, pos.width, height])
+            ax3.set_position((pos.x0, bottom_3d, pos.width, height))
 
     def _build_controls(self) -> None:
         assert self.figure is not None
