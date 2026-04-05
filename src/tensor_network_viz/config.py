@@ -33,6 +33,9 @@ class PlotConfig:
         self_loop_radius: Radius for self-contraction loops; None uses default (0.2).
         line_width_2d: Line width for 2D plots (node outlines and tensor edges); None uses default.
         line_width_3d: Line width for 3D plots (node outlines and tensor edges); None uses default.
+        show_nodes: Whether to render tensor nodes with their normal geometry (2D circles /
+            3D octahedra). If False, use compact fixed-size markers instead (2D points / 3D
+            screen-facing circles).
         positions: Custom node positions for grid/PEPS layout; mapping from node id to
             (x, y) for 2D or (x, y, z) for 3D. Tuple-like coordinates and NumPy arrays are both
             accepted. None uses automatic layout.
@@ -103,6 +106,7 @@ class PlotConfig:
     self_loop_radius: float | None = None
     line_width_2d: float | None = None
     line_width_3d: float | None = None
+    show_nodes: bool = True
     layout_iterations: int | None = None
     positions: PositionMapping | None = None
     validate_positions: bool = False

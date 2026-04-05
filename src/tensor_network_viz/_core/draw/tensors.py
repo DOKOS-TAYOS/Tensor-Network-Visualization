@@ -72,6 +72,7 @@ def _draw_nodes(
     visible_node_ids: list[int] | None = None,
     node_degrees: dict[int, int] | None = None,
 ) -> np.ndarray:
+    node_mode = "normal" if config.show_nodes else "compact"
     if visible_node_ids is None:
         visible_node_ids = _visible_node_ids_in_graph_order(graph)
     if visible_node_ids:
@@ -79,7 +80,13 @@ def _draw_nodes(
             [np.asarray(positions[node_id], dtype=float) for node_id in visible_node_ids]
         )
         deg1 = _visible_degree_one_mask(graph, visible_node_ids, node_degrees=node_degrees)
-        plotter.draw_tensor_nodes(coords, config=config, p=p, degree_one_mask=deg1)
+        plotter.draw_tensor_nodes(
+            coords,
+            config=config,
+            p=p,
+            degree_one_mask=deg1,
+            mode=node_mode,
+        )
         return coords
     return _stack_visible_tensor_coords(graph, positions)
 

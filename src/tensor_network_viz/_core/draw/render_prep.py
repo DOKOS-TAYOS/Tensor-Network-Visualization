@@ -251,6 +251,7 @@ def _draw_edges_nodes_and_labels(
     tensor_disk_radius_px_3d: float | None,
 ) -> np.ndarray:
     visible_order = list(_render_visible_order(context))
+    node_mode = "normal" if context.config.show_nodes else "compact"
     node_degrees = context.graph_state.node_degrees
     tensor_z_by_node: dict[int, float] | None = None
     use_2d_layers = context.dimensions == 2 and bool(visible_order)
@@ -285,6 +286,7 @@ def _draw_edges_nodes_and_labels(
                 config=context.config,
                 p=context.params,
                 degree_one=node_degrees.get(int(node_id), 0) == 1,
+                mode=node_mode,
                 zorder=z_disk,
             )
         coords = np.stack(

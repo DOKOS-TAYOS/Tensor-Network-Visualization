@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 from matplotlib.backend_bases import CloseEvent, MouseButton, MouseEvent
 from matplotlib.collections import LineCollection
+from matplotlib.colors import to_rgba
 
 import tensor_network_viz._core.renderer as core_renderer_module
 import tensor_network_viz._interaction.controller as interaction_controller_module
@@ -25,7 +26,14 @@ import tensor_network_viz.viewer as viewer_module
 from plotting_helpers import (
     line_collection_segment_count,
     line_collection_segments,
+    path3d_collection_facecolors,
+    path3d_collection_point_count,
+    path3d_collection_sizes,
+    path_collection_point_count,
+    point_collection_facecolors,
+    point_collection_sizes,
     patch_collection_circle_count,
+    poly3d_node_collection_count,
 )
 from tensor_network_viz import EinsumTrace, PlotConfig, einsum, show_tensor_network
 from tensor_network_viz._core import _draw_common
@@ -140,6 +148,10 @@ def connect(
 def close_figures():
     yield
     plt.close("all")
+
+
+def test_plot_config_show_nodes_defaults_to_true() -> None:
+    assert PlotConfig().show_nodes is True
 
 
 def test_build_tensorkrowch_graph_disconnected_components() -> None:
@@ -1222,6 +1234,50 @@ def test_plot_tensorkrowch_network_2d_draws_tensor_nodes_as_circle_patches() -> 
     assert patch_collection_circle_count(ax) == 2
 
 
+def test_plot_tensorkrowch_network_2d_show_nodes_false_draws_points() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    _, ax = plot_tensorkrowch_network_2d(
+        DummyNetwork(nodes=[left, right]),
+        config=PlotConfig(show_nodes=False),
+    )
+
+    assert patch_collection_circle_count(ax) == 0
+    assert path_collection_point_count(ax) == 2
+
+
+def test_plot_tensorkrowch_network_2d_show_nodes_false_ignores_node_radius() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    _, ax_small = plot_tensorkrowch_network_2d(
+        DummyNetwork(nodes=[left, right]),
+        config=PlotConfig(show_nodes=False, node_radius=0.04),
+    )
+    _, ax_large = plot_tensorkrowch_network_2d(
+        DummyNetwork(nodes=[left, right]),
+        config=PlotConfig(show_nodes=False, node_radius=0.5),
+    )
+
+    assert path_collection_point_count(ax_small) == 2
+    assert path_collection_point_count(ax_large) == 2
+    assert point_collection_sizes(ax_small) == point_collection_sizes(ax_large)
+
+
+def test_plot_tensorkrowch_network_2d_show_nodes_false_keeps_degree_one_color() -> None:
+    node = DummyTensorKrowchNode("A", ["left"])
+    connect(node, 0, name="left")
+    config = PlotConfig(show_nodes=False)
+
+    _, ax = plot_tensorkrowch_network_2d(DummyNetwork(leaf_nodes=[node]), config=config)
+
+    facecolors = point_collection_facecolors(ax)
+    assert facecolors == [tuple(float(value) for value in to_rgba(config.node_color_degree_one))]
+
+
 def test_extent_scale_factor_reflects_long_dense_chain_vs_pair() -> None:
     """Large span with small nearest-neighbor spacing should shrink glyphs vs a loose pair."""
     long_dense = np.array([[i * 0.2, 0.0] for i in range(20)], dtype=float)
@@ -1337,6 +1393,50 @@ def test_plot_tensorkrowch_network_3d_returns_3d_axes() -> None:
     assert ax.name == "3d"
     assert len(ax.lines) == 1
     assert len(ax.collections) >= 1
+
+
+def test_plot_tensorkrowch_network_3d_show_nodes_false_draws_marker_nodes() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0)
+
+    _, ax = plot_tensorkrowch_network_3d(
+        DummyNetwork(nodes=[left, right]),
+        config=PlotConfig(show_nodes=False),
+    )
+
+    assert poly3d_node_collection_count(ax) == 0
+    assert path3d_collection_point_count(ax) == 2
+
+
+def test_plot_tensorkrowch_network_3d_show_nodes_false_ignores_node_radius() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0)
+
+    _, ax_small = plot_tensorkrowch_network_3d(
+        DummyNetwork(nodes=[left, right]),
+        config=PlotConfig(show_nodes=False, node_radius=0.04),
+    )
+    _, ax_large = plot_tensorkrowch_network_3d(
+        DummyNetwork(nodes=[left, right]),
+        config=PlotConfig(show_nodes=False, node_radius=0.5),
+    )
+
+    assert path3d_collection_point_count(ax_small) == 2
+    assert path3d_collection_point_count(ax_large) == 2
+    assert path3d_collection_sizes(ax_small) == path3d_collection_sizes(ax_large)
+
+
+def test_plot_tensorkrowch_network_3d_show_nodes_false_keeps_degree_one_color() -> None:
+    node = DummyTensorKrowchNode("A", ["left"])
+    connect(node, 0, name="left")
+    config = PlotConfig(show_nodes=False)
+
+    _, ax = plot_tensorkrowch_network_3d(DummyNetwork(leaf_nodes=[node]), config=config)
+
+    facecolors = path3d_collection_facecolors(ax)
+    assert facecolors == [tuple(float(value) for value in to_rgba(config.node_color_degree_one))]
 
 
 def test_plot_tensornetwork_network_3d_returns_3d_axes() -> None:
