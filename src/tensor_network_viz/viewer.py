@@ -9,9 +9,11 @@ from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from ._input_inspection import _detect_network_engine_with_input
+from ._logging import package_logger
 from ._registry import _get_plotters
 from ._typing import FigureLike, root_figure
 from .config import EngineName, PlotConfig, ViewName
+from .exceptions import AxisConfigurationError
 
 RenderedAxes: TypeAlias = Axes | Axes3D
 
@@ -93,19 +95,31 @@ def show_tensor_network(
         >>> fig, ax = show_tensor_network(network, config=config)
     """
     style = config or PlotConfig()
+    package_logger.debug(
+        "show_tensor_network called with engine=%r view=%r show_controls=%s show=%s.",
+        engine,
+        view,
+        show_controls,
+        show,
+    )
     ax_view: ViewName | None = None
     if ax is not None:
         ax_view = "3d" if getattr(ax, "name", "") == "3d" else "2d"
     resolved_view = ax_view or "2d" if view is None else view
     if ax_view is not None and resolved_view != ax_view:
-        raise ValueError(f"Provided ax is {ax_view}, but view={resolved_view!r} was requested.")
+        raise AxisConfigurationError(
+            f"Provided ax is {ax_view}, but view={resolved_view!r} was requested."
+        )
     if resolved_view not in ("2d", "3d"):
-        raise ValueError(f"Unsupported tensor network view: {resolved_view}")
+        raise AxisConfigurationError(f"Unsupported tensor network view: {resolved_view}")
     network_input = network
     if engine is None:
         resolved_engine, network_input = _detect_engine_with_network(network)
     else:
         resolved_engine = engine
+    package_logger.debug(
+        "Rendering tensor network with engine=%r resolved_view=%r.", resolved_engine, resolved_view
+    )
     plot_2d, plot_3d = _get_plotters(resolved_engine)
     if not show_controls:
         static_style = style
@@ -133,7 +147,7 @@ def show_tensor_network(
                 _build_scene_state=False,
             )
         else:
-            raise ValueError(f"Unsupported tensor network view: {resolved_view}")
+            raise AxisConfigurationError(f"Unsupported tensor network view: {resolved_view}")
     else:
         from .interactive_viewer import show_tensor_network_interactive
 

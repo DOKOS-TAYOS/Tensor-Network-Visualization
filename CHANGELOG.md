@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Hide nodes in the viewer:** Option to exclude selected nodes from the interactive visualization so dense or branching tensor networks stay readable without changing the underlying graph data.
+- **Public diagnostics contract:** Added package-specific exceptions (`TensorNetworkVizError`, `VisualizationInputError`, `AxisConfigurationError`, `UnsupportedEngineError`, `TensorDataError`, `MissingOptionalDependencyError`) and a documented `tensor_network_viz` logger with a default `NullHandler`.
+
+### Changed
+
+- **Typing and controller structure:** Fixed the interactive tensor-inspector typing issue reported by `pyright`, extracted the linked tensor-inspector controller, and split tensor-element rendering/color-scaling helpers into a dedicated module to keep responsibilities narrower.
+- **Verification workflow docs:** README, guide, and contribution docs now document the `.venv`-first verification flow (`quality`, `tests`, `smoke`, `package`) used before release and CI troubleshooting.
 
 ## [1.5.2] — 2026-04-05
 

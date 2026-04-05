@@ -17,7 +17,7 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgba
 
 import tensor_network_viz._core.renderer as core_renderer_module
-import tensor_network_viz._interaction.controller as interaction_controller_module
+import tensor_network_viz._interaction.tensor_inspector as tensor_inspector_module
 import tensor_network_viz.tensorkrowch.graph as tk_graph_module
 import tensor_network_viz.tensorkrowch.renderer as tk_renderer_module
 import tensor_network_viz.tensornetwork.graph as tn_graph_module
@@ -1048,7 +1048,7 @@ def test_show_tn_reenabling_tensor_inspector_reveals_auxiliary_window(
     revealed: list[matplotlib.figure.Figure] = []
 
     monkeypatch.setattr(
-        interaction_controller_module,
+        tensor_inspector_module,
         "_reveal_auxiliary_figure",
         lambda figure: revealed.append(figure),
     )

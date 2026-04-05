@@ -66,6 +66,33 @@ show_tensor_elements(
 | `show_controls` | If `True`, add compact `group + mode` controls and, when several tensors are present, a tensor slider. |
 | `show` | If `True`, display the figure immediately. If `False`, just return `(fig, ax)`. |
 
+## Errors and Diagnostics
+
+The public API raises package-specific exceptions so callers can distinguish user-input problems
+from unrelated runtime failures without parsing error strings:
+
+- `TensorNetworkVizError`: root class for package-specific failures.
+- `VisualizationInputError`: unsupported or ambiguous network input.
+- `AxisConfigurationError`: incompatible `ax`, `view`, or figure-control setup.
+- `UnsupportedEngineError`: unknown backend name.
+- `TensorDataError`: unsupported tensor values or collections for `show_tensor_elements(...)`.
+- `MissingOptionalDependencyError`: backend requested but its dependency is not installed.
+
+These classes deliberately preserve compatibility with the built-in families they refine
+(`ValueError` or `ImportError`), so existing downstream handlers keep working.
+
+For diagnostics, enable the package logger:
+
+```python
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logging.getLogger("tensor_network_viz").setLevel(logging.DEBUG)
+```
+
+The logger name is `tensor_network_viz`, and the library installs a `NullHandler`, so imports stay
+quiet unless your application opts in.
+
 ## `PlotConfig` in Practice
 
 `PlotConfig` is where visual behavior lives.
@@ -317,6 +344,15 @@ enough.
 
 Manual trace steps describe contractions, not tensor values. Use `EinsumTrace` and keep the traced
 tensors alive until you render them.
+
+### `AxisConfigurationError` appears immediately
+
+This means the plotting surface and the requested behavior disagree. Typical cases:
+
+- `show_tensor_network(..., view="3d", ax=<2D axis>)`
+- `show_tensor_network(..., view="2d", ax=<3D axis>)`
+- `show_tensor_elements(..., ax=...)` with more than one tensor selected
+- `show_tensor_elements(..., show_controls=True, ax=...)` on a figure that already has extra axes
 
 ### Jupyter shows duplicate output
 

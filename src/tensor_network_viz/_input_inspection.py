@@ -6,7 +6,9 @@ from itertools import tee
 from typing import Any
 
 from ._engine_specs import EngineName
+from ._logging import package_logger
 from .einsum_module.trace import EinsumTrace, einsum_trace_step, pair_tensor
+from .exceptions import TensorDataError, VisualizationInputError
 from .tenpy.explicit import TenPyTensorNetwork
 
 
@@ -78,30 +80,46 @@ def _detect_engine_from_tensor_sample(sample_item: Any | None) -> EngineName | N
 
 def _detect_network_engine_with_input(network: Any) -> tuple[EngineName, Any]:
     if isinstance(network, EinsumTrace):
+        package_logger.debug("Auto-detected tensor network engine='einsum' from EinsumTrace.")
         return "einsum", network
     if _is_tenpy_like(network):
+        package_logger.debug(
+            "Auto-detected tensor network engine='tenpy' from %s.", type(network).__name__
+        )
         return "tenpy", network
 
     if hasattr(network, "tensors"):
         tensor_sample, _ = _peek_input_item(network.tensors)
         if tensor_sample is None or hasattr(tensor_sample, "inds"):
+            package_logger.debug(
+                "Auto-detected tensor network engine='quimb' from %s.", type(network).__name__
+            )
             return "quimb", network
 
     if hasattr(network, "leaf_nodes"):
         leaf_sample, _ = _peek_input_item(network.leaf_nodes)
         if leaf_sample is None or hasattr(leaf_sample, "axes_names"):
+            package_logger.debug(
+                "Auto-detected tensor network engine='tensorkrowch' from leaf_nodes."
+            )
             return "tensorkrowch", network
     if hasattr(network, "nodes"):
         node_sample, _ = _peek_input_item(network.nodes)
         if node_sample is None or hasattr(node_sample, "axes_names"):
+            package_logger.debug("Auto-detected tensor network engine='tensorkrowch' from nodes.")
             return "tensorkrowch", network
 
     sample_item, sampled_network = _peek_input_item(network)
     detected_engine = _detect_engine_from_network_sample(sample_item)
     if detected_engine is not None:
+        package_logger.debug(
+            "Auto-detected tensor network engine='%s' from sample type %s.",
+            detected_engine,
+            type(sample_item).__name__,
+        )
         return detected_engine, sampled_network
 
-    raise ValueError(
+    raise VisualizationInputError(
         "Could not infer tensor network engine from input of type "
         f"{type(network).__name__!r}. Pass engine= explicitly or provide a supported backend input."
     )
@@ -109,36 +127,52 @@ def _detect_network_engine_with_input(network: Any) -> tuple[EngineName, Any]:
 
 def _detect_tensor_engine_with_input(data: Any) -> tuple[EngineName, Any]:
     if isinstance(data, EinsumTrace):
+        package_logger.debug("Auto-detected tensor engine='einsum' from EinsumTrace.")
         return "einsum", data
     if _is_tenpy_like(data, include_tensor=True):
+        package_logger.debug("Auto-detected tensor engine='tenpy' from %s.", type(data).__name__)
         return "tenpy", data
 
     direct_engine = _detect_engine_from_tensor_sample(data)
     if direct_engine is not None:
+        package_logger.debug(
+            "Auto-detected tensor engine='%s' from direct input type %s.",
+            direct_engine,
+            type(data).__name__,
+        )
         return direct_engine, data
 
     if hasattr(data, "tensors"):
         tensor_sample, _ = _peek_input_item(data.tensors)
         if tensor_sample is None or hasattr(tensor_sample, "inds"):
+            package_logger.debug("Auto-detected tensor engine='quimb' from tensor container.")
             return "quimb", data
 
     if hasattr(data, "leaf_nodes"):
         sample, _ = _peek_input_item(data.leaf_nodes)
         if sample is None or hasattr(sample, "axes_names"):
+            package_logger.debug("Auto-detected tensor engine='tensorkrowch' from leaf_nodes.")
             return "tensorkrowch", data
     if hasattr(data, "nodes"):
         sample, _ = _peek_input_item(data.nodes)
         if sample is None or hasattr(sample, "axes_names"):
+            package_logger.debug("Auto-detected tensor engine='tensorkrowch' from nodes.")
             return "tensorkrowch", data
         if sample is None or hasattr(sample, "axis_names"):
+            package_logger.debug("Auto-detected tensor engine='tensornetwork' from nodes.")
             return "tensornetwork", data
 
     sample_item, sampled_input = _peek_input_item(data)
     detected_engine = _detect_engine_from_tensor_sample(sample_item)
     if detected_engine is not None:
+        package_logger.debug(
+            "Auto-detected tensor engine='%s' from sample type %s.",
+            detected_engine,
+            type(sample_item).__name__,
+        )
         return detected_engine, sampled_input
 
-    raise ValueError(
+    raise TensorDataError(
         "Could not infer tensor engine from input of type "
         f"{type(data).__name__!r}. Pass engine= explicitly or provide a supported tensor input."
     )

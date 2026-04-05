@@ -6,14 +6,16 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
+from ._logging import package_logger
 from ._tensor_elements_controller import (
-    _RenderedTensorPanel,
     _TensorElementsFigureController,
     _TensorPayloadCacheEntry,
 )
+from ._tensor_elements_rendering import _RenderedTensorPanel
 from ._tensor_elements_support import _extract_tensor_records, _prepare_mode_payload
 from ._typing import root_figure
 from .config import EngineName
+from .exceptions import AxisConfigurationError
 from .tensor_elements_config import TensorElementsConfig
 
 
@@ -40,9 +42,11 @@ def _show_tensor_records(
         resolved_mode, payload = _prepare_mode_payload(records[0], config=config, mode=config.mode)
         initial_payload_cache[0] = _TensorPayloadCacheEntry(payloads={resolved_mode: payload})
     if ax is not None and len(records) != 1:
-        raise ValueError("An explicit ax is only supported when visualizing a single tensor.")
+        raise AxisConfigurationError(
+            "An explicit ax is only supported when visualizing a single tensor."
+        )
     if ax is not None and show_controls and len(root_figure(ax.figure).axes) > 1:
-        raise ValueError(
+        raise AxisConfigurationError(
             "show_controls=True with an external ax is only supported when the target figure "
             "contains a single axes."
         )
@@ -88,6 +92,12 @@ def show_tensor_elements(
 ) -> tuple[Figure, Axes]:
     """Render tensor values in a single Matplotlib view with optional controls."""
     style = config or TensorElementsConfig()
+    package_logger.debug(
+        "show_tensor_elements called with engine=%r show_controls=%s show=%s.",
+        engine,
+        show_controls,
+        show,
+    )
     _, records = _extract_tensor_records(data, engine=engine)
     figure, main_ax, _controller = _show_tensor_records(
         records,

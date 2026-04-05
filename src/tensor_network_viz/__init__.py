@@ -5,8 +5,19 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
+from . import _logging as _package_logging
 from ._core.graph_cache import clear_tensor_network_graph_cache
 from .config import EngineName, PlotConfig, ViewName
+from .exceptions import (
+    AxisConfigurationError,
+    MissingOptionalDependencyError,
+    TensorDataError,
+    TensorDataTypeError,
+    TensorNetworkVizError,
+    UnsupportedEngineError,
+    VisualizationInputError,
+    VisualizationTypeError,
+)
 
 if TYPE_CHECKING:
     from .contraction_viewer import ContractionViewer2D, ContractionViewer3D
@@ -87,14 +98,22 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
+    "AxisConfigurationError",
     "ContractionViewer2D",
     "ContractionViewer3D",
     "EngineName",
     "EinsumTrace",
+    "MissingOptionalDependencyError",
     "PlotConfig",
+    "TensorDataError",
+    "TensorDataTypeError",
     "TensorElementsConfig",
+    "TensorNetworkVizError",
     "TenPyTensorNetwork",
+    "UnsupportedEngineError",
     "ViewName",
+    "VisualizationInputError",
+    "VisualizationTypeError",
     "clear_tensor_network_graph_cache",
     "einsum",
     "einsum_trace_step",
@@ -103,3 +122,5 @@ __all__ = [
     "show_tensor_elements",
     "show_tensor_network",
 ]
+
+_ = _package_logging

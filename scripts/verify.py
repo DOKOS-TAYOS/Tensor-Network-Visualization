@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ class VerificationStep:
 
 
 VerificationGroup: TypeAlias = tuple[VerificationStep, ...]
+LOGGER = logging.getLogger("tensor_network_viz.verify")
 
 
 def _repo_root() -> Path:
@@ -65,6 +67,7 @@ def _format_command(command: tuple[str, ...]) -> str:
 
 
 def _run_step(step: VerificationStep, repo_root: Path) -> None:
+    LOGGER.debug("Running verification step '%s' in %s.", step.label, repo_root)
     print(f"[verify] {step.label}")
     print(f"[verify] $ {_format_command(step.command)}")
     subprocess.run(step.command, cwd=repo_root, check=True)
@@ -88,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     repo_root = _repo_root()
+    LOGGER.debug("Starting verification mode='%s' in repo_root=%s.", args.mode, repo_root)
 
     try:
         for step in _ordered_steps(args.mode):

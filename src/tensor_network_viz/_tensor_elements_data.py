@@ -12,8 +12,10 @@ from ._input_inspection import (
     _is_tenpy_tensor,
     _is_unordered_collection,
 )
+from ._logging import package_logger
 from .einsum_module._equation import parse_einsum_equation
 from .einsum_module.trace import EinsumTrace, einsum_trace_step, pair_tensor
+from .exceptions import TensorDataError, TensorDataTypeError, UnsupportedEngineError
 from .quimb.graph import _quimb_tensor_parsed, _tensors_sorted_with_meta
 from .tenpy.explicit import TenPyTensorNetwork
 from .tensorkrowch._history import _recover_contraction_history
@@ -427,21 +429,29 @@ def _extract_tensor_records(
     if resolved_engine is None:
         resolved_engine, prepared_input = _detect_tensor_elements_engine(data)
 
-    if resolved_engine == "tensornetwork":
-        records = _extract_tensornetwork_records(prepared_input)
-    elif resolved_engine == "tensorkrowch":
-        records = _extract_tensorkrowch_records(prepared_input)
-    elif resolved_engine == "quimb":
-        records = _extract_quimb_records(prepared_input)
-    elif resolved_engine == "tenpy":
-        records = _extract_tenpy_records(prepared_input)
-    elif resolved_engine == "einsum":
-        records = _extract_einsum_records(prepared_input)
-    else:
-        raise ValueError(f"Unsupported tensor engine: {resolved_engine}")
+    package_logger.debug("Extracting tensor records with engine=%r.", resolved_engine)
+    try:
+        if resolved_engine == "tensornetwork":
+            records = _extract_tensornetwork_records(prepared_input)
+        elif resolved_engine == "tensorkrowch":
+            records = _extract_tensorkrowch_records(prepared_input)
+        elif resolved_engine == "quimb":
+            records = _extract_quimb_records(prepared_input)
+        elif resolved_engine == "tenpy":
+            records = _extract_tenpy_records(prepared_input)
+        elif resolved_engine == "einsum":
+            records = _extract_einsum_records(prepared_input)
+        else:
+            raise UnsupportedEngineError(f"Unsupported tensor engine: {resolved_engine}")
+    except UnsupportedEngineError:
+        raise
+    except TypeError as exc:
+        raise TensorDataTypeError(str(exc)) from exc
+    except ValueError as exc:
+        raise TensorDataError(str(exc)) from exc
 
     if not records:
-        raise ValueError("The input does not expose any tensors to visualize.")
+        raise TensorDataError("The input does not expose any tensors to visualize.")
     return resolved_engine, records
 
 

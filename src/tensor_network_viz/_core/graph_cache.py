@@ -10,6 +10,7 @@ import weakref
 from collections.abc import Callable
 from typing import Any
 
+from .._logging import package_logger
 from .graph import _GraphData
 
 _graph_weak_cache: weakref.WeakKeyDictionary[Any, dict[int, _GraphData]] = (
@@ -77,20 +78,27 @@ def _get_or_build_graph(
         if bucket is not None:
             hit = bucket.get(b_id)
             if hit is not None:
+                package_logger.debug("Graph cache hit via weak cache for builder_id=%s.", b_id)
                 return hit
     except TypeError:
         pass
 
     builtin_hit = _builtin_container_cache_get(network, builder_id=b_id)
     if builtin_hit is not None:
+        package_logger.debug("Graph cache hit via builtin container cache for builder_id=%s.", b_id)
         return builtin_hit
 
     attr_bucket = getattr(network, _CACHE_ATTR, None)
     if isinstance(attr_bucket, dict):
         hit = attr_bucket.get(b_id)
         if isinstance(hit, _GraphData):
+            package_logger.debug(
+                "Graph cache hit via object attribute cache for builder_id=%s.",
+                b_id,
+            )
             return hit
 
+    package_logger.debug("Graph cache miss for builder_id=%s; rebuilding graph.", b_id)
     graph = builder(network)
 
     try:
@@ -101,6 +109,7 @@ def _get_or_build_graph(
         bucket[b_id] = graph
     except TypeError:
         if _builtin_container_cache_put(network, builder_id=b_id, graph=graph):
+            package_logger.debug("Stored graph in builtin container cache for builder_id=%s.", b_id)
             return graph
         try:
             if not isinstance(attr_bucket, dict):
@@ -123,6 +132,7 @@ def clear_tensor_network_graph_cache(
     Call this after in-place edits to a tensor network so the next draw re-extracts the structure.
     """
     b_id = id(builder) if builder is not None else None
+    package_logger.debug("Clearing tensor network graph cache for builder_id=%s.", b_id)
     try:
         bucket = _graph_weak_cache.get(network)
         if bucket is not None:

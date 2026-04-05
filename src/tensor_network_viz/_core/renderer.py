@@ -14,6 +14,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
+from .._logging import package_logger
 from .._matplotlib_state import get_reserved_bottom
 from .._typing import PositionMapping, root_figure
 from ..config import PlotConfig
@@ -240,6 +241,9 @@ def _resolve_draw_scale(graph: _GraphData, positions: NodePositions) -> float:
     d_min = _min_contraction_edge_length(graph, positions)
     if d_min is not None:
         return _geometric_draw_scale(d_min)
+    package_logger.debug(
+        "Falling back to heuristic draw scale because no valid contraction-edge length was found."
+    )
     return _heuristic_draw_scale(graph, positions)
 
 
@@ -268,6 +272,10 @@ def _resolve_draw_scale_and_bond_curve_pad(
         if d_min is not None
         else _heuristic_draw_scale(graph, positions)
     )
+    if d_min is None:
+        package_logger.debug(
+            "Falling back to heuristic draw scale and curve padding for renderer graph."
+        )
 
     best_curve = 0.0
     for record in records:
