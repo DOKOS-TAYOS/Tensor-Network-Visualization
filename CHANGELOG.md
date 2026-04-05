@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Typing and controller structure:** Fixed the interactive tensor-inspector typing issue reported by `pyright`, extracted the linked tensor-inspector controller, and split tensor-element rendering/color-scaling helpers into a dedicated module to keep responsibilities narrower.
 - **Verification workflow docs:** README, guide, and contribution docs now document the `.venv`-first verification flow (`quality`, `tests`, `smoke`, `package`) used before release and CI troubleshooting.
+- **Refactor:** Great refactor to clean the code, and new logs and exceptions.
 
 ## [1.5.2] — 2026-04-05
 
