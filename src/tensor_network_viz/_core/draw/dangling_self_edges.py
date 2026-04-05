@@ -62,10 +62,11 @@ def _draw_dangling_edge(
     endpoint = edge.endpoints[0]
     direction = directions[(endpoint.node_id, endpoint.axis_index)]
     center = positions[endpoint.node_id]
-    use_center_anchor = (
-        dimensions == 3 or graph.nodes[endpoint.node_id].is_virtual or not config.show_nodes
-    )
-    if use_center_anchor:
+    use_center_anchor = dimensions == 3 or graph.nodes[endpoint.node_id].is_virtual
+    if dimensions == 2 and not config.show_nodes and not graph.nodes[endpoint.node_id].is_virtual:
+        start = center
+        end = center + direction * p.stub
+    elif use_center_anchor:
         start = center
         end = center + direction * (p.r + p.stub)
     else:

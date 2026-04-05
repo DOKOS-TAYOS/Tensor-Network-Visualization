@@ -699,6 +699,40 @@ def test_show_tensor_network_nodes_toggle_persists_across_2d_and_3d_views() -> N
     assert controls.current_scene.active_node_mode == "compact"
 
 
+def test_show_tensor_network_nodes_toggle_updates_2d_dangling_anchor() -> None:
+    node = DummyTensorKrowchNode("A", ["left"])
+    connect(node, 0, name="left")
+    center = np.array([0.0, 0.0], dtype=float)
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(leaf_nodes=[node]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            stub_length=0.2,
+            positions={id(node): (float(center[0]), float(center[1]))},
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    ax_2d = controls._view_caches["2d"].ax
+    assert ax_2d is not None
+
+    seg_before = np.asarray(line_collection_segments(ax_2d)[0], dtype=float)
+    length_before = float(np.linalg.norm(seg_before[1] - seg_before[0]))
+    assert float(np.min(np.linalg.norm(seg_before - center, axis=1))) > 0.0
+
+    controls.set_nodes_enabled(False)
+
+    seg_after = np.asarray(line_collection_segments(ax_2d)[0], dtype=float)
+    assert float(np.min(np.linalg.norm(seg_after - center, axis=1))) == pytest.approx(0.0)
+    assert float(np.linalg.norm(seg_after[1] - seg_after[0])) == pytest.approx(
+        length_before,
+        rel=1e-6,
+    )
+
+
 def test_show_tensor_network_discards_stale_hover_annotations_when_switching_views() -> None:
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
@@ -1426,19 +1460,35 @@ def test_plot_tensorkrowch_network_2d_show_nodes_false_dangling_reaches_node_cen
     node = DummyTensorKrowchNode("A", ["left"])
     connect(node, 0, name="left")
     center = np.array([0.0, 0.0], dtype=float)
+    stub_length = 0.2
 
+    _, ax_normal = plot_tensorkrowch_network_2d(
+        DummyNetwork(leaf_nodes=[node]),
+        config=PlotConfig(
+            show_nodes=True,
+            stub_length=stub_length,
+            positions={id(node): (float(center[0]), float(center[1]))},
+        ),
+    )
     _, ax = plot_tensorkrowch_network_2d(
         DummyNetwork(leaf_nodes=[node]),
         config=PlotConfig(
             show_nodes=False,
+            stub_length=stub_length,
             positions={id(node): (float(center[0]), float(center[1]))},
         ),
     )
 
     segs = line_collection_segments(ax)
     assert len(segs) == 1
-    distances = np.linalg.norm(np.asarray(segs[0], dtype=float) - center, axis=1)
+    seg = np.asarray(segs[0], dtype=float)
+    seg_normal = np.asarray(line_collection_segments(ax_normal)[0], dtype=float)
+    distances = np.linalg.norm(seg - center, axis=1)
     assert float(np.min(distances)) == pytest.approx(0.0)
+    assert float(np.linalg.norm(seg[1] - seg[0])) == pytest.approx(
+        float(np.linalg.norm(seg_normal[1] - seg_normal[0])),
+        rel=1e-6,
+    )
 
 
 def test_extent_scale_factor_reflects_long_dense_chain_vs_pair() -> None:

@@ -351,6 +351,7 @@ class _InteractiveTensorFigureController:
     def _base_config(self) -> PlotConfig:
         return replace(
             self.config,
+            show_nodes=self.nodes_on,
             hover_labels=False,
             show_tensor_labels=False,
             show_index_labels=False,
@@ -359,6 +360,27 @@ class _InteractiveTensorFigureController:
             contraction_scheme_cost_hover=False,
             contraction_tensor_inspector=False,
         )
+
+    def _scene_requires_node_mode_rerender(self, scene: _InteractiveSceneState) -> bool:
+        desired_mode = _node_mode_from_show_nodes(self.nodes_on)
+        return (
+            scene.dimensions == 2
+            and scene.active_node_mode != desired_mode
+            and any(edge.kind == "dangling" for edge in scene.graph.edges)
+        )
+
+    def _rerender_cached_view(self, view: ViewName) -> _InteractiveSceneState:
+        cache = self._view_caches[view]
+        assert cache.ax is not None
+        fig, rendered_ax = self._render_view(view, ax=cache.ax)
+        scene = _scene_from_axes(rendered_ax)
+        assert scene is not None
+        cache.ax = rendered_ax
+        cache.scene = scene
+        scene.contraction_controls = get_contraction_controls(rendered_ax)
+        _ensure_scene_label_descriptors(scene)
+        set_active_axes(fig, rendered_ax)
+        return scene
 
     def _render_view(
         self,
@@ -572,6 +594,8 @@ class _InteractiveTensorFigureController:
             self._tensor_inspector.close_from_owner()
 
     def _apply_scene_state(self, scene: _InteractiveSceneState) -> None:
+        if self._scene_requires_node_mode_rerender(scene):
+            scene = self._rerender_cached_view(self.current_view)
         _set_scene_node_mode(scene, mode=_node_mode_from_show_nodes(self.nodes_on))
         if self.tensor_labels_on:
             _ensure_tensor_label_artists(scene)
