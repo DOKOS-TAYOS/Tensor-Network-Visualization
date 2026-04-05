@@ -93,8 +93,7 @@ def test_first_and_repeated_public_render_paths_stay_bounded() -> None:
     assert static_cold < 2.5, f"static first render took {static_cold:.4f}s"
     assert static_warm < 0.9, f"static repeated render took {static_warm:.4f}s"
     assert static_warm < static_cold * 0.65, (
-        f"expected warm static render << cold "
-        f"(cold={static_cold:.4f}s warm={static_warm:.4f}s)"
+        f"expected warm static render << cold (cold={static_cold:.4f}s warm={static_warm:.4f}s)"
     )
     # Cold interactive startup still includes Matplotlib widget/font initialization, so keep this
     # as a broad regression guard rather than a machine-tight benchmark.

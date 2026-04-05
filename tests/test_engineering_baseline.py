@@ -154,8 +154,7 @@ def test_compute_axis_directions_dense_dangling_chain_completes_quickly() -> Non
 def test_compute_axis_directions_dense_dangling_chain_3d_completes_quickly() -> None:
     graph = _build_dense_dangling_chain(160)
     positions = {
-        node_id: np.array([float(node_id) * 0.35, 0.0, 0.0], dtype=float)
-        for node_id in range(160)
+        node_id: np.array([float(node_id) * 0.35, 0.0, 0.0], dtype=float) for node_id in range(160)
     }
 
     started = time.perf_counter()

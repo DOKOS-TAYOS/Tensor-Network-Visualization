@@ -402,7 +402,11 @@ def _direction_margin_3d(
                     ):
                         margin = min(
                             margin,
-                            math.sqrt(_segment_segment_min_distance_sq_3d(start, end, bond_start, bond_end))
+                            math.sqrt(
+                                _segment_segment_min_distance_sq_3d(
+                                    start, end, bond_start, bond_end
+                                )
+                            )
                             - _STUB_BOND_CLEAR_3D,
                         )
         else:

@@ -15,6 +15,7 @@ from .constants import (
     _PHYS_DANGLING_2D_FRAC_FROM_TIP,
 )
 from .fonts_and_scale import _DrawScaleParams
+from .label_descriptors import _TextLabelDescriptor
 from .labels_misc import (
     _curve_index_outside_disk,
     _dangling_hover_label_text,
@@ -22,7 +23,6 @@ from .labels_misc import (
     _node_label_clearance,
     _self_loop_hover_label_text,
 )
-from .label_descriptors import _TextLabelDescriptor
 from .plotter import _PlotAdapter
 from .scene_state import _RenderedEdgeGeometry
 from .vectors import _perpendicular_2d
