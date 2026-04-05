@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Hide nodes in the viewer:** Option to exclude selected nodes from the interactive visualization so dense or branching tensor networks stay readable without changing the underlying graph data.
+
 ## [1.5.2] — 2026-04-05
 
 ### Added
