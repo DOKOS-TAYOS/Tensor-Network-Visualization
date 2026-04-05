@@ -1422,6 +1422,25 @@ def test_plot_tensorkrowch_network_2d_show_nodes_false_keeps_degree_one_color() 
     assert facecolors == [tuple(float(value) for value in to_rgba(config.node_color_degree_one))]
 
 
+def test_plot_tensorkrowch_network_2d_show_nodes_false_dangling_reaches_node_center() -> None:
+    node = DummyTensorKrowchNode("A", ["left"])
+    connect(node, 0, name="left")
+    center = np.array([0.0, 0.0], dtype=float)
+
+    _, ax = plot_tensorkrowch_network_2d(
+        DummyNetwork(leaf_nodes=[node]),
+        config=PlotConfig(
+            show_nodes=False,
+            positions={id(node): (float(center[0]), float(center[1]))},
+        ),
+    )
+
+    segs = line_collection_segments(ax)
+    assert len(segs) == 1
+    distances = np.linalg.norm(np.asarray(segs[0], dtype=float) - center, axis=1)
+    assert float(np.min(distances)) == pytest.approx(0.0)
+
+
 def test_extent_scale_factor_reflects_long_dense_chain_vs_pair() -> None:
     """Large span with small nearest-neighbor spacing should shrink glyphs vs a loose pair."""
     long_dense = np.array([[i * 0.2, 0.0] for i in range(20)], dtype=float)
