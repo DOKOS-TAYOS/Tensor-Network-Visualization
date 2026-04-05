@@ -33,7 +33,7 @@ from .._tensor_elements_data import (
 )
 from .._tensor_elements_support import _TensorRecord
 from .._typing import root_figure
-from .._ui_utils import _set_axes_visible, _set_figure_bottom_reserved
+from .._ui_utils import _set_axes_visible, _set_figure_bottom_reserved, _style_control_tray_axes
 from ..config import EngineName, PlotConfig, ViewName
 from ..contraction_viewer import _MAIN_FIGURE_BOTTOM_RESERVED, _PLAYBACK_DETAILS_TOP
 from ..einsum_module.trace import EinsumTrace
@@ -73,22 +73,27 @@ _INTERACTIVE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _INTERACTIVE_CHECK_MARK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
 _INTERACTIVE_RADIO_PROPS: dict[str, float] = {"s": 38.0, "linewidth": 0.9}
-_CONTROL_TRAY_FACE: tuple[float, float, float] = (0.97, 0.97, 0.99)
-_CONTROL_TRAY_FRAME: tuple[float, float, float] = (0.78, 0.78, 0.82)
 
 
-def _style_interactive_control_axes(ax: Axes) -> None:
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_navigate(False)
-    ax.patch.set_facecolor(_CONTROL_TRAY_FACE)
-    ax.patch.set_alpha(0.88)
-    ax.patch.set_edgecolor(_CONTROL_TRAY_FRAME)
-    ax.patch.set_linewidth(0.6)
-    for spine in ax.spines.values():
-        spine.set_visible(True)
-        spine.set_linewidth(0.6)
-        spine.set_color(_CONTROL_TRAY_FRAME)
+def _reveal_auxiliary_figure(figure: Figure) -> None:
+    manager = getattr(figure.canvas, "manager", None)
+    manager_show = getattr(manager, "show", None)
+    if callable(manager_show):
+        with suppress(AttributeError, RuntimeError, TypeError, ValueError):
+            manager_show()
+    else:
+        figure_show = getattr(figure, "show", None)
+        if callable(figure_show):
+            with suppress(AttributeError, RuntimeError, TypeError, ValueError):
+                figure_show()
+    draw_idle = getattr(figure.canvas, "draw_idle", None)
+    if callable(draw_idle):
+        with suppress(AttributeError, RuntimeError, TypeError, ValueError):
+            draw_idle()
+    flush_events = getattr(figure.canvas, "flush_events", None)
+    if callable(flush_events):
+        with suppress(AttributeError, RuntimeError, TypeError, ValueError):
+            flush_events()
 
 
 class _LinkedTensorInspectorController:
@@ -111,6 +116,10 @@ class _LinkedTensorInspectorController:
         self._closing_programmatically: bool = False
         self._close_cid: int | None = None
 
+    @property
+    def is_enabled(self) -> bool:
+        return self._enabled
+
     def bind_viewer(self, viewer: Any) -> None:
         if self._viewer is viewer:
             if self._enabled and self._viewer is not None:
@@ -128,9 +137,11 @@ class _LinkedTensorInspectorController:
                 call_immediately=self._enabled,
             )
 
-    def set_enabled(self, enabled: bool) -> None:
+    def set_enabled(self, enabled: bool, *, reveal: bool = False) -> None:
         target = bool(enabled)
         if target == self._enabled:
+            if target and reveal and self._figure is not None:
+                _reveal_auxiliary_figure(self._figure)
             if target and self._viewer is not None:
                 self._sync_to_step(int(self._viewer.current_step))
             return
@@ -139,6 +150,8 @@ class _LinkedTensorInspectorController:
             self._close_figure()
             return
         self._ensure_figure()
+        if reveal and self._figure is not None:
+            _reveal_auxiliary_figure(self._figure)
         if self._viewer is not None:
             self._sync_to_step(int(self._viewer.current_step))
         else:
@@ -295,6 +308,7 @@ class _InteractiveTensorFigureController:
         self.figure: Figure | None = None
         self._tensor_inspector: _LinkedTensorInspectorController | None = None
         self._figure_close_cid: int | None = None
+        self._initialized: bool = False
         if self.tensor_inspector_available:
             self._tensor_inspector = _LinkedTensorInspectorController(
                 trace=cast(EinsumTrace, network),
@@ -314,6 +328,7 @@ class _InteractiveTensorFigureController:
             return figure, ax
         self._build_controls()
         self._apply_scene_state(self.current_scene)
+        self._initialized = True
         set_interactive_controls(figure, self)
         set_active_axes(figure, ax)
         figure._tensor_network_viz_tensor_inspector = self._tensor_inspector  # type: ignore[attr-defined]
@@ -436,7 +451,7 @@ class _InteractiveTensorFigureController:
         )
         cb_bottom = float(cb_bounds[1])
         check_ax = self.figure.add_axes(cb_bounds)
-        _style_interactive_control_axes(check_ax)
+        _style_control_tray_axes(check_ax)
         self._check_ax = check_ax
         if not self._external_ax:
             radio_bounds: tuple[float, float, float, float] = (
@@ -446,7 +461,7 @@ class _InteractiveTensorFigureController:
                 _VIEW_SELECTOR_HEIGHT,
             )
             radio_ax = self.figure.add_axes(radio_bounds)
-            _style_interactive_control_axes(radio_ax)
+            _style_control_tray_axes(radio_ax)
             self._radio_ax = radio_ax
             active_index = 0 if self.current_view == "2d" else 1
             self._radio = RadioButtons(
@@ -569,7 +584,15 @@ class _InteractiveTensorFigureController:
             if self._tensor_inspector is not None:
                 self._tensor_inspector.bind_viewer(controls._viewer)
         if self._tensor_inspector is not None:
-            self._tensor_inspector.set_enabled(self.tensor_inspector_on)
+            reveal_inspector = bool(
+                self._initialized
+                and self.tensor_inspector_on
+                and not self._tensor_inspector.is_enabled
+            )
+            self._tensor_inspector.set_enabled(
+                self.tensor_inspector_on,
+                reveal=reveal_inspector,
+            )
         _apply_scene_hover_state(scene, hover_on=self.hover_on)
         self._sync_checkbuttons()
         if not self._external_ax:

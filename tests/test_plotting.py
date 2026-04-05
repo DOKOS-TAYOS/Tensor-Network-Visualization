@@ -16,6 +16,7 @@ from matplotlib.backend_bases import CloseEvent, MouseButton, MouseEvent
 from matplotlib.collections import LineCollection
 
 import tensor_network_viz._core.renderer as core_renderer_module
+import tensor_network_viz._interaction.controller as interaction_controller_module
 import tensor_network_viz.tensorkrowch.graph as tk_graph_module
 import tensor_network_viz.tensorkrowch.renderer as tk_renderer_module
 import tensor_network_viz.tensornetwork.graph as tn_graph_module
@@ -849,6 +850,46 @@ def test_show_tn_einsum_trace_inspector_checkbox_auto_enables_playback() -> None
     assert controls.playback_on is True
     assert controls.tensor_inspector_on is True
     assert getattr(fig, "_tensor_network_viz_tensor_inspector", None) is not None
+
+
+def test_show_tn_reenabling_tensor_inspector_reveals_auxiliary_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = _build_einsum_trace_for_inspector()
+    revealed: list[matplotlib.figure.Figure] = []
+
+    monkeypatch.setattr(
+        interaction_controller_module,
+        "_reveal_auxiliary_figure",
+        lambda figure: revealed.append(figure),
+    )
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(
+            contraction_tensor_inspector=False,
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+
+    _click_checkbutton(controls._checkbuttons, 6)
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    assert revealed == [inspector._figure]
+
+    _click_checkbutton(controls._checkbuttons, 6)
+    assert inspector._figure is None
+
+    _click_checkbutton(controls._checkbuttons, 6)
+
+    assert inspector._figure is not None
+    assert revealed == [revealed[0], inspector._figure]
 
 
 def test_show_tensor_network_non_einsum_inputs_do_not_expose_tensor_inspector_checkbox() -> None:

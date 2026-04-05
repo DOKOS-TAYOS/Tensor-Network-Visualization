@@ -22,7 +22,7 @@ from ._tensor_elements_support import (
     _TextSummaryPayload,
     _valid_group_modes_for_record,
 )
-from ._ui_utils import _reserve_figure_bottom
+from ._ui_utils import _reserve_figure_bottom, _style_control_tray_axes
 from .tensor_elements_config import TensorElementsConfig, TensorElementsMode
 
 TensorElementsGroup = Literal["basic", "complex", "diagnostic"]
@@ -32,9 +32,9 @@ PrepareModePayloadFn = Callable[
 ]
 
 _GROUP_OPTIONS: Final[tuple[TensorElementsGroup, ...]] = ("basic", "complex", "diagnostic")
-_GROUP_SELECTOR_BOUNDS: Final[tuple[float, float, float, float]] = (0.02, 0.048, 0.12, 0.12)
-_MODE_SELECTOR_BOUNDS: Final[tuple[float, float, float, float]] = (0.16, 0.028, 0.18, 0.18)
-_TENSOR_SLIDER_BOUNDS: Final[tuple[float, float, float, float]] = (0.42, 0.058, 0.38, 0.03)
+_GROUP_SELECTOR_BOUNDS: Final[tuple[float, float, float, float]] = (0.02, 0.048, 0.15, 0.12)
+_MODE_SELECTOR_BOUNDS: Final[tuple[float, float, float, float]] = (0.19, 0.028, 0.21, 0.16)
+_TENSOR_SLIDER_BOUNDS: Final[tuple[float, float, float, float]] = (0.48, 0.052, 0.38, 0.05)
 _TENSOR_ELEMENTS_CONTROLS_BOTTOM: Final[float] = 0.24
 _INTERACTIVE_LABEL_PROPS: Final[dict[str, Sequence[Any]]] = {"fontsize": [9.5]}
 _INTERACTIVE_RADIO_PROPS: Final[dict[str, float]] = {"s": 38.0, "linewidth": 0.9}
@@ -209,6 +209,7 @@ class _TensorElementsFigureController:
         if show_controls:
             _reserve_figure_bottom(self._figure, _TENSOR_ELEMENTS_CONTROLS_BOTTOM)
             self._group_radio_ax = self._figure.add_axes(_GROUP_SELECTOR_BOUNDS)
+            _style_control_tray_axes(self._group_radio_ax)
             self._group_radio = RadioButtons(
                 self._group_radio_ax,
                 _GROUP_OPTIONS,
@@ -221,6 +222,7 @@ class _TensorElementsFigureController:
 
             if len(self._records) > 1:
                 self._slider_ax = self._figure.add_axes(_TENSOR_SLIDER_BOUNDS)
+                _style_control_tray_axes(self._slider_ax)
                 self._slider = Slider(
                     self._slider_ax,
                     "Tensor",
@@ -246,6 +248,7 @@ class _TensorElementsFigureController:
         if self._mode_radio_ax is not None:
             self._mode_radio_ax.remove()
         self._mode_radio_ax = self._figure.add_axes(_MODE_SELECTOR_BOUNDS)
+        _style_control_tray_axes(self._mode_radio_ax)
         mode_options = self._current_group_modes()
         active_index = mode_options.index(self._mode)
         self._mode_radio = RadioButtons(

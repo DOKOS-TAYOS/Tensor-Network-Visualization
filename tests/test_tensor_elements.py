@@ -961,6 +961,109 @@ def test_show_tensor_elements_widgets_offer_new_basic_and_diagnostic_modes() -> 
     assert diagnostic_modes == ("sign", "signed_value", "sparsity", "nan_inf")
 
 
+def test_show_tensor_elements_group_selector_fits_diagnostic_label() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(6, dtype=float).reshape(2, 3),
+        name="WidgetModes",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+    assert controller._group_radio is not None
+
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    diagnostic_label = controller._group_radio.labels[2]
+    label_bbox = diagnostic_label.get_window_extent(renderer)
+    axis_bbox = controller._group_radio.ax.get_window_extent(renderer)
+
+    assert fig is ax.figure
+    assert label_bbox.x0 >= axis_bbox.x0
+    assert label_bbox.x1 <= axis_bbox.x1
+
+
+def test_show_tensor_elements_controls_use_same_tray_style_as_viewer_controls() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.arange(6, dtype=float).reshape(2, 3),
+            name="A",
+            axis_names=("x", "y"),
+        ),
+        DummyTensorNetworkNode(
+            np.arange(12, dtype=float).reshape(3, 4),
+            name="B",
+            axis_names=("u", "v"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert fig is ax.figure
+    assert controller._group_radio_ax is not None
+    assert controller._mode_radio_ax is not None
+    assert controller._slider_ax is not None
+
+    for control_ax in (
+        controller._group_radio_ax,
+        controller._mode_radio_ax,
+        controller._slider_ax,
+    ):
+        assert control_ax.patch.get_facecolor() == pytest.approx((0.97, 0.97, 0.99, 0.88))
+        assert control_ax.patch.get_linewidth() == pytest.approx(0.6)
+        for spine in control_ax.spines.values():
+            assert spine.get_visible()
+            assert spine.get_linewidth() == pytest.approx(0.6)
+
+
+def test_show_tensor_elements_mode_selector_sits_lower_than_plot_area() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(6, dtype=float).reshape(2, 3),
+        name="WidgetModes",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert fig is ax.figure
+    assert controller._mode_radio_ax is not None
+    mode_bounds = controller._mode_radio_ax.get_position().bounds
+    mode_top = mode_bounds[1] + mode_bounds[3]
+
+    assert float(mode_top) <= 0.19
+
+
+def test_show_tensor_elements_slider_sits_farther_right_of_mode_selector() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.arange(6, dtype=float).reshape(2, 3),
+            name="A",
+            axis_names=("x", "y"),
+        ),
+        DummyTensorNetworkNode(
+            np.arange(12, dtype=float).reshape(3, 4),
+            name="B",
+            axis_names=("u", "v"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert fig is ax.figure
+    assert controller._mode_radio_ax is not None
+    assert controller._slider_ax is not None
+
+    mode_bounds = controller._mode_radio_ax.get_position().bounds
+    slider_bounds = controller._slider_ax.get_position().bounds
+    mode_right = mode_bounds[0] + mode_bounds[2]
+    slider_left = slider_bounds[0]
+
+    assert float(slider_left - mode_right) >= 0.075
+
+
 def test_show_tensor_elements_widgets_switch_group_then_mode() -> None:
     tensor = DummyTensorNetworkNode(
         np.array([[1.0 + 2.0j, 3.0 - 4.0j]], dtype=np.complex128),

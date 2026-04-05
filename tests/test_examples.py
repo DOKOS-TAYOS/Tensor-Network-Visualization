@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tensor_network_viz import EinsumTrace
+from tensor_network_viz import EinsumTrace, show_tensor_network
 from tensor_network_viz._tensor_elements_data import _extract_einsum_playback_step_records
 
 _EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
@@ -254,6 +254,67 @@ def test_einsum_auto_examples_keep_tensors_alive_for_tensor_inspector(example_na
     step_records = _extract_einsum_playback_step_records(trace)
     assert step_records
     assert all(step.record is not None for step in step_records)
+
+
+@pytest.mark.parametrize("example_name", ["mps", "mpo"])
+def test_einsum_auto_examples_keep_inspector_and_costs_aligned_to_real_trace_steps(
+    example_name: str,
+) -> None:
+    _require_torch()
+    run_demo = _load_example_module(
+        Path("examples/run_demo.py"),
+        f"run_demo_{example_name}_inspector_alignment",
+    )
+    demo_cli = importlib.import_module("demo_cli")
+    einsum_demo = importlib.import_module("einsum_demo")
+
+    args = run_demo.parse_args(
+        ["einsum", example_name, "--view", "2d", "--tensor-inspector", "--no-show"]
+    )
+    trace = einsum_demo._trace_steps_for(example_name, args)
+    scheme_steps = einsum_demo._scheme_steps(example_name, args)
+
+    assert isinstance(trace, EinsumTrace)
+    assert scheme_steps is not None
+    assert len(scheme_steps) == len(trace)
+
+    config = demo_cli.finalize_demo_plot_config(
+        args,
+        engine="einsum",
+        scheme_tensor_names=scheme_steps,
+    )
+    fig, _ax = show_tensor_network(
+        trace,
+        engine="einsum",
+        view=args.view,
+        config=config,
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls.current_scene.contraction_controls is not None
+    viewer = controls.current_scene.contraction_controls._viewer
+    assert viewer is not None
+    assert viewer.current_step == len(trace)
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+    assert f"r{len(trace) - 1}" in inspector_controls._panel.main_ax.get_title()
+
+    controls.cost_hover_on = True
+    controls._apply_scene_state(controls.current_scene)
+    assert viewer._cost_panel_ax is not None
+    assert viewer._cost_panel_ax.get_visible()
+    assert viewer._cost_text_artist is not None
+    assert "Contraction:" in viewer._cost_text_artist.get_text()
 
 
 def test_tensornetwork_mera_ttn_saves_figure_without_showing() -> None:

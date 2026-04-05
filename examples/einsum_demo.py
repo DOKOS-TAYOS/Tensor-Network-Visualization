@@ -68,6 +68,19 @@ def _keep_trace_tensors_alive(trace: Any, *tensors: Any) -> None:
     trace._example_keepalive = keepalive
 
 
+def _cumulative_group_contraction_scheme(
+    groups: tuple[tuple[str, ...], ...],
+) -> tuple[tuple[str, ...], ...]:
+    if not groups:
+        return ()
+    running_names: list[str] = []
+    steps: list[tuple[str, ...]] = []
+    for group in groups:
+        running_names.extend(group)
+        steps.append(tuple(running_names))
+    return tuple(steps)
+
+
 def _site_bond_dims(n_sites: int) -> list[int]:
     return [2 + (index % 3) for index in range(max(n_sites - 1, 1))]
 
@@ -586,16 +599,13 @@ def _renderable_trace(trace: Any, args: ExampleCliArgs) -> Any:
 
 def _scheme_steps(name: str, args: ExampleCliArgs) -> tuple[tuple[str, ...], ...] | None:
     if name == "mps":
-        return cumulative_prefix_contraction_scheme(
-            tuple(f"A{i}" for i in range(args.n_sites))
-            + tuple(f"x{i}" for i in range(args.n_sites))
+        return _cumulative_group_contraction_scheme(
+            tuple((f"A{i}", f"x{i}") for i in range(args.n_sites))
         )
     if name == "mpo":
-        mpo_names = tuple(f"W{i}" for i in range(args.n_sites))
-        vectors = tuple(f"d{i}" for i in range(args.n_sites)) + tuple(
-            f"u{i}" for i in range(args.n_sites)
+        return _cumulative_group_contraction_scheme(
+            tuple((f"W{i}", f"d{i}", f"u{i}") for i in range(args.n_sites))
         )
-        return cumulative_prefix_contraction_scheme(mpo_names + vectors)
     if name == "peps":
         names = tuple(f"P{i}_{j}" for i in range(args.lx) for j in range(args.ly))
         return cumulative_prefix_contraction_scheme(names)
