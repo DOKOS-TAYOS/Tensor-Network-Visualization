@@ -77,9 +77,7 @@ def test_bridge_round_trips_matplotlib_attrs() -> None:
         assert fig._tensor_network_viz_active_axes is ax
 
         set_tensor_elements_controls(fig, tensor_elements_controls)
-        assert fig._tensor_network_viz_tensor_elements_controls is (
-            tensor_elements_controls
-        )
+        assert fig._tensor_network_viz_tensor_elements_controls is (tensor_elements_controls)
 
         assert get_hover_cid(fig) is None
         set_hover_cid(fig, 17)
