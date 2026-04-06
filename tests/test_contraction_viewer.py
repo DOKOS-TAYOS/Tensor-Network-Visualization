@@ -13,6 +13,7 @@ import pytest
 from matplotlib.backend_bases import MouseButton, MouseEvent
 from matplotlib.patches import FancyBboxPatch, Rectangle
 from matplotlib.widgets import Button, CheckButtons, Slider
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from tensor_network_viz import ContractionViewer2D, PlotConfig, pair_tensor
 from tensor_network_viz._core.graph import (
@@ -126,8 +127,23 @@ def test_plot_graph_contraction_playback_adds_widgets() -> None:
     )
     viewer = getattr(fig, "_tensor_network_viz_contraction_viewer", None)
     assert viewer is not None
+    assert getattr(fig, "_tensor_network_viz_contraction_viewer", None) is viewer
     assert viewer.slider is not None
-    assert len(fig.axes) >= 2
+    assert isinstance(viewer.slider, Slider)
+    assert viewer.slider.valmin == 0
+    assert viewer.slider.valmax == len(trace)
+    assert viewer.current_step == len(trace)
+    assert viewer.slider.ax.get_visible()
+    assert viewer._btn_play is not None
+    assert viewer._btn_play.label.get_text() == "Play"
+    assert viewer._btn_pause is not None
+    assert viewer._btn_pause.label.get_text() == "Pause"
+    assert viewer._btn_reset is not None
+    assert viewer._btn_reset.label.get_text() == "Reset"
+    assert viewer._cost_panel_ax is not None
+    assert viewer._cost_panel_ax in fig.axes
+    assert not viewer._cost_panel_ax.get_visible()
+    assert len(fig.axes) >= 6
 
 
 def test_plot_graph_scheme_without_playback_keeps_controls_but_hides_playback_widgets() -> None:
@@ -145,9 +161,20 @@ def test_plot_graph_scheme_without_playback_keeps_controls_but_hides_playback_wi
     assert controls is not None
     viewer = getattr(fig, "_tensor_network_viz_contraction_viewer", None)
     assert viewer is not None
+    assert controls._viewer is viewer
+    assert controls._checkbuttons is not None
+    assert tuple(bool(v) for v in controls._checkbuttons.get_status()) == (True, False, False)
     assert viewer.slider is not None
     assert not viewer.slider.ax.get_visible()
-    assert len(fig.axes) >= 2
+    assert viewer._btn_play is not None
+    assert not viewer._btn_play.ax.get_visible()
+    assert viewer._btn_pause is not None
+    assert not viewer._btn_pause.ax.get_visible()
+    assert viewer._btn_reset is not None
+    assert not viewer._btn_reset.ax.get_visible()
+    assert viewer.current_step == viewer.num_steps == len(trace)
+    assert viewer._artists[0] is not None
+    assert viewer._artists[0].get_visible()
 
 
 def test_contraction_playback_without_scheme_raises() -> None:
@@ -168,18 +195,48 @@ def test_contraction_playback_without_scheme_raises() -> None:
         )
 
 
-def test_attach_playback_requires_drawable_artists() -> None:
+def test_attach_playback_registers_viewer_and_builds_2d_controls() -> None:
     fig, ax = matplotlib.pyplot.subplots()
     r = Rectangle((0, 0), 1, 1)
     ax.add_patch(r)
     cfg = PlotConfig()
-    attach_playback_to_tensor_network_figure(
+    viewer = attach_playback_to_tensor_network_figure(
         artists_by_step=[r],
         fig=fig,
         ax=ax,
         config=cfg,
     )
-    assert fig.axes  # main + widget axes
+    assert getattr(fig, "_tensor_network_viz_contraction_viewer", None) is viewer
+    assert viewer.slider is not None
+    assert viewer.slider.valmin == 0
+    assert viewer.slider.valmax == 1
+    assert viewer.current_step == 1
+    assert viewer._btn_play is not None
+    assert viewer._btn_pause is not None
+    assert viewer._btn_reset is not None
+    viewer.reset()
+    assert viewer.current_step == 0
+    assert viewer.slider.val == 0
+
+
+def test_attach_playback_uses_3d_viewer_for_3d_axes() -> None:
+    fig = matplotlib.pyplot.figure()
+    ax = fig.add_subplot(111, projection="3d")
+    artist = Poly3DCollection([[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]])
+    ax.add_collection3d(artist)
+
+    viewer = attach_playback_to_tensor_network_figure(
+        artists_by_step=[artist],
+        fig=fig,
+        ax=ax,
+        config=PlotConfig(),
+    )
+
+    assert viewer.__class__.__name__ == "ContractionViewer3D"
+    assert getattr(fig, "_tensor_network_viz_contraction_viewer", None) is viewer
+    assert viewer.slider is not None
+    assert viewer.slider.valmax == 1
+    assert viewer.current_step == 1
 
 
 def test_highlight_current_2d_scheme_patch_faint_fill_opaque_edge() -> None:

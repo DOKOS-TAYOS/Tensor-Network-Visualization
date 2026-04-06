@@ -25,13 +25,20 @@ def _repo_root() -> Path:
 
 def _command_groups() -> dict[str, VerificationGroup]:
     python = sys.executable
+    pytest_base = (python, "-m", "pytest", "-q")
     return {
         "quality": (
             VerificationStep("ruff-check", (python, "-m", "ruff", "check", ".")),
             VerificationStep("ruff-format", (python, "-m", "ruff", "format", "--check", ".")),
             VerificationStep("pyright", (python, "-m", "pyright")),
         ),
-        "tests": (VerificationStep("pytest", (python, "-m", "pytest", "-q")),),
+        "tests": (VerificationStep("pytest", pytest_base),),
+        "perf": (
+            VerificationStep(
+                "pytest-perf",
+                (*pytest_base, "-p", "no:cacheprovider", "--override-ini=addopts=", "-m", "perf"),
+            ),
+        ),
         "smoke": (
             VerificationStep(
                 "quimb-smoke",
@@ -80,9 +87,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "mode",
         nargs="?",
-        choices=("all", "quality", "tests", "smoke", "package"),
+        choices=("all", "quality", "tests", "perf", "smoke", "package"),
         default="all",
-        help="Verification slice to run. Defaults to the full pre-merge suite.",
+        help="Verification slice to run. Defaults to the full pre-merge suite without perf checks.",
     )
     return parser
 

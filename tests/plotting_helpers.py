@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import numpy as np
+from matplotlib import image as mpimg
+from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection, PatchCollection, PathCollection
+from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.art3d import Path3DCollection, Poly3DCollection
 
 
@@ -21,6 +25,28 @@ def line_collection_segments(ax: Any) -> list[np.ndarray]:
         if isinstance(c, LineCollection):
             out.extend(c.get_segments())
     return out
+
+
+def assert_rendered_figure(
+    fig: Figure,
+    ax: Axes,
+    *,
+    min_axes_count: int = 1,
+) -> None:
+    """Assert that the plotted axes is attached to the expected figure."""
+    assert ax.figure is fig
+    assert ax in fig.axes
+    assert len(fig.axes) >= min_axes_count
+
+
+def assert_readable_image(path: Path) -> np.ndarray:
+    """Assert that a saved image exists and can be loaded as pixel data."""
+    assert path.exists()
+    assert path.stat().st_size > 0
+    image = np.asarray(mpimg.imread(path))
+    assert image.size > 0
+    assert image.ndim in {2, 3}
+    return image
 
 
 def patch_collection_circle_count(ax: Any) -> int:

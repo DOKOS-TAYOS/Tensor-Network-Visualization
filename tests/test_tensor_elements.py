@@ -15,6 +15,7 @@ import pytest
 from matplotlib.axes import Axes
 from matplotlib.backend_bases import MouseButton, MouseEvent
 
+from plotting_helpers import assert_rendered_figure
 from tensor_network_viz import (
     EinsumTrace,
     TensorElementsConfig,
@@ -176,7 +177,7 @@ def test_show_tensor_elements_returns_fig_ax_for_single_tensor_with_autodetect()
 
     fig, ax = show_tensor_elements(tensor, show=False)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.images
     assert "Left" in ax.get_title()
 
@@ -190,7 +191,7 @@ def test_show_tensor_elements_supports_single_quimb_like_tensor() -> None:
 
     fig, ax = show_tensor_elements(tensor, show=False)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.images
     assert "quimb" in ax.get_title().lower()
 
@@ -408,7 +409,7 @@ def test_show_tensor_elements_uses_magnitude_by_default_for_complex_tensors() ->
 
     fig, ax = show_tensor_elements(tensor, show=False, show_controls=False)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "magnitude" in ax.get_title().lower()
 
 
@@ -426,7 +427,7 @@ def test_show_tensor_elements_real_mode_renders_real_component() -> None:
         show_controls=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "real" in ax.get_title().lower()
 
 
@@ -444,7 +445,7 @@ def test_show_tensor_elements_imag_mode_renders_imag_component() -> None:
         show_controls=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "imag" in ax.get_title().lower()
 
 
@@ -462,7 +463,7 @@ def test_show_tensor_elements_phase_mode_produces_heatmap() -> None:
         show_controls=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.images
     assert "phase" in ax.get_title().lower()
 
@@ -515,7 +516,7 @@ def test_show_tensor_elements_sign_mode_is_discrete() -> None:
     image = ax.images[0].get_array()
     image_array = np.asarray(image, dtype=float)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "sign" in ax.get_title().lower()
     assert set(np.unique(image_array)) <= {-1.0, 0.0, 1.0}
 
@@ -534,7 +535,7 @@ def test_show_tensor_elements_signed_value_mode_is_continuous() -> None:
         show_controls=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "signed value" in ax.get_title().lower()
 
 
@@ -553,7 +554,7 @@ def test_show_tensor_elements_log_magnitude_mode_uses_log_scaled_magnitude() -> 
     )
     image_array = np.asarray(ax.images[0].get_array(), dtype=float)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "log" in ax.get_title().lower()
     np.testing.assert_allclose(image_array, np.array([[0.0, 2.0]]))
 
@@ -573,7 +574,7 @@ def test_show_tensor_elements_sparsity_mode_marks_near_zero_entries() -> None:
     )
     image_array = np.asarray(ax.images[0].get_array(), dtype=float)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "sparsity" in ax.get_title().lower()
     np.testing.assert_array_equal(image_array, np.array([[1.0, 1.0, 0.0]]))
 
@@ -593,7 +594,7 @@ def test_show_tensor_elements_nan_inf_mode_marks_special_values() -> None:
     )
     image_array = np.asarray(ax.images[0].get_array(), dtype=float)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     np.testing.assert_array_equal(image_array, np.array([[0.0, 1.0, 2.0, 3.0]]))
 
 
@@ -622,7 +623,7 @@ def test_show_tensor_elements_nan_inf_mode_marks_complex_nonfinite_components() 
     )
     image_array = np.asarray(ax.images[0].get_array(), dtype=float)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     np.testing.assert_array_equal(image_array, np.array([[0.0, 1.0, 2.0, 3.0]]))
 
 
@@ -641,7 +642,7 @@ def test_show_tensor_elements_data_mode_uses_main_axis_for_textual_summary() -> 
     )
     all_text = "\n".join(text.get_text() for text in ax.texts)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "data" in ax.get_title().lower()
     assert not ax.images
     assert "shape:" in all_text.lower()
@@ -663,7 +664,7 @@ def test_show_tensor_elements_data_mode_includes_axis_summary_and_topk() -> None
     )
     text_blob = "\n".join(text.get_text() for text in ax.texts)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "axis summary:" in text_blob.lower()
     assert "top 3 by magnitude:" in text_blob.lower()
     assert "row (size=2)" in text_blob
@@ -687,7 +688,7 @@ def test_show_tensor_elements_data_mode_uses_magnitude_for_complex_topk() -> Non
     )
     text_blob = "\n".join(text.get_text() for text in ax.texts)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "mean|x|" in text_blob
     assert "row=0, col=1" in text_blob
 
@@ -707,10 +708,9 @@ def test_show_tensor_elements_downsamples_large_heatmaps() -> None:
     )
 
     image = ax.images[0].get_array()
-    assert image is not None
     image_array = np.asarray(image, dtype=float)
     assert tuple(image_array.shape) == (64, 32)
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
 
 
 def test_show_tensor_elements_heatmap_adds_colorbar_axis_on_the_right() -> None:
@@ -780,7 +780,7 @@ def test_show_tensor_elements_robust_scaling_ignores_outliers_and_nonfinite_valu
     )
     low, high = ax.images[0].get_clim()
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert np.isfinite(low)
     assert np.isfinite(high)
     assert high < 1000.0
@@ -830,7 +830,7 @@ def test_show_tensor_elements_signed_value_robust_scaling_stays_symmetric() -> N
     )
     low, high = ax.images[0].get_clim()
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert high < 100.0
     assert low == pytest.approx(-high)
 
@@ -853,7 +853,7 @@ def test_show_tensor_elements_outlier_overlay_appears_for_continuous_heatmaps() 
         show_controls=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert len(ax.collections) == 1
 
 
@@ -875,7 +875,7 @@ def test_show_tensor_elements_outlier_overlay_skips_discrete_heatmaps() -> None:
         show_controls=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert not ax.collections
 
 
@@ -1019,7 +1019,7 @@ def test_show_tensor_elements_widgets_switch_modes() -> None:
     controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
     _click_radio_label(controller._mode_radio, 3)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "distribution" in ax.get_title().lower()
 
 
@@ -1035,7 +1035,7 @@ def test_show_tensor_elements_widgets_offer_data_mode() -> None:
     _click_radio_label(controller._mode_radio, 4)
     text_blob = "\n".join(text.get_text() for text in ax.texts)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "data" in ax.get_title().lower()
     assert "shape:" in text_blob.lower()
 
@@ -1054,7 +1054,7 @@ def test_show_tensor_elements_widgets_offer_new_basic_and_diagnostic_modes() -> 
     _click_radio_label(controller._group_radio, 2)
     diagnostic_modes = tuple(text.get_text() for text in controller._mode_radio.labels)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert basic_modes == ("elements", "magnitude", "log_magnitude", "distribution", "data")
     assert diagnostic_modes == ("sign", "signed_value", "sparsity", "nan_inf")
 
@@ -1076,7 +1076,7 @@ def test_show_tensor_elements_group_selector_fits_diagnostic_label() -> None:
     label_bbox = diagnostic_label.get_window_extent(renderer)
     axis_bbox = controller._group_radio.ax.get_window_extent(renderer)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert label_bbox.x0 >= axis_bbox.x0
     assert label_bbox.x1 <= axis_bbox.x1
 
@@ -1098,7 +1098,7 @@ def test_show_tensor_elements_controls_use_same_tray_style_as_viewer_controls() 
     fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
     controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert controller._group_radio_ax is not None
     assert controller._mode_radio_ax is not None
     assert controller._slider_ax is not None
@@ -1125,7 +1125,7 @@ def test_show_tensor_elements_mode_selector_sits_lower_than_plot_area() -> None:
     fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
     controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert controller._mode_radio_ax is not None
     mode_bounds = controller._mode_radio_ax.get_position().bounds
     mode_top = mode_bounds[1] + mode_bounds[3]
@@ -1150,7 +1150,7 @@ def test_show_tensor_elements_slider_sits_farther_right_of_mode_selector() -> No
     fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
     controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert controller._mode_radio_ax is not None
     assert controller._slider_ax is not None
 
@@ -1174,7 +1174,7 @@ def test_show_tensor_elements_widgets_switch_group_then_mode() -> None:
     _click_radio_label(controller._group_radio, 1)
     _click_radio_label(controller._mode_radio, 1)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "imag" in ax.get_title().lower()
 
 
@@ -1198,5 +1198,5 @@ def test_show_tensor_elements_slider_keeps_group_and_falls_back_to_valid_mode() 
     _click_radio_label(controller._mode_radio, 2)
     controller._slider.set_val(1.0)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "real" in ax.get_title().lower()
