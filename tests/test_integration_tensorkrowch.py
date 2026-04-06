@@ -3,7 +3,6 @@ import matplotlib
 matplotlib.use("Agg")
 
 import pytest
-from matplotlib.patches import FancyBboxPatch
 
 from tensor_network_viz import PlotConfig, show_tensor_network
 from tensor_network_viz.tensorkrowch import (
@@ -58,7 +57,7 @@ def test_real_tensorkrowch_contracted_network_exposes_auto_scheme_steps() -> Non
     assert graph.contraction_step_metrics[0].multiplicative_cost == 30
 
 
-def test_real_tensorkrowch_contracted_network_draws_auto_scheme_and_playback() -> None:
+def test_real_tensorkrowch_contracted_network_draws_auto_scheme_with_slider() -> None:
     network = tk.TensorNetwork(name="demo")
     left = tk.Node(
         shape=(2, 3),
@@ -81,7 +80,6 @@ def test_real_tensorkrowch_contracted_network_draws_auto_scheme_and_playback() -
         network,
         config=PlotConfig(
             show_contraction_scheme=True,
-            contraction_playback=True,
             contraction_scheme_cost_hover=True,
         ),
     )
@@ -90,8 +88,7 @@ def test_real_tensorkrowch_contracted_network_draws_auto_scheme_and_playback() -
     controls = getattr(fig, "_tensor_network_viz_contraction_controls", None)
 
     assert fig is ax.figure
-    assert len(patches) == 1
-    assert isinstance(patches[0], FancyBboxPatch)
+    assert patches == []
     assert controls is not None
     assert controls._viewer is not None
     assert controls._viewer.slider is not None
@@ -125,7 +122,6 @@ def test_contracted_tensorkrowch_network_exposes_tensor_inspector() -> None:
         view="2d",
         config=PlotConfig(
             show_contraction_scheme=True,
-            contraction_playback=True,
             contraction_scheme_cost_hover=True,
             contraction_tensor_inspector=True,
         ),

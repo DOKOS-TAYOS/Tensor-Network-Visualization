@@ -396,7 +396,6 @@ def test_tensorkrowch_run_example_2d_calls_renderer_without_scope_patch(
         labels=None,
         hover_labels=True,
         scheme=False,
-        playback=False,
         hover_cost=False,
         tensor_inspector=False,
         contracted=False,
@@ -455,6 +454,25 @@ def test_tensorkrowch_contracted_demo_uses_native_network_and_auto_scheme() -> N
     assert len(built.network.resultant_nodes) == 5
 
 
+def test_tensorkrowch_mps_demo_uses_pairwise_merge_contractions_by_default() -> None:
+    module = _load_example_module(
+        Path("examples/tensorkrowch_demo.py"),
+        "tensorkrowch_demo_pairwise",
+    )
+    run_demo = _load_example_module(Path("examples/run_demo.py"), "run_demo_tk_pairwise_args")
+    from tensor_network_viz.tensorkrowch.graph import _build_graph as _build_tensorkrowch_graph
+
+    args = run_demo.parse_args(["tensorkrowch", "mps", "--scheme", "--n-sites", "6", "--no-show"])
+    definition = module.resolve_example_definition(module.EXAMPLES, "mps")
+    built = module._build_example(args, definition)
+
+    assert built.scheme_steps_by_name is None
+    graph = _build_tensorkrowch_graph(built.network)
+    assert graph.contraction_steps is not None
+    assert len(graph.contraction_steps) == 5
+    assert tuple(len(step) for step in graph.contraction_steps) == (2, 2, 2, 4, 6)
+
+
 def test_tensorkrowch_contracted_demo_saves_figure_without_showing() -> None:
     pytest.importorskip("tensorkrowch")
     pytest.importorskip("torch")
@@ -468,7 +486,6 @@ def test_tensorkrowch_contracted_demo_saves_figure_without_showing() -> None:
             "tensorkrowch",
             "mps",
             "--contracted",
-            "--scheme",
             "--n-sites",
             "6",
             "--save",
@@ -545,7 +562,7 @@ def test_run_all_examples_list_mode_prints_without_running_subprocesses(
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert "examples/run_demo.py tensornetwork mera_ttn --view 2d --scheme" in captured.out
+    assert "examples/run_demo.py tensornetwork mera_ttn --view 2d" in captured.out
 
 
 def test_run_all_examples_contraction_group_includes_small_contracted_tensorkrowch_demo() -> None:
@@ -565,7 +582,6 @@ def test_run_all_examples_contraction_group_includes_small_contracted_tensorkrow
         "--contracted",
         "--n-sites",
         "6",
-        "--scheme",
     ) in argvs
 
 
@@ -601,7 +617,6 @@ def test_representative_demo_tensors_are_deterministic_and_non_constant() -> Non
         labels=None,
         hover_labels=True,
         scheme=False,
-        playback=False,
         hover_cost=False,
         tensor_inspector=False,
         contracted=False,

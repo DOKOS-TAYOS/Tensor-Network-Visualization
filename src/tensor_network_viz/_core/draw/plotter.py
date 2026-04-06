@@ -6,6 +6,7 @@ from typing import Any, Literal, Protocol, TypeAlias
 
 import numpy as np
 from matplotlib import patheffects
+from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection, PatchCollection, PathCollection
 from matplotlib.patches import Circle
@@ -105,6 +106,7 @@ class _PlotAdapter(Protocol):
         mode: NodeRenderMode,
     ) -> None: ...
     def get_node_artist_bundle(self) -> _NodeArtistBundle | None: ...
+    def get_edge_artists(self) -> tuple[Any, ...]: ...
     def style_axes(self, coords: np.ndarray, *, view_margin: float) -> None: ...
 
 
@@ -123,6 +125,7 @@ def _make_plotter(
                 "_ax",
                 "_edge_segments",
                 "_hover_edge_targets",
+                "_edge_artists",
                 "_node_disk_collection",
                 "_node_disk_collections",
                 "_node_artist_bundle",
@@ -136,6 +139,7 @@ def _make_plotter(
                 self._ax = ax_2d
                 self._edge_segments: list[tuple[float, str, float, np.ndarray]] = []
                 self._hover_edge_targets = hover_edges
+                self._edge_artists: list[Artist] = []
                 self._node_disk_collection: PatchCollection | PathCollection | None = None
                 self._node_disk_collections: list[PatchCollection | PathCollection] = []
                 self._node_artist_bundle: _NodeArtistBundle | None = None
@@ -147,6 +151,9 @@ def _make_plotter(
 
             def get_node_artist_bundle(self) -> _NodeArtistBundle | None:
                 return self._node_artist_bundle
+
+            def get_edge_artists(self) -> tuple[Artist, ...]:
+                return tuple(self._edge_artists)
 
             def flush_edge_collections(self) -> None:
                 """Batch buffered edges into a few LineCollections (call after all edges drawn)."""
@@ -167,6 +174,7 @@ def _make_plotter(
                     )
                     coll.set_path_effects(_edge_outline_effects(float(lw)))
                     ax_.add_collection(coll)
+                    self._edge_artists.append(coll)
                 self._edge_segments.clear()
 
             def plot_line(self, start: np.ndarray, end: np.ndarray, **kwargs: Any) -> None:
@@ -293,10 +301,14 @@ def _make_plotter(
     class _3DPlotter:
         def __init__(self, hover_edges: list[tuple[np.ndarray, str]] | None) -> None:
             self._hover_edge_targets = hover_edges
+            self._edge_artists: list[Artist] = []
             self._node_artist_bundle: _NodeArtistBundle | None = None
 
         def get_node_artist_bundle(self) -> _NodeArtistBundle | None:
             return self._node_artist_bundle
+
+        def get_edge_artists(self) -> tuple[Artist, ...]:
+            return tuple(self._edge_artists)
 
         def plot_line(self, start: np.ndarray, end: np.ndarray, **kwargs: Any) -> None:
             _apply_edge_line_style(kwargs)
@@ -304,6 +316,7 @@ def _make_plotter(
             linewidth = float(kwargs.get("linewidth", 1.0))
             for artist in artists:
                 artist.set_path_effects(_edge_outline_effects(linewidth))
+                self._edge_artists.append(artist)
 
         def plot_curve(self, curve: np.ndarray, **kwargs: Any) -> None:
             _apply_edge_line_style(kwargs)
@@ -311,6 +324,7 @@ def _make_plotter(
             linewidth = float(kwargs.get("linewidth", 1.0))
             for artist in artists:
                 artist.set_path_effects(_edge_outline_effects(linewidth))
+                self._edge_artists.append(artist)
 
         def plot_text(self, pos: np.ndarray, text: str, **kwargs: Any) -> None:
             _apply_text_no_clip(kwargs)

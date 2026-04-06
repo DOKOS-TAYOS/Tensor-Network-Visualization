@@ -31,6 +31,7 @@ from demo_cli import (
     demo_runs_headless,
     finalize_demo_plot_config,
     graph_tensor_names,
+    pairwise_merge_contraction_scheme,
     render_demo_tensor_network,
     resolve_example_definition,
 )
@@ -100,7 +101,9 @@ def _build_quimb_network(blueprint: GraphBlueprint) -> tuple[Any, list[Any]]:
 
 
 def _scheme_steps(example: str, blueprint: GraphBlueprint) -> tuple[tuple[str, ...], ...] | None:
-    if example in {"mps", "mpo", "ladder", "peps", "cubic_peps"}:
+    if example in {"mps", "mpo"}:
+        return pairwise_merge_contraction_scheme(graph_tensor_names(blueprint))
+    if example in {"ladder", "peps", "cubic_peps"}:
         return cumulative_prefix_contraction_scheme(graph_tensor_names(blueprint))
     if example == "hyper":
         return (("A", "B", "C"),)

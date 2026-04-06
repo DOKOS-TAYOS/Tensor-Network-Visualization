@@ -27,17 +27,15 @@ from ..contraction_viewer import (
 class _ContractionSchemeBundle:
     availability: str = "not_computed"
     steps: tuple[frozenset[int], ...] | None = None
-    artists_by_step: list[Artist | None] | None = None
-    scheme_aabb: list[tuple[float, float, float, float, float, float] | None] | None = None
+    playback_states: tuple[Any, ...] | None = None
     metrics_row: tuple[Any | None, ...] | None = None
     step_details: tuple[str | None, ...] | None = None
     viewer: Any = None
-    bounds_2d: tuple[float, float, float, float] | None = None
-    bounds_3d: tuple[float, float, float, float, float, float] | None = None
+    scene_applier: Any = None
 
 
 class _ContractionControls:
-    """Per-figure controller for lazy contraction scheme, playback, and cost-hover toggles."""
+    """Per-figure controller for the dynamic contraction slider and cost panel."""
 
     def __init__(
         self,
@@ -65,17 +63,13 @@ class _ContractionControls:
         self._refresh_hover_callback = refresh_hover
         self._bundle = _ContractionSchemeBundle()
         self._viewer: Any = None
+        self._scene: Any = None
         self.scheme_on: bool = bool(config.show_contraction_scheme)
-        self.playback_on: bool = bool(config.contraction_playback)
         self.cost_hover_on: bool = bool(config.contraction_scheme_cost_hover)
         if self.cost_hover_on:
             self.scheme_on = True
-            self.playback_on = True
-        elif self.playback_on:
-            self.scheme_on = True
         self._controls_ax: Axes | None = None
         self._checkbuttons: CheckButtons | None = None
-        self._checkbuttons_cid: int | None = None
         self._callback_guard: bool = False
 
         if self._build_controls_ui:
@@ -85,9 +79,15 @@ class _ContractionControls:
             set_contraction_controls(fig, self)
         set_contraction_controls(ax, self)
         if self.scheme_on:
-            self._ensure_bundle(strict=self.playback_on, swallow_errors=False)
+            self._ensure_bundle(strict=True, swallow_errors=False)
         self._apply_visual_state()
         self._refresh_hover()
+
+    def bind_scene(self, scene: Any) -> None:
+        self._scene = scene
+        if self._bundle.scene_applier is not None:
+            self._bundle.scene_applier.bind_scene(scene)
+        self._apply_visual_state()
 
     def _build_controls(self) -> None:
         controls_ax = self.figure.add_axes(_CONTROLS_CHECKBOX_BOUNDS)
@@ -105,13 +105,13 @@ class _ContractionControls:
         self._controls_ax = controls_ax
         self._checkbuttons = CheckButtons(
             controls_ax,
-            ["Scheme", "Playback", "Costs"],
-            [self.scheme_on, self.playback_on, self.cost_hover_on],
+            ["Scheme", "Costs"],
+            [self.scheme_on, self.cost_hover_on],
             label_props=_CONTROL_LABEL_PROPS,
             frame_props=_CONTROL_FRAME_PROPS,
             check_props=_CONTROL_CHECK_PROPS,
         )
-        self._checkbuttons_cid = self._checkbuttons.on_clicked(self._on_toggle)
+        self._checkbuttons.on_clicked(self._on_toggle)
 
     def _set_checkbox_state(self, index: int, value: bool) -> None:
         if self._checkbuttons is None:
@@ -127,60 +127,41 @@ class _ContractionControls:
 
     def _sync_checkbuttons(self) -> None:
         self._set_checkbox_state(0, self.scheme_on)
-        self._set_checkbox_state(1, self.playback_on)
-        self._set_checkbox_state(2, self.cost_hover_on)
+        self._set_checkbox_state(1, self.cost_hover_on)
 
-    def _on_toggle(self, label: str | None) -> None:
+    def _on_toggle(self, _label: str | None) -> None:
         if self._callback_guard or self._checkbuttons is None:
             return
-        ui_scheme, ui_playback, ui_cost = [bool(v) for v in self._checkbuttons.get_status()]
+        scheme_on, cost_hover_on = [bool(value) for value in self._checkbuttons.get_status()]
         self.set_states(
-            scheme_on=ui_scheme,
-            playback_on=ui_playback,
-            cost_hover_on=ui_cost,
-            source_label=label,
+            scheme_on=scheme_on,
+            cost_hover_on=cost_hover_on,
         )
 
     def set_states(
         self,
         *,
         scheme_on: bool,
-        playback_on: bool,
         cost_hover_on: bool,
-        source_label: str | None = None,
     ) -> None:
         prev_scheme = self.scheme_on
-        prev_playback = self.playback_on
         prev_cost = self.cost_hover_on
 
-        new_scheme = bool(scheme_on)
-        new_playback = bool(playback_on)
-        new_cost = bool(cost_hover_on)
-        if new_cost:
-            new_scheme = True
-            new_playback = True
-        elif source_label is None:
-            if new_playback:
-                new_scheme = True
-        elif source_label == "Playback" and new_playback:
-            new_scheme = True
+        self.scheme_on = bool(scheme_on)
+        self.cost_hover_on = bool(cost_hover_on)
+        if self.cost_hover_on:
+            self.scheme_on = True
 
-        strict = bool(new_scheme or new_playback or new_cost)
-        if strict:
+        if self.scheme_on:
             bundle = self._ensure_bundle(strict=True, swallow_errors=True)
             if bundle is None:
                 self.scheme_on = prev_scheme
-                self.playback_on = prev_playback
                 self.cost_hover_on = prev_cost
                 self._sync_checkbuttons()
                 self._apply_visual_state()
                 self._refresh_hover()
                 return
             self._viewer = bundle.viewer
-
-        self.scheme_on = new_scheme
-        self.playback_on = new_playback
-        self.cost_hover_on = new_cost
         self._sync_checkbuttons()
         self._apply_visual_state()
         self._refresh_hover()
@@ -194,6 +175,8 @@ class _ContractionControls:
         if self._bundle.availability == "unavailable":
             return None
         if self._bundle.availability == "computed":
+            if self._scene is not None and self._bundle.scene_applier is not None:
+                self._bundle.scene_applier.bind_scene(self._scene)
             return self._bundle
 
         try:
@@ -206,6 +189,8 @@ class _ContractionControls:
 
         self._bundle = bundle
         self._viewer = bundle.viewer
+        if self._scene is not None and bundle.scene_applier is not None:
+            bundle.scene_applier.bind_scene(self._scene)
         if self._viewer is not None:
             self._viewer.build_ui(initialize_step=False)
             self._viewer.set_step_details_enabled(self.cost_hover_on)
@@ -218,22 +203,17 @@ class _ContractionControls:
             if not self.scheme_on:
                 self.figure.canvas.draw_idle()
             return
-        self._viewer.set_step_details_enabled(self.cost_hover_on)
 
+        self._viewer.set_step_details_enabled(self.cost_hover_on)
         if not self.scheme_on:
             self._viewer.pause()
             self._viewer.set_playback_widgets_visible(False)
             self._viewer.hide_scheme_artists()
             return
 
-        if self.playback_on:
-            self._viewer.set_playback_widgets_visible(True)
-            self._viewer.set_step(self._viewer.current_step)
-            return
-
-        self._viewer.pause()
-        self._viewer.set_playback_widgets_visible(False)
-        self._viewer.show_static_scheme()
+        self._viewer.set_playback_widgets_visible(True)
+        self._viewer.show_dynamic_scheme()
+        self._viewer.set_step(self._viewer.current_step)
 
     def _refresh_hover(self) -> None:
         self._refresh_hover_callback((), ())

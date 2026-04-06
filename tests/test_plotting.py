@@ -792,7 +792,6 @@ def test_show_tensor_network_places_view_selector_between_options_and_playback_s
         engine="tensorkrowch",
         config=PlotConfig(
             show_contraction_scheme=True,
-            contraction_playback=True,
             contraction_scheme_by_name=(("A", "B"),),
         ),
         show=False,
@@ -835,7 +834,6 @@ def test_show_tensor_network_disables_hidden_view_slider_widgets_after_switch() 
         engine="tensorkrowch",
         config=PlotConfig(
             show_contraction_scheme=True,
-            contraction_playback=True,
             contraction_scheme_by_name=(("A", "B"),),
         ),
         show=False,
@@ -904,7 +902,6 @@ def test_show_tensor_network_hides_cost_panel_for_inactive_view_after_switch() -
         engine="einsum",
         config=PlotConfig(
             show_contraction_scheme=True,
-            contraction_playback=True,
             contraction_scheme_cost_hover=True,
         ),
         show=False,
@@ -969,7 +966,7 @@ def test_show_tensor_network_scheme_checkbox_visual_state_matches_scheme_toggle(
     assert controls.current_scene.contraction_controls.scheme_on is False
 
 
-def test_show_tensor_network_playback_and_cost_hover_keep_visual_checkboxes_in_sync() -> None:
+def test_show_tensor_network_scheme_and_cost_hover_keep_visual_checkboxes_in_sync() -> None:
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
@@ -986,35 +983,29 @@ def test_show_tensor_network_playback_and_cost_hover_keep_visual_checkboxes_in_s
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
-    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
+    assert [label.get_text() for label in controls._checkbuttons.labels][-2:] == [
         "Scheme",
-        "Playback",
         "Costs",
     ]
     scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
-    playback_index = _checkbutton_index(controls._checkbuttons, "Playback")
     cost_index = _checkbutton_index(controls._checkbuttons, "Costs")
 
-    _click_checkbutton(controls._checkbuttons, playback_index)
+    _click_checkbutton(controls._checkbuttons, scheme_index)
 
-    status_after_playback = tuple(bool(v) for v in controls._checkbuttons.get_status())
-    assert status_after_playback[scheme_index] is True
-    assert status_after_playback[playback_index] is True
+    status_after_scheme = tuple(bool(v) for v in controls._checkbuttons.get_status())
+    assert status_after_scheme[scheme_index] is True
     assert controls.scheme_on is True
-    assert controls.playback_on is True
 
     _click_checkbutton(controls._checkbuttons, cost_index)
 
     status_after_cost_hover = tuple(bool(v) for v in controls._checkbuttons.get_status())
     assert status_after_cost_hover[scheme_index] is True
-    assert status_after_cost_hover[playback_index] is True
     assert status_after_cost_hover[cost_index] is True
     assert controls.scheme_on is True
-    assert controls.playback_on is True
     assert controls.cost_hover_on is True
 
 
-def test_show_tn_einsum_trace_inspector_checkbox_auto_enables_playback() -> None:
+def test_show_tn_einsum_trace_inspector_checkbox_auto_enables_scheme() -> None:
     trace = _build_einsum_trace_for_inspector()
 
     fig, _ax = show_tensor_network(
@@ -1028,24 +1019,20 @@ def test_show_tn_einsum_trace_inspector_checkbox_auto_enables_playback() -> None
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
-    assert [label.get_text() for label in controls._checkbuttons.labels][-4:] == [
+    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
         "Scheme",
-        "Playback",
         "Costs",
         "Tensor inspector",
     ]
     scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
-    playback_index = _checkbutton_index(controls._checkbuttons, "Playback")
     inspector_index = _checkbutton_index(controls._checkbuttons, "Tensor inspector")
 
     _click_checkbutton(controls._checkbuttons, inspector_index)
 
     status_after_enable = tuple(bool(v) for v in controls._checkbuttons.get_status())
     assert status_after_enable[scheme_index] is True
-    assert status_after_enable[playback_index] is True
     assert status_after_enable[inspector_index] is True
     assert controls.scheme_on is True
-    assert controls.playback_on is True
     assert controls.tensor_inspector_on is True
     assert getattr(fig, "_tensor_network_viz_tensor_inspector", None) is not None
 
@@ -1108,9 +1095,8 @@ def test_non_playback_tensorkrowch_inputs_hide_tensor_inspector_checkbox() -> No
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
-    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
+    assert [label.get_text() for label in controls._checkbuttons.labels][-2:] == [
         "Scheme",
-        "Playback",
         "Costs",
     ]
     assert "Tensor inspector" not in [label.get_text() for label in controls._checkbuttons.labels]
@@ -1295,23 +1281,17 @@ def test_show_tensor_network_show_controls_false_hides_all_figure_controls() -> 
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
 
-    fig, ax = show_tensor_network(
-        DummyNetwork(nodes=[left, right]),
-        engine="tensorkrowch",
-        config=PlotConfig(
-            show_contraction_scheme=True,
-            contraction_playback=True,
-            contraction_scheme_by_name=(("A", "B"),),
-        ),
-        show_controls=False,
-        show=False,
-    )
-
-    assert getattr(fig, "_tensor_network_viz_interactive_controls", None) is None
-    assert getattr(fig, "_tensor_network_viz_contraction_controls", None) is None
-    assert getattr(fig, "_tensor_network_viz_contraction_viewer", None) is None
-    assert len(fig.axes) == 1
-    assert getattr(ax, "_tensor_network_viz_scene", None) is None
+    with pytest.raises(ValueError, match="show_controls=True"):
+        show_tensor_network(
+            DummyNetwork(nodes=[left, right]),
+            engine="tensorkrowch",
+            config=PlotConfig(
+                show_contraction_scheme=True,
+                contraction_scheme_by_name=(("A", "B"),),
+            ),
+            show_controls=False,
+            show=False,
+        )
 
 
 def test_viewer_static_render_keeps_interactive_viewer_module_lazy() -> None:

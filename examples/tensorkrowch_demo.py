@@ -30,6 +30,7 @@ from demo_cli import (
     demo_runs_headless,
     finalize_demo_plot_config,
     graph_tensor_names,
+    pairwise_merge_contraction_scheme,
     render_demo_tensor_network,
     resolve_example_definition,
 )
@@ -111,14 +112,27 @@ def _build_tensorkrowch_network(
 def _contract_small_chain(nodes: list[Any]) -> Any:
     if len(nodes) < 2:
         raise ValueError("Small contracted demos need at least two tensors.")
-    current = nodes[0]
-    for next_node in nodes[1:]:
-        current = current @ next_node
-    return current
+    active_nodes = list(nodes)
+    while len(active_nodes) > 1:
+        next_nodes: list[Any] = []
+        index = 0
+        while index < len(active_nodes):
+            left_node = active_nodes[index]
+            if index + 1 >= len(active_nodes):
+                next_nodes.append(left_node)
+                index += 1
+                continue
+            right_node = active_nodes[index + 1]
+            next_nodes.append(left_node @ right_node)
+            index += 2
+        active_nodes = next_nodes
+    return active_nodes[0]
 
 
 def _scheme_steps(example: str, blueprint: GraphBlueprint) -> tuple[tuple[str, ...], ...] | None:
-    if example in {"mps", "mpo", "ladder", "peps", "cubic_peps"}:
+    if example in {"mps", "mpo"}:
+        return pairwise_merge_contraction_scheme(graph_tensor_names(blueprint))
+    if example in {"ladder", "peps", "cubic_peps"}:
         return cumulative_prefix_contraction_scheme(graph_tensor_names(blueprint))
     return None
 

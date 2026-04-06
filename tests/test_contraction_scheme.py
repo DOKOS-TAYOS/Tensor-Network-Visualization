@@ -7,7 +7,6 @@ import matplotlib
 matplotlib.use("Agg")
 
 import pytest
-from matplotlib.patches import FancyBboxPatch
 
 from tensor_network_viz import PlotConfig, pair_tensor
 from tensor_network_viz._core.graph import (
@@ -132,7 +131,7 @@ def test_einsum_contraction_steps_parallel_branches_then_merge() -> None:
     graph = _build_einsum_graph(trace)
     assert graph.contraction_steps == (
         frozenset({0, 1}),
-        frozenset({0, 1, 2, 3}),
+        frozenset({2, 3}),
         frozenset({0, 1, 2, 3}),
     )
 
@@ -167,7 +166,7 @@ def test_resolve_contraction_scheme_by_name_duplicate_name_raises() -> None:
         _resolve_contraction_scheme_by_name(graph, (("A",),))
 
 
-def test_plot_graph_draws_scheme_patches_2d() -> None:
+def test_plot_graph_contraction_scheme_is_dynamic_only() -> None:
     trace = [
         pair_tensor("A0", "x0", "r0", "pa,p->a"),
         pair_tensor("r0", "A1", "r1", "a,apb->pb"),
@@ -182,10 +181,13 @@ def test_plot_graph_draws_scheme_patches_2d() -> None:
         renderer_name="test_scheme",
     )
     patches = [p for p in ax.patches if p.get_gid() == "tnv_contraction_scheme"]
-    assert len(patches) == 2
-    assert all(isinstance(p, FancyBboxPatch) for p in patches)
+    assert patches == []
     labels = [t for t in ax.texts if t.get_gid() == "tnv_contraction_scheme_label"]
     assert labels == []
+    viewer = getattr(fig, "_tensor_network_viz_contraction_viewer", None)
+    assert viewer is not None
+    assert viewer.slider is not None
+    assert viewer.slider.ax.get_visible()
     assert fig is not None
 
 
@@ -205,10 +207,12 @@ def test_plot_graph_scheme_override_by_name() -> None:
         renderer_name="test_scheme_override",
     )
     patches = [p for p in ax.patches if p.get_gid() == "tnv_contraction_scheme"]
-    assert len(patches) == 1
-    assert isinstance(patches[0], FancyBboxPatch)
+    assert patches == []
     labels = [t for t in ax.texts if t.get_gid() == "tnv_contraction_scheme_label"]
     assert labels == []
+    viewer = getattr(fig, "_tensor_network_viz_contraction_viewer", None)
+    assert viewer is not None
+    assert viewer.current_step == 1
 
 
 def test_tensorkrowch_graph_records_single_auto_contraction_step() -> None:
@@ -233,7 +237,7 @@ def test_tensorkrowch_graph_records_single_auto_contraction_step() -> None:
     assert graph.contraction_step_metrics is None
 
 
-def test_tensorkrowch_graph_records_cumulative_auto_contraction_steps() -> None:
+def test_tensorkrowch_graph_records_eventwise_auto_contraction_steps() -> None:
     left = _DummyTensorKrowchNode("A", ("a", "b"))
     middle = _DummyTensorKrowchNode("B", ("b", "c"))
     right = _DummyTensorKrowchNode("C", ("c", "d"))
@@ -274,6 +278,65 @@ def test_tensorkrowch_graph_records_cumulative_auto_contraction_steps() -> None:
         frozenset({left_id, middle_id, right_id}),
     )
     assert graph.contraction_step_metrics is None
+
+
+def test_tensorkrowch_graph_records_parallel_eventwise_steps() -> None:
+    left = _DummyTensorKrowchNode("A", ("a", "b"))
+    middle = _DummyTensorKrowchNode("B", ("b", "c"))
+    right = _DummyTensorKrowchNode("C", ("d", "e"))
+    far = _DummyTensorKrowchNode("D", ("e", "f"))
+    result0 = _DummyTensorKrowchNode("contract_edges_0", ("a", "c"))
+    result1 = _DummyTensorKrowchNode("contract_edges_1", ("d", "f"))
+    result2 = _DummyTensorKrowchNode("contract_edges_2", ("a", "f"))
+
+    _connect(left, 0, result0, 0, name="A[a] <-> None")
+    _connect(left, 1, middle, 0, name="A[b] <-> B[b]")
+    _connect(middle, 1, result0, 1, name="B[c] <-> None")
+
+    _connect(right, 0, result1, 0, name="C[d] <-> None")
+    _connect(right, 1, far, 0, name="C[e] <-> D[e]")
+    _connect(far, 1, result1, 1, name="D[f] <-> None")
+
+    _connect(result0, 0, result2, 0, name="A[a] <-> None")
+    _connect(result1, 1, result2, 1, name="D[f] <-> None")
+
+    _attach_successor(left, op_name="contract_edges", parents=(left, middle), child=result0)
+    _attach_successor(right, op_name="contract_edges", parents=(right, far), child=result1)
+    _attach_successor(
+        result0,
+        op_name="contract_edges",
+        parents=(result0, result1),
+        child=result2,
+    )
+    network = _DummyTensorKrowchNetwork(
+        nodes={
+            "A": left,
+            "B": middle,
+            "C": right,
+            "D": far,
+            "contract_edges_0": result0,
+            "contract_edges_1": result1,
+            "contract_edges_2": result2,
+        },
+        leaf_nodes={"A": left, "B": middle, "C": right, "D": far},
+        resultant_nodes={
+            "contract_edges_0": result0,
+            "contract_edges_1": result1,
+            "contract_edges_2": result2,
+        },
+    )
+
+    graph = _build_tensorkrowch_graph(network)
+
+    left_id = _node_id_by_name(graph, "A")
+    middle_id = _node_id_by_name(graph, "B")
+    right_id = _node_id_by_name(graph, "C")
+    far_id = _node_id_by_name(graph, "D")
+    assert graph.contraction_steps == (
+        frozenset({left_id, middle_id}),
+        frozenset({right_id, far_id}),
+        frozenset({left_id, middle_id, right_id, far_id}),
+    )
 
 
 def test_tensorkrowch_graph_ignores_helper_nodes_when_recovering_contractions() -> None:

@@ -57,31 +57,30 @@ class PlotConfig:
             (2D: hit-testing in axes space; 3D: projected screen distance). This is independent
             from static tensor/index labels, so both can stay enabled at once. Use an interactive
             Matplotlib window.
-        show_contraction_scheme: If True, draw colored highlights for each contraction step (from
-            ``graph.contraction_steps`` or ``contraction_scheme_by_name``).
-        contraction_scheme_alpha: Fill alpha for scheme rectangles (2D); 3D uses edge color only.
-            Default is 0 (no fill); borders remain visible via ``contraction_scheme_edge_alpha``.
-        contraction_scheme_edge_alpha: Stroke alpha for scheme borders; None chooses a visible edge
-            (stronger when the fill is fully transparent).
-        contraction_scheme_linewidth: Border line width for 2D rounded scheme rectangles
-            (data units, scaled like bond lines); None uses a thin default.
+        show_contraction_scheme: If True, enable the interactive contraction slider using
+            ``graph.contraction_steps`` or ``contraction_scheme_by_name``. The visualization is
+            dynamic only: already-contracted tensors change real shape, and group colors propagate
+            through the slider state.
+        contraction_scheme_alpha: Reserved for backwards compatibility; not used by the dynamic
+            contraction slider.
+        contraction_scheme_edge_alpha: Reserved for backwards compatibility; not used by the
+            dynamic contraction slider.
+        contraction_scheme_linewidth: Reserved for backwards compatibility; not used by the
+            dynamic contraction slider.
         contraction_scheme_colors: Optional cycle of face colors (hex/named); None uses a built-in
             categorical palette.
         contraction_scheme_by_name: Optional override: each inner tuple is one step, tensor names
             matching non-virtual ``node.name`` values. Duplicate names among visible tensors or
-            unknown names raise ``ValueError``. When set, this replaces ``graph.contraction_steps``.
-        contraction_playback: If True, ``show_tensor_network`` adds a Matplotlib slider and
-            Play/Pause/Reset controls on the same figure (2D widget axes only) to step through
-            contraction highlights interactively. Requires ``show_contraction_scheme=True`` and a
-            non-empty contraction step list.
+            unknown names raise ``ValueError``. Each tuple is one real contraction event, and when
+            set it replaces ``graph.contraction_steps``.
         contraction_scheme_cost_hover: If True, show contraction-step details in a fixed text
-            panel while playback is active. Requires metrics on ``graph`` (for example
-            ``EinsumTrace`` inputs with shapes or contracted TensorKrowch networks with
+            panel while the contraction slider is active. Requires metrics on ``graph`` (for
+            example ``EinsumTrace`` inputs with shapes or contracted TensorKrowch networks with
             recoverable step metrics). Independent of ``hover_labels`` and kept under the old
             name for API compatibility.
         contraction_tensor_inspector: If True, and the input exposes recoverable playback tensors
             (currently ``EinsumTrace`` and contracted TensorKrowch networks with usable result
-            history), enable a linked tensor inspector window that follows contraction playback
+            history), enable a linked tensor inspector window that follows the contraction slider
             step by step.
     """
 
@@ -122,7 +121,6 @@ class PlotConfig:
     contraction_scheme_linewidth: float | None = None
     contraction_scheme_colors: tuple[str, ...] | None = None
     contraction_scheme_by_name: tuple[tuple[str, ...], ...] | None = None
-    contraction_playback: bool = False
     contraction_scheme_cost_hover: bool = False
     contraction_tensor_inspector: bool = False
 
