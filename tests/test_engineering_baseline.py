@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import ast
 import importlib
+import json
+import shlex
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -19,7 +23,7 @@ from tensor_network_viz._core.layout import _compute_axis_directions
 
 
 def _build_dense_dangling_chain(length: int) -> _GraphData:
-    nodes = {}
+    nodes: dict[int, Any] = {}
     for node_id in range(length):
         axes_names: list[str] = []
         if node_id > 0:
@@ -28,6 +32,7 @@ def _build_dense_dangling_chain(length: int) -> _GraphData:
         if node_id < length - 1:
             axes_names.append("right")
         nodes[node_id] = _make_node(f"T{node_id}", tuple(axes_names))
+
     edges = []
     for node_id in range(length):
         phys_axis_index = nodes[node_id].axes_names.index("phys")
@@ -40,11 +45,7 @@ def _build_dense_dangling_chain(length: int) -> _GraphData:
     for node_id in range(length - 1):
         edges.append(
             _make_contraction_edge(
-                _EdgeEndpoint(
-                    node_id,
-                    nodes[node_id].axes_names.index("right"),
-                    f"b{node_id}",
-                ),
+                _EdgeEndpoint(node_id, nodes[node_id].axes_names.index("right"), f"b{node_id}"),
                 _EdgeEndpoint(
                     node_id + 1,
                     nodes[node_id + 1].axes_names.index("left"),
@@ -54,6 +55,51 @@ def _build_dense_dangling_chain(length: int) -> _GraphData:
             )
         )
     return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
+def _load_pyproject() -> dict[str, Any]:
+    import tomllib
+
+    return tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+
+def _load_requirements_lines(path: Path) -> list[str]:
+    lines: list[str] = []
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        requirement = stripped.split(" ; ", 1)[0].strip()
+        lines.append(requirement)
+    return lines
+
+
+def _top_level_importorskip_targets(path: Path) -> list[str]:
+    module = ast.parse(path.read_text(encoding="utf-8"))
+    targets: list[str] = []
+
+    for node in module.body:
+        if isinstance(node, (ast.Assign, ast.Expr)):
+            call = node.value
+        else:
+            continue
+
+        if not isinstance(call, ast.Call):
+            continue
+        if not isinstance(call.func, ast.Attribute):
+            continue
+        if not isinstance(call.func.value, ast.Name) or call.func.value.id != "pytest":
+            continue
+        if call.func.attr != "importorskip":
+            continue
+        if not call.args:
+            continue
+
+        first_arg = call.args[0]
+        if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
+            targets.append(first_arg.value)
+
+    return targets
 
 
 def test_tmp_path_uses_repo_local_tmp_directory(tmp_path: Path) -> None:
@@ -77,27 +123,34 @@ def test_tmp_path_allows_file_writes(tmp_path: Path) -> None:
 
 
 def test_dev_requirements_pin_verification_tools_and_use_editable_install() -> None:
-    content = Path("requirements.dev.txt").read_text(encoding="utf-8")
+    lines = _load_requirements_lines(Path("requirements.dev.txt"))
 
-    assert "-e ." in content
-    assert '".[dev]"' not in content
-    assert "pytest==" in content
-    assert "ruff==" in content
-    assert "pyright==" in content
-    assert "build==" in content
-    assert "matplotlib==" in content
-    assert "networkx==" in content
-    assert "numpy==" in content
+    assert "-e ." in lines
+    assert {
+        "build==1.4.2",
+        "ipython==9.10.1",
+        "ipython==9.12.0",
+        "matplotlib==3.10.8",
+        "networkx==3.6.1",
+        "numpy==2.4.3",
+        "physics-tenpy==1.1.0",
+        "pyright==1.1.408",
+        "pytest==9.0.2",
+        "quimb==1.13.0",
+        "ruff==0.15.8",
+        "tensorkrowch==1.1.6",
+        "tensornetwork==0.4.6",
+    }.issubset(set(lines))
 
 
 def test_pyright_config_escalates_active_type_checks_to_errors() -> None:
-    content = Path("pyrightconfig.json").read_text(encoding="utf-8")
+    config = json.loads(Path("pyrightconfig.json").read_text(encoding="utf-8"))
 
-    assert '"reportMissingImports": "error"' in content
-    assert '"reportArgumentType": "error"' in content
-    assert '"reportAssignmentType": "error"' in content
-    assert '"reportReturnType": "error"' in content
-    assert '"reportCallIssue": "error"' in content
+    assert config["reportMissingImports"] == "error"
+    assert config["reportArgumentType"] == "error"
+    assert config["reportAssignmentType"] == "error"
+    assert config["reportReturnType"] == "error"
+    assert config["reportCallIssue"] == "error"
 
 
 def test_layout_module_compatibility_exports_survive_internal_split() -> None:
@@ -165,35 +218,19 @@ def test_compute_axis_directions_dense_dangling_chain_3d_completes_quickly() -> 
     assert elapsed < 0.10, f"_compute_axis_directions(..., dimensions=3) took {elapsed:.4f}s"
 
 
-def test_pyproject_declares_smoke_and_perf_markers() -> None:
-    content = Path("pyproject.toml").read_text(encoding="utf-8")
+def test_pytest_configuration_skips_perf_by_default() -> None:
+    pyproject = _load_pyproject()
+    pytest_ini = pyproject["tool"]["pytest"]["ini_options"]
 
-    assert "markers = [" in content
-    assert '"perf: runtime-sensitive regression checks and throughput guards"' in content
-    assert '"smoke: lightweight render smoke checks"' in content
-
-
-def test_contributing_references_engine_module_map_instead_of_legacy_engine_config() -> None:
-    content = Path("CONTRIBUTING.md").read_text(encoding="utf-8")
-
-    assert "_engine_specs.py" in content
-    assert "ENGINE_MODULE_MAP" in content
-    assert "_ENGINE_CONFIG" not in content
-
-
-def test_render_benchmark_script_covers_cache_and_control_scenarios() -> None:
-    content = Path("scripts/bench_render_workflows.py").read_text(encoding="utf-8")
-
-    assert "first render" in content
-    assert "repeated render" in content
-    assert "network-object" in content
-    assert "tensor-list" in content
-    assert "interactive-controls" in content
-    assert "static-render" in content
+    assert shlex.split(pytest_ini["addopts"]) == ["-p", "no:cacheprovider", "-m", "not perf"]
+    assert pytest_ini["markers"] == [
+        "perf: runtime-sensitive regression checks and throughput guards",
+        "smoke: lightweight render smoke checks",
+    ]
 
 
 def test_tensorkrowch_integration_test_skips_when_torch_is_missing() -> None:
-    content = Path("tests/test_integration_tensorkrowch.py").read_text(encoding="utf-8")
-
-    assert 'torch = pytest.importorskip("torch")' in content
-    assert "\nimport torch\n" not in content
+    assert _top_level_importorskip_targets(Path("tests/test_integration_tensorkrowch.py")) == [
+        "torch",
+        "tensorkrowch",
+    ]

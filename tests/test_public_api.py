@@ -11,6 +11,7 @@ matplotlib.use("Agg")
 
 import pytest
 
+from plotting_helpers import assert_readable_image, assert_rendered_figure
 from tensor_network_viz import PlotConfig, show_tensor_network
 from tensor_network_viz._core.renderer import _effective_layout_iterations
 from tensor_network_viz.config import EngineName
@@ -118,8 +119,13 @@ def test_show_tensor_network_returns_fig_ax_with_show_false() -> None:
         show=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.name != "3d"
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls.current_view == "2d"
+    assert controls._view_caches["2d"].ax is ax
+    assert len(fig.axes) >= 3
 
 
 def test_show_tensor_network_defaults_to_2d_when_view_is_omitted() -> None:
@@ -136,8 +142,13 @@ def test_show_tensor_network_defaults_to_2d_when_view_is_omitted() -> None:
         show=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.name != "3d"
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls.current_view == "2d"
+    assert controls._view_caches["2d"].ax is ax
+    assert len(fig.axes) >= 3
 
 
 def test_show_tensor_network_headless_save_produces_file() -> None:
@@ -159,8 +170,9 @@ def test_show_tensor_network_headless_save_produces_file() -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, bbox_inches="tight")
 
-    assert out_path.exists()
-    assert out_path.stat().st_size > 0
+    image = assert_readable_image(out_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
 
 
 @pytest.mark.parametrize("engine", ["tensorkrowch", "tensornetwork", "quimb", "tenpy", "einsum"])
@@ -215,6 +227,6 @@ def _run_engine_smoke(engine: EngineName) -> None:
             view=view,  # type: ignore[arg-type]
             show=False,
         )
-        assert fig is ax.figure
+        assert_rendered_figure(fig, ax)
         if view == "3d":
             assert ax.name == "3d"

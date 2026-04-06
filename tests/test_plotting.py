@@ -24,6 +24,7 @@ import tensor_network_viz.tensornetwork.graph as tn_graph_module
 import tensor_network_viz.tensornetwork.renderer as tn_renderer_module
 import tensor_network_viz.viewer as viewer_module
 from plotting_helpers import (
+    assert_rendered_figure,
     line_collection_segment_count,
     line_collection_segments,
     patch_collection_circle_count,
@@ -279,7 +280,7 @@ def test_plot_tensorkrowch_network_2d_draws_simple_contraction() -> None:
     )
 
     labels = {text.get_text() for text in ax.texts}
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert labels >= {"A", "B", "left", "right"}
     assert line_collection_segment_count(ax) == 1
 
@@ -295,7 +296,7 @@ def test_plot_tensorkrowch_network_2d_accepts_list_of_nodes() -> None:
     )
 
     labels = {text.get_text() for text in ax.texts}
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert labels >= {"A", "B", "left", "right"}
     assert line_collection_segment_count(ax) == 1
 
@@ -311,7 +312,7 @@ def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
     )
 
     labels = {text.get_text() for text in ax.texts}
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert labels >= {"A", "B", "left", "right"}
     assert line_collection_segment_count(ax) == 1
 
@@ -368,7 +369,7 @@ def test_plot_graph_2d_keeps_virtual_dangling_index_labels_in_view() -> None:
     x0, x1 = ax.get_xlim()
     y0, y1 = ax.get_ylim()
     label_positions = [text.get_position() for text in ax.texts if text.get_text() == "out"]
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert label_positions
     label_x, label_y = label_positions[0]
     assert x0 <= label_x <= x1
@@ -388,7 +389,8 @@ def test_plot_tensornetwork_network_2d_hover_labels_skips_static_label_artists()
         gids = {t.get_gid() for t in ax.texts if t.get_gid()}
         assert _draw_common._TENSOR_LABEL_GID not in gids
         assert _draw_common._EDGE_INDEX_LABEL_GID not in gids
-        assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+        hover_cid = getattr(fig, "_tensor_network_viz_hover_cid", None)
+        assert isinstance(hover_cid, int)
     finally:
         plt.close(fig)
 
@@ -406,7 +408,8 @@ def test_plot_tensornetwork_network_3d_hover_labels_skips_static_label_artists()
         gids = {t.get_gid() for t in ax.texts if t.get_gid()}
         assert _draw_common._TENSOR_LABEL_GID not in gids
         assert _draw_common._EDGE_INDEX_LABEL_GID not in gids
-        assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+        hover_cid = getattr(fig, "_tensor_network_viz_hover_cid", None)
+        assert isinstance(hover_cid, int)
     finally:
         plt.close(fig)
 
@@ -429,7 +432,8 @@ def test_plot_tensornetwork_network_2d_hover_labels_can_coexist_with_static_labe
         gids = {t.get_gid() for t in ax.texts if t.get_gid()}
         assert _draw_common._TENSOR_LABEL_GID in gids
         assert _draw_common._EDGE_INDEX_LABEL_GID in gids
-        assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+        hover_cid = getattr(fig, "_tensor_network_viz_hover_cid", None)
+        assert isinstance(hover_cid, int)
     finally:
         plt.close(fig)
 
@@ -447,12 +451,15 @@ def test_show_tensor_network_default_interactive_controls_start_in_2d() -> None:
 
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.name != "3d"
     assert controls.current_view == "2d"
     assert controls.hover_on is True
     assert controls.tensor_labels_on is False
     assert controls.edge_labels_on is False
+    assert controls._radio_ax is not None and controls._radio_ax in fig.axes
+    assert controls._check_ax is not None and controls._check_ax in fig.axes
+    assert len(fig.axes) >= 3
 
 
 def test_show_tensor_network_interactive_controls_include_nodes_toggle() -> None:
@@ -476,6 +483,7 @@ def test_show_tensor_network_interactive_controls_include_nodes_toggle() -> None
         "Edge labels",
     ]
     assert controls.nodes_on is True
+    assert controls._checkbuttons.ax in fig.axes
 
 
 def test_show_tensor_network_builds_3d_view_lazily_once(
@@ -576,7 +584,8 @@ def test_show_tensor_network_reuses_tensor_and_edge_label_artists_when_toggled()
     edge_label_ids_before = tuple(id(text) for text in controls.current_scene.edge_label_artists)
     assert tensor_label_ids_before
     assert edge_label_ids_before
-    assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+    hover_cid = getattr(fig, "_tensor_network_viz_hover_cid", None)
+    assert isinstance(hover_cid, int)
 
     controls.set_tensor_labels_enabled(False)
     controls.set_edge_labels_enabled(False)
@@ -1533,7 +1542,7 @@ def test_plot_tensorkrowch_network_2d_accepts_full_custom_positions() -> None:
 
     fig, ax = plot_tensorkrowch_network_2d(DummyNetwork(nodes=[left, right]), config=config)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert line_collection_segment_count(ax) == 1
 
 
@@ -1602,7 +1611,7 @@ def test_plot_tensorkrowch_network_3d_returns_3d_axes() -> None:
 
     fig, ax = plot_tensorkrowch_network_3d(DummyNetwork(nodes=[left, right]))
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.name == "3d"
     assert len(ax.lines) == 1
     assert len(ax.collections) >= 1
@@ -1659,7 +1668,7 @@ def test_plot_tensornetwork_network_3d_returns_3d_axes() -> None:
 
     fig, ax = plot_tensornetwork_network_3d([left, right])
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.name == "3d"
     assert len(ax.lines) == 1
 
@@ -1703,7 +1712,7 @@ def test_show_tensor_network_displays_selected_renderer(monkeypatch: pytest.Monk
     )
 
     assert shown["value"] is True
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
 
 
 def test_show_figure_uses_ipython_display_in_jupyter_kernel(
@@ -1757,7 +1766,7 @@ def test_show_tensor_network_supports_tensornetwork_engine(
     )
 
     assert called["value"] is True
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
 
 
 def test_show_tensor_network_supports_quimb_engine(
@@ -1783,7 +1792,7 @@ def test_show_tensor_network_supports_quimb_engine(
     )
 
     assert called["value"] is True
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
 
 
 def test_show_tensor_network_supports_tenpy_engine(
@@ -1809,7 +1818,7 @@ def test_show_tensor_network_supports_tenpy_engine(
     )
 
     assert called["value"] is True
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
 
 
 def test_show_tensor_network_supports_einsum_engine(
@@ -1836,7 +1845,7 @@ def test_show_tensor_network_supports_einsum_engine(
     )
 
     assert called["value"] is True
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
 
 
 def test_tensornetwork_renderer_does_not_import_tensorkrowch_private_modules() -> None:

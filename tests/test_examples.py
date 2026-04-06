@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from plotting_helpers import assert_readable_image
 from tensor_network_viz import EinsumTrace, show_tensor_network
 from tensor_network_viz._tensor_elements_data import (
     _extract_einsum_playback_step_records,
@@ -194,7 +195,9 @@ def test_quimb_hyper_saves_figure_without_showing() -> None:
     )
 
     assert exit_code == 0
-    assert output_path.exists()
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
 
 
 def test_tenpy_imps_saves_figure_without_showing() -> None:
@@ -209,7 +212,9 @@ def test_tenpy_imps_saves_figure_without_showing() -> None:
     )
 
     assert exit_code == 0
-    assert output_path.exists()
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
 
 
 def test_tenpy_chain_saves_figure_without_showing() -> None:
@@ -224,7 +229,9 @@ def test_tenpy_chain_saves_figure_without_showing() -> None:
     )
 
     assert exit_code == 0
-    assert output_path.exists()
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
 
 
 def test_einsum_ellipsis_saves_figure_without_showing() -> None:
@@ -239,7 +246,9 @@ def test_einsum_ellipsis_saves_figure_without_showing() -> None:
     )
 
     assert exit_code == 0
-    assert output_path.exists()
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
 
 
 @pytest.mark.parametrize("example_name", ["mps", "ellipsis"])
@@ -340,7 +349,9 @@ def test_tensornetwork_mera_ttn_saves_figure_without_showing() -> None:
     )
 
     assert exit_code == 0
-    assert output_path.exists()
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
 
 
 def test_tensorkrowch_run_example_2d_calls_renderer_without_scope_patch(
@@ -467,7 +478,9 @@ def test_tensorkrowch_contracted_demo_saves_figure_without_showing() -> None:
     )
 
     assert exit_code == 0
-    assert output_path.exists()
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
 
 
 def test_run_all_examples_default_2d_matches_new_matrix() -> None:
@@ -655,8 +668,8 @@ def test_tensor_elements_demo_saves_figure_without_showing(tmp_path: Path) -> No
     fig, _ = module.main(show=False)
     fig.savefig(output_path, bbox_inches="tight")
 
-    assert output_path.exists()
-    assert output_path.stat().st_size > 0
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
 
 
 def test_tensor_elements_structured_demo_includes_sparse_and_nonfinite_cases() -> None:
