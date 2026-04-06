@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import weakref
-from collections import Counter
 from dataclasses import dataclass
 
 from .axis_directions import _AXIS_OFFSET_SIGN
@@ -37,7 +36,6 @@ class _ContractionDerived:
     """Cached contraction lists and groupings for one :class:`_GraphData` instance."""
 
     records: tuple[_ContractionRecord, ...]
-    weights: dict[ContractionNodeIds, int]
     groups: _ContractionGroups
 
 
@@ -97,9 +95,8 @@ def _contraction_derived(graph: _GraphData) -> _ContractionDerived:
     if cached is not None:
         return cached
     records = _build_contraction_records(graph)
-    weights = dict(Counter(record.key for record in records))
     groups = _group_contractions_from_records(records)
-    derived = _ContractionDerived(records=records, weights=weights, groups=groups)
+    derived = _ContractionDerived(records=records, groups=groups)
     _contraction_derived_by_id[key] = derived
 
     def _evict() -> None:
@@ -111,11 +108,6 @@ def _contraction_derived(graph: _GraphData) -> _ContractionDerived:
 
 def _iter_contractions(graph: _GraphData) -> tuple[_ContractionRecord, ...]:
     return _contraction_derived(graph).records
-
-
-def _contraction_weights(graph: _GraphData) -> dict[ContractionNodeIds, int]:
-    """Multiplicity counts per unordered contraction node pair (read-only dict; do not mutate)."""
-    return _contraction_derived(graph).weights
 
 
 def _group_contractions(graph: _GraphData) -> _ContractionGroups:
