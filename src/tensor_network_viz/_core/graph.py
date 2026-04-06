@@ -54,12 +54,12 @@ class _ContractionStepMetrics:
 class _GraphData:
     nodes: dict[int, _NodeData]
     edges: tuple[_EdgeData, ...]
-    #: Per execution step, non-virtual node ids (einsum): intermediate steps use the **immediate**
-    #: operand footprint on the graph; the **last** step uses the full transitive lineage of all
-    #: operands (whole network). See einsum ``graph._build_graph``.
+    #: Per execution step, non-virtual node ids involved in that real contraction event.
+    #: Result tensors contribute the transitive lineage of their visible operands, so disjoint
+    #: branches stay separated until a later merge step actually touches both.
     contraction_steps: tuple[frozenset[int], ...] | None = None
     #: Same length as ``contraction_steps`` when both are set: per-step naive dense metrics from
-    #: the einsum parse (None entries allowed if a step has no drawable hull).
+    #: the einsum parse.
     contraction_step_metrics: tuple[_ContractionStepMetrics | None, ...] | None = None
 
 

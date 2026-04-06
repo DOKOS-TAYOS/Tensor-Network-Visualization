@@ -17,6 +17,8 @@ from demo_cli import (  # noqa: E402
     cumulative_prefix_contraction_scheme,
     demo_runs_headless,
     finalize_demo_plot_config,
+    pairwise_merge_contraction_scheme,
+    pairwise_merge_group_contraction_scheme,
     render_demo_tensor_network,
 )
 
@@ -47,6 +49,25 @@ def test_cumulative_prefix_empty() -> None:
     assert cumulative_prefix_contraction_scheme(()) == ()
 
 
+def test_pairwise_merge_contraction_scheme_merges_branches_before_final_join() -> None:
+    steps = pairwise_merge_contraction_scheme(("A", "B", "C", "D", "E", "F"))
+    assert steps == (
+        ("A", "B"),
+        ("C", "D"),
+        ("E", "F"),
+        ("A", "B", "C", "D"),
+        ("A", "B", "C", "D", "E", "F"),
+    )
+
+
+def test_pairwise_merge_group_contraction_scheme_keeps_odd_tail_until_it_merges() -> None:
+    steps = pairwise_merge_group_contraction_scheme((("A", "x"), ("B", "y"), ("C", "z")))
+    assert steps == (
+        ("A", "x", "B", "y"),
+        ("A", "x", "B", "y", "C", "z"),
+    )
+
+
 def test_cubic_peps_names_match_grid_count() -> None:
     names = cubic_peps_tensor_names(2, 3, 2)
     assert len(names) == 12
@@ -67,7 +88,6 @@ def test_auto_save_path_uses_engine_and_example() -> None:
 def _demo_args(
     *,
     scheme: bool = False,
-    playback: bool = False,
     hover_cost: bool = False,
     tensor_inspector: bool = False,
     contracted: bool = False,
@@ -78,7 +98,6 @@ def _demo_args(
         labels=None,
         hover_labels=True,
         scheme=scheme,
-        playback=playback,
         hover_cost=hover_cost,
         tensor_inspector=tensor_inspector,
         contracted=contracted,
@@ -92,24 +111,14 @@ def _render_args(*, no_show: bool = False, save: Path | None = None) -> argparse
     )
 
 
-def test_finalize_contraction_playback_stays_false_for_einsum_scheme_by_default() -> None:
+def test_finalize_contraction_scheme_enables_slider_behavior_directly() -> None:
     cfg = finalize_demo_plot_config(
         _demo_args(scheme=True),
         engine="einsum",
         scheme_tensor_names=None,
     )
     assert cfg.show_contraction_scheme is True
-    assert cfg.contraction_playback is False
-
-
-def test_finalize_contraction_playback_true_when_playback_requested_without_scheme() -> None:
-    cfg = finalize_demo_plot_config(
-        _demo_args(playback=True),
-        engine="quimb",
-        scheme_tensor_names=(("A", "B"),),
-    )
-    assert cfg.show_contraction_scheme is True
-    assert cfg.contraction_playback is True
+    assert not hasattr(cfg, "contraction_playback")
 
 
 def test_finalize_contraction_cost_hover_auto_enables_scheme() -> None:
@@ -213,7 +222,7 @@ def test_run_demo_parser_defaults_match_cli_contract() -> None:
     assert args.labels is None
     assert args.hover_labels is True
     assert args.scheme is False
-    assert args.playback is False
+    assert not hasattr(args, "playback")
     assert args.hover_cost is False
     assert args.tensor_inspector is False
     assert args.contracted is False

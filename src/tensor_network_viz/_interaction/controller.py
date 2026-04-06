@@ -69,7 +69,7 @@ _BASE_TOGGLE_LABELS: tuple[str, str, str, str] = (
     "Tensor labels",
     "Edge labels",
 )
-_SCHEME_TOGGLE_LABELS: tuple[str, str, str] = ("Scheme", "Playback", "Costs")
+_SCHEME_TOGGLE_LABELS: tuple[str, str] = ("Scheme", "Costs")
 _TENSOR_INSPECTOR_LABEL: str = "Tensor inspector"
 _INTERACTIVE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
@@ -114,7 +114,6 @@ class _InteractiveTensorFigureController:
         self.tensor_labels_on: bool = bool(config.show_tensor_labels)
         self.edge_labels_on: bool = bool(config.show_index_labels)
         self.scheme_on: bool = bool(config.show_contraction_scheme)
-        self.playback_on: bool = bool(config.contraction_playback)
         self.cost_hover_on: bool = bool(config.contraction_scheme_cost_hover)
         self._playback_step_records = _extract_playback_step_records(network)
         self.tensor_inspector_available: bool = self._playback_step_records is not None
@@ -122,9 +121,6 @@ class _InteractiveTensorFigureController:
             config.contraction_tensor_inspector and self.tensor_inspector_available
         )
         if self.cost_hover_on or self.tensor_inspector_on:
-            self.scheme_on = True
-            self.playback_on = True
-        elif self.playback_on:
             self.scheme_on = True
         self._initial_ax = initial_ax
         self._external_ax = initial_ax is not None
@@ -177,7 +173,6 @@ class _InteractiveTensorFigureController:
             show_tensor_labels=False,
             show_index_labels=False,
             show_contraction_scheme=False,
-            contraction_playback=False,
             contraction_scheme_cost_hover=False,
             contraction_tensor_inspector=False,
         )
@@ -335,7 +330,7 @@ class _InteractiveTensorFigureController:
             self.edge_labels_on,
         ]
         if has_scheme_toggles:
-            statuses.extend([self.scheme_on, self.playback_on, self.cost_hover_on])
+            statuses.extend([self.scheme_on, self.cost_hover_on])
         if has_tensor_inspector:
             statuses.append(self.tensor_inspector_on)
         self._checkbuttons = CheckButtons(
@@ -353,8 +348,8 @@ class _InteractiveTensorFigureController:
             return
         desired = [self.hover_on, self.nodes_on, self.tensor_labels_on, self.edge_labels_on]
         if len(self._checkbuttons.labels) > len(_BASE_TOGGLE_LABELS):
-            desired.extend([self.scheme_on, self.playback_on, self.cost_hover_on])
-            if self.tensor_inspector_available and len(self._checkbuttons.labels) > 6:
+            desired.extend([self.scheme_on, self.cost_hover_on])
+            if self.tensor_inspector_available and len(self._checkbuttons.labels) > 5:
                 desired.append(self.tensor_inspector_on)
         current = [bool(value) for value in self._checkbuttons.get_status()]
         self._callback_guard = True
@@ -379,12 +374,11 @@ class _InteractiveTensorFigureController:
         self.tensor_labels_on = status[_TOGGLE_INDEX_TENSOR_LABELS]
         self.edge_labels_on = status[_TOGGLE_INDEX_EDGE_LABELS]
         scheme_index = len(_BASE_TOGGLE_LABELS)
-        if len(status) >= scheme_index + 3:
+        if len(status) >= scheme_index + 2:
             self.scheme_on = status[scheme_index]
-            self.playback_on = status[scheme_index + 1]
-            self.cost_hover_on = status[scheme_index + 2]
-        if len(status) >= scheme_index + 4 and self.tensor_inspector_available:
-            self.tensor_inspector_on = status[scheme_index + 3]
+            self.cost_hover_on = status[scheme_index + 1]
+        if len(status) >= scheme_index + 3 and self.tensor_inspector_available:
+            self.tensor_inspector_on = status[scheme_index + 2]
         self._apply_scene_state(self.current_scene)
 
     def _deactivate_non_current_views(self) -> None:
@@ -429,19 +423,14 @@ class _InteractiveTensorFigureController:
 
         if self.cost_hover_on or self.tensor_inspector_on:
             self.scheme_on = True
-            self.playback_on = True
-        elif self.playback_on:
-            self.scheme_on = True
 
         controls = scene.contraction_controls
         if controls is not None:
             controls.set_states(
                 scheme_on=self.scheme_on,
-                playback_on=self.playback_on,
                 cost_hover_on=self.cost_hover_on,
             )
             self.scheme_on = bool(controls.scheme_on)
-            self.playback_on = bool(controls.playback_on)
             self.cost_hover_on = bool(controls.cost_hover_on)
             if self._tensor_inspector is not None:
                 self._tensor_inspector.bind_viewer(controls._viewer)

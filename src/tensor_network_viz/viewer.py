@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Any, TypeAlias, cast
 
 import matplotlib.pyplot as plt
@@ -121,15 +120,13 @@ def show_tensor_network(
         "Rendering tensor network with engine=%r resolved_view=%r.", resolved_engine, resolved_view
     )
     plot_2d, plot_3d = _get_plotters(resolved_engine)
+    if style.show_contraction_scheme and not show_controls:
+        raise ValueError(
+            "show_contraction_scheme=True requires show_controls=True because the contraction "
+            "scheme is dynamic-only; it cannot be rendered with show_controls=False."
+        )
     if not show_controls:
         static_style = style
-        if style.contraction_playback or style.contraction_scheme_cost_hover:
-            static_style = replace(
-                static_style,
-                show_contraction_scheme=True,
-                contraction_playback=False,
-                contraction_scheme_cost_hover=False,
-            )
         if resolved_view == "2d":
             fig, ax_out = plot_2d(
                 network_input,

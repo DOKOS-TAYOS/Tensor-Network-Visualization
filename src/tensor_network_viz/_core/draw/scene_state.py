@@ -39,6 +39,8 @@ class _InteractiveSceneState:
     edge_geometry: tuple[_RenderedEdgeGeometry, ...]
     hover_state: _RenderHoverState
     tensor_disk_radius_px_3d: float | None
+    edge_artists: list[Artist] = field(default_factory=list)
+    scheme_artists: list[Artist] = field(default_factory=list)
     node_artist_bundles: dict[NodeRenderMode, _NodeArtistBundle] = field(default_factory=dict)
     active_node_mode: NodeRenderMode = "normal"
     tensor_label_artists: list[Artist] = field(default_factory=list)

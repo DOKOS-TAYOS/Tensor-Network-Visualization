@@ -442,6 +442,7 @@ def _build_interactive_scene_state(
     tensor_disk_radius_px_3d: float | None,
 ) -> _InteractiveSceneState:
     initial_bundle = context.plotter.get_node_artist_bundle()
+    edge_artists = list(context.plotter.get_edge_artists())
     active_node_mode = "normal" if context.config.show_nodes else "compact"
     return _InteractiveSceneState(
         ax=ax,
@@ -463,6 +464,7 @@ def _build_interactive_scene_state(
         edge_geometry=tuple(context.edge_geometry_sink),
         hover_state=hover_state,
         tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
+        edge_artists=edge_artists,
     )
 
 

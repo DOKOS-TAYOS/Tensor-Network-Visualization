@@ -59,7 +59,6 @@ def _recover_contraction_history(
         return None
 
     contributor_cache: dict[int, frozenset[int] | None] = {}
-    accumulated: set[int] = set()
     steps: list[frozenset[int]] = []
     metrics: list[_ContractionStepMetrics | None] = []
     step_result_nodes: list[Any] = []
@@ -73,8 +72,7 @@ def _recover_contraction_history(
         if not contributors:
             return None
         if graph is not None:
-            accumulated.update(contributors)
-            steps.append(frozenset(accumulated))
+            steps.append(frozenset(contributors))
         metrics.append(_metric_for_contraction_node(node, produced))
         step_result_nodes.append(node)
 

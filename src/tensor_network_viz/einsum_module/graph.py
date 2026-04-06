@@ -88,8 +88,7 @@ def _build_graph(trace_input: Any) -> _GraphData:
     all_result_names = {_step_result_name(s) for s in trace}
     next_virtual_id = -1
     contraction_scheme: list[frozenset[int]] = []
-    accumulated_scheme_nodes: set[int] = set()
-    # Full physical lineage per tensor (contraction scheme uses running union across steps).
+    # Full physical lineage per tensor. Each playback step records the real event footprint only.
     physical_contributors: dict[str, frozenset[int]] = {}
     step_metrics_list: list[_ContractionStepMetrics] = []
 
@@ -144,8 +143,7 @@ def _build_graph(trace_input: Any) -> _GraphData:
         step_lineage: set[int] = set()
         for name in operand_names:
             step_lineage.update(physical_contributors[name])
-        accumulated_scheme_nodes |= step_lineage
-        contraction_scheme.append(frozenset(accumulated_scheme_nodes))
+        contraction_scheme.append(frozenset(step_lineage))
 
         by_label: dict[str, list[_AxisOrigin]] = {}
         for i, axes in enumerate(parsed.operand_axes):

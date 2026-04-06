@@ -112,16 +112,15 @@ config = PlotConfig(
 ```python
 config = PlotConfig(
     show_contraction_scheme=True,
-    contraction_playback=True,
     contraction_scheme_cost_hover=True,
 )
 ```
 
 Important detail:
 
-- if `show_controls=True`, playback and scheme toggles are available on the figure;
-- if `contraction_scheme_cost_hover=True`, the current playback step shows a fixed detail panel;
-- if `show_controls=False`, the scheme can still be drawn statically, but no playback widgets are added.
+- if `show_controls=True`, the figure exposes a `Scheme` toggle plus the slider controls;
+- if `contraction_scheme_cost_hover=True`, the current slider step shows a fixed detail panel;
+- if `show_controls=False`, `show_contraction_scheme=True` raises `ValueError` because the scheme is dynamic-only.
 
 ### Performance-oriented rendering
 

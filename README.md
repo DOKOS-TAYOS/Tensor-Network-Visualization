@@ -382,9 +382,8 @@ For fuller backend examples, see [docs/backends.md](docs/backends.md).
 | `show_tensor_labels` | Draw tensor names on nodes. |
 | `show_index_labels` | Draw index labels on bonds and dangling legs. |
 | `hover_labels` | Enable hover tooltips in interactive sessions. |
-| `show_contraction_scheme` | Draw contraction-step regions. |
-| `contraction_playback` | Start with playback controls enabled when controls are shown. |
-| `contraction_scheme_cost_hover` | Show contraction details in the playback panel. |
+| `show_contraction_scheme` | Enable the dynamic contraction slider with real node shape/color changes. |
+| `contraction_scheme_cost_hover` | Show contraction details in the slider panel. |
 | `tensor_label_refinement` | `"auto"`, `"always"`, or `"never"` for the expensive label-fit pass. |
 | `layout_iterations` | Force-layout effort. |
 | `positions` | Supply custom node coordinates. |
