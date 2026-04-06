@@ -172,11 +172,17 @@ views and then the concrete mode inside that family:
 
 - `basic`: `elements`, `magnitude`, `log_magnitude`, `distribution`, `data`
 - `complex`: `real`, `imag`, `phase`
-- `diagnostic`: `sign`, `signed_value`, `sparsity`, `nan_inf`
+- `diagnostic`: `sign`, `signed_value`, `sparsity`, `nan_inf`, `singular_values`, `eigen_real`,
+  `eigen_imag`
 
 `data` mode combines the global tensor stats with a compact per-axis summary and the top-k entries
-by magnitude. Use `shared_color_scale=True` when you want slider-based tensor comparisons to reuse
-the same limits, and `highlight_outliers=True` to overlay extreme values on continuous heatmaps.
+by magnitude. The `singular_values` mode renders the singular-value spectrum derived from the same
+matrixized tensor used by the heatmap views. The `eigen_real` and `eigen_imag` modes render the
+real and imaginary parts of the corresponding eigenvalues, ordered by eigenvalue magnitude. These
+spectral modes hide themselves automatically whenever the active analysis matrix is not finite, and
+the eigenvalue views also stay hidden for non-square analysis matrices. Use
+`shared_color_scale=True` when you want slider-based tensor comparisons to reuse the same limits,
+and `highlight_outliers=True` to overlay extreme values on continuous heatmaps.
 
 ### Rank > 2 tensors
 

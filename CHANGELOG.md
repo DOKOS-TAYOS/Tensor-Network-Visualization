@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Hide nodes in the viewer:** Option to exclude selected nodes from the interactive visualization so dense or branching tensor networks stay readable without changing the underlying graph data.
 - **Public diagnostics contract:** Added package-specific exceptions (`TensorNetworkVizError`, `VisualizationInputError`, `AxisConfigurationError`, `UnsupportedEngineError`, `TensorDataError`, `MissingOptionalDependencyError`) and a documented `tensor_network_viz` logger with a default `NullHandler`.
+- **Spectral tensor diagnostics:** `show_tensor_elements` now exposes `singular_values`, `eigen_real`, and `eigen_imag` diagnostic modes for the current matrixization, with graceful hiding when the analysis is not applicable.
 
 ### Changed
 

@@ -42,19 +42,21 @@ python examples/tensor_elements_demo.py --demo structured
 It uses fairly large NumPy tensors, keeps one tensor active at a time with a slider, and exposes a
 grouped control flow: `basic` (`elements`, `magnitude`, `log_magnitude`, `distribution`, `data`),
 `complex` (`real`, `imag`, `phase`), and `diagnostic` (`sign`, `signed_value`, `sparsity`,
-`nan_inf`). The optional demos are: `matvec` (default, traced matrix-vector), `batch` (traced
+`nan_inf`, `singular_values`, `eigen_real`, `eigen_imag`). The optional demos are: `matvec` (default, traced matrix-vector), `batch` (traced
 batched matmul), and `structured` (3D complex, dense, sparse, and non-finite TensorNetwork-style
 nodes).
 
 If you want to inspect the new diagnostic-friendly tensors specifically, launch the structured demo
-and move the tensor slider until you reach `SparseMask` or `Specials`:
+and move the tensor slider until you reach `Lattice`, `SparseMask`, or `Specials`:
 
 ```bash
 python examples/tensor_elements_demo.py --demo structured
 ```
 
+- `Lattice`: useful for `singular_values`, `eigen_real`, and `eigen_imag`.
 - `SparseMask`: useful for the `sparsity` mode.
-- `Specials`: useful for the `nan_inf` mode because it contains `NaN`, `+Inf`, and `-Inf`.
+- `Specials`: useful for the `nan_inf` mode and for confirming that spectral modes are hidden when
+  non-finite values are present.
 
 ## Common Workflows
 

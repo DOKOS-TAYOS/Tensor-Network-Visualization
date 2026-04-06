@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from itertools import combinations
+from math import inf, log
 from typing import Any, TypeAlias
 
 import numpy as np
@@ -18,6 +20,7 @@ from .einsum_module.trace import EinsumTrace, einsum_trace_step, pair_tensor
 from .exceptions import TensorDataError, TensorDataTypeError, UnsupportedEngineError
 from .quimb.graph import _quimb_tensor_parsed, _tensors_sorted_with_meta
 from .tenpy.explicit import TenPyTensorNetwork
+from .tensor_elements_config import TensorAxisSelector, TensorElementsConfig
 from .tensorkrowch._history import _recover_contraction_history
 
 NumericArray: TypeAlias = np.ndarray[Any, Any]
@@ -50,6 +53,18 @@ class _MatrixMetadata:
 
 
 @dataclass(frozen=True)
+class _SpectralAnalysis:
+    analysis_shape: tuple[int, int]
+    col_names: tuple[str, ...]
+    eigenvalues: NumericArray | None
+    issue: str | None
+    matrix_shape: tuple[int, int]
+    row_names: tuple[str, ...]
+    singular_values: NumericArray | None
+    used_reduced_matrix: bool
+
+
+@dataclass(frozen=True)
 class _PlaybackStepRecord:
     result_name: str
     record: _TensorRecord | None
@@ -60,6 +75,191 @@ _EinsumPlaybackStepRecord = _PlaybackStepRecord
 
 def _detect_tensor_elements_engine(data: Any) -> tuple[EngineName, Any]:
     return _detect_tensor_engine_with_input(data)
+
+
+def _normalize_axis_selector(
+    selector: TensorAxisSelector,
+    *,
+    axis_names: tuple[str, ...],
+    ndim: int,
+) -> int:
+    if isinstance(selector, str):
+        if not axis_names:
+            raise ValueError("Axis names are not available for this tensor.")
+        try:
+            return axis_names.index(selector)
+        except ValueError as exc:
+            raise ValueError(
+                f"Unknown axis name {selector!r}. Available axes are {axis_names!r}."
+            ) from exc
+    index = int(selector)
+    if index < 0:
+        index += ndim
+    if index < 0 or index >= ndim:
+        raise ValueError(f"Axis index {selector!r} is out of bounds for ndim={ndim}.")
+    return index
+
+
+def _normalize_axis_group(
+    selectors: tuple[TensorAxisSelector, ...] | None,
+    *,
+    axis_names: tuple[str, ...],
+    ndim: int,
+) -> tuple[int, ...] | None:
+    if selectors is None:
+        return None
+    resolved = tuple(
+        _normalize_axis_selector(selector, axis_names=axis_names, ndim=ndim)
+        for selector in selectors
+    )
+    if len(set(resolved)) != len(resolved):
+        raise ValueError("row_axes and col_axes must not contain duplicate axes.")
+    return resolved
+
+
+def _axis_names_for_shape(axis_names: tuple[str, ...], *, ndim: int) -> tuple[str, ...]:
+    if len(axis_names) >= ndim:
+        return axis_names[:ndim]
+    generated = tuple(f"axis{index}" for index in range(len(axis_names), ndim))
+    return axis_names + generated
+
+
+def _balanced_axes_for_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
+    ndim = len(shape)
+    if ndim == 0:
+        return ()
+    if ndim == 1:
+        return (0,)
+
+    if ndim > 16:
+        selected: list[int] = [0]
+        row_log = log(float(shape[0]))
+        col_log = sum(log(float(dim)) for dim in shape[1:])
+        for index in range(1, ndim):
+            dim_log = log(float(shape[index]))
+            if row_log <= col_log:
+                selected.append(index)
+                row_log += dim_log
+                col_log -= dim_log
+        if len(selected) == ndim:
+            return tuple(selected[:-1])
+        return tuple(selected)
+
+    total_log = sum(log(float(dim)) for dim in shape)
+    best_axes: tuple[int, ...] | None = None
+    best_score = inf
+    best_rank_gap = inf
+    for size in range(1, ndim):
+        for combo in combinations(range(1, ndim), size - 1):
+            candidate = (0,) + combo
+            row_log = sum(log(float(shape[index])) for index in candidate)
+            col_log = total_log - row_log
+            score = abs(row_log - col_log)
+            rank_gap = abs(len(candidate) - (ndim - len(candidate)))
+            if (
+                score < best_score
+                or (np.isclose(score, best_score) and rank_gap < best_rank_gap)
+                or (
+                    np.isclose(score, best_score)
+                    and rank_gap == best_rank_gap
+                    and (best_axes is None or candidate < best_axes)
+                )
+            ):
+                best_axes = candidate
+                best_score = score
+                best_rank_gap = rank_gap
+    assert best_axes is not None
+    return best_axes
+
+
+def _resolve_matrix_axes(
+    *,
+    shape: tuple[int, ...],
+    row_axes: tuple[TensorAxisSelector, ...] | None,
+    col_axes: tuple[TensorAxisSelector, ...] | None,
+    axis_names: tuple[str, ...],
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    ndim = len(shape)
+    if ndim == 0:
+        return (), ()
+
+    resolved_rows = _normalize_axis_group(row_axes, axis_names=axis_names, ndim=ndim)
+    resolved_cols = _normalize_axis_group(col_axes, axis_names=axis_names, ndim=ndim)
+
+    if resolved_rows is None and resolved_cols is None:
+        resolved_rows = _balanced_axes_for_shape(shape)
+        resolved_cols = tuple(index for index in range(ndim) if index not in resolved_rows)
+        return resolved_rows, resolved_cols
+
+    if resolved_rows is None:
+        assert resolved_cols is not None
+        resolved_rows = tuple(index for index in range(ndim) if index not in resolved_cols)
+    if resolved_cols is None:
+        assert resolved_rows is not None
+        resolved_cols = tuple(index for index in range(ndim) if index not in resolved_rows)
+
+    if set(resolved_rows).intersection(resolved_cols):
+        raise ValueError("row_axes and col_axes must be disjoint.")
+    if set(resolved_rows) | set(resolved_cols) != set(range(ndim)):
+        raise ValueError("row_axes and col_axes must cover every axis exactly once.")
+    return resolved_rows, resolved_cols
+
+
+def _matrixize_tensor(
+    array: NumericArray,
+    *,
+    axis_names: tuple[str, ...],
+    row_axes: tuple[TensorAxisSelector, ...] | None,
+    col_axes: tuple[TensorAxisSelector, ...] | None,
+) -> tuple[NumericArray, _MatrixMetadata]:
+    shape = tuple(int(dimension) for dimension in array.shape)
+    resolved_axis_names = _axis_names_for_shape(axis_names, ndim=len(shape))
+    resolved_rows, resolved_cols = _resolve_matrix_axes(
+        shape=shape,
+        row_axes=row_axes,
+        col_axes=col_axes,
+        axis_names=resolved_axis_names,
+    )
+    if array.ndim == 0:
+        matrix = np.asarray(array).reshape(1, 1)
+    else:
+        order = resolved_rows + resolved_cols
+        transposed = np.transpose(array, axes=order) if order else array
+        row_size = int(np.prod([shape[index] for index in resolved_rows], dtype=int)) or 1
+        col_size = int(np.prod([shape[index] for index in resolved_cols], dtype=int)) or 1
+        matrix = np.reshape(transposed, (row_size, col_size))
+    metadata = _MatrixMetadata(
+        col_axes=resolved_cols,
+        col_names=tuple(resolved_axis_names[index] for index in resolved_cols),
+        original_shape=shape,
+        row_axes=resolved_rows,
+        row_names=tuple(resolved_axis_names[index] for index in resolved_rows),
+    )
+    return matrix, metadata
+
+
+def _downsample_axis_mean(array: NumericArray, *, axis: int, target_size: int) -> NumericArray:
+    source = np.asarray(array)
+    length = int(source.shape[axis])
+    if length <= target_size:
+        return source
+
+    edges = np.linspace(0, length, target_size + 1, dtype=int)
+    moved = np.moveaxis(source, axis, 0)
+    contiguous = np.ascontiguousarray(moved)
+    slices: list[NumericArray] = []
+    for start, stop in zip(edges[:-1], edges[1:], strict=True):
+        safe_stop = min(max(stop, start + 1), length)
+        slices.append(np.nanmean(contiguous[start:safe_stop], axis=0, keepdims=True))
+    reduced = np.concatenate(slices, axis=0)
+    return np.moveaxis(reduced, 0, axis)
+
+
+def _downsample_matrix(matrix: NumericArray, *, max_shape: tuple[int, int]) -> NumericArray:
+    max_rows, max_cols = max_shape
+    reduced = _downsample_axis_mean(np.asarray(matrix), axis=0, target_size=int(max_rows))
+    reduced = _downsample_axis_mean(reduced, axis=1, target_size=int(max_cols))
+    return reduced
 
 
 def _name_sort_key(item: Any) -> tuple[str, tuple[str, ...], str, str]:
@@ -558,7 +758,171 @@ def _build_topk_lines(record: _TensorRecord, *, count: int) -> list[str]:
     return lines
 
 
-def _build_data_summary_text(record: _TensorRecord, *, topk_count: int) -> str:
+def _spectral_analysis_for_record(
+    record: _TensorRecord,
+    *,
+    config: TensorElementsConfig,
+) -> _SpectralAnalysis:
+    matrix, metadata = _matrixize_tensor(
+        np.asarray(record.array),
+        axis_names=record.axis_names,
+        row_axes=config.row_axes,
+        col_axes=config.col_axes,
+    )
+    matrix_shape = tuple(int(dimension) for dimension in matrix.shape)
+    reduced_matrix = _downsample_matrix(matrix, max_shape=config.max_matrix_shape)
+    analysis_shape = tuple(int(dimension) for dimension in reduced_matrix.shape)
+    used_reduced_matrix = analysis_shape != matrix_shape
+
+    if not np.all(np.isfinite(matrix)):
+        return _SpectralAnalysis(
+            analysis_shape=analysis_shape,
+            col_names=metadata.col_names,
+            eigenvalues=None,
+            issue="matrix contains NaN or Inf values",
+            matrix_shape=matrix_shape,
+            row_names=metadata.row_names,
+            singular_values=None,
+            used_reduced_matrix=used_reduced_matrix,
+        )
+
+    try:
+        singular_values = np.asarray(np.linalg.svd(reduced_matrix, compute_uv=False), dtype=float)
+        eigenvalues = None
+        if analysis_shape[0] == analysis_shape[1]:
+            eigenvalues = np.asarray(np.linalg.eigvals(reduced_matrix))
+    except np.linalg.LinAlgError as exc:
+        return _SpectralAnalysis(
+            analysis_shape=analysis_shape,
+            col_names=metadata.col_names,
+            eigenvalues=None,
+            issue=f"linear algebra failed ({exc.__class__.__name__})",
+            matrix_shape=matrix_shape,
+            row_names=metadata.row_names,
+            singular_values=None,
+            used_reduced_matrix=used_reduced_matrix,
+        )
+
+    return _SpectralAnalysis(
+        analysis_shape=analysis_shape,
+        col_names=metadata.col_names,
+        eigenvalues=eigenvalues,
+        issue=None,
+        matrix_shape=matrix_shape,
+        row_names=metadata.row_names,
+        singular_values=singular_values,
+        used_reduced_matrix=used_reduced_matrix,
+    )
+
+
+def _format_name_list(names: tuple[str, ...]) -> str:
+    if not names:
+        return "-"
+    return ", ".join(names)
+
+
+def _format_percent(value: float) -> str:
+    return f"{_format_float(100.0 * value)}%"
+
+
+def _topk_singular_value_lines(values: NumericArray, *, count: int) -> list[str]:
+    requested_count = min(int(count), int(values.size))
+    lines = [f"top {int(count)} singular values:"]
+    for rank, singular_value in enumerate(values[:requested_count], start=1):
+        lines.append(f"{rank}. sigma{rank}={_format_float(float(singular_value))}")
+    return lines
+
+
+def _topk_eigenvalue_lines(values: NumericArray, *, count: int) -> list[str]:
+    requested_count = min(int(count), int(values.size))
+    lines = [f"top {int(count)} eigenvalues by magnitude:"]
+    ranked = sorted(
+        np.ravel(values).tolist(),
+        key=lambda value: (-float(np.abs(value)), float(np.real(value)), float(np.imag(value))),
+    )
+    for rank, eigenvalue in enumerate(ranked[:requested_count], start=1):
+        lines.append(
+            f"{rank}. |lambda|={_format_float(float(np.abs(eigenvalue)))}, "
+            f"lambda={_format_scalar(eigenvalue)}"
+        )
+    return lines
+
+
+def _build_spectral_summary_lines(
+    record: _TensorRecord,
+    *,
+    config: TensorElementsConfig,
+    topk_count: int,
+) -> list[str]:
+    analysis = _spectral_analysis_for_record(record, config=config)
+    lines = [
+        "spectral analysis:",
+        f"- matrixized shape: {analysis.matrix_shape}",
+        f"- matrix rows: {_format_name_list(analysis.row_names)}",
+        f"- matrix cols: {_format_name_list(analysis.col_names)}",
+    ]
+
+    if analysis.used_reduced_matrix:
+        lines.append(
+            "- analysis matrix: "
+            f"reduced to {analysis.analysis_shape} via max_matrix_shape={config.max_matrix_shape}"
+        )
+    else:
+        lines.append("- analysis matrix: full matrix")
+
+    if analysis.issue is not None:
+        lines.append(f"- spectral analysis unavailable: {analysis.issue}")
+        return lines
+
+    assert analysis.singular_values is not None
+    singular_values = np.asarray(analysis.singular_values, dtype=float)
+    if singular_values.size == 0:
+        lines.append("- spectral analysis unavailable: empty singular spectrum")
+        return lines
+
+    sigma_max = float(np.max(singular_values))
+    sigma_min = float(np.min(singular_values))
+    positive_singular_values = singular_values[singular_values > 0.0]
+    if positive_singular_values.size == 0:
+        condition_number = float("inf") if sigma_max > 0.0 else 1.0
+    else:
+        condition_number = float(sigma_max / np.min(positive_singular_values))
+    frobenius_sq = float(np.sum(np.square(singular_values)))
+    stable_rank = float(frobenius_sq / (sigma_max * sigma_max)) if sigma_max > 0.0 else 0.0
+    energy_numerator = float(
+        np.sum(np.square(singular_values[: min(int(topk_count), singular_values.size)]))
+    )
+    energy_ratio = float(energy_numerator / frobenius_sq) if frobenius_sq > 0.0 else 1.0
+
+    lines.extend(
+        [
+            f"- singular-value range: {_format_float(sigma_min)} .. {_format_float(sigma_max)}",
+            f"- condition number: {_format_float(condition_number)}",
+            f"- stable rank: {_format_float(stable_rank)}",
+            f"- top {int(topk_count)} energy: {_format_percent(energy_ratio)}",
+        ]
+    )
+    lines.extend(
+        f"- {line}" for line in _topk_singular_value_lines(singular_values, count=topk_count)
+    )
+
+    if analysis.eigenvalues is None:
+        lines.append("- eigenvalues: not available for non-square matrices")
+        return lines
+
+    eigenvalues = np.asarray(analysis.eigenvalues)
+    spectral_radius = float(np.max(np.abs(eigenvalues))) if eigenvalues.size else 0.0
+    lines.append(f"- spectral radius: {_format_float(spectral_radius)}")
+    lines.extend(f"- {line}" for line in _topk_eigenvalue_lines(eigenvalues, count=topk_count))
+    return lines
+
+
+def _build_data_summary_text(
+    record: _TensorRecord,
+    *,
+    config: TensorElementsConfig,
+    topk_count: int,
+) -> str:
     sections = [
         _build_stats(record).text,
         "\n".join(_build_axis_summary_lines(record)),
@@ -635,13 +999,18 @@ __all__ = [
     "_EinsumPlaybackStepRecord",
     "_MatrixMetadata",
     "_PlaybackStepRecord",
+    "_SpectralAnalysis",
     "_TensorRecord",
     "_TensorStats",
     "_build_axis_summary_lines",
     "_build_data_summary_text",
     "_build_stats",
     "_build_topk_lines",
+    "_downsample_matrix",
     "_extract_playback_step_records",
     "_extract_einsum_playback_step_records",
     "_extract_tensor_records",
+    "_matrixize_tensor",
+    "_resolve_matrix_axes",
+    "_spectral_analysis_for_record",
 ]

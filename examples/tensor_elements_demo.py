@@ -9,8 +9,9 @@ from matplotlib.figure import Figure
 
 RenderedTensorAxes: TypeAlias = Axes
 
-# Large tensors: stats reflect the full tensor; only the displayed heatmap is
-# downsampled according to TensorElementsConfig.max_matrix_shape (384x384 here).
+# Large tensors: stats reflect the full tensor; heatmaps and spectral analysis
+# may use a reduced matrix according to TensorElementsConfig.max_matrix_shape
+# (384x384 here) so the demo stays responsive.
 _MATVEC_ROWS: int = 240
 _MATVEC_COLS: int = 256
 _BATCH: int = 24
@@ -198,7 +199,7 @@ def _parse_args() -> argparse.Namespace:
         default="matvec",
         help=(
             "matvec: traced matrix-vector; batch: traced batched matmul; "
-            "structured: complex, dense, sparse, and non-finite tensors."
+            "structured: complex, dense, sparse, spectral-friendly, and non-finite tensors."
         ),
     )
     return parser.parse_args()

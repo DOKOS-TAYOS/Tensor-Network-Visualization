@@ -10,6 +10,7 @@ from matplotlib.colors import BoundaryNorm, ListedColormap
 from ._tensor_elements_support import (
     _HeatmapPayload,
     _HistogramPayload,
+    _SeriesPayload,
     _TensorElementsPayload,
     _TensorRecord,
     _TextSummaryPayload,
@@ -205,6 +206,22 @@ def _render_panel(
         )
         panel.main_ax.set_xlabel(payload.xlabel)
         panel.main_ax.set_ylabel("count")
+        panel.main_ax.set_title(f"{record.name} [{record.engine}] - {payload.mode_label}")
+        return
+
+    if isinstance(payload, _SeriesPayload):
+        panel.main_ax.plot(
+            np.asarray(payload.x_values, dtype=float),
+            np.asarray(payload.y_values, dtype=float),
+            color="#0369A1",
+            linewidth=1.8,
+            marker="o",
+            markersize=4.5,
+        )
+        panel.main_ax.set_xlabel(payload.xlabel)
+        panel.main_ax.set_ylabel(payload.ylabel)
+        panel.main_ax.set_yscale(payload.yscale)
+        panel.main_ax.grid(True, alpha=0.25)
         panel.main_ax.set_title(f"{record.name} [{record.engine}] - {payload.mode_label}")
         return
 

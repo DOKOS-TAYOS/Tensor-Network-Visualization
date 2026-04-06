@@ -144,13 +144,19 @@ show_tensor_elements(
 When several tensors are present, the figure keeps one tensor active at a time and uses a slider
 to switch between them. The interactive controls are grouped: `basic` (`elements`, `magnitude`,
 `log_magnitude`, `distribution`, `data`), `complex` (`real`, `imag`, `phase`), and
-`diagnostic` (`sign`, `signed_value`, `sparsity`, `nan_inf`).
+`diagnostic` (`sign`, `signed_value`, `sparsity`, `nan_inf`, `singular_values`, `eigen_real`,
+`eigen_imag`).
 
 - `data`: single tensor, iterable of tensors, supported backend-native tensor collections, or an
   `EinsumTrace` with live tensor values.
 - `engine`: optional backend override. If omitted, the library auto-detects it.
 - `config`: tensor-inspection behavior lives here.
-- `data` mode now includes global stats, per-axis summaries, and top-k coordinates by magnitude.
+- `data` mode includes global stats, per-axis summaries, and top-k coordinates by magnitude.
+- `singular_values` renders the singular-value spectrum for the same matrixized tensor used by the
+  heatmap views and is hidden automatically when the active tensor contains `NaN` or `Inf`.
+- `eigen_real` and `eigen_imag` render the real and imaginary parts of the eigenvalues for the same
+  matrixized tensor, ordered by eigenvalue magnitude. They appear only when the active analysis
+  matrix is finite and square.
 - `ax`: render a single tensor into an existing Matplotlib axis.
 - `show_controls`: if `True`, add compact Matplotlib `group + mode` controls and, when needed, a tensor slider.
 - `show`: if `False`, nothing is displayed automatically.
@@ -207,11 +213,12 @@ This is where you configure:
 - heatmap downsampling limits,
 - histogram sampling and bin count,
 - data-summary depth (`topk_count`),
+- heatmap/spectral reduction via `max_matrix_shape`,
 - optional robust/shared scaling and outlier overlays.
 
 If you want to start in a specific grouped view, pass `mode="real"`, `mode="imag"`,
-`mode="phase"`, `mode="log_magnitude"`, `mode="sparsity"`, `mode="nan_inf"`, `mode="sign"`, or
-`mode="signed_value"` directly in
+`mode="phase"`, `mode="log_magnitude"`, `mode="sparsity"`, `mode="nan_inf"`, `mode="sign"`,
+`mode="signed_value"`, `mode="singular_values"`, `mode="eigen_real"`, or `mode="eigen_imag"` directly in
 `TensorElementsConfig(...)`.
 
 ## Most Common Workflows

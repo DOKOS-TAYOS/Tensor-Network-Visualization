@@ -17,6 +17,9 @@ TensorElementsMode: TypeAlias = Literal[
     "signed_value",
     "sparsity",
     "nan_inf",
+    "singular_values",
+    "eigen_real",
+    "eigen_imag",
 ]
 TensorAxisSelector: TypeAlias = int | str
 

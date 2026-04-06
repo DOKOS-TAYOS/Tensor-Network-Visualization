@@ -124,6 +124,7 @@ class _TensorElementsFigureController:
                 self._current_record(),
                 group=requested_group,
                 preferred_mode=requested_mode,
+                config=self._config,
             )
             return
         self._group = requested_group
@@ -166,7 +167,11 @@ class _TensorElementsFigureController:
     def _current_group_modes(self) -> tuple[str, ...]:
         if not self._allow_interactive_fallback:
             return _group_modes(self._group)
-        return _valid_group_modes_for_record(self._current_record(), self._group)
+        return _valid_group_modes_for_record(
+            self._current_record(),
+            self._group,
+            config=self._config,
+        )
 
     def _rebuild_mode_radio(self) -> None:
         if self._mode_radio_ax is not None:
@@ -300,6 +305,7 @@ class _TensorElementsFigureController:
             self._current_record(),
             group=resolved_group,  # type: ignore[arg-type]
             preferred_mode=self._mode if _mode_group(self._mode) == resolved_group else None,
+            config=self._config,
         )
         self._render_current(redraw=redraw)
 
@@ -310,6 +316,7 @@ class _TensorElementsFigureController:
                 self._current_record(),
                 group=resolved_group,
                 preferred_mode=str(mode),
+                config=self._config,
             )
         else:
             self._group = resolved_group
@@ -324,6 +331,7 @@ class _TensorElementsFigureController:
                 self._current_record(),
                 group=self._group,
                 preferred_mode=self._mode,
+                config=self._config,
             )
         if (
             self._slider is not None
@@ -349,6 +357,7 @@ class _TensorElementsFigureController:
                 record,
                 group=self._group,
                 preferred_mode=self._mode,
+                config=self._config,
             )
         self._render_current(redraw=redraw)
 
