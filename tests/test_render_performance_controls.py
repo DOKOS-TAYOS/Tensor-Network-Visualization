@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 import matplotlib
 
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 from tensor_network_viz import PlotConfig
 from tensor_network_viz._core.draw.fonts_and_scale import _draw_scale_params
@@ -176,14 +178,14 @@ def test_plot_graph_reuses_cached_geometry_for_same_key(monkeypatch) -> None:
 
     direction_calls: list[int] = []
     scale_calls: list[int] = []
-    original_compute_axis_directions: Callable[..., object] = renderer._compute_axis_directions
-    original_resolve_scale: Callable[..., object] = renderer._resolve_draw_scale_and_bond_curve_pad
+    original_compute_axis_directions: Callable[..., Any] = renderer._compute_axis_directions
+    original_resolve_scale: Callable[..., Any] = renderer._resolve_draw_scale_and_bond_curve_pad
 
-    def counting_compute_axis_directions(*args: object, **kwargs: object) -> object:
+    def counting_compute_axis_directions(*args: Any, **kwargs: Any) -> Any:
         direction_calls.append(1)
         return original_compute_axis_directions(*args, **kwargs)
 
-    def counting_resolve_scale(*args: object, **kwargs: object) -> object:
+    def counting_resolve_scale(*args: Any, **kwargs: Any) -> Any:
         scale_calls.append(1)
         return original_resolve_scale(*args, **kwargs)
 
@@ -215,9 +217,9 @@ def test_plot_graph_reuses_cached_geometry_for_same_key(monkeypatch) -> None:
 def test_2d_plotter_collections_disable_autolim(monkeypatch) -> None:
     fig, ax = plt.subplots()
     autolim_values: list[bool | None] = []
-    original_add_collection: Callable[..., object] = ax.add_collection
+    original_add_collection: Callable[..., Any] = ax.add_collection
 
-    def recording_add_collection(*args: object, **kwargs: object) -> object:
+    def recording_add_collection(*args: Any, **kwargs: Any) -> Any:
         autolim_values.append(kwargs.get("autolim"))
         return original_add_collection(*args, **kwargs)
 
@@ -230,7 +232,13 @@ def test_2d_plotter_collections_disable_autolim(monkeypatch) -> None:
         fig=fig,
         is_3d=False,
     )
-    plotter.plot_line([0.0, 0.0], [1.0, 0.0], color="#123456", linewidth=1.5, zorder=1.0)
+    plotter.plot_line(
+        np.array([0.0, 0.0], dtype=float),
+        np.array([1.0, 0.0], dtype=float),
+        color="#123456",
+        linewidth=1.5,
+        zorder=1.0,
+    )
     flush = getattr(plotter, "flush_edge_collections", None)
     assert callable(flush)
     flush()
