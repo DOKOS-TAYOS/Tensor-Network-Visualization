@@ -455,6 +455,8 @@ def test_tensorkrowch_contracted_demo_uses_native_network_and_auto_scheme() -> N
 
 
 def test_tensorkrowch_mps_demo_uses_pairwise_merge_contractions_by_default() -> None:
+    pytest.importorskip("tensorkrowch")
+    pytest.importorskip("torch")
     module = _load_example_module(
         Path("examples/tensorkrowch_demo.py"),
         "tensorkrowch_demo_pairwise",

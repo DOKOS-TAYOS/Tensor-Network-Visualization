@@ -481,9 +481,14 @@ def _cube_faces_for_node(
         (0, 3, 7, 4),
         (1, 2, 6, 5),
     )
-    return tuple(
-        tuple(tuple(float(value) for value in corners[index]) for index in face) for face in faces
-    )
+    typed_faces: list[_CubeFace] = []
+    for face in faces:
+        typed_face: list[tuple[float, float, float]] = []
+        for index in face:
+            x_coord, y_coord, z_coord = corners[index]
+            typed_face.append((float(x_coord), float(y_coord), float(z_coord)))
+        typed_faces.append(tuple(typed_face))
+    return tuple(typed_faces)
 
 
 def _draw_scheme_nodes_2d(

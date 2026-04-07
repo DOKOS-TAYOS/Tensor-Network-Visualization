@@ -89,6 +89,10 @@ class DummyQuimbTensor:
         self.shape = data.shape
 
 
+def _line_ydata_as_float(ax: Axes) -> np.ndarray[Any, np.dtype[np.float64]]:
+    return np.asarray(ax.lines[0].get_ydata(), dtype=float)
+
+
 def _widget_center_event(fig: matplotlib.figure.Figure, artist: object) -> MouseEvent:
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
@@ -685,7 +689,7 @@ def test_show_tensor_elements_singular_values_mode_renders_ordered_spectrum() ->
     assert "singular values" in ax.get_title().lower()
     assert ax.get_yscale() == "log"
     assert len(ax.lines) == 1
-    np.testing.assert_allclose(ax.lines[0].get_ydata(), np.array([3.0, 1.0]))
+    np.testing.assert_allclose(_line_ydata_as_float(ax), np.array([3.0, 1.0]))
 
 
 def test_show_tensor_elements_singular_values_mode_switches_to_log_scale_for_wide_ranges() -> None:
@@ -745,7 +749,7 @@ def test_show_tensor_elements_singular_values_mode_supports_complex_tensors() ->
     )
 
     assert_rendered_figure(fig, ax)
-    np.testing.assert_allclose(ax.lines[0].get_ydata(), np.array([5.0, 2.0]))
+    np.testing.assert_allclose(_line_ydata_as_float(ax), np.array([5.0, 2.0]))
 
 
 def test_show_tensor_elements_singular_values_mode_uses_rank3_matrixization() -> None:
@@ -774,7 +778,7 @@ def test_show_tensor_elements_singular_values_mode_uses_rank3_matrixization() ->
     default_config = TensorElementsConfig()
     visual_floor = max(default_config.zero_threshold, default_config.log_magnitude_floor)
     np.testing.assert_allclose(
-        ax.lines[0].get_ydata(),
+        _line_ydata_as_float(ax),
         np.maximum(expected_singular_values, visual_floor),
     )
 
@@ -794,7 +798,7 @@ def test_show_tensor_elements_singular_values_mode_supports_scalar_tensors() -> 
     )
 
     assert_rendered_figure(fig, ax)
-    np.testing.assert_allclose(ax.lines[0].get_ydata(), np.array([3.0]))
+    np.testing.assert_allclose(_line_ydata_as_float(ax), np.array([3.0]))
 
 
 def test_show_tensor_elements_eigen_real_mode_renders_ranked_real_parts() -> None:
@@ -814,7 +818,7 @@ def test_show_tensor_elements_eigen_real_mode_renders_ranked_real_parts() -> Non
     assert_rendered_figure(fig, ax)
     assert "eigenvalues (real)" in ax.get_title().lower()
     assert ax.get_yscale() == "linear"
-    np.testing.assert_allclose(ax.lines[0].get_ydata(), np.array([3.0, -1.0]))
+    np.testing.assert_allclose(_line_ydata_as_float(ax), np.array([3.0, -1.0]))
 
 
 def test_show_tensor_elements_eigen_imag_mode_renders_ranked_imag_parts() -> None:
@@ -834,7 +838,7 @@ def test_show_tensor_elements_eigen_imag_mode_renders_ranked_imag_parts() -> Non
     assert_rendered_figure(fig, ax)
     assert "eigenvalues (imag)" in ax.get_title().lower()
     assert ax.get_yscale() == "linear"
-    np.testing.assert_allclose(ax.lines[0].get_ydata(), np.array([4.0, 2.0]))
+    np.testing.assert_allclose(_line_ydata_as_float(ax), np.array([4.0, 2.0]))
 
 
 def test_show_tensor_elements_nonfinite_tensor_rejects_singular_values_mode() -> None:

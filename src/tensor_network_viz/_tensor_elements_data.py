@@ -898,9 +898,9 @@ def _spectral_analysis_for_record(
         row_axes=config.row_axes,
         col_axes=config.col_axes,
     )
-    matrix_shape = tuple(int(dimension) for dimension in matrix.shape)
+    matrix_shape = (int(matrix.shape[0]), int(matrix.shape[1]))
     reduced_matrix = _downsample_matrix(matrix, max_shape=config.max_matrix_shape)
-    analysis_shape = tuple(int(dimension) for dimension in reduced_matrix.shape)
+    analysis_shape = (int(reduced_matrix.shape[0]), int(reduced_matrix.shape[1]))
     used_reduced_matrix = analysis_shape != matrix_shape
 
     if not np.all(np.isfinite(matrix)):
