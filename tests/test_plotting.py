@@ -1803,6 +1803,25 @@ def test_plot_tensornetwork_network_3d_rejects_2d_axis() -> None:
     plt.close(fig)
 
 
+def test_show_tensor_network_with_external_axis_does_not_relayout_sibling_subplots() -> None:
+    left = DummyTensorNetworkNode("A", ["left"])
+    right = DummyTensorNetworkNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+    fig, axes = plt.subplots(1, 2, figsize=(6, 3))
+    sibling_bounds_before = axes[1].get_position().bounds
+
+    _fig, ax = show_tensor_network(
+        [left, right],
+        ax=axes[0],
+        show=False,
+        show_controls=False,
+    )
+
+    assert ax is axes[0]
+    assert np.allclose(axes[1].get_position().bounds, sibling_bounds_before)
+    plt.close(fig)
+
+
 def test_show_tensor_network_displays_selected_renderer(monkeypatch: pytest.MonkeyPatch) -> None:
     node = DummyTensorKrowchNode("A", ["left"])
     connect(node, 0, name="edge")

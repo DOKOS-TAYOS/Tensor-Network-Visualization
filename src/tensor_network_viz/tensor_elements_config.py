@@ -72,6 +72,28 @@ class TensorElementsConfig:
 
     def __post_init__(self) -> None:
         """Validate numeric configuration values and normalize percentile input."""
+        try:
+            max_rows_raw, max_cols_raw = self.max_matrix_shape
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "max_matrix_shape must contain exactly two positive integers."
+            ) from exc
+        max_rows = int(max_rows_raw)
+        max_cols = int(max_cols_raw)
+        if max_rows <= 0 or max_cols <= 0:
+            raise ValueError("max_matrix_shape must contain exactly two positive integers.")
+        object.__setattr__(self, "max_matrix_shape", (max_rows, max_cols))
+
+        histogram_bins = int(self.histogram_bins)
+        if histogram_bins <= 0:
+            raise ValueError("histogram_bins must be positive.")
+        object.__setattr__(self, "histogram_bins", histogram_bins)
+
+        histogram_max_samples = int(self.histogram_max_samples)
+        if histogram_max_samples <= 0:
+            raise ValueError("histogram_max_samples must be positive.")
+        object.__setattr__(self, "histogram_max_samples", histogram_max_samples)
+
         if int(self.topk_count) <= 0:
             raise ValueError("topk_count must be positive.")
         if float(self.zero_threshold) <= 0.0:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gc
 import inspect
+import warnings
 from collections.abc import Iterable, Iterator
 from typing import Any
 
@@ -168,10 +169,13 @@ def test_tensor_elements_config_supports_grouped_modes() -> None:
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
+        ({"max_matrix_shape": (0, 256)}, "max_matrix_shape"),
         ({"topk_count": 0}, "topk_count"),
         ({"zero_threshold": 0.0}, "zero_threshold"),
         ({"log_magnitude_floor": 0.0}, "log_magnitude_floor"),
         ({"outlier_zscore": 0.0}, "outlier_zscore"),
+        ({"histogram_bins": 0}, "histogram_bins"),
+        ({"histogram_max_samples": 0}, "histogram_max_samples"),
         ({"robust_percentiles": (-1.0, 90.0)}, "robust_percentiles"),
         ({"robust_percentiles": (90.0, 90.0)}, "robust_percentiles"),
         ({"robust_percentiles": (20.0, 101.0)}, "robust_percentiles"),
@@ -224,6 +228,16 @@ def test_show_tensor_elements_supports_single_quimb_like_tensor() -> None:
     assert_rendered_figure(fig, ax)
     assert ax.images
     assert "quimb" in ax.get_title().lower()
+
+
+def test_show_tensor_elements_supports_direct_numpy_array_input() -> None:
+    tensor = np.arange(6, dtype=float).reshape(2, 3)
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=False)
+
+    assert_rendered_figure(fig, ax)
+    assert ax.images
+    assert "tensor" in ax.get_title().lower()
 
 
 def test_extract_einsum_playback_step_records_follow_trace_order_and_output_axes() -> None:
@@ -349,6 +363,22 @@ def test_show_tensor_elements_multiple_tensors_use_slider_and_single_axes() -> N
     controller._slider.set_val(1.0)
 
     assert "B" in ax.get_title()
+
+
+def test_show_tensor_elements_direct_iterables_preserve_duplicate_tensors() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(6, dtype=float).reshape(2, 3),
+        name="Repeat",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements([tensor, tensor], show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert isinstance(ax, Axes)
+    assert controller._slider is not None
+    assert len(controller._records) == 2
+    assert "Repeat" in ax.get_title()
 
 
 def test_show_tensor_elements_keeps_first_node_for_single_pass_nodes_attribute() -> None:
@@ -667,6 +697,28 @@ def test_show_tensor_elements_log_magnitude_mode_uses_log_scaled_magnitude() -> 
     assert_rendered_figure(fig, ax)
     assert "log" in ax.get_title().lower()
     np.testing.assert_allclose(image_array, np.array([[0.0, 2.0]]))
+
+
+def test_show_tensor_elements_data_mode_handles_all_nan_without_runtime_warnings() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[np.nan, np.nan]], dtype=float),
+        name="AllNaN",
+        axis_names=("row", "col"),
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        fig, ax = show_tensor_elements(
+            tensor,
+            config=TensorElementsConfig(mode="data"),
+            show=False,
+            show_controls=False,
+        )
+
+    assert_rendered_figure(fig, ax)
+    assert "allnan" in ax.get_title().lower()
+    assert ax.texts
+    assert "nan" in ax.texts[0].get_text().lower()
 
 
 def test_show_tensor_elements_distribution_mode_filters_nonfinite_values() -> None:

@@ -78,7 +78,8 @@ else:
         """Lazily dispatch to :func:`tensor_network_viz.tensor_elements.show_tensor_elements`.
 
         Args:
-            data: Tensor data accepted by the public tensor-elements entry point.
+            data: Tensor data accepted by the public tensor-elements entry point, including direct
+                numeric arrays and iterables of tensors.
             engine: Optional backend override.
             config: Optional tensor-inspection configuration.
             ax: Optional Matplotlib axes for single-tensor rendering.

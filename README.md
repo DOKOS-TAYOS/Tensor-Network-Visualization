@@ -162,7 +162,8 @@ to switch between them. The interactive controls are grouped: `basic` (`elements
 `diagnostic` (`sign`, `signed_value`, `sparsity`, `nan_inf`, `singular_values`, `eigen_real`,
 `eigen_imag`).
 
-- `data`: single tensor, iterable of tensors, supported backend-native tensor collections, or an
+- `data`: direct numeric tensor input (for example a NumPy array), direct iterables of tensors
+  preserving order and duplicates, supported backend-native tensor collections, or an
   `EinsumTrace` with live tensor values.
 - `engine`: optional backend override. If omitted, the library auto-detects it.
 - `config`: tensor-inspection behavior lives here.

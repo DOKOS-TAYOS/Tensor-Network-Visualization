@@ -95,8 +95,9 @@ def show_tensor_elements(
     """Render tensor values in a single Matplotlib figure.
 
     Args:
-        data: Single tensor, iterable of tensors, supported backend-native tensor container,
-            or playback-aware inputs such as ``EinsumTrace``.
+        data: Direct numeric tensor/array-like input, iterable of tensors (preserving order and
+            duplicates), supported backend-native tensor container, or playback-aware inputs such
+            as ``EinsumTrace``.
         engine: Optional backend override. When omitted, the backend is inferred from ``data``.
         config: Optional tensor-inspection configuration. When omitted,
             ``TensorElementsConfig()`` is used. The config is ordered from mode/axis selection

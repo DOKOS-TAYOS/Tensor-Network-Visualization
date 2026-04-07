@@ -491,6 +491,7 @@ def _plot_graph(
     build_scene_state: bool = True,
 ) -> tuple[Figure, RenderedAxes]:
     style = config or PlotConfig()
+    created_figure = ax is None
     fig, resolved_ax = _prepare_axes(
         ax=ax,
         figsize=style.figsize,
@@ -520,13 +521,14 @@ def _plot_graph(
         register_contraction_controls_on_figure=register_contraction_controls_on_figure,
         build_scene_state=build_scene_state,
     )
-    reserved_bottom = get_reserved_bottom(fig)
-    fig.subplots_adjust(
-        left=_FIGURE_ADJUST_LEFT,
-        right=_FIGURE_ADJUST_RIGHT,
-        bottom=reserved_bottom,
-        top=0.98,
-    )
+    if created_figure:
+        reserved_bottom = get_reserved_bottom(fig)
+        fig.subplots_adjust(
+            left=_FIGURE_ADJUST_LEFT,
+            right=_FIGURE_ADJUST_RIGHT,
+            bottom=reserved_bottom,
+            top=0.98,
+        )
     return fig, resolved_ax
 
 

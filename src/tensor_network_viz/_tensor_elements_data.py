@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from itertools import combinations
 from math import inf, log
-from typing import Any, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 import numpy as np
 
@@ -26,6 +26,7 @@ from .tensor_elements_config import TensorAxisSelector, TensorElementsConfig
 from .tensorkrowch._history import _recover_contraction_history
 
 NumericArray: TypeAlias = np.ndarray[Any, Any]
+TensorElementsSourceName: TypeAlias = EngineName | Literal["numpy"]
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,7 @@ class _TensorRecord:
 
     array: NumericArray
     axis_names: tuple[str, ...]
-    engine: EngineName
+    engine: TensorElementsSourceName
     name: str
 
 
@@ -127,6 +128,70 @@ _EinsumPlaybackStepRecord = _PlaybackStepRecord
 def _detect_tensor_elements_engine(data: Any) -> tuple[EngineName, Any]:
     """Detect the tensor backend and preserve any prepared input wrapper."""
     return _detect_tensor_engine_with_input(data)
+
+
+def _looks_like_backend_tensor_input(value: Any) -> bool:
+    return (
+        isinstance(value, EinsumTrace)
+        or _is_tenpy_tensor(value)
+        or hasattr(value, "tensors")
+        or hasattr(value, "leaf_nodes")
+        or hasattr(value, "nodes")
+        or hasattr(value, "axes_names")
+        or (hasattr(value, "axis_names") and hasattr(value, "tensor"))
+        or (hasattr(value, "inds") and hasattr(value, "data"))
+    )
+
+
+def _is_direct_array_like_tensor(value: Any) -> bool:
+    if isinstance(value, (str, bytes, bytearray, dict)):
+        return False
+    if _looks_like_backend_tensor_input(value):
+        return False
+    if not hasattr(value, "shape") and not hasattr(value, "__array__"):
+        return False
+    try:
+        array = np.asarray(value)
+    except Exception:
+        return False
+    return array.dtype != np.dtype("O")
+
+
+def _direct_array_record_name(index: int, *, total: int) -> str:
+    if total <= 1:
+        return "Tensor"
+    return f"Tensor {index + 1}"
+
+
+def _extract_direct_array_records(data: Any) -> list[_TensorRecord] | None:
+    if _is_direct_array_like_tensor(data):
+        return [
+            _TensorRecord(
+                array=_to_numpy_array(data),
+                axis_names=(),
+                engine="numpy",
+                name=_direct_array_record_name(0, total=1),
+            )
+        ]
+    if isinstance(data, (str, bytes, bytearray, dict)) or _looks_like_backend_tensor_input(data):
+        return None
+    if not isinstance(data, Iterable):
+        return None
+    try:
+        items = list(data)
+    except TypeError:
+        return None
+    if not items or not all(_is_direct_array_like_tensor(item) for item in items):
+        return None
+    return [
+        _TensorRecord(
+            array=_to_numpy_array(item),
+            axis_names=(),
+            engine="numpy",
+            name=_direct_array_record_name(index, total=len(items)),
+        )
+        for index, item in enumerate(items)
+    ]
 
 
 def _normalize_axis_selector(
@@ -344,6 +409,8 @@ def _matrixize_tensor(
 
 def _downsample_axis_mean(array: NumericArray, *, axis: int, target_size: int) -> NumericArray:
     source = np.asarray(array)
+    if int(target_size) <= 0:
+        raise ValueError("max_matrix_shape must contain exactly two positive integers.")
     length = int(source.shape[axis])
     if length <= target_size:
         return source
@@ -409,30 +476,36 @@ def _collect_items(
     if isinstance(source, dict):
         raw_items = list(source.values())
         should_sort = False
+        deduplicate = True
     elif attr_sources and any(hasattr(source, attr) for attr in attr_sources):
         raw_items = _iter_attr_values(source, attr_sources)
         should_sort = False
+        deduplicate = True
     elif isinstance(source, (str, bytes, bytearray)):
         raise TypeError("Tensor collection input must be iterable.")
     elif isinstance(source, Iterable):
         raw_items = list(source)
         should_sort = _is_unordered_collection(source)
+        deduplicate = False
     else:
         raise TypeError("Tensor collection input must be a supported tensor object or iterable.")
 
-    unique: list[Any] = []
-    seen: set[int] = set()
-    for item in raw_items:
-        if item is None:
-            continue
-        item_id = id(item)
-        if item_id in seen:
-            continue
-        seen.add(item_id)
-        unique.append(item)
+    if deduplicate:
+        items: list[Any] = []
+        seen: set[int] = set()
+        for item in raw_items:
+            if item is None:
+                continue
+            item_id = id(item)
+            if item_id in seen:
+                continue
+            seen.add(item_id)
+            items.append(item)
+    else:
+        items = [item for item in raw_items if item is not None]
     if should_sort:
-        unique.sort(key=_name_sort_key)
-    return unique
+        items.sort(key=_name_sort_key)
+    return items
 
 
 def _to_numpy_array(value: Any) -> NumericArray:
@@ -728,7 +801,7 @@ def _extract_tensor_records(
     data: Any,
     *,
     engine: EngineName | None,
-) -> tuple[EngineName, list[_TensorRecord]]:
+) -> tuple[TensorElementsSourceName, list[_TensorRecord]]:
     """Extract normalized tensor records from supported public inputs.
 
     Args:
@@ -746,6 +819,9 @@ def _extract_tensor_records(
     resolved_engine = engine
     prepared_input = data
     if resolved_engine is None:
+        direct_array_records = _extract_direct_array_records(data)
+        if direct_array_records is not None:
+            return "numpy", direct_array_records
         resolved_engine, prepared_input = _detect_tensor_elements_engine(data)
 
     package_logger.debug("Extracting tensor records with engine=%r.", resolved_engine)
@@ -778,6 +854,45 @@ def _format_float(value: float) -> str:
     if np.isnan(value):
         return "nan"
     return f"{value:.4g}"
+
+
+def _non_nan_values(values: NumericArray) -> NumericArray:
+    array = np.asarray(values, dtype=float)
+    return array[~np.isnan(array)]
+
+
+def _safe_min_max_mean_std(values: NumericArray) -> tuple[float, float, float, float]:
+    non_nan = _non_nan_values(values)
+    if non_nan.size == 0:
+        nan = float("nan")
+        return nan, nan, nan, nan
+    with np.errstate(invalid="ignore", divide="ignore", over="ignore", under="ignore"):
+        return (
+            float(np.min(non_nan)),
+            float(np.max(non_nan)),
+            float(np.mean(non_nan)),
+            float(np.std(non_nan)),
+        )
+
+
+def _safe_nanmean_axis(values: NumericArray, *, axis: int | tuple[int, ...]) -> NumericArray:
+    array = np.asarray(values, dtype=float)
+    valid_mask = ~np.isnan(array)
+    counts = np.sum(valid_mask, axis=axis)
+    totals = np.sum(np.where(valid_mask, array, 0.0), axis=axis, dtype=float)
+    result = np.full(np.shape(totals), np.nan, dtype=float)
+    np.divide(totals, counts, out=result, where=counts > 0)
+    return result
+
+
+def _safe_nan_norm_axis(values: NumericArray, *, axis: int | tuple[int, ...]) -> NumericArray:
+    array = np.asarray(values, dtype=float)
+    valid_mask = ~np.isnan(array)
+    squared = np.square(np.where(valid_mask, array, 0.0))
+    totals = np.sum(squared, axis=axis, dtype=float)
+    counts = np.sum(valid_mask, axis=axis)
+    norms = np.sqrt(totals)
+    return np.where(counts > 0, norms, np.nan)
 
 
 def _format_scalar(value: complex | float) -> str:
@@ -826,8 +941,8 @@ def _build_axis_summary_lines(record: _TensorRecord) -> list[str]:
     for axis_index, (axis_name, axis_size) in enumerate(zip(axis_names, shape, strict=True)):
         other_axes = tuple(index for index in range(array.ndim) if index != axis_index)
         if other_axes:
-            marginal_mean = np.nanmean(metrics, axis=other_axes)
-            marginal_norm = np.sqrt(np.nansum(np.square(metrics), axis=other_axes))
+            marginal_mean = _safe_nanmean_axis(metrics, axis=other_axes)
+            marginal_norm = _safe_nan_norm_axis(metrics, axis=other_axes)
         else:
             marginal_mean = metrics
             marginal_norm = np.abs(metrics)
@@ -1088,31 +1203,27 @@ def _build_stats(record: _TensorRecord) -> _TensorStats:
 
     if np.iscomplexobj(array):
         magnitude = np.abs(flat)
+        min_mag, max_mag, mean_mag, std_mag = _safe_min_max_mean_std(magnitude)
+        real_min, real_max, _, _ = _safe_min_max_mean_std(np.real(flat))
+        imag_min, imag_max, _, _ = _safe_min_max_mean_std(np.imag(flat))
         lines.append(
             "magnitude: "
-            f"min={_format_float(float(np.nanmin(magnitude)))}, "
-            f"max={_format_float(float(np.nanmax(magnitude)))}, "
-            f"mean={_format_float(float(np.nanmean(magnitude)))}, "
-            f"std={_format_float(float(np.nanstd(magnitude)))}"
+            f"min={_format_float(min_mag)}, "
+            f"max={_format_float(max_mag)}, "
+            f"mean={_format_float(mean_mag)}, "
+            f"std={_format_float(std_mag)}"
         )
-        lines.append(
-            "real range: "
-            f"{_format_float(float(np.nanmin(np.real(flat))))} .. "
-            f"{_format_float(float(np.nanmax(np.real(flat))))}"
-        )
-        lines.append(
-            "imag range: "
-            f"{_format_float(float(np.nanmin(np.imag(flat))))} .. "
-            f"{_format_float(float(np.nanmax(np.imag(flat))))}"
-        )
+        lines.append(f"real range: {_format_float(real_min)} .. {_format_float(real_max)}")
+        lines.append(f"imag range: {_format_float(imag_min)} .. {_format_float(imag_max)}")
     else:
         values = np.real(flat)
+        value_min, value_max, value_mean, value_std = _safe_min_max_mean_std(values)
         lines.append(
             "stats: "
-            f"min={_format_float(float(np.nanmin(values)))}, "
-            f"max={_format_float(float(np.nanmax(values)))}, "
-            f"mean={_format_float(float(np.nanmean(values)))}, "
-            f"std={_format_float(float(np.nanstd(values)))}"
+            f"min={_format_float(value_min)}, "
+            f"max={_format_float(value_max)}, "
+            f"mean={_format_float(value_mean)}, "
+            f"std={_format_float(value_std)}"
         )
 
     return _TensorStats(

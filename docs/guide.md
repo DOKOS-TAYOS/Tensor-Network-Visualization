@@ -66,7 +66,7 @@ show_tensor_elements(
 
 | Parameter | Meaning |
 | --- | --- |
-| `data` | Supported tensor object, tensor collection, backend-native tensor container, or `EinsumTrace` with live tensors. |
+| `data` | Direct numeric tensor input, direct iterable of tensors (order preserved, duplicates allowed), backend-native tensor container, or `EinsumTrace` with live tensors. |
 | `engine` | Optional explicit backend: `"tensorkrowch"`, `"tensornetwork"`, `"quimb"`, `"tenpy"`, or `"einsum"`. |
 | `config` | A `TensorElementsConfig` instance. If omitted, `TensorElementsConfig()` is used. |
 | `ax` | Existing Matplotlib axis for single-tensor rendering only. |
@@ -291,6 +291,12 @@ summary without leaving the same figure.
 - common native MPS/MPO-style objects
 - explicit `TenPyTensorNetwork`
 - single TeNPy tensor exposing `to_ndarray()` and `get_leg_labels()`
+
+### Direct tensor inputs
+
+- single NumPy / array-like tensor input
+- direct iterables of tensors preserve order and duplicates; they are treated as inspection data,
+  not as backend container objects
 
 ### `einsum`
 
