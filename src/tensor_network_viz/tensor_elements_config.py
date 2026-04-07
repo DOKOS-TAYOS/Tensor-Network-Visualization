@@ -1,3 +1,5 @@
+"""Public configuration types for tensor-elements inspection figures."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -69,6 +71,7 @@ class TensorElementsConfig:
     topk_count: int = 8
 
     def __post_init__(self) -> None:
+        """Validate numeric configuration values and normalize percentile input."""
         if int(self.topk_count) <= 0:
             raise ValueError("topk_count must be positive.")
         if float(self.zero_threshold) <= 0.0:

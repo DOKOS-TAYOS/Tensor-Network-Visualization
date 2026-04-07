@@ -45,6 +45,13 @@ python -m pip install tensor-network-visualization
 
 Base dependencies are only `numpy`, `matplotlib`, and `networkx`.
 
+## Documentation Map
+
+- Start here for installation and the public API overview.
+- Use [`docs/guide.md`](docs/guide.md) for workflow-oriented explanations.
+- Use [`docs/backends.md`](docs/backends.md) for backend-specific copy-paste examples.
+- Use [`examples/README.md`](examples/README.md) when you want to run the local demos from this repository.
+
 ## Errors and Logging
 
 Public entry points now raise package-specific exceptions while remaining compatible with the
@@ -99,7 +106,15 @@ python -m pip install -U pip
 python -m pip install "tensor-network-visualization[quimb]"
 ```
 
+Once the virtual environment is active, the `python ...` commands shown in the rest of this
+README work the same way on Windows and Linux.
+
 ## The API in One Minute
+
+`show_controls` and `show` are independent:
+
+- `show_controls=False` disables the embedded Matplotlib widgets and slider.
+- `show=False` skips automatic display and only returns `(fig, ax)`.
 
 ### `show_tensor_network`
 
@@ -122,7 +137,7 @@ show_tensor_network(
 - `view`: `"2d"` or `"3d"`. If omitted, it starts in `"2d"`.
 - `config`: all visual behavior lives here.
 - `ax`: render into an existing Matplotlib axis.
-- `show_controls`: if `False`, the figure is saved/rendered without the embedded control panel.
+- `show_controls`: if `False`, render a static figure without the embedded control panel.
 - `show`: if `False`, nothing is displayed automatically.
 
 ### `show_tensor_elements`
@@ -158,7 +173,8 @@ to switch between them. The interactive controls are grouped: `basic` (`elements
   matrixized tensor, ordered by eigenvalue magnitude. They appear only when the active analysis
   matrix is finite and square.
 - `ax`: render a single tensor into an existing Matplotlib axis.
-- `show_controls`: if `True`, add compact Matplotlib `group + mode` controls and, when needed, a tensor slider.
+- `show_controls`: if `True`, add compact Matplotlib `group + mode` controls and, when needed, a
+  tensor slider.
 - `show`: if `False`, nothing is displayed automatically.
 
 ### `PlotConfig`

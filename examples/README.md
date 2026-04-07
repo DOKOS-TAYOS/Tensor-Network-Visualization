@@ -16,6 +16,9 @@ If you are working locally, activate the project `.venv` first.
 source .venv/bin/activate
 ```
 
+After the virtual environment is active, the `python ...` commands below are the same on Windows
+and Linux.
+
 ## Main Launcher
 
 ```bash
@@ -42,9 +45,9 @@ python examples/tensor_elements_demo.py --demo structured
 It uses fairly large NumPy tensors, keeps one tensor active at a time with a slider, and exposes a
 grouped control flow: `basic` (`elements`, `magnitude`, `log_magnitude`, `distribution`, `data`),
 `complex` (`real`, `imag`, `phase`), and `diagnostic` (`sign`, `signed_value`, `sparsity`,
-`nan_inf`, `singular_values`, `eigen_real`, `eigen_imag`). The optional demos are: `matvec` (default, traced matrix-vector), `batch` (traced
-batched matmul), and `structured` (3D complex, dense, sparse, and non-finite TensorNetwork-style
-nodes).
+`nan_inf`, `singular_values`, `eigen_real`, `eigen_imag`). The optional demos are `matvec`
+(default traced matrix-vector), `batch` (traced batched matmul), and `structured` (3D complex,
+dense, sparse, and non-finite TensorNetwork-style nodes).
 
 If you want to inspect the new diagnostic-friendly tensors specifically, launch the structured demo
 and move the tensor slider until you reach `Lattice`, `SparseMask`, or `Specials`:

@@ -1,3 +1,5 @@
+"""Package-specific exception hierarchy for public visualization entry points."""
+
 from __future__ import annotations
 
 

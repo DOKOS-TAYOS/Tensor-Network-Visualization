@@ -1,3 +1,5 @@
+"""State helpers for interactive feature toggles and cached views."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,6 +18,8 @@ else:
 
 @dataclass(frozen=True)
 class InteractiveFeatureAvailability:
+    """Runtime availability of interactive features for the active scene."""
+
     scheme: bool
     playback: bool
     cost_hover: bool
@@ -24,6 +28,8 @@ class InteractiveFeatureAvailability:
 
 @dataclass(frozen=True)
 class InteractiveFeatureState:
+    """Requested or normalized on/off state for each interactive feature."""
+
     hover: bool
     nodes: bool
     tensor_labels: bool
@@ -39,6 +45,8 @@ RenderedAxes = Axes | Axes3D
 
 @dataclass
 class InteractiveViewCache:
+    """Cached axes and scene objects for one rendered view."""
+
     view: ViewName
     ax: RenderedAxes | None = None
     scene: _InteractiveSceneState | None = None
@@ -49,6 +57,7 @@ def feature_availability_from_scene(
     *,
     tensor_inspector_available: bool,
 ) -> InteractiveFeatureAvailability:
+    """Derive which interactive toggles can be enabled for the active scene."""
     controls = getattr(scene, "contraction_controls", None) if scene is not None else None
     bundle = getattr(controls, "_bundle", None)
     bundle_availability = getattr(bundle, "availability", "computed")
@@ -68,6 +77,7 @@ def feature_state_from_config(
     *,
     tensor_inspector_available: bool,
 ) -> InteractiveFeatureState:
+    """Translate the public plotting config into the initial interactive feature state."""
     requested = InteractiveFeatureState(
         hover=bool(config.hover_labels),
         nodes=bool(config.show_nodes),
@@ -93,6 +103,11 @@ def normalize_feature_state(
     requested: InteractiveFeatureState,
     availability: InteractiveFeatureAvailability,
 ) -> InteractiveFeatureState:
+    """Clamp a requested feature state to what the current scene can actually support.
+
+    The contraction scheme is promoted automatically when playback, cost hover, or the
+    tensor inspector require it.
+    """
     scheme = bool(requested.scheme and availability.scheme)
     playback = bool(requested.playback and availability.playback)
     cost_hover = bool(requested.cost_hover and availability.cost_hover)

@@ -1,3 +1,5 @@
+"""Payload builders for tensor-elements groups, modes, and spectral views."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -45,6 +47,18 @@ _MODE_TO_GROUP: dict[str, TensorElementsGroup] = {
 
 @dataclass(frozen=True)
 class _HeatmapPayload:
+    """Prepared payload for heatmap-like tensor-elements modes.
+
+    Attributes:
+        matrix: Matrix data ready to pass to the renderer.
+        metadata: Matrixization metadata used for axis labels.
+        mode_label: Human-readable mode title.
+        colorbar_label: Label displayed next to the colorbar.
+        style_key: Renderer style selector for the mode.
+        color_limits: Optional explicit colorbar limits.
+        outlier_mask: Optional mask used to highlight outliers.
+    """
+
     matrix: NumericArray
     metadata: _MatrixMetadata
     mode_label: str
@@ -56,6 +70,8 @@ class _HeatmapPayload:
 
 @dataclass(frozen=True)
 class _HistogramPayload:
+    """Prepared payload for the value-distribution histogram view."""
+
     values: NumericArray
     xlabel: str
     mode_label: str
@@ -63,6 +79,8 @@ class _HistogramPayload:
 
 @dataclass(frozen=True)
 class _SeriesPayload:
+    """Prepared payload for line-plot spectral diagnostics."""
+
     mode_label: str
     x_values: NumericArray
     xlabel: str
@@ -76,6 +94,8 @@ class _SeriesPayload:
 
 @dataclass(frozen=True)
 class _TextSummaryPayload:
+    """Prepared payload for the textual ``data`` summary view."""
+
     text: str
     mode_label: str = "data"
 
@@ -87,6 +107,8 @@ _TensorElementsPayload: TypeAlias = (
 
 @dataclass(frozen=True)
 class _HeatmapComputation:
+    """Intermediate description of a heatmap transformation before downsampling."""
+
     matrix: NumericArray
     mode_label: str
     colorbar_label: str
@@ -95,6 +117,7 @@ class _HeatmapComputation:
 
 
 def _mode_group(mode: str) -> TensorElementsGroup:
+    """Return the control-group name that owns a concrete tensor-elements mode."""
     if mode not in _MODE_TO_GROUP:
         raise ValueError(f"Unknown tensor-elements mode: {mode!r}.")
     return _MODE_TO_GROUP[mode]
@@ -109,6 +132,7 @@ def _spectral_mode_flags(
     *,
     config: TensorElementsConfig,
 ) -> tuple[bool, bool]:
+    """Report whether spectral views are finite-safe and square-safe for one tensor."""
     matrix, _ = _prepare_heatmap_matrix(record, config=config)
     reduced_matrix = _downsample_matrix(matrix, max_shape=config.max_matrix_shape)
     is_finite = bool(np.all(np.isfinite(matrix)))
@@ -122,6 +146,7 @@ def _mode_supported_for_record(
     *,
     config: TensorElementsConfig,
 ) -> bool:
+    """Check whether a concrete mode is available for the selected tensor."""
     is_complex = bool(np.iscomplexobj(record.array))
     if mode in (
         "elements",
@@ -165,6 +190,16 @@ def _validate_mode_for_record(
     *,
     config: TensorElementsConfig,
 ) -> None:
+    """Raise a user-facing error when a requested mode is invalid for one tensor.
+
+    Args:
+        record: Tensor selected for inspection.
+        mode: Concrete mode name requested by the UI or configuration.
+        config: Active tensor-elements configuration.
+
+    Raises:
+        ValueError: If the requested mode is incompatible with the tensor data.
+    """
     if _mode_supported_for_record(record, mode, config=config):
         return
     if mode == "singular_values":
@@ -201,6 +236,11 @@ def _resolve_group_mode_for_record(
     preferred_mode: str | None,
     config: TensorElementsConfig,
 ) -> tuple[TensorElementsGroup, str]:
+    """Resolve a valid ``(group, mode)`` pair for the selected tensor.
+
+    The preferred mode is kept when possible. Otherwise the function falls back to the
+    first valid mode in the requested group, and finally to a valid mode in ``basic``.
+    """
     modes_in_group = _valid_group_modes_for_record(record, group, config=config)
     if preferred_mode in modes_in_group:
         return group, str(preferred_mode)
@@ -223,6 +263,7 @@ def _resolve_mode(array: NumericArray, requested_mode: TensorElementsMode | str)
 
 
 def _distribution_values(array: NumericArray, *, max_samples: int) -> NumericArray:
+    """Extract finite scalar values for the histogram view, with deterministic sampling."""
     values = np.abs(np.ravel(array)) if np.iscomplexobj(array) else np.real(np.ravel(array))
     values = np.asarray(values)[np.isfinite(values)]
     if int(values.size) <= max_samples:
@@ -236,6 +277,7 @@ def _prepare_heatmap_matrix(
     *,
     config: TensorElementsConfig,
 ) -> tuple[NumericArray, _MatrixMetadata]:
+    """Matrixize one tensor using the active row/column axis configuration."""
     return _matrixize_tensor(
         np.asarray(record.array),
         axis_names=record.axis_names,
@@ -401,6 +443,7 @@ def _build_heatmap_payload(
     *,
     mode: str,
 ) -> _HeatmapPayload:
+    """Build the renderer payload for one heatmap-like tensor-elements mode."""
     matrix, metadata = _prepare_heatmap_matrix(record, config=config)
     computation = _HEATMAP_DEFINITIONS[mode](matrix, config)
     reduced = _downsample_matrix(computation.matrix, max_shape=config.max_matrix_shape)
@@ -419,6 +462,7 @@ def _build_distribution_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
 ) -> _HistogramPayload:
+    """Build the histogram payload used by ``distribution`` mode."""
     values = _distribution_values(record.array, max_samples=int(config.histogram_max_samples))
     return _HistogramPayload(
         values=values,
@@ -431,6 +475,11 @@ def _build_singular_values_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
 ) -> _SeriesPayload:
+    """Build the line-plot payload for the singular-value spectrum.
+
+    Raises:
+        ValueError: If the tensor cannot produce a finite singular-value analysis.
+    """
     analysis = _spectral_analysis_for_record(record, config=config)
     if analysis.issue is not None or analysis.singular_values is None:
         raise ValueError(
@@ -480,6 +529,11 @@ def _build_eigen_component_payload(
     *,
     component: Literal["real", "imag"],
 ) -> _SeriesPayload:
+    """Build the real or imaginary eigenvalue payload for one tensor.
+
+    Raises:
+        ValueError: If the tensor does not expose a finite square analysis matrix.
+    """
     analysis = _spectral_analysis_for_record(record, config=config)
     mode_name = f"eigen_{component}"
     if analysis.issue is not None:
@@ -642,6 +696,19 @@ def _prepare_mode_payload(
     config: TensorElementsConfig,
     mode: TensorElementsMode | str,
 ) -> tuple[str, _TensorElementsPayload]:
+    """Resolve and build the payload for one requested tensor-elements mode.
+
+    Args:
+        record: Tensor selected for inspection.
+        config: Active tensor-elements configuration.
+        mode: Requested mode name or ``"auto"``.
+
+    Returns:
+        The resolved mode name together with the renderer payload.
+
+    Raises:
+        ValueError: If the resolved mode is not available for the selected tensor.
+    """
     resolved_mode = _resolve_mode(record.array, mode)
     _validate_mode_for_record(record, resolved_mode, config=config)
     payload = _MODE_PAYLOAD_BUILDERS[resolved_mode](record, config)

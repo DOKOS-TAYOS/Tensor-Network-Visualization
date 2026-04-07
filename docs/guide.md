@@ -1,6 +1,8 @@
 # Tensor-Network-Visualization Guide
 
 This guide is organized around user workflows instead of internal implementation details.
+Use [`docs/backends.md`](backends.md) when you want backend-specific copy-paste examples instead of
+workflow guidance.
 
 ## Core Idea
 
@@ -44,6 +46,11 @@ show_tensor_elements(
     show=True,
 )
 ```
+
+`show_controls` and `show` are independent in both public entry points:
+
+- `show_controls=False` renders a static figure with no embedded widgets.
+- `show=False` skips automatic display and just returns `(fig, ax)`.
 
 ### Parameters
 
@@ -243,6 +250,8 @@ show_tensor_network(
 ```
 
 If you pass `ax`, the plot is rendered into that axis and the figure is not recreated.
+For `show_tensor_elements(...)`, an external `ax` is only supported when visualizing a single
+tensor.
 
 ### 4. Inspect tensor values
 

@@ -1,12 +1,10 @@
-"""Matplotlib-only interactive stepping through ordered contraction visuals.
+"""Matplotlib playback helpers for stepping through contraction schemes.
 
-Primary integration: ``show_tensor_network(..., config=PlotConfig(
-show_contraction_scheme=True))`` adds a slider and Play / Pause / Reset on the
-same figure (2D widget axes only).
-
-For a richer visual policy, subclass ``ContractionViewer2D`` / ``ContractionViewer3D``
-and override ``_apply_step_visuals``. The draw pipeline attaches highlights; this module
-only adds matplotlib widgets and mutates existing artists.
+The main public integration path is ``show_tensor_network(..., config=PlotConfig(
+show_contraction_scheme=True))``. That path reuses this module to attach a slider plus
+playback buttons to an existing tensor-network figure without redrawing the scene from
+scratch. The standalone viewers remain useful for demos and tests that want the same step
+logic on arbitrary Matplotlib artists.
 """
 
 from __future__ import annotations
@@ -83,6 +81,8 @@ _SchemeAvailability = Literal["not_computed", "computed", "unavailable"]
 
 @dataclass
 class _ContractionSchemeBundle:
+    """Cached contraction-scheme artists, bounds, metrics, and playback helpers."""
+
     availability: _SchemeAvailability = "not_computed"
     steps: tuple[frozenset[int], ...] | None = None
     artists_by_step: list[Artist | None] | None = None
@@ -95,7 +95,11 @@ class _ContractionSchemeBundle:
 
 
 class _ContractionViewerBase:
-    """Shared stepping logic; UI is built only when ``enable_playback`` is True."""
+    """Shared stepping logic for contraction playback viewers.
+
+    The base class only mutates already-created Matplotlib artists. Subclasses decide how
+    those artists are created and which axes type they require.
+    """
 
     def __init__(
         self,
@@ -454,7 +458,7 @@ class _ContractionViewerBase:
 
 
 class ContractionViewer2D(_ContractionViewerBase):
-    """Step through 2D patches (e.g. ``FancyBboxPatch``, ``Rectangle``)."""
+    """Playback viewer for 2D Matplotlib artists such as patches and rectangles."""
 
     def __init__(
         self,
@@ -494,6 +498,7 @@ class ContractionViewer2D(_ContractionViewerBase):
         edgecolor: str | tuple[float, ...] = "navy",
         **kwargs: Any,
     ) -> ContractionViewer2D:
+        """Create a 2D viewer from ``(x, y, width, height)`` rectangle tuples."""
         if fig is None and ax is not None:
             fig = root_figure(ax.figure)
         if fig is None:
@@ -516,7 +521,7 @@ class ContractionViewer2D(_ContractionViewerBase):
 
 
 class ContractionViewer3D(_ContractionViewerBase):
-    """Step through 3D line or poly collections."""
+    """Playback viewer for 3D Matplotlib collections."""
 
     def __init__(
         self,
@@ -556,6 +561,7 @@ class ContractionViewer3D(_ContractionViewerBase):
         edgecolor: str | tuple[float, ...] = "0.2",
         **kwargs: Any,
     ) -> ContractionViewer3D:
+        """Create a 3D viewer from axis-aligned ``(min_corner, max_corner)`` boxes."""
         if fig is None and ax is not None:
             fig = root_figure(ax.figure)
         if fig is None:
@@ -581,11 +587,15 @@ class ContractionViewer3D(_ContractionViewerBase):
 
 
 class _SceneStepApplier(Protocol):
+    """Protocol for scene objects that can redraw themselves for one playback step."""
+
     def apply_step(self, step: int) -> None: ...
     def set_enabled(self, enabled: bool) -> None: ...
 
 
 class _TensorNetworkContractionViewer(_ContractionViewerBase):
+    """Viewer adapter that drives tensor-network scene playback without standalone artists."""
+
     def __init__(
         self,
         *,

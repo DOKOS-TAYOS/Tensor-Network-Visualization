@@ -1,3 +1,5 @@
+"""Public tensor-elements rendering entry point."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -106,6 +108,12 @@ def show_tensor_elements(
 
     Returns:
         Tuple ``(figure, axes)`` for further customization.
+
+    Raises:
+        AxisConfigurationError: If an external ``ax`` is combined with multiple tensors or
+            with a figure layout that cannot host the grouped controls.
+        TensorDataError: If ``data`` does not expose supported tensor values.
+        UnsupportedEngineError: If ``engine`` names an unknown backend.
 
     Notes:
         ``show_tensor_elements`` keeps one tensor active at a time. With multiple tensors,

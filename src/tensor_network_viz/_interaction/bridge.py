@@ -1,3 +1,5 @@
+"""Attribute bridge helpers for storing interactive Matplotlib state on figures and axes."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
@@ -25,6 +27,7 @@ _ZOOM_FONTS_ATTR = "_tensor_network_viz_zoom_fonts"
 
 
 def _clear_attr(obj: object, attr_name: str) -> None:
+    """Remove a private bridge attribute when it is present."""
     if hasattr(obj, attr_name):
         delattr(obj, attr_name)
 

@@ -29,9 +29,11 @@ For larger changes, open an issue first to discuss scope and approach.
   - Linux/macOS: `source .venv/bin/activate`
 3. Install the pinned development requirements:
   ```bash
-   pip install -r requirements.dev.txt
+   python -m pip install -r requirements.dev.txt
   ```
    This installs the pinned local toolchain plus the optional backends required for the full test suite.
+
+All commands below assume the project `.venv` is active.
 
 ## Running Tests
 

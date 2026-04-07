@@ -1,3 +1,5 @@
+"""Normalization and analysis helpers for tensor-elements rendering."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
@@ -28,6 +30,15 @@ NumericArray: TypeAlias = np.ndarray[Any, Any]
 
 @dataclass(frozen=True)
 class _TensorRecord:
+    """Normalized tensor entry extracted from a supported backend.
+
+    Attributes:
+        array: Concrete NumPy array used by the rendering pipeline.
+        axis_names: Axis labels associated with ``array``.
+        engine: Backend that produced the tensor.
+        name: Stable display name shown in controls and summaries.
+    """
+
     array: NumericArray
     axis_names: tuple[str, ...]
     engine: EngineName
@@ -36,6 +47,16 @@ class _TensorRecord:
 
 @dataclass(frozen=True)
 class _TensorStats:
+    """Human-readable summary statistics for one tensor.
+
+    Attributes:
+        dtype_text: Display-ready dtype description.
+        element_count: Number of scalar entries in the tensor.
+        is_complex: Whether the tensor contains complex values.
+        shape: Tensor shape used in the summary.
+        text: Multiline textual summary rendered in ``data`` mode.
+    """
+
     dtype_text: str
     element_count: int
     is_complex: bool
@@ -45,6 +66,16 @@ class _TensorStats:
 
 @dataclass(frozen=True)
 class _MatrixMetadata:
+    """Metadata describing how a tensor was matrixized for inspection views.
+
+    Attributes:
+        col_axes: Axis indices grouped into the matrix columns.
+        col_names: Display names for the column axes.
+        original_shape: Shape of the source tensor before reshaping.
+        row_axes: Axis indices grouped into the matrix rows.
+        row_names: Display names for the row axes.
+    """
+
     col_axes: tuple[int, ...]
     col_names: tuple[str, ...]
     original_shape: tuple[int, ...]
@@ -54,6 +85,19 @@ class _MatrixMetadata:
 
 @dataclass(frozen=True)
 class _SpectralAnalysis:
+    """Derived singular-value and eigenvalue information for one tensor.
+
+    Attributes:
+        analysis_shape: Shape of the matrix actually analyzed after optional downsampling.
+        col_names: Column-axis names used in the matrix view.
+        eigenvalues: Eigenvalues when the analysis matrix is square, else ``None``.
+        issue: Reason why the spectral analysis is unavailable, if any.
+        matrix_shape: Shape of the full matrixized tensor before reduction.
+        row_names: Row-axis names used in the matrix view.
+        singular_values: Singular values for the analysis matrix, if available.
+        used_reduced_matrix: Whether downsampling changed the matrix before analysis.
+    """
+
     analysis_shape: tuple[int, int]
     col_names: tuple[str, ...]
     eigenvalues: NumericArray | None
@@ -66,6 +110,13 @@ class _SpectralAnalysis:
 
 @dataclass(frozen=True)
 class _PlaybackStepRecord:
+    """Tensor payload associated with one playback step result.
+
+    Attributes:
+        result_name: Name of the result tensor produced by the step.
+        record: Normalized tensor data for the result, when available.
+    """
+
     result_name: str
     record: _TensorRecord | None
 
@@ -74,6 +125,7 @@ _EinsumPlaybackStepRecord = _PlaybackStepRecord
 
 
 def _detect_tensor_elements_engine(data: Any) -> tuple[EngineName, Any]:
+    """Detect the tensor backend and preserve any prepared input wrapper."""
     return _detect_tensor_engine_with_input(data)
 
 
@@ -83,6 +135,19 @@ def _normalize_axis_selector(
     axis_names: tuple[str, ...],
     ndim: int,
 ) -> int:
+    """Resolve one row/column selector to a concrete axis index.
+
+    Args:
+        selector: Axis name or integer index supplied by the user.
+        axis_names: Known axis names for the tensor.
+        ndim: Tensor rank.
+
+    Returns:
+        The resolved non-negative axis index.
+
+    Raises:
+        ValueError: If the axis name is unknown or the index is out of bounds.
+    """
     if isinstance(selector, str):
         if not axis_names:
             raise ValueError("Axis names are not available for this tensor.")
@@ -106,6 +171,19 @@ def _normalize_axis_group(
     axis_names: tuple[str, ...],
     ndim: int,
 ) -> tuple[int, ...] | None:
+    """Resolve a user-provided row/column selector tuple to axis indices.
+
+    Args:
+        selectors: User-provided axis selectors or ``None``.
+        axis_names: Known axis names for the tensor.
+        ndim: Tensor rank.
+
+    Returns:
+        The resolved axis indices, or ``None`` when the selector group was omitted.
+
+    Raises:
+        ValueError: If any selector is invalid or the group contains duplicates.
+    """
     if selectors is None:
         return None
     resolved = tuple(
@@ -125,6 +203,7 @@ def _axis_names_for_shape(axis_names: tuple[str, ...], *, ndim: int) -> tuple[st
 
 
 def _balanced_axes_for_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
+    """Choose a deterministic row-axis partition for matrixized tensor views."""
     ndim = len(shape)
     if ndim == 0:
         return ()
@@ -179,6 +258,20 @@ def _resolve_matrix_axes(
     col_axes: tuple[TensorAxisSelector, ...] | None,
     axis_names: tuple[str, ...],
 ) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Resolve the row/column axis split used by matrixized inspection modes.
+
+    Args:
+        shape: Shape of the source tensor.
+        row_axes: Optional user-selected row axes.
+        col_axes: Optional user-selected column axes.
+        axis_names: Known axis names for the tensor.
+
+    Returns:
+        Two tuples containing the resolved row-axis and column-axis indices.
+
+    Raises:
+        ValueError: If the explicit row/column groups overlap or do not cover the tensor.
+    """
     ndim = len(shape)
     if ndim == 0:
         return (), ()
@@ -212,6 +305,17 @@ def _matrixize_tensor(
     row_axes: tuple[TensorAxisSelector, ...] | None,
     col_axes: tuple[TensorAxisSelector, ...] | None,
 ) -> tuple[NumericArray, _MatrixMetadata]:
+    """Reshape a tensor into the matrix used by heatmap and spectral views.
+
+    Args:
+        array: Tensor values to reshape.
+        axis_names: Axis labels associated with ``array``.
+        row_axes: Optional axes assigned to matrix rows.
+        col_axes: Optional axes assigned to matrix columns.
+
+    Returns:
+        The matrixized tensor together with metadata describing the reshape.
+    """
     shape = tuple(int(dimension) for dimension in array.shape)
     resolved_axis_names = _axis_names_for_shape(axis_names, ndim=len(shape))
     resolved_rows, resolved_cols = _resolve_matrix_axes(
@@ -606,6 +710,7 @@ def _extract_tensorkrowch_playback_step_records(
 
 
 def _extract_playback_step_records(data: Any) -> tuple[_PlaybackStepRecord, ...] | None:
+    """Recover playback result tensors when the input carries contraction history."""
     if isinstance(data, EinsumTrace):
         return _extract_einsum_playback_step_records(data)
 
@@ -624,6 +729,20 @@ def _extract_tensor_records(
     *,
     engine: EngineName | None,
 ) -> tuple[EngineName, list[_TensorRecord]]:
+    """Extract normalized tensor records from supported public inputs.
+
+    Args:
+        data: Tensor input passed to ``show_tensor_elements(...)``.
+        engine: Optional explicit backend override.
+
+    Returns:
+        The resolved backend name and the normalized tensor records ready for rendering.
+
+    Raises:
+        UnsupportedEngineError: If ``engine`` names an unknown backend.
+        TensorDataTypeError: If the backend input type is structurally incompatible.
+        TensorDataError: If the input is valid in principle but exposes no usable tensors.
+    """
     resolved_engine = engine
     prepared_input = data
     if resolved_engine is None:
@@ -763,6 +882,16 @@ def _spectral_analysis_for_record(
     *,
     config: TensorElementsConfig,
 ) -> _SpectralAnalysis:
+    """Compute spectral diagnostics for the matrixized view of one tensor.
+
+    Args:
+        record: Tensor selected for inspection.
+        config: Active tensor-elements configuration.
+
+    Returns:
+        A spectral-analysis bundle containing singular values, optional eigenvalues, and
+        any issue that prevented the analysis from running.
+    """
     matrix, metadata = _matrixize_tensor(
         np.asarray(record.array),
         axis_names=record.axis_names,
@@ -923,6 +1052,7 @@ def _build_data_summary_text(
     config: TensorElementsConfig,
     topk_count: int,
 ) -> str:
+    """Assemble the multiline textual summary used by ``data`` mode."""
     sections = [
         _build_stats(record).text,
         "\n".join(_build_axis_summary_lines(record)),

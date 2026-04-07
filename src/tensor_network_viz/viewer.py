@@ -1,3 +1,5 @@
+"""Public tensor-network rendering entry point and figure display helpers."""
+
 from __future__ import annotations
 
 from typing import Any, TypeAlias, cast
@@ -90,6 +92,12 @@ def show_tensor_network(
 
     Returns:
         Tuple of (Figure, Axes) for further customization.
+
+    Raises:
+        AxisConfigurationError: If ``ax`` and ``view`` request incompatible dimensions, or
+            if the resolved view name is unsupported.
+        ValueError: If ``show_contraction_scheme=True`` is requested together with
+            ``show_controls=False``.
 
     Example:
         >>> config = PlotConfig(show_tensor_labels=True, hover_labels=True, figsize=(8, 6))

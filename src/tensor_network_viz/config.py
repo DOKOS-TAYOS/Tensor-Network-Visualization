@@ -1,3 +1,5 @@
+"""Public plotting configuration types for tensor-network figures."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

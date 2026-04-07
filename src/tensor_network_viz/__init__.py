@@ -1,3 +1,5 @@
+"""Public package surface with lazy imports for optional backends and viewers."""
+
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +40,20 @@ else:
         show_controls: bool = True,
         show: bool = True,
     ) -> tuple[Figure, Axes | Axes3D]:
+        """Lazily dispatch to :func:`tensor_network_viz.viewer.show_tensor_network`.
+
+        Args:
+            network: Tensor-network input accepted by the public viewer entry point.
+            engine: Optional backend override.
+            view: Optional initial view name.
+            config: Optional plotting configuration.
+            ax: Optional Matplotlib axes to render into.
+            show_controls: Whether to attach embedded interactive controls.
+            show: Whether to display the figure automatically.
+
+        Returns:
+            The ``(figure, axes)`` tuple returned by the concrete viewer implementation.
+        """
         from .viewer import show_tensor_network as _show_tensor_network
 
         return _show_tensor_network(
@@ -59,6 +75,19 @@ else:
         show_controls: bool = True,
         show: bool = True,
     ) -> tuple[Figure, Axes]:
+        """Lazily dispatch to :func:`tensor_network_viz.tensor_elements.show_tensor_elements`.
+
+        Args:
+            data: Tensor data accepted by the public tensor-elements entry point.
+            engine: Optional backend override.
+            config: Optional tensor-inspection configuration.
+            ax: Optional Matplotlib axes for single-tensor rendering.
+            show_controls: Whether to attach grouped controls and the tensor slider.
+            show: Whether to display the figure automatically.
+
+        Returns:
+            The ``(figure, axes)`` tuple returned by the tensor-elements implementation.
+        """
         from .tensor_elements import show_tensor_elements as _show_tensor_elements
 
         return _show_tensor_elements(
@@ -85,6 +114,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
 
 
 def __getattr__(name: str) -> Any:
+    """Resolve a lazily exported public symbol on first attribute access."""
     if name not in _LAZY_EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     module_name, attr_name = _LAZY_EXPORTS[name]
@@ -94,6 +124,7 @@ def __getattr__(name: str) -> Any:
 
 
 def __dir__() -> list[str]:
+    """Return module attributes including the lazily exported public names."""
     return sorted(set(globals()) | set(__all__))
 
 

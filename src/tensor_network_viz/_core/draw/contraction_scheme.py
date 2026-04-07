@@ -58,6 +58,8 @@ _CubeFace = tuple[tuple[float, float, float], ...]
 
 @dataclass(frozen=True)
 class _PlaybackGroup:
+    """Persistent color assignment for tensors that already contracted together."""
+
     members: frozenset[int]
     color: tuple[float, float, float, float]
     birth_step: int
@@ -66,12 +68,16 @@ class _PlaybackGroup:
 
 @dataclass(frozen=True)
 class _NodePlaybackState:
+    """Per-node playback status for one contraction step."""
+
     contracted: bool
     color: tuple[float, float, float, float] | None
 
 
 @dataclass(frozen=True)
 class _ContractionPlaybackState:
+    """Per-step scene state used by the contraction playback renderer."""
+
     current_event: frozenset[int]
     node_states: dict[int, _NodePlaybackState]
     edge_colors: dict[int, tuple[float, float, float, float]]
@@ -81,6 +87,7 @@ def _effective_contraction_steps(
     graph: _GraphData,
     config: PlotConfig,
 ) -> tuple[frozenset[int], ...] | None:
+    """Return the contraction scheme that should drive playback for this graph."""
     if config.contraction_scheme_by_name is not None:
         return _resolve_contraction_scheme_by_name(graph, config.contraction_scheme_by_name)
     return graph.contraction_steps
@@ -90,6 +97,7 @@ def _contraction_step_metrics_for_draw(
     graph: _GraphData,
     scheme_steps: tuple[frozenset[int], ...],
 ) -> tuple[_ContractionStepMetrics | None, ...] | None:
+    """Keep metric rows only when they still align exactly with the visible scheme."""
     metrics = graph.contraction_step_metrics
     base = graph.contraction_steps
     if metrics is None or base is None:
@@ -153,6 +161,7 @@ def _edge_color_for_state(
     groups: dict[int, _PlaybackGroup],
     virtual_visible_neighbors: dict[int, frozenset[int]],
 ) -> tuple[float, float, float, float] | None:
+    """Choose the playback color for one edge, if the edge is currently internal."""
     if edge.kind == "dangling":
         return None
     if edge.kind == "self":
@@ -230,6 +239,7 @@ def _build_contraction_playback_states(
     steps: tuple[frozenset[int], ...],
     config: PlotConfig,
 ) -> tuple[_ContractionPlaybackState, ...]:
+    """Build the cumulative playback state sequence for every contraction step."""
     virtual_visible_neighbors = _visible_neighbors_by_virtual_node(graph)
     active_groups: dict[int, _PlaybackGroup] = {}
     node_to_group: dict[int, int] = {}
