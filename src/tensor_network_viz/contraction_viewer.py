@@ -14,20 +14,64 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, Final, Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
-from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
-from matplotlib.patches import FancyBboxPatch, Rectangle
+from matplotlib.patches import Rectangle
 from matplotlib.text import Text
 from matplotlib.widgets import Button, Slider
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
+from ._contraction_viewer_style import (
+    apply_scheme_2d_highlight_current as _apply_scheme_2d_highlight_current,
+)
+from ._contraction_viewer_style import (
+    apply_scheme_2d_highlight_past as _apply_scheme_2d_highlight_past,
+)
+from ._contraction_viewer_style import (
+    box_poly3d_faces as _box_poly3d_faces,
+)
+from ._contraction_viewer_style import (
+    is_tensor_network_scheme_artist as _is_tensor_network_scheme_artist,
+)
+from ._contraction_viewer_style import (
+    is_tensor_network_scheme_fancy_patch as _is_tensor_network_scheme_fancy_patch,
+)
+from ._contraction_viewer_style import (
+    restore_style as _restore_style,
+)
+from ._contraction_viewer_style import (
+    safe_set_alpha as _safe_set_alpha,
+)
+from ._contraction_viewer_style import (
+    safe_set_color as _safe_set_color,
+)
+from ._contraction_viewer_style import (
+    safe_set_linewidth as _safe_set_linewidth,
+)
+from ._contraction_viewer_style import (
+    safe_set_visible as _safe_set_visible,
+)
+from ._contraction_viewer_style import (
+    snapshot_style as _snapshot_style,
+)
+from ._contraction_viewer_ui import (
+    _PLAYBACK_MAIN_BOTTOM,
+)
+from ._contraction_viewer_ui import (
+    create_playback_buttons as _create_playback_buttons,
+)
+from ._contraction_viewer_ui import (
+    create_playback_details_panel as _create_playback_details_panel,
+)
+from ._contraction_viewer_ui import (
+    create_playback_slider as _create_playback_slider,
+)
 from ._matplotlib_state import set_contraction_viewer
 from ._typing import root_figure
 from ._ui_utils import _reserve_figure_bottom, _set_axes_visible, _set_widget_active
@@ -35,50 +79,6 @@ from .config import PlotConfig
 
 VisualizerMode = Literal["cumulative", "highlight_current", "window"]
 _SchemeAvailability = Literal["not_computed", "computed", "unavailable"]
-
-# Must stay aligned with ``_CONTRACTION_SCHEME_GID`` in ``_core.draw.contraction_scheme``.
-_TNV_CONTRACTION_SCHEME_PATCH_GID: Final[str] = "tnv_contraction_scheme"
-
-_TRANSPARENT: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
-_PLAYBACK_DETAILS_BOUNDS: tuple[float, float, float, float] = (0.25, 0.116, 0.68, 0.12)
-# Top of the cost / step-details axis; interactive chrome (checkboxes, 2d/3d) aligns to this y.
-_PLAYBACK_DETAILS_TOP: float = _PLAYBACK_DETAILS_BOUNDS[1] + _PLAYBACK_DETAILS_BOUNDS[3]
-# Aligned with the top of the cost / scheme chrome (no extra gap above the widgets).
-_MAIN_FIGURE_BOTTOM_RESERVED: float = _PLAYBACK_DETAILS_TOP
-_PLAYBACK_MAIN_BOTTOM: float = _MAIN_FIGURE_BOTTOM_RESERVED
-_CONTROLS_MAIN_BOTTOM: float = _MAIN_FIGURE_BOTTOM_RESERVED
-_PLAYBACK_SLIDER_HEIGHT: float = 0.058
-_PLAYBACK_SLIDER_BOUNDS: tuple[float, float, float, float] = (
-    0.33,
-    0.062,
-    0.345,
-    _PLAYBACK_SLIDER_HEIGHT,
-)
-_PLAYBACK_SLIDER_HANDLE_STYLE: dict[str, Any] = {
-    "facecolor": "#2563eb",
-    "edgecolor": "#1d4ed8",
-    "size": 11,
-}
-_PLAYBACK_BUTTON_START_X: float = 0.73
-_PLAYBACK_BUTTON_Y: float = 0.058
-_PLAYBACK_BUTTON_WIDTH: float = 0.055
-_PLAYBACK_BUTTON_HEIGHT: float = 0.038
-_PLAYBACK_BUTTON_GAP: float = 0.012
-_PLAYBACK_RESET_WIDTH: float = 0.065
-_CONTROLS_CHECKBOX_TOP: float = _PLAYBACK_DETAILS_TOP
-_CONTROLS_CHECKBOX_HEIGHT: float = 0.10
-_CONTROLS_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (
-    0.02,
-    _CONTROLS_CHECKBOX_TOP - _CONTROLS_CHECKBOX_HEIGHT,
-    0.13,
-    _CONTROLS_CHECKBOX_HEIGHT,
-)
-_PLAYBACK_TRAY_FACE: tuple[float, float, float] = (0.96, 0.96, 0.98)
-_PLAYBACK_TRAY_FRAME: tuple[float, float, float] = (0.78, 0.78, 0.82)
-_SCHEME_LABELS: tuple[str, str] = ("Scheme", "Costs")
-_CONTROL_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
-_CONTROL_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
-_CONTROL_CHECK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
 
 
 @dataclass
@@ -92,179 +92,6 @@ class _ContractionSchemeBundle:
     viewer: _ContractionViewerBase | None = None
     bounds_2d: tuple[float, float, float, float] | None = None
     bounds_3d: tuple[float, float, float, float, float, float] | None = None
-
-
-def _is_tensor_network_scheme_artist(artist: Artist) -> bool:
-    """True for contraction-scheme artists tagged by the draw pipeline."""
-    getter = getattr(artist, "get_gid", None)
-    if not callable(getter):
-        return False
-    with suppress(TypeError, ValueError):
-        return getter() == _TNV_CONTRACTION_SCHEME_PATCH_GID
-    return False
-
-
-def _is_tensor_network_scheme_fancy_patch(artist: Artist) -> bool:
-    """True for 2D contraction-scheme hulls (playback restyle only; static draw unchanged)."""
-    return isinstance(artist, FancyBboxPatch) and _is_tensor_network_scheme_artist(artist)
-
-
-def _apply_scheme_2d_highlight_past(artist: Artist) -> None:
-    """Transparent fill and edge (like wire-only 3D: no colored hull)."""
-    _safe_set_visible(artist, True)
-    setter_fc = getattr(artist, "set_facecolor", None)
-    if callable(setter_fc):
-        with suppress(TypeError, ValueError):
-            setter_fc(_TRANSPARENT)
-    setter_ec = getattr(artist, "set_edgecolor", None)
-    if callable(setter_ec):
-        with suppress(TypeError, ValueError):
-            setter_ec(_TRANSPARENT)
-    _safe_set_linewidth(artist, 0.0)
-    _safe_clear_patch_alpha(artist)
-
-
-def _apply_scheme_2d_highlight_current(
-    artist: Artist,
-    *,
-    accent: Any,
-    fill_alpha: float,
-    edge_alpha: float,
-    linewidth: float,
-) -> None:
-    """Very faint tint inside; strong accent on border (aligns with 3D edge emphasis)."""
-    r, g, b, _ = to_rgba(accent)
-    face = (float(r), float(g), float(b), float(np.clip(fill_alpha, 0.0, 1.0)))
-    edge = to_rgba(accent, alpha=float(np.clip(edge_alpha, 0.0, 1.0)))
-    _safe_set_visible(artist, True)
-    setter_fc = getattr(artist, "set_facecolor", None)
-    if callable(setter_fc):
-        with suppress(TypeError, ValueError):
-            setter_fc(face)
-    setter_ec = getattr(artist, "set_edgecolor", None)
-    if callable(setter_ec):
-        with suppress(TypeError, ValueError):
-            setter_ec(edge)
-    _safe_set_linewidth(artist, float(linewidth))
-    _safe_clear_patch_alpha(artist)
-
-
-def _safe_set_visible(artist: Artist, visible: bool) -> None:
-    setter = getattr(artist, "set_visible", None)
-    if callable(setter):
-        with suppress(AttributeError, TypeError, ValueError):
-            setter(visible)
-
-
-def _safe_set_alpha(artist: Artist, alpha: float | None) -> None:
-    setter = getattr(artist, "set_alpha", None)
-    if callable(setter) and alpha is not None:
-        with suppress(AttributeError, TypeError, ValueError):
-            setter(alpha)
-
-
-def _safe_clear_patch_alpha(artist: Artist) -> None:
-    """So facecolor/edgecolor RGBA alphas are not multiplied by a stale artist alpha."""
-    setter = getattr(artist, "set_alpha", None)
-    if callable(setter):
-        with suppress(AttributeError, TypeError, ValueError):
-            setter(None)
-
-
-def _safe_set_color(artist: Artist, color: Any) -> None:
-    for name in ("set_edgecolor", "set_color", "set_facecolor"):
-        setter = getattr(artist, name, None)
-        if callable(setter):
-            try:
-                setter(color)
-                return
-            except (AttributeError, TypeError, ValueError):
-                continue
-
-
-def _safe_set_linewidth(artist: Artist, lw: float) -> None:
-    setter = getattr(artist, "set_linewidth", None)
-    if callable(setter):
-        try:
-            setter(lw)
-            return
-        except (AttributeError, TypeError, ValueError):
-            pass
-    setter2 = getattr(artist, "set_linewidths", None)
-    if callable(setter2):
-        with suppress(AttributeError, TypeError, ValueError):
-            setter2(lw)
-
-
-def _snapshot_style(artist: Artist) -> dict[str, Any]:
-    snap: dict[str, Any] = {}
-    for attr, key in (
-        ("get_edgecolor", "edgecolor"),
-        ("get_facecolor", "facecolor"),
-        ("get_color", "color"),
-        ("get_linewidth", "linewidth"),
-        ("get_linewidths", "linewidths"),
-        ("get_alpha", "alpha"),
-    ):
-        fn = getattr(artist, attr, None)
-        if callable(fn):
-            with suppress(AttributeError, TypeError, ValueError):
-                snap[key] = fn()
-    return snap
-
-
-def _restore_style(artist: Artist, snap: dict[str, Any]) -> None:
-    ec = snap.get("edgecolor")
-    if ec is not None:
-        _safe_set_color(artist, ec)
-    fc = snap.get("facecolor")
-    setter_fc = getattr(artist, "set_facecolor", None)
-    if callable(setter_fc) and fc is not None:
-        with suppress(AttributeError, TypeError, ValueError):
-            setter_fc(fc)
-    col = snap.get("color")
-    if col is not None and not hasattr(artist, "set_edgecolor"):
-        _safe_set_color(artist, col)
-    lw = snap.get("linewidth")
-    if lw is not None:
-        try:
-            _safe_set_linewidth(artist, float(np.ravel(lw)[0]))
-        except (TypeError, ValueError, IndexError):
-            _safe_set_linewidth(artist, float(lw))  # type: ignore[arg-type]
-    else:
-        lws = snap.get("linewidths")
-        if lws is not None:
-            with suppress(TypeError, ValueError, IndexError):
-                _safe_set_linewidth(artist, float(np.ravel(lws)[0]))
-    al = snap.get("alpha")
-    if al is not None:
-        try:
-            a0 = float(np.ravel(al)[0])
-        except (TypeError, ValueError, IndexError):
-            try:
-                a0 = float(al)  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                a0 = None
-        if a0 is not None:
-            _safe_set_alpha(artist, a0)
-
-
-def _box_poly3d_faces(
-    xmin: float,
-    xmax: float,
-    ymin: float,
-    ymax: float,
-    zmin: float,
-    zmax: float,
-) -> list:
-    return [
-        [(xmin, ymin, zmin), (xmax, ymin, zmin), (xmax, ymax, zmin), (xmin, ymax, zmin)],
-        [(xmin, ymin, zmax), (xmax, ymin, zmax), (xmax, ymax, zmax), (xmin, ymax, zmax)],
-        [(xmin, ymin, zmin), (xmax, ymin, zmin), (xmax, ymin, zmax), (xmin, ymin, zmax)],
-        [(xmin, ymax, zmin), (xmax, ymax, zmin), (xmax, ymax, zmax), (xmin, ymax, zmax)],
-        [(xmin, ymin, zmin), (xmin, ymax, zmin), (xmin, ymax, zmax), (xmin, ymin, zmax)],
-        [(xmax, ymin, zmin), (xmax, ymax, zmin), (xmax, ymax, zmax), (xmax, ymin, zmax)],
-    ]
 
 
 class _ContractionViewerBase:
@@ -469,28 +296,7 @@ class _ContractionViewerBase:
     def _build_step_details_panel(self) -> None:
         if self._cost_panel_ax is not None:
             return
-        ax_details = self.figure.add_axes(_PLAYBACK_DETAILS_BOUNDS)
-        ax_details.set_xticks([])
-        ax_details.set_yticks([])
-        ax_details.set_navigate(False)
-        ax_details.patch.set_facecolor(_PLAYBACK_TRAY_FACE)
-        ax_details.patch.set_alpha(0.92)
-        ax_details.patch.set_edgecolor(_PLAYBACK_TRAY_FRAME)
-        ax_details.patch.set_linewidth(0.6)
-        for spine in ax_details.spines.values():
-            spine.set_visible(True)
-            spine.set_linewidth(0.6)
-            spine.set_color(_PLAYBACK_TRAY_FRAME)
-        text = ax_details.text(
-            0.0,
-            1.0,
-            "",
-            transform=ax_details.transAxes,
-            ha="left",
-            va="top",
-            fontsize=9.0,
-            wrap=True,
-        )
+        ax_details, text = _create_playback_details_panel(self.figure)
         self._cost_panel_ax = ax_details
         self._cost_text_artist = text
         _set_axes_visible(ax_details, False)
@@ -525,29 +331,14 @@ class _ContractionViewerBase:
         n = self.num_steps
         _reserve_figure_bottom(self.figure, _PLAYBACK_MAIN_BOTTOM)
         self._build_step_details_panel()
-        ax_slider = self.figure.add_axes(_PLAYBACK_SLIDER_BOUNDS)
-        slider = Slider(
-            ax_slider,
-            "Step",
-            0,
-            float(max(0, n)),
-            valinit=float(self._initial_step if self._initial_step is not None else n),
-            valstep=1,
-            handle_style=_PLAYBACK_SLIDER_HANDLE_STYLE,
+        slider = _create_playback_slider(
+            self.figure,
+            num_steps=n,
+            initial_step=int(self._initial_step if self._initial_step is not None else n),
         )
         self.slider = slider
 
-        bx = _PLAYBACK_BUTTON_START_X
-        by = _PLAYBACK_BUTTON_Y
-        bw = _PLAYBACK_BUTTON_WIDTH
-        bh = _PLAYBACK_BUTTON_HEIGHT
-        gap = _PLAYBACK_BUTTON_GAP
-        ax_play = self.figure.add_axes((bx, by, bw, bh))
-        ax_pause = self.figure.add_axes((bx + bw + gap, by, bw, bh))
-        ax_reset = self.figure.add_axes((bx + 2.0 * (bw + gap), by, _PLAYBACK_RESET_WIDTH, bh))
-        btn_play = Button(ax_play, "Play")
-        btn_pause = Button(ax_pause, "Pause")
-        btn_reset = Button(ax_reset, "Reset")
+        btn_play, btn_pause, btn_reset = _create_playback_buttons(self.figure)
         self._btn_play = btn_play
         self._btn_pause = btn_pause
         self._btn_reset = btn_reset

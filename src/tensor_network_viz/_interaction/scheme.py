@@ -10,10 +10,7 @@ from matplotlib.figure import Figure
 from matplotlib.widgets import CheckButtons
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
-from .._matplotlib_state import set_contraction_controls, set_contraction_viewer
-from .._ui_utils import _reserve_figure_bottom
-from ..config import PlotConfig
-from ..contraction_viewer import (
+from .._contraction_viewer_ui import (
     _CONTROL_CHECK_PROPS,
     _CONTROL_FRAME_PROPS,
     _CONTROL_LABEL_PROPS,
@@ -21,6 +18,9 @@ from ..contraction_viewer import (
     _CONTROLS_MAIN_BOTTOM,
     _PLAYBACK_TRAY_FRAME,
 )
+from .._matplotlib_state import set_contraction_controls, set_contraction_viewer
+from .._ui_utils import _reserve_figure_bottom
+from ..config import PlotConfig
 
 
 @dataclass

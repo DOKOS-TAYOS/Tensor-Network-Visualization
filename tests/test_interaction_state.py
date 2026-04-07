@@ -39,8 +39,11 @@ from tensor_network_viz._interaction.bridge import (
 from tensor_network_viz._interaction.state import (
     InteractiveFeatureAvailability,
     InteractiveFeatureState,
+    feature_availability_from_scene,
+    feature_state_from_config,
     normalize_feature_state,
 )
+from tensor_network_viz.config import PlotConfig
 
 
 def test_bridge_round_trips_matplotlib_attrs() -> None:
@@ -118,6 +121,7 @@ def test_normalize_feature_state_enforces_dependency_rules() -> None:
     )
     requested = InteractiveFeatureState(
         hover=True,
+        nodes=True,
         tensor_labels=False,
         edge_labels=False,
         scheme=False,
@@ -129,6 +133,7 @@ def test_normalize_feature_state_enforces_dependency_rules() -> None:
     resolved = normalize_feature_state(requested, availability)
 
     assert resolved.hover is True
+    assert resolved.nodes is True
     assert resolved.tensor_labels is False
     assert resolved.edge_labels is False
     assert resolved.scheme is True
@@ -146,6 +151,7 @@ def test_normalize_feature_state_turns_off_unavailable_features() -> None:
     )
     requested = InteractiveFeatureState(
         hover=False,
+        nodes=False,
         tensor_labels=True,
         edge_labels=True,
         scheme=False,
@@ -157,9 +163,57 @@ def test_normalize_feature_state_turns_off_unavailable_features() -> None:
     resolved = normalize_feature_state(requested, availability)
 
     assert resolved.hover is False
+    assert resolved.nodes is False
     assert resolved.tensor_labels is True
     assert resolved.edge_labels is True
     assert resolved.scheme is False
     assert resolved.playback is False
     assert resolved.cost_hover is False
     assert resolved.tensor_inspector is False
+
+
+def test_feature_state_from_config_normalizes_playback_dependencies() -> None:
+    resolved = feature_state_from_config(
+        PlotConfig(
+            show_contraction_scheme=False,
+            contraction_scheme_cost_hover=True,
+            contraction_tensor_inspector=True,
+        ),
+        tensor_inspector_available=True,
+    )
+
+    assert resolved.scheme is True
+    assert resolved.playback is True
+    assert resolved.cost_hover is True
+    assert resolved.tensor_inspector is True
+
+
+def test_feature_availability_from_scene_disables_playback_dependent_features_when_bundle_failed() -> (
+    None
+):
+    scene = cast(
+        _InteractiveSceneState,
+        type(
+            "SceneStub",
+            (),
+            {
+                "contraction_controls": type(
+                    "ControlsStub",
+                    (),
+                    {
+                        "_bundle": type("BundleStub", (), {"availability": "unavailable"})(),
+                    },
+                )(),
+            },
+        )(),
+    )
+
+    availability = feature_availability_from_scene(
+        scene,
+        tensor_inspector_available=True,
+    )
+
+    assert availability.scheme is False
+    assert availability.playback is False
+    assert availability.cost_hover is False
+    assert availability.tensor_inspector is False

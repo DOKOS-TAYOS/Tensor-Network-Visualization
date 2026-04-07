@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any, cast
 
@@ -13,81 +12,31 @@ from .._core.draw.scene_state import _InteractiveSceneState
 from .._interactive_scene import (
     _apply_scene_hover_state,
     _ensure_edge_label_artists,
-    _ensure_scene_label_descriptors,
     _ensure_tensor_label_artists,
     _node_mode_from_show_nodes,
-    _scene_from_axes,
     _set_artist_visible,
     _set_scene_node_mode,
 )
 from .._logging import package_logger
-from .._matplotlib_state import (
-    get_contraction_controls,
-    set_active_axes,
-    set_interactive_controls,
-)
+from .._matplotlib_state import set_active_axes, set_interactive_controls
 from .._registry import _get_plotters
 from .._tensor_elements_data import (
     _extract_playback_step_records,
     _PlaybackStepRecord,
 )
-from .._typing import root_figure
-from .._ui_utils import _set_axes_visible, _set_figure_bottom_reserved, _style_control_tray_axes
 from ..config import EngineName, PlotConfig, ViewName
-from ..contraction_viewer import _MAIN_FIGURE_BOTTOM_RESERVED, _PLAYBACK_DETAILS_TOP
-from .state import InteractiveViewCache
+from .controls import _InteractiveControlsLayout, _InteractiveControlsPanel
+from .state import (
+    InteractiveFeatureState,
+    InteractiveViewCache,
+    feature_availability_from_scene,
+    feature_state_from_config,
+    normalize_feature_state,
+)
 from .tensor_inspector import _LinkedTensorInspectorController
+from .views import _InteractiveViewManager
 
 RenderedAxes = Axes | Axes3D
-
-# Menu column: fixed bottom = tallest stack (inspector + scheme). Without playback, checkboxes/radio
-# stay as low as when the bottom row exists. Top aligned with cost-details top.
-_VIEW_SELECTOR_LEFT: float = 0.213
-_VIEW_SELECTOR_WIDTH: float = 0.053
-_VIEW_SELECTOR_HEIGHT: float = 0.063
-# Manual axes positions: 2D extends slightly below *base*, 3D starts higher (base + lift).
-_INTERACTIVE_2D_BOTTOM_EXTRA: float = 0.022
-_INTERACTIVE_3D_BOTTOM_LIFT: float = 0.084
-_BASE_INTERACTIVE_HEIGHT: float = 0.09
-_SCHEME_INSPECTOR_INTERACTIVE_HEIGHT: float = 0.172
-_INTERACTIVE_MENU_COLUMN_HEIGHT: float = _SCHEME_INSPECTOR_INTERACTIVE_HEIGHT
-_INTERACTIVE_MENU_COLUMN_BOTTOM: float = _PLAYBACK_DETAILS_TOP - _INTERACTIVE_MENU_COLUMN_HEIGHT
-_INTERACTIVE_CHECKBOX_AXES_BOUNDS: tuple[float, float, float, float] = (
-    0.02,
-    _INTERACTIVE_MENU_COLUMN_BOTTOM,
-    0.19,
-    _INTERACTIVE_MENU_COLUMN_HEIGHT,
-)
-# When Scheme is off, main axes bottom (not tied to menu column bottom after unifying menus).
-_SCHEME_OFF_FIGURE_BOTTOM_PAD: float = 0.02
-_MAIN_FIGURE_BOTTOM_SCHEME_OFF: float = (
-    _PLAYBACK_DETAILS_TOP - _BASE_INTERACTIVE_HEIGHT + _SCHEME_OFF_FIGURE_BOTTOM_PAD
-)
-_BASE_TOGGLE_LABELS: tuple[str, str, str, str] = (
-    "Hover",
-    "Nodes",
-    "Tensor labels",
-    "Edge labels",
-)
-_SCHEME_TOGGLE_LABELS: tuple[str, str] = ("Scheme", "Costs")
-_TENSOR_INSPECTOR_LABEL: str = "Tensor inspector"
-_INTERACTIVE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
-_INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
-_INTERACTIVE_CHECK_MARK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
-_INTERACTIVE_RADIO_PROPS: dict[str, float] = {"s": 38.0, "linewidth": 0.9}
-_TOGGLE_INDEX_HOVER: int = 0
-_TOGGLE_INDEX_NODES: int = 1
-_TOGGLE_INDEX_TENSOR_LABELS: int = 2
-_TOGGLE_INDEX_EDGE_LABELS: int = 3
-
-
-def _interactive_checkbox_bounds(
-    *,
-    include_scheme_toggles: bool,
-    include_tensor_inspector: bool,
-) -> tuple[float, float, float, float]:
-    _ = include_scheme_toggles, include_tensor_inspector
-    return _INTERACTIVE_CHECKBOX_AXES_BOUNDS
 
 
 class _InteractiveTensorFigureController:
@@ -109,32 +58,23 @@ class _InteractiveTensorFigureController:
             initial_view,
         )
         self.current_view: ViewName = initial_view
-        self.hover_on: bool = bool(config.hover_labels)
-        self.nodes_on: bool = bool(config.show_nodes)
-        self.tensor_labels_on: bool = bool(config.show_tensor_labels)
-        self.edge_labels_on: bool = bool(config.show_index_labels)
-        self.scheme_on: bool = bool(config.show_contraction_scheme)
-        self.cost_hover_on: bool = bool(config.contraction_scheme_cost_hover)
-        self._playback_step_records = _extract_playback_step_records(network)
-        self.tensor_inspector_available: bool = self._playback_step_records is not None
-        self.tensor_inspector_on: bool = bool(
-            config.contraction_tensor_inspector and self.tensor_inspector_available
-        )
-        if self.cost_hover_on or self.tensor_inspector_on:
-            self.scheme_on = True
         self._initial_ax = initial_ax
         self._external_ax = initial_ax is not None
         self._plot_2d, self._plot_3d = _get_plotters(engine)
-        self._view_caches: dict[ViewName, InteractiveViewCache] = {
-            "2d": InteractiveViewCache(view="2d"),
-            "3d": InteractiveViewCache(view="3d"),
-        }
-        self._radio_ax: Axes | None = None
-        self._radio: RadioButtons | None = None
-        self._check_ax: Axes | None = None
-        self._checkbuttons: CheckButtons | None = None
-        self._callback_guard: bool = False
+        self._playback_step_records = _extract_playback_step_records(network)
+        self.tensor_inspector_available: bool = self._playback_step_records is not None
+        self._desired_state = feature_state_from_config(
+            config,
+            tensor_inspector_available=self.tensor_inspector_available,
+        )
+        self._active_state = self._desired_state
+        self._view_manager = _InteractiveViewManager(
+            render_view=lambda view, ax: self._render_view(view, ax=ax),
+            initial_ax=initial_ax,
+            external_ax=self._external_ax,
+        )
         self.figure: Figure | None = None
+        self._controls_panel: _InteractiveControlsPanel | None = None
         self._tensor_inspector: _LinkedTensorInspectorController | None = None
         self._figure_close_cid: int | None = None
         self._initialized: bool = False
@@ -146,18 +86,97 @@ class _InteractiveTensorFigureController:
             )
 
     @property
+    def _view_caches(self) -> dict[ViewName, InteractiveViewCache]:
+        return self._view_manager.view_caches
+
+    @property
+    def _radio_ax(self) -> Axes | None:
+        return None if self._controls_panel is None else self._controls_panel.radio_ax
+
+    @property
+    def _radio(self) -> RadioButtons | None:
+        return None if self._controls_panel is None else self._controls_panel.radio
+
+    @property
+    def _check_ax(self) -> Axes | None:
+        return None if self._controls_panel is None else self._controls_panel.check_ax
+
+    @property
+    def _checkbuttons(self) -> CheckButtons | None:
+        return None if self._controls_panel is None else self._controls_panel.checkbuttons
+
+    @property
+    def hover_on(self) -> bool:
+        return bool(self._active_state.hover)
+
+    @hover_on.setter
+    def hover_on(self, enabled: bool) -> None:
+        self._set_requested_state(hover=bool(enabled))
+
+    @property
+    def nodes_on(self) -> bool:
+        return bool(self._active_state.nodes)
+
+    @nodes_on.setter
+    def nodes_on(self, enabled: bool) -> None:
+        self._set_requested_state(nodes=bool(enabled))
+
+    @property
+    def tensor_labels_on(self) -> bool:
+        return bool(self._active_state.tensor_labels)
+
+    @tensor_labels_on.setter
+    def tensor_labels_on(self, enabled: bool) -> None:
+        self._set_requested_state(tensor_labels=bool(enabled))
+
+    @property
+    def edge_labels_on(self) -> bool:
+        return bool(self._active_state.edge_labels)
+
+    @edge_labels_on.setter
+    def edge_labels_on(self, enabled: bool) -> None:
+        self._set_requested_state(edge_labels=bool(enabled))
+
+    @property
+    def scheme_on(self) -> bool:
+        return bool(self._active_state.scheme)
+
+    @scheme_on.setter
+    def scheme_on(self, enabled: bool) -> None:
+        self._set_requested_state(scheme=bool(enabled))
+
+    @property
+    def cost_hover_on(self) -> bool:
+        return bool(self._active_state.cost_hover)
+
+    @cost_hover_on.setter
+    def cost_hover_on(self, enabled: bool) -> None:
+        self._set_requested_state(cost_hover=bool(enabled))
+
+    @property
+    def tensor_inspector_on(self) -> bool:
+        return bool(self._active_state.tensor_inspector)
+
+    @tensor_inspector_on.setter
+    def tensor_inspector_on(self, enabled: bool) -> None:
+        self._set_requested_state(tensor_inspector=bool(enabled))
+
+    @property
     def current_scene(self) -> _InteractiveSceneState:
-        scene = self._view_caches[self.current_view].scene
+        scene = self._view_manager.current_scene(self.current_view)
         assert scene is not None
         return scene
 
     def initialize(self) -> tuple[Figure, RenderedAxes]:
-        figure, ax = self._build_view(self.current_view, ax=self._initial_ax)
+        figure, ax, scene = self._view_manager.build_initial_view(
+            self.current_view,
+            show_nodes=self._desired_state.nodes,
+        )
         self.figure = figure
-        if self._view_caches[self.current_view].scene is None:
+        if scene is None:
             return figure, ax
-        self._build_controls()
-        self._apply_scene_state(self.current_scene)
+        self._build_controls(scene)
+        self._apply_scene_state(scene)
         self._initialized = True
         set_interactive_controls(figure, self)
         set_active_axes(figure, ax)
@@ -165,10 +184,14 @@ class _InteractiveTensorFigureController:
         self._figure_close_cid = figure.canvas.mpl_connect("close_event", self._on_figure_closed)
         return figure, ax
 
+    def _set_requested_state(self, **changes: bool) -> None:
+        self._desired_state = replace(self._desired_state, **changes)
+        self._active_state = replace(self._active_state, **changes)
+
     def _base_config(self) -> PlotConfig:
         return replace(
             self.config,
-            show_nodes=self.nodes_on,
+            show_nodes=self._desired_state.nodes,
             hover_labels=False,
             show_tensor_labels=False,
             show_index_labels=False,
@@ -177,26 +200,19 @@ class _InteractiveTensorFigureController:
             contraction_tensor_inspector=False,
         )
 
-    def _scene_requires_node_mode_rerender(self, scene: _InteractiveSceneState) -> bool:
-        desired_mode = _node_mode_from_show_nodes(self.nodes_on)
-        return (
-            scene.dimensions == 2
-            and scene.active_node_mode != desired_mode
-            and any(edge.kind == "dangling" for edge in scene.graph.edges)
+    def _scene_availability(self, scene: _InteractiveSceneState) -> Any:
+        return feature_availability_from_scene(
+            scene,
+            tensor_inspector_available=self.tensor_inspector_available,
         )
 
-    def _rerender_cached_view(self, view: ViewName) -> _InteractiveSceneState:
-        cache = self._view_caches[view]
-        assert cache.ax is not None
-        fig, rendered_ax = self._render_view(view, ax=cache.ax)
-        scene = _scene_from_axes(rendered_ax)
-        assert scene is not None
-        cache.ax = rendered_ax
-        cache.scene = scene
-        scene.contraction_controls = get_contraction_controls(rendered_ax)
-        _ensure_scene_label_descriptors(scene)
-        set_active_axes(fig, rendered_ax)
-        return scene
+    def _controls_layout(self, scene: _InteractiveSceneState) -> _InteractiveControlsLayout:
+        availability = self._scene_availability(scene)
+        return _InteractiveControlsLayout(
+            include_view_selector=not self._external_ax,
+            include_scheme_toggles=availability.scheme,
+            include_tensor_inspector=availability.tensor_inspector,
+        )
 
     def _render_view(
         self,
@@ -215,188 +231,76 @@ class _InteractiveTensorFigureController:
         )
         return fig, rendered_ax
 
+    def _scene_requires_node_mode_rerender(self, scene: _InteractiveSceneState) -> bool:
+        return self._view_manager.scene_requires_node_mode_rerender(
+            scene,
+            show_nodes=self._desired_state.nodes,
+        )
+
+    def _rerender_cached_view(self, view: ViewName) -> _InteractiveSceneState:
+        return self._view_manager.rerender_cached_view(view)
+
     def _build_view(
         self,
         view: ViewName,
         *,
         ax: RenderedAxes | None,
     ) -> tuple[Figure, RenderedAxes]:
-        cache = self._view_caches[view]
-        if cache.ax is not None and cache.scene is not None:
-            return root_figure(cache.ax.figure), cache.ax
-        fig, rendered_ax = self._render_view(view, ax=ax)
-        scene = _scene_from_axes(rendered_ax)
-        cache.ax = rendered_ax
-        cache.scene = scene
-        if scene is not None:
-            scene.contraction_controls = get_contraction_controls(rendered_ax)
-            _ensure_scene_label_descriptors(scene)
-        return fig, rendered_ax
-
-    def _shared_data_axes_top(self) -> float:
-        ax3 = self._view_caches["3d"].ax
-        if ax3 is not None:
-            p = ax3.get_position()
-            return float(p.y0 + p.height)
-        ax2 = self._view_caches["2d"].ax
-        if ax2 is not None:
-            p = ax2.get_position()
-            return float(p.y0 + p.height)
-        return 0.9
+        return self._view_manager.build_view(view, ax=ax)
 
     def _interactive_scheme_chrome_on(self) -> bool:
-        return self.current_scene.contraction_controls is not None and self.scheme_on
-
-    def _interactive_main_axes_bottom(self) -> float:
-        return float(
-            _MAIN_FIGURE_BOTTOM_RESERVED
-            if self._interactive_scheme_chrome_on()
-            else _MAIN_FIGURE_BOTTOM_SCHEME_OFF
-        )
-
-    def _figure_bottom_margin(self) -> float:
-        base = self._interactive_main_axes_bottom()
-        lows: list[float] = []
-        if self._view_caches["2d"].ax is not None:
-            lows.append(base - float(_INTERACTIVE_2D_BOTTOM_EXTRA))
-        if self._view_caches["3d"].ax is not None:
-            lows.append(base + float(_INTERACTIVE_3D_BOTTOM_LIFT))
-        return min(lows) if lows else base
+        controls = self.current_scene.contraction_controls
+        return bool(controls is not None and self._active_state.scheme)
 
     def _apply_interactive_figure_layout(self) -> None:
-        if self.figure is None or self._external_ax:
-            return
-        _set_figure_bottom_reserved(self.figure, self._figure_bottom_margin())
-        self._sync_data_axes_vertical_layout()
+        self._view_manager.sync_layout(
+            figure=self.figure,
+            scheme_chrome_on=self._interactive_scheme_chrome_on(),
+        )
 
     def _sync_data_axes_vertical_layout(self) -> None:
-        if self.figure is None or self._external_ax:
-            return
-        base = self._interactive_main_axes_bottom()
-        top = self._shared_data_axes_top()
-        ax2 = self._view_caches["2d"].ax
-        ax3 = self._view_caches["3d"].ax
-        if ax2 is not None:
-            bottom_2d = base - float(_INTERACTIVE_2D_BOTTOM_EXTRA)
-            pos = ax2.get_position()
-            height = max(top - bottom_2d, 0.08)
-            ax2.set_position((pos.x0, bottom_2d, pos.width, height))
-        if ax3 is not None:
-            bottom_3d = base + float(_INTERACTIVE_3D_BOTTOM_LIFT)
-            pos = ax3.get_position()
-            height = max(top - bottom_3d, 0.08)
-            ax3.set_position((pos.x0, bottom_3d, pos.width, height))
+        self._view_manager.sync_layout(
+            figure=self.figure,
+            scheme_chrome_on=self._interactive_scheme_chrome_on(),
+        )
 
-    def _build_controls(self) -> None:
+    def _build_controls(self, scene: _InteractiveSceneState) -> None:
         assert self.figure is not None
-        labels = list(_BASE_TOGGLE_LABELS)
-        has_scheme_toggles = self.current_scene.contraction_controls is not None
-        has_tensor_inspector = bool(has_scheme_toggles and self.tensor_inspector_available)
-        if has_scheme_toggles:
-            labels.extend(_SCHEME_TOGGLE_LABELS)
-        if has_tensor_inspector:
-            labels.append(_TENSOR_INSPECTOR_LABEL)
-        cb_bounds = _interactive_checkbox_bounds(
-            include_scheme_toggles=has_scheme_toggles,
-            include_tensor_inspector=has_tensor_inspector,
+        self._controls_panel = _InteractiveControlsPanel(
+            fig=self.figure,
+            layout=self._controls_layout(scene),
+            initial_view=self.current_view,
+            initial_state=self._active_state,
+            on_view_selected=self.set_view,
+            on_state_changed=self._on_controls_state_changed,
         )
-        cb_bottom = float(cb_bounds[1])
-        check_ax = self.figure.add_axes(cb_bounds)
-        _style_control_tray_axes(check_ax)
-        self._check_ax = check_ax
-        if not self._external_ax:
-            radio_bounds: tuple[float, float, float, float] = (
-                _VIEW_SELECTOR_LEFT,
-                cb_bottom,
-                _VIEW_SELECTOR_WIDTH,
-                _VIEW_SELECTOR_HEIGHT,
-            )
-            radio_ax = self.figure.add_axes(radio_bounds)
-            _style_control_tray_axes(radio_ax)
-            self._radio_ax = radio_ax
-            active_index = 0 if self.current_view == "2d" else 1
-            self._radio = RadioButtons(
-                radio_ax,
-                ("2d", "3d"),
-                active=active_index,
-                label_props=_INTERACTIVE_LABEL_PROPS,
-                radio_props=_INTERACTIVE_RADIO_PROPS,
-            )
-            self._radio.on_clicked(self._on_view_clicked)
-        statuses = [
-            self.hover_on,
-            self.nodes_on,
-            self.tensor_labels_on,
-            self.edge_labels_on,
-        ]
-        if has_scheme_toggles:
-            statuses.extend([self.scheme_on, self.cost_hover_on])
-        if has_tensor_inspector:
-            statuses.append(self.tensor_inspector_on)
-        self._checkbuttons = CheckButtons(
-            check_ax,
-            labels,
-            statuses,
-            label_props=_INTERACTIVE_LABEL_PROPS,
-            frame_props=_INTERACTIVE_CHECK_FRAME_PROPS,
-            check_props=_INTERACTIVE_CHECK_MARK_PROPS,
-        )
-        self._checkbuttons.on_clicked(self._on_toggle_clicked)
 
     def _sync_checkbuttons(self) -> None:
-        if self._checkbuttons is None:
+        if self._controls_panel is None:
             return
-        desired = [self.hover_on, self.nodes_on, self.tensor_labels_on, self.edge_labels_on]
-        if len(self._checkbuttons.labels) > len(_BASE_TOGGLE_LABELS):
-            desired.extend([self.scheme_on, self.cost_hover_on])
-            if self.tensor_inspector_available and len(self._checkbuttons.labels) > 5:
-                desired.append(self.tensor_inspector_on)
-        current = [bool(value) for value in self._checkbuttons.get_status()]
-        self._callback_guard = True
-        try:
-            for index, value in enumerate(desired):
-                if index < len(current) and current[index] != value:
-                    self._checkbuttons.set_active(index, state=value)
-        finally:
-            self._callback_guard = False
+        self._controls_panel.sync(state=self._active_state, view=self.current_view)
+
+    def _on_controls_state_changed(self, requested_state: InteractiveFeatureState) -> None:
+        self._desired_state = requested_state
+        self._active_state = requested_state
+        self._apply_scene_state(self.current_scene)
 
     def _on_view_clicked(self, label: str | None) -> None:
-        if self._callback_guard or label is None:
+        if label is None:
             return
         self.set_view(cast(ViewName, label))
 
     def _on_toggle_clicked(self, _label: str | None) -> None:
-        if self._callback_guard or self._checkbuttons is None:
+        if self._controls_panel is None:
             return
-        status = [bool(value) for value in self._checkbuttons.get_status()]
-        self.hover_on = status[_TOGGLE_INDEX_HOVER]
-        self.nodes_on = status[_TOGGLE_INDEX_NODES]
-        self.tensor_labels_on = status[_TOGGLE_INDEX_TENSOR_LABELS]
-        self.edge_labels_on = status[_TOGGLE_INDEX_EDGE_LABELS]
-        scheme_index = len(_BASE_TOGGLE_LABELS)
-        if len(status) >= scheme_index + 2:
-            self.scheme_on = status[scheme_index]
-            self.cost_hover_on = status[scheme_index + 1]
-        if len(status) >= scheme_index + 3 and self.tensor_inspector_available:
-            self.tensor_inspector_on = status[scheme_index + 2]
-        self._apply_scene_state(self.current_scene)
+        self._on_controls_state_changed(self._controls_panel._last_state)
 
     def _deactivate_non_current_views(self) -> None:
-        for view_name, cache in self._view_caches.items():
-            if cache.ax is None:
-                continue
-            is_current = view_name == self.current_view
-            _set_axes_visible(cache.ax, is_current)
-            scene = cache.scene
-            if scene is None or scene.contraction_controls is None:
-                continue
-            viewer = scene.contraction_controls._viewer
-            if viewer is not None and not is_current:
-                viewer.pause()
-                viewer.set_playback_widgets_visible(False)
+        self._view_manager.deactivate_non_current_views(self.current_view)
 
     def _on_tensor_inspector_closed(self) -> None:
-        self.tensor_inspector_on = False
+        self._active_state = replace(self._active_state, tensor_inspector=False)
+        self._desired_state = replace(self._desired_state, tensor_inspector=False)
         self._sync_checkbuttons()
         if self.figure is not None:
             self.figure.canvas.draw_idle()
@@ -409,42 +313,48 @@ class _InteractiveTensorFigureController:
             self._tensor_inspector.close_from_owner()
 
     def _apply_scene_state(self, scene: _InteractiveSceneState) -> None:
+        availability = self._scene_availability(scene)
+        resolved = normalize_feature_state(self._desired_state, availability)
         if self._scene_requires_node_mode_rerender(scene):
             scene = self._rerender_cached_view(self.current_view)
-        _set_scene_node_mode(scene, mode=_node_mode_from_show_nodes(self.nodes_on))
-        if self.tensor_labels_on:
+            availability = self._scene_availability(scene)
+            resolved = normalize_feature_state(self._desired_state, availability)
+        _set_scene_node_mode(scene, mode=_node_mode_from_show_nodes(resolved.nodes))
+        if resolved.tensor_labels:
             _ensure_tensor_label_artists(scene)
         for artist in scene.tensor_label_artists:
-            _set_artist_visible(artist, self.tensor_labels_on)
-        if self.edge_labels_on:
+            _set_artist_visible(artist, resolved.tensor_labels)
+        if resolved.edge_labels:
             _ensure_edge_label_artists(scene)
         for artist in scene.edge_label_artists:
-            _set_artist_visible(artist, self.edge_labels_on)
-
-        if self.cost_hover_on or self.tensor_inspector_on:
-            self.scheme_on = True
+            _set_artist_visible(artist, resolved.edge_labels)
 
         controls = scene.contraction_controls
         if controls is not None:
             controls.set_states(
-                scheme_on=self.scheme_on,
-                cost_hover_on=self.cost_hover_on,
+                scheme_on=resolved.scheme,
+                cost_hover_on=resolved.cost_hover,
             )
-            self.scheme_on = bool(controls.scheme_on)
-            self.cost_hover_on = bool(controls.cost_hover_on)
+            resolved = replace(
+                resolved,
+                scheme=bool(controls.scheme_on),
+                playback=bool(controls.scheme_on),
+                cost_hover=bool(controls.cost_hover_on),
+            )
             if self._tensor_inspector is not None:
                 self._tensor_inspector.bind_viewer(controls._viewer)
         if self._tensor_inspector is not None:
             reveal_inspector = bool(
                 self._initialized
-                and self.tensor_inspector_on
+                and resolved.tensor_inspector
                 and not self._tensor_inspector.is_enabled
             )
             self._tensor_inspector.set_enabled(
-                self.tensor_inspector_on,
+                resolved.tensor_inspector,
                 reveal=reveal_inspector,
             )
-        _apply_scene_hover_state(scene, hover_on=self.hover_on)
+        _apply_scene_hover_state(scene, hover_on=resolved.hover)
+        self._active_state = resolved
         self._sync_checkbuttons()
         if not self._external_ax:
             self._apply_interactive_figure_layout()
@@ -458,48 +368,35 @@ class _InteractiveTensorFigureController:
             self.current_view,
             view,
         )
-        if self._radio is not None and self._radio.value_selected != view:
-            self._callback_guard = True
-            try:
-                self._radio.set_active(0 if view == "2d" else 1)
-            finally:
-                self._callback_guard = False
-        target_ax: RenderedAxes | None = None
-        cache = self._view_caches[view]
-        needs_new_axes = cache.ax is None or cache.scene is None
-        if self.figure is not None and not self._external_ax and needs_new_axes:
-            if view == "3d":
-                target_ax = cast(RenderedAxes, self.figure.add_subplot(111, projection="3d"))
-            else:
-                target_ax = cast(RenderedAxes, self.figure.add_subplot(111))
-        fig, ax = self._build_view(view, ax=target_ax)
+        fig, ax, scene = self._view_manager.ensure_view(
+            view,
+            figure=self.figure,
+            show_nodes=self._desired_state.nodes,
+        )
         self.current_view = view
         self._deactivate_non_current_views()
-        self._apply_scene_state(self.current_scene)
+        if scene is not None:
+            self._apply_scene_state(scene)
         set_active_axes(fig, ax)
 
     def set_hover_enabled(self, enabled: bool) -> None:
-        self.hover_on = bool(enabled)
+        self.hover_on = enabled
         package_logger.debug("Interactive hover enabled=%s.", self.hover_on)
-        self._sync_checkbuttons()
         self._apply_scene_state(self.current_scene)
 
     def set_nodes_enabled(self, enabled: bool) -> None:
-        self.nodes_on = bool(enabled)
+        self.nodes_on = enabled
         package_logger.debug("Interactive node visibility enabled=%s.", self.nodes_on)
-        self._sync_checkbuttons()
         self._apply_scene_state(self.current_scene)
 
     def set_tensor_labels_enabled(self, enabled: bool) -> None:
-        self.tensor_labels_on = bool(enabled)
+        self.tensor_labels_on = enabled
         package_logger.debug("Interactive tensor labels enabled=%s.", self.tensor_labels_on)
-        self._sync_checkbuttons()
         self._apply_scene_state(self.current_scene)
 
     def set_edge_labels_enabled(self, enabled: bool) -> None:
-        self.edge_labels_on = bool(enabled)
+        self.edge_labels_on = enabled
         package_logger.debug("Interactive edge labels enabled=%s.", self.edge_labels_on)
-        self._sync_checkbuttons()
         self._apply_scene_state(self.current_scene)
 
 
