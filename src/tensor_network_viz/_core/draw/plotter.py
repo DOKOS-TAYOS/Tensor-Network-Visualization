@@ -173,7 +173,7 @@ def _make_plotter(
                         joinstyle=_EDGE_LINE_JOIN_STYLE,
                     )
                     coll.set_path_effects(_edge_outline_effects(float(lw)))
-                    ax_.add_collection(coll)
+                    ax_.add_collection(coll, autolim=False)
                     self._edge_artists.append(coll)
                 self._edge_segments.clear()
 
@@ -232,7 +232,7 @@ def _make_plotter(
                         zorder=zorder,
                         match_original=False,
                     )
-                    self._ax.add_collection(coll)
+                    self._ax.add_collection(coll, autolim=False)
                 self._node_disk_collections.append(coll)
                 self._node_artist_bundle = _NodeArtistBundle(
                     mode=mode,
@@ -282,7 +282,7 @@ def _make_plotter(
                         zorder=_ZORDER_NODE_DISK,
                         match_original=False,
                     )
-                    self._ax.add_collection(coll)
+                    self._ax.add_collection(coll, autolim=False)
                 self._node_disk_collection = coll
                 self._node_disk_collections = [coll]
                 self._node_artist_bundle = _NodeArtistBundle(

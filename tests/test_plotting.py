@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from matplotlib.backend_bases import CloseEvent, MouseButton, MouseEvent
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgba
 
@@ -650,6 +651,38 @@ def test_show_tensor_network_reuses_tensor_and_edge_label_artists_when_toggled()
     assert edge_label_ids_before == tuple(
         id(text) for text in controls.current_scene.edge_label_artists
     )
+
+
+def test_show_tensor_network_offscreen_agg_skips_draw_idle_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    draw_idle_calls: list[FigureCanvasAgg] = []
+    original_draw_idle = FigureCanvasAgg.draw_idle
+
+    def counting_draw_idle(self: FigureCanvasAgg) -> None:
+        draw_idle_calls.append(self)
+        original_draw_idle(self)
+
+    monkeypatch.setattr(FigureCanvasAgg, "draw_idle", counting_draw_idle)
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+
+    controls.set_tensor_labels_enabled(True)
+    controls.set_edge_labels_enabled(True)
+    controls.set_view("3d")
+
+    assert draw_idle_calls == []
 
 
 def test_show_tensor_network_nodes_toggle_reuses_cached_view_and_label_artists(

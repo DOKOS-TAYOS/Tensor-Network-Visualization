@@ -6,8 +6,6 @@ from typing import Any, Literal
 
 import numpy as np
 from matplotlib.figure import Figure
-from matplotlib.font_manager import FontProperties
-from matplotlib.textpath import TextPath
 
 from ...config import PlotConfig
 from .._label_format import format_tensor_node_label
@@ -21,19 +19,23 @@ from .constants import (
     _ZORDER_TENSOR_NAME,
 )
 from .disk_metrics import _tensor_disk_radius_px
-from .fonts_and_scale import _DrawScaleParams
+from .fonts_and_scale import _DrawScaleParams, _textpath_width_pts
 from .label_descriptors import _TextLabelDescriptor
 from .plotter import _PlotAdapter, _visible_degree_one_mask
 from .viewport_geometry import _stack_visible_tensor_coords
+
+_TEXT_REF_HEIGHT_POINTS: float = 9.5
 
 
 @functools.lru_cache(maxsize=1024)
 def _textpath_diagonal_points_ref10(text: str) -> float:
     """Diagonal of TextPath at ref fontsize=10pt in points (path units × calibration factor)."""
-    fp = FontProperties(size=10.0)
-    tp = TextPath((0.0, 0.0), text, prop=fp)
-    ex = tp.get_extents()
-    return float(math.hypot(float(ex.width), float(ex.height)) * _TEXT_RENDER_DIAGONAL_FACTOR)
+    if not text.strip():
+        return 0.0
+    width_points = _textpath_width_pts(text, fontsize_pt=10.0)
+    return float(
+        math.hypot(float(width_points), _TEXT_REF_HEIGHT_POINTS) * _TEXT_RENDER_DIAGONAL_FACTOR
+    )
 
 
 def _tensor_label_fontsize_to_fit(

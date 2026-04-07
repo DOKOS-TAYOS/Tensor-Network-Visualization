@@ -206,6 +206,43 @@ def test_compute_axis_directions_chain_2d_allows_opposite_free_axes_on_same_node
     assert np.allclose(picked[1], np.array([0.0, -1.0], dtype=float), atol=1e-6)
 
 
+def test_compute_axis_directions_chain_2d_skips_random_bucket_when_cardinals_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.layout.free_directions_2d as free_directions_2d
+
+    graph = _build_chain_graph(length=3, dangling_axis_counts={1: 1})
+    positions = {
+        0: np.array([0.0, 0.0], dtype=float),
+        1: np.array([1.0, 0.0], dtype=float),
+        2: np.array([2.0, 0.0], dtype=float),
+    }
+    calls: list[int] = []
+
+    def counting_random_bucket(
+        *,
+        blocked: tuple[np.ndarray, ...],
+        count: int = 8,
+        rng: np.random.Generator | None = None,
+    ) -> tuple[np.ndarray, ...]:
+        calls.append(1)
+        return (
+            np.array([1.0, 0.0], dtype=float),
+            np.array([-1.0, 0.0], dtype=float),
+        )
+
+    monkeypatch.setattr(
+        free_directions_2d,
+        "_random_direction_bucket_2d",
+        counting_random_bucket,
+    )
+
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=1.0)
+
+    assert np.allclose(directions[(1, 2)], np.array([0.0, 1.0], dtype=float), atol=1e-6)
+    assert calls == []
+
+
 def test_physical_stub_2d_segment_clears_neighbor_node_disk() -> None:
     """Physical dangling legs use strict clearance: stub polyline must not pierce neighbor disks."""
     nodes = {

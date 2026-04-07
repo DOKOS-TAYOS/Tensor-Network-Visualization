@@ -6,6 +6,7 @@ import math
 import warnings
 import weakref
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Literal, TypeAlias, cast
 
 import matplotlib.pyplot as plt
@@ -24,6 +25,7 @@ from .draw.constants import _CURVE_NEAR_PAIR_REF, _CURVE_OFFSET_FACTOR
 from .graph import _GraphData
 from .graph_cache import _get_or_build_graph
 from .layout import (
+    AxisDirections,
     NodePositions,
     _analyze_layout_components_cached,
     _compute_axis_directions,
@@ -44,6 +46,17 @@ _layout_positions_by_id: dict[
     int,
     dict[_LayoutCacheKey, tuple[NodePositions, tuple[_LayoutComponent, ...]]],
 ] = {}
+_resolved_geometry_by_id: dict[int, dict[_LayoutCacheKey, _ResolvedGeometry]] = {}
+
+
+@dataclass(frozen=True)
+class _ResolvedGeometry:
+    positions: NodePositions
+    layout_components: tuple[_LayoutComponent, ...]
+    contraction_groups: _ContractionGroups
+    scale: float
+    bond_curve_pad: float
+    directions: AxisDirections
 
 
 def _layout_positions_bucket(
@@ -59,6 +72,22 @@ def _layout_positions_bucket(
 
     def _evict() -> None:
         _layout_positions_by_id.pop(key, None)
+
+    weakref.finalize(graph, _evict)
+    return bucket
+
+
+def _resolved_geometry_bucket(graph: _GraphData) -> dict[_LayoutCacheKey, _ResolvedGeometry]:
+    key = id(graph)
+    cached = _resolved_geometry_by_id.get(key)
+    if cached is not None:
+        return cached
+
+    bucket: dict[_LayoutCacheKey, _ResolvedGeometry] = {}
+    _resolved_geometry_by_id[key] = bucket
+
+    def _evict() -> None:
+        _resolved_geometry_by_id.pop(key, None)
 
     weakref.finalize(graph, _evict)
     return bucket
@@ -376,6 +405,76 @@ def _resolve_positions(
     )
 
 
+def _resolve_geometry(
+    graph: _GraphData,
+    config: PlotConfig,
+    *,
+    dimensions: _Dimensions,
+    seed: int,
+) -> _ResolvedGeometry:
+    positions, layout_components = _resolve_positions(
+        graph,
+        config,
+        dimensions=dimensions,
+        seed=seed,
+    )
+    if config.positions is not None:
+        contraction_groups = _group_contractions(graph)
+        scale, bond_curve_pad = _resolve_draw_scale_and_bond_curve_pad(
+            graph,
+            positions,
+            contraction_groups,
+        )
+        directions = _compute_axis_directions(
+            graph,
+            positions,
+            dimensions=dimensions,
+            draw_scale=scale,
+            contraction_groups=contraction_groups,
+            layout_components=layout_components,
+        )
+        return _ResolvedGeometry(
+            positions=positions,
+            layout_components=layout_components,
+            contraction_groups=contraction_groups,
+            scale=scale,
+            bond_curve_pad=bond_curve_pad,
+            directions=directions,
+        )
+
+    iterations = _effective_layout_iterations(config, n_nodes=len(graph.nodes))
+    cache_key: _LayoutCacheKey = (int(dimensions), int(seed), int(iterations))
+    cache_bucket = _resolved_geometry_bucket(graph)
+    cached = cache_bucket.get(cache_key)
+    if cached is not None:
+        return cached
+
+    contraction_groups = _group_contractions(graph)
+    scale, bond_curve_pad = _resolve_draw_scale_and_bond_curve_pad(
+        graph,
+        positions,
+        contraction_groups,
+    )
+    directions = _compute_axis_directions(
+        graph,
+        positions,
+        dimensions=dimensions,
+        draw_scale=scale,
+        contraction_groups=contraction_groups,
+        layout_components=layout_components,
+    )
+    resolved = _ResolvedGeometry(
+        positions=positions,
+        layout_components=layout_components,
+        contraction_groups=contraction_groups,
+        scale=scale,
+        bond_curve_pad=bond_curve_pad,
+        directions=directions,
+    )
+    cache_bucket[cache_key] = resolved
+    return resolved
+
+
 def _plot_graph(
     graph: _GraphData,
     *,
@@ -398,36 +497,24 @@ def _plot_graph(
         renderer_name=renderer_name,
         dimensions=dimensions,
     )
-    positions, layout_components = _resolve_positions(
+    geometry = _resolve_geometry(
         graph,
         style,
         dimensions=dimensions,
         seed=seed,
     )
-    contraction_groups = _group_contractions(graph)
-    scale, bond_curve_pad = _resolve_draw_scale_and_bond_curve_pad(
-        graph, positions, contraction_groups
-    )
-    directions = _compute_axis_directions(
-        graph,
-        positions,
-        dimensions=dimensions,
-        draw_scale=scale,
-        contraction_groups=contraction_groups,
-        layout_components=layout_components,
-    )
     _draw_graph(
         ax=resolved_ax,
         graph=graph,
-        positions=positions,
-        directions=directions,
+        positions=geometry.positions,
+        directions=geometry.directions,
         show_tensor_labels=_resolve_flag(show_tensor_labels, style.show_tensor_labels),
         show_index_labels=_resolve_flag(show_index_labels, style.show_index_labels),
         config=style,
         dimensions=dimensions,
-        scale=scale,
-        contraction_groups=contraction_groups,
-        bond_curve_pad=bond_curve_pad,
+        scale=geometry.scale,
+        contraction_groups=geometry.contraction_groups,
+        bond_curve_pad=geometry.bond_curve_pad,
         build_contraction_controls=build_contraction_controls,
         contraction_controls_build_ui=contraction_controls_build_ui,
         register_contraction_controls_on_figure=register_contraction_controls_on_figure,

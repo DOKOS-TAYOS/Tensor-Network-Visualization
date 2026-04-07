@@ -16,6 +16,7 @@ from ..._matplotlib_state import (
     clear_hover_cid,
     get_hover_annotation,
     get_hover_cid,
+    request_canvas_redraw,
     set_hover_annotation,
     set_hover_cid,
 )
@@ -106,9 +107,7 @@ def _disconnect_tensor_network_hover(fig: FigureLike) -> None:
             with suppress(AttributeError, NotImplementedError, TypeError, ValueError):
                 remover()
         clear_hover_annotation(resolved_figure)
-        draw_idle = getattr(resolved_figure.canvas, "draw_idle", None)
-        if callable(draw_idle):
-            draw_idle()
+        request_canvas_redraw(resolved_figure)
 
 
 def _register_2d_hover_labels(
@@ -157,7 +156,7 @@ def _register_2d_hover_labels(
     def on_move(event: Any) -> None:
         if event.inaxes != ax or event.x is None or event.y is None:
             ann.set_visible(False)
-            fig.canvas.draw_idle()
+            request_canvas_redraw(fig)
             return
 
         x_d, y_d = float(event.x), float(event.y)
@@ -228,19 +227,19 @@ def _register_2d_hover_labels(
 
         if not label:
             ann.set_visible(False)
-            fig.canvas.draw_idle()
+            request_canvas_redraw(fig)
             return
 
         if event.xdata is None or event.ydata is None:
             ann.set_visible(False)
-            fig.canvas.draw_idle()
+            request_canvas_redraw(fig)
             return
 
         ann.xy = (float(event.xdata), float(event.ydata))
         ann.set_text(label)
         ann.set_fontsize(max(7.0, min(14.0, fs_hint)))
         ann.set_visible(True)
-        fig.canvas.draw_idle()
+        request_canvas_redraw(fig)
 
     set_hover_cid(fig, fig.canvas.mpl_connect("motion_notify_event", on_move))
 
@@ -294,7 +293,7 @@ def _register_3d_hover_labels(
     def on_move(event: Any) -> None:
         if event.inaxes != ax or event.x is None or event.y is None:
             ann.set_visible(False)
-            resolved_figure.canvas.draw_idle()
+            request_canvas_redraw(resolved_figure)
             return
 
         x_d, y_d = float(event.x), float(event.y)
@@ -356,14 +355,14 @@ def _register_3d_hover_labels(
 
         if not label:
             ann.set_visible(False)
-            resolved_figure.canvas.draw_idle()
+            request_canvas_redraw(resolved_figure)
             return
 
         ann.xy = (x_d, y_d)
         ann.set_text(label)
         ann.set_fontsize(max(7.0, min(14.0, fs_hint)))
         ann.set_visible(True)
-        resolved_figure.canvas.draw_idle()
+        request_canvas_redraw(resolved_figure)
 
     set_hover_cid(
         resolved_figure,

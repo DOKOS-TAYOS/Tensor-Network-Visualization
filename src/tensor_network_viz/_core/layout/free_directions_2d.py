@@ -305,12 +305,8 @@ def _behavior_candidates_2d(
     behavior: _Behavior2D,
     rng: np.random.Generator,
 ) -> tuple[np.ndarray, ...]:
-    deterministic = _behavior_direction_order_2d(behavior)
-    random_bucket = _sort_bucket_by_reference_2d(
-        _reference_for_behavior_2d(behavior),
-        _random_direction_bucket_2d(blocked=deterministic, rng=rng),
-    )
-    return (*deterministic, *random_bucket)
+    del rng
+    return _behavior_direction_order_2d(behavior)
 
 
 def _outward_candidates_2d(
@@ -320,21 +316,17 @@ def _outward_candidates_2d(
     node_id: int,
     rng: np.random.Generator,
 ) -> tuple[np.ndarray, ...]:
+    del rng
     origin = np.asarray(positions[node_id], dtype=float).reshape(-1)[:2]
     centroid = _component_centroid(component, positions, dimensions=2)
     reference = origin - centroid
     if float(np.linalg.norm(reference)) < 1e-9:
         reference = np.array([0.0, 1.0], dtype=float)
-    deterministic = (
+    return (
         *_sort_bucket_by_reference_2d(reference, _CARDINAL_DIRECTIONS_2D),
         *_sort_bucket_by_reference_2d(reference, _DIAGONAL_DIRECTIONS_2D),
         *_sort_bucket_by_reference_2d(reference, _SEMIDIAGONAL_DIRECTIONS_2D),
     )
-    random_bucket = _sort_bucket_by_reference_2d(
-        reference,
-        _random_direction_bucket_2d(blocked=deterministic, rng=rng),
-    )
-    return (*deterministic, *random_bucket)
 
 
 def _node_candidate_directions_2d(
@@ -347,19 +339,39 @@ def _node_candidate_directions_2d(
     rng: np.random.Generator,
 ) -> tuple[np.ndarray, ...]:
     if outward_reference is not None:
-        deterministic = (
+        del rng
+        return (
             *_sort_bucket_by_reference_2d(outward_reference, _CARDINAL_DIRECTIONS_2D),
             *_sort_bucket_by_reference_2d(outward_reference, _DIAGONAL_DIRECTIONS_2D),
             *_sort_bucket_by_reference_2d(outward_reference, _SEMIDIAGONAL_DIRECTIONS_2D),
         )
-        random_bucket = _sort_bucket_by_reference_2d(
-            outward_reference,
-            _random_direction_bucket_2d(blocked=deterministic, rng=rng),
-        )
-        return (*deterministic, *random_bucket)
     if behavior is not None:
         return _behavior_candidates_2d(behavior=behavior, rng=rng)
     return _outward_candidates_2d(component, positions, node_id=node_id, rng=rng)
+
+
+def _random_fallback_candidates_2d(
+    *,
+    deterministic: tuple[np.ndarray, ...],
+    reference: np.ndarray,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, ...]:
+    return _sort_bucket_by_reference_2d(
+        reference,
+        _random_direction_bucket_2d(blocked=deterministic, rng=rng),
+    )
+
+
+def _first_valid_candidate_2d(
+    *,
+    candidates: tuple[np.ndarray, ...],
+    is_valid: Callable[[np.ndarray], bool],
+) -> np.ndarray | None:
+    for candidate in candidates:
+        normalized = _normalize_2d(candidate)
+        if is_valid(normalized):
+            return normalized
+    return None
 
 
 def _shared_virtual_hub_outward_reference_2d(
@@ -723,7 +735,7 @@ def _candidate_tip_enters_neighbor_space_2d(
     node_id: int,
     candidate: np.ndarray,
     prohibited_neighbor_ids: set[int],
-    processed_node_ids: frozenset[int],
+    processed_node_ids: set[int],
     draw_scale: float,
 ) -> bool:
     if component.structure_kind == "grid3d":
@@ -789,7 +801,7 @@ def _candidate_is_valid_2d(
     axis_index: int,
     candidate: np.ndarray,
     neighbor_hops: int,
-    processed_node_ids: frozenset[int],
+    processed_node_ids: set[int],
     draw_scale: float,
 ) -> bool:
     if _candidate_conflicts_with_node_axes_2d(
@@ -865,21 +877,36 @@ def _compute_free_directions_2d(
                 continue
             node = graph.nodes[node_id]
             axis_count = max(node.degree, 1)
+            outward_reference = _shared_virtual_hub_outward_reference_2d(
+                context,
+                node_id=node_id,
+            )
+            deterministic_candidates = _node_candidate_directions_2d(
+                component,
+                positions,
+                node_id=node_id,
+                behavior=node_plan.behavior,
+                outward_reference=outward_reference,
+                rng=rng,
+            )
+            fallback_reference = (
+                outward_reference
+                if outward_reference is not None
+                else _reference_for_behavior_2d(node_plan.behavior)
+                if node_plan.behavior is not None
+                else (
+                    context.positions_xy[node_id]
+                    - _component_centroid(component, positions, dimensions=2)
+                )
+            )
+            if float(np.linalg.norm(fallback_reference)) < 1e-9:
+                fallback_reference = np.array([0.0, 1.0], dtype=float)
+            random_candidates: tuple[np.ndarray, ...] | None = None
+
             for axis_index in range(axis_count):
                 axis_key = (node_id, axis_index)
                 if axis_key in directions:
                     continue
-                candidates = _node_candidate_directions_2d(
-                    component,
-                    positions,
-                    node_id=node_id,
-                    behavior=node_plan.behavior,
-                    outward_reference=_shared_virtual_hub_outward_reference_2d(
-                        context,
-                        node_id=node_id,
-                    ),
-                    rng=rng,
-                )
 
                 def is_valid_candidate(
                     candidate: np.ndarray,
@@ -896,16 +923,27 @@ def _compute_free_directions_2d(
                         axis_index=axis_index,
                         candidate=candidate,
                         neighbor_hops=neighbor_hops,
-                        processed_node_ids=frozenset(processed_node_ids),
+                        processed_node_ids=processed_node_ids,
                         draw_scale=draw_scale,
                     )
 
-                picked = _pick_candidate_direction_2d(
-                    candidates=candidates,
+                picked = _first_valid_candidate_2d(
+                    candidates=deterministic_candidates,
                     is_valid=is_valid_candidate,
                 )
-                normalized_pick = _normalize_2d(picked)
-                directions[axis_key] = normalized_pick
+                if picked is None:
+                    if random_candidates is None:
+                        random_candidates = _random_fallback_candidates_2d(
+                            deterministic=deterministic_candidates,
+                            reference=np.asarray(fallback_reference, dtype=float).reshape(-1)[:2],
+                            rng=rng,
+                        )
+                    picked = _pick_candidate_direction_2d(
+                        candidates=random_candidates,
+                        is_valid=is_valid_candidate,
+                    )
+                directions[axis_key] = _normalize_2d(picked)
+
             processed_node_ids.add(node_id)
 
 

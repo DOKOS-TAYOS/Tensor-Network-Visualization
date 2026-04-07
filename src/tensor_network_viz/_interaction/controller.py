@@ -18,7 +18,11 @@ from .._interactive_scene import (
     _set_scene_node_mode,
 )
 from .._logging import package_logger
-from .._matplotlib_state import set_active_axes, set_interactive_controls
+from .._matplotlib_state import (
+    request_canvas_redraw,
+    set_active_axes,
+    set_interactive_controls,
+)
 from .._registry import _get_plotters
 from .._tensor_elements_data import (
     _extract_playback_step_records,
@@ -302,8 +306,7 @@ class _InteractiveTensorFigureController:
         self._active_state = replace(self._active_state, tensor_inspector=False)
         self._desired_state = replace(self._desired_state, tensor_inspector=False)
         self._sync_checkbuttons()
-        if self.figure is not None:
-            self.figure.canvas.draw_idle()
+        request_canvas_redraw(self.figure)
 
     def _on_figure_closed(self, _event: Any) -> None:
         if self._figure_close_cid is not None and self.figure is not None:
@@ -358,7 +361,7 @@ class _InteractiveTensorFigureController:
         self._sync_checkbuttons()
         if not self._external_ax:
             self._apply_interactive_figure_layout()
-        scene.ax.figure.canvas.draw_idle()
+        request_canvas_redraw(scene.ax.figure)
 
     def set_view(self, view: ViewName) -> None:
         if view == self.current_view:
