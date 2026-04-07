@@ -21,6 +21,14 @@ __all__ = [
 ]
 
 
+def _is_unsupported_out_keyword_error(exc: TypeError) -> bool:
+    message = str(exc).lower()
+    return (
+        "unexpected keyword argument 'out'" in message
+        or 'unexpected keyword argument "out"' in message
+    )
+
+
 class EinsumTrace:
     """Stateful trace for automatically recorded einsum contractions (any arity)."""
 
@@ -138,7 +146,9 @@ def einsum(
         sub_kwargs = {k: v for k, v in kwargs.items() if k != "out"}
         try:
             result = backend_fn(expression, *operands, **kwargs)
-        except TypeError:
+        except TypeError as exc:
+            if not _is_unsupported_out_keyword_error(exc):
+                raise
             tmp = backend_fn(expression, *operands, **sub_kwargs)
             out_tensor.copy_(tmp)
             result = out_tensor

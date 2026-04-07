@@ -12,6 +12,27 @@ from .exceptions import TensorDataError, VisualizationInputError
 from .tenpy.explicit import TenPyTensorNetwork
 
 
+class _PreparedInputProxy:
+    """Delegate input access while swapping in replayable single-pass attributes."""
+
+    def __init__(self, source: Any, overrides: dict[str, Any] | None = None) -> None:
+        self._source = source
+        self._overrides = {} if overrides is None else dict(overrides)
+
+    def with_override(self, attr_name: str, attr_value: Any) -> _PreparedInputProxy:
+        overrides = dict(self._overrides)
+        overrides[attr_name] = attr_value
+        return _PreparedInputProxy(self._source, overrides)
+
+    def __getattr__(self, attr_name: str) -> Any:
+        if attr_name in self._overrides:
+            return self._overrides[attr_name]
+        return getattr(self._source, attr_name)
+
+    def __iter__(self) -> Any:
+        return iter(self._source)
+
+
 def _first_non_none(items: Iterable[Any]) -> Any | None:
     for item in items:
         if item is not None:
@@ -30,6 +51,16 @@ def _peek_input_item(source: Any) -> tuple[Any | None, Any]:
         probe_iter, runtime_iter = tee(iterator)
         return _first_non_none(probe_iter), runtime_iter
     return _first_non_none(iterator), source
+
+
+def _peek_input_attr(source: Any, attr_name: str) -> tuple[Any | None, Any]:
+    raw_value = getattr(source, attr_name)
+    sample_item, prepared_value = _peek_input_item(raw_value)
+    if prepared_value is raw_value:
+        return sample_item, source
+    if isinstance(source, _PreparedInputProxy):
+        return sample_item, source.with_override(attr_name, prepared_value)
+    return sample_item, _PreparedInputProxy(source, {attr_name: prepared_value})
 
 
 def _is_unordered_collection(value: Any) -> bool:
@@ -88,28 +119,30 @@ def _detect_network_engine_with_input(network: Any) -> tuple[EngineName, Any]:
         )
         return "tenpy", network
 
-    if hasattr(network, "tensors"):
-        tensor_sample, _ = _peek_input_item(network.tensors)
+    prepared_network = network
+
+    if hasattr(prepared_network, "tensors"):
+        tensor_sample, prepared_network = _peek_input_attr(prepared_network, "tensors")
         if tensor_sample is None or hasattr(tensor_sample, "inds"):
             package_logger.debug(
                 "Auto-detected tensor network engine='quimb' from %s.", type(network).__name__
             )
-            return "quimb", network
+            return "quimb", prepared_network
 
-    if hasattr(network, "leaf_nodes"):
-        leaf_sample, _ = _peek_input_item(network.leaf_nodes)
+    if hasattr(prepared_network, "leaf_nodes"):
+        leaf_sample, prepared_network = _peek_input_attr(prepared_network, "leaf_nodes")
         if leaf_sample is None or hasattr(leaf_sample, "axes_names"):
             package_logger.debug(
                 "Auto-detected tensor network engine='tensorkrowch' from leaf_nodes."
             )
-            return "tensorkrowch", network
-    if hasattr(network, "nodes"):
-        node_sample, _ = _peek_input_item(network.nodes)
+            return "tensorkrowch", prepared_network
+    if hasattr(prepared_network, "nodes"):
+        node_sample, prepared_network = _peek_input_attr(prepared_network, "nodes")
         if node_sample is None or hasattr(node_sample, "axes_names"):
             package_logger.debug("Auto-detected tensor network engine='tensorkrowch' from nodes.")
-            return "tensorkrowch", network
+            return "tensorkrowch", prepared_network
 
-    sample_item, sampled_network = _peek_input_item(network)
+    sample_item, sampled_network = _peek_input_item(prepared_network)
     detected_engine = _detect_engine_from_network_sample(sample_item)
     if detected_engine is not None:
         package_logger.debug(
@@ -142,27 +175,29 @@ def _detect_tensor_engine_with_input(data: Any) -> tuple[EngineName, Any]:
         )
         return direct_engine, data
 
-    if hasattr(data, "tensors"):
-        tensor_sample, _ = _peek_input_item(data.tensors)
+    prepared_data = data
+
+    if hasattr(prepared_data, "tensors"):
+        tensor_sample, prepared_data = _peek_input_attr(prepared_data, "tensors")
         if tensor_sample is None or hasattr(tensor_sample, "inds"):
             package_logger.debug("Auto-detected tensor engine='quimb' from tensor container.")
-            return "quimb", data
+            return "quimb", prepared_data
 
-    if hasattr(data, "leaf_nodes"):
-        sample, _ = _peek_input_item(data.leaf_nodes)
+    if hasattr(prepared_data, "leaf_nodes"):
+        sample, prepared_data = _peek_input_attr(prepared_data, "leaf_nodes")
         if sample is None or hasattr(sample, "axes_names"):
             package_logger.debug("Auto-detected tensor engine='tensorkrowch' from leaf_nodes.")
-            return "tensorkrowch", data
-    if hasattr(data, "nodes"):
-        sample, _ = _peek_input_item(data.nodes)
+            return "tensorkrowch", prepared_data
+    if hasattr(prepared_data, "nodes"):
+        sample, prepared_data = _peek_input_attr(prepared_data, "nodes")
         if sample is None or hasattr(sample, "axes_names"):
             package_logger.debug("Auto-detected tensor engine='tensorkrowch' from nodes.")
-            return "tensorkrowch", data
+            return "tensorkrowch", prepared_data
         if sample is None or hasattr(sample, "axis_names"):
             package_logger.debug("Auto-detected tensor engine='tensornetwork' from nodes.")
-            return "tensornetwork", data
+            return "tensornetwork", prepared_data
 
-    sample_item, sampled_input = _peek_input_item(data)
+    sample_item, sampled_input = _peek_input_item(prepared_data)
     detected_engine = _detect_engine_from_tensor_sample(sample_item)
     if detected_engine is not None:
         package_logger.debug(

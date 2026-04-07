@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import gc
 import inspect
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 import matplotlib
@@ -64,7 +64,7 @@ class DummyTensorKrowchNode:
 
 
 class DummyTensorKrowchNetwork:
-    def __init__(self, nodes: list[DummyTensorKrowchNode]) -> None:
+    def __init__(self, nodes: Iterable[DummyTensorKrowchNode]) -> None:
         self.nodes = nodes
 
 
@@ -72,9 +72,9 @@ class DummyTensorKrowchContractedNetwork:
     def __init__(
         self,
         *,
-        nodes: list[DummyTensorKrowchNode],
-        leaf_nodes: list[DummyTensorKrowchNode],
-        resultant_nodes: list[DummyTensorKrowchNode],
+        nodes: Iterable[DummyTensorKrowchNode],
+        leaf_nodes: Iterable[DummyTensorKrowchNode],
+        resultant_nodes: Iterable[DummyTensorKrowchNode],
     ) -> None:
         self.nodes = nodes
         self.leaf_nodes = leaf_nodes
@@ -87,6 +87,11 @@ class DummyQuimbTensor:
         self.inds = inds
         self.tags = set(tags)
         self.shape = data.shape
+
+
+class DummyQuimbNetwork:
+    def __init__(self, tensors: Iterable[DummyQuimbTensor]) -> None:
+        self.tensors = tensors
 
 
 def _line_ydata_as_float(ax: Axes) -> np.ndarray[Any, np.dtype[np.float64]]:
@@ -344,6 +349,86 @@ def test_show_tensor_elements_multiple_tensors_use_slider_and_single_axes() -> N
     controller._slider.set_val(1.0)
 
     assert "B" in ax.get_title()
+
+
+def test_show_tensor_elements_keeps_first_node_for_single_pass_nodes_attribute() -> None:
+    tensors = [
+        DummyTensorKrowchNode(
+            name="A",
+            axes_names=("x", "y"),
+            tensor=np.arange(6, dtype=float).reshape(2, 3),
+            shape=(2, 3),
+        ),
+        DummyTensorKrowchNode(
+            name="B",
+            axes_names=("u", "v"),
+            tensor=np.arange(12, dtype=float).reshape(3, 4),
+            shape=(3, 4),
+        ),
+    ]
+    network = DummyTensorKrowchNetwork(iter(tensors))
+
+    fig, ax = show_tensor_elements(network, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert controller._slider is not None
+    assert "A" in ax.get_title()
+    controller._slider.set_val(1.0)
+    assert "B" in ax.get_title()
+
+
+def test_show_tensor_elements_keeps_first_leaf_node_for_single_pass_leaf_nodes_attribute() -> None:
+    tensors = [
+        DummyTensorKrowchNode(
+            name="A",
+            axes_names=("x", "y"),
+            tensor=np.arange(6, dtype=float).reshape(2, 3),
+            shape=(2, 3),
+        ),
+        DummyTensorKrowchNode(
+            name="B",
+            axes_names=("u", "v"),
+            tensor=np.arange(12, dtype=float).reshape(3, 4),
+            shape=(3, 4),
+        ),
+    ]
+    network = DummyTensorKrowchContractedNetwork(
+        nodes=tensors,
+        leaf_nodes=iter(tensors),
+        resultant_nodes=(),
+    )
+
+    fig, ax = show_tensor_elements(network, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert controller._slider is not None
+    assert "A" in ax.get_title()
+    controller._slider.set_val(1.0)
+    assert "B" in ax.get_title()
+
+
+def test_show_tensor_elements_keeps_first_tensor_for_single_pass_tensors_attribute() -> None:
+    tensors = [
+        DummyQuimbTensor(
+            np.arange(6, dtype=float).reshape(2, 3),
+            inds=("x", "y"),
+            tags=("Q0",),
+        ),
+        DummyQuimbTensor(
+            np.arange(12, dtype=float).reshape(3, 4),
+            inds=("u", "v"),
+            tags=("Q1",),
+        ),
+    ]
+    network = DummyQuimbNetwork(iter(tensors))
+
+    fig, ax = show_tensor_elements(network, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert controller._slider is not None
+    assert "Q0" in ax.get_title()
+    controller._slider.set_val(1.0)
+    assert "Q1" in ax.get_title()
 
 
 def test_show_tensor_elements_reuses_prepared_payloads_for_revisited_modes(

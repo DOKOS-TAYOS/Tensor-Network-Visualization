@@ -201,6 +201,33 @@ def test_einsum_trace_rejects_out_tensor_already_on_trace() -> None:
     assert len(trace) == 1
 
 
+def test_einsum_trace_does_not_hide_unrelated_typeerror_from_out_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_loader(_backend: str) -> object:
+        def fake_backend(expression: str, *operands: object, **kwargs: object) -> object:
+            del operands
+            calls.append({"expression": expression, "kwargs": dict(kwargs)})
+            raise TypeError("backend exploded for unrelated reason")
+
+        return fake_backend
+
+    monkeypatch.setattr("tensor_network_viz.einsum_module.trace._load_backend_einsum", fake_loader)
+
+    trace = tv.EinsumTrace()
+    a = torch.ones((2, 2))
+    b = torch.ones((2,))
+    out = torch.empty((2,))
+
+    with pytest.raises(TypeError, match="backend exploded for unrelated reason"):
+        tv.einsum("ij,j->i", a, b, trace=trace, backend="torch", out=out)
+
+    assert calls == [{"expression": "ij,j->i", "kwargs": {"out": out}}]
+    assert len(trace) == 0
+
+
 def test_einsum_trace_unary_and_ternary_use_einsum_trace_step() -> None:
     trace = tv.EinsumTrace()
     m = torch.ones(4, 4)
