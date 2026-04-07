@@ -10,7 +10,6 @@ from mpl_toolkits.mplot3d.axes3d import Axes3D
 from ._core._label_format import format_tensor_node_label
 from ._core.draw.constants import (
     _EDGE_INDEX_LABEL_GID,
-    _LABEL_FONT_3D_SCALE,
     _TENSOR_LABEL_GID,
     _ZORDER_LAYER_BASE,
     _ZORDER_LAYER_DISK,
@@ -50,7 +49,7 @@ from ._core.draw.render_prep import (
 from ._core.draw.scene_state import _InteractiveSceneState
 from ._core.draw.tensors import (
     _refit_tensor_labels_to_disks,
-    _tensor_label_fontsize_to_fit,
+    _tensor_label_fontsize_for_render,
 )
 from ._core.draw.viewport_geometry import (
     _bond_index_label_perp_offset,
@@ -200,6 +199,7 @@ def _resolve_bond_label_descriptor(
         dimensions=scene.dimensions,
         is_physical=descriptor.is_physical,
         peer_captions_for_width=descriptor.peer_captions_for_width,
+        preferred_fontsize_pt=scene.config.edge_label_fontsize,
     )
     text_kwargs = _edge_index_text_kwargs(
         scene.config,
@@ -249,6 +249,7 @@ def _resolve_self_loop_label_descriptor(
         dimensions=scene.dimensions,
         is_physical=False,
         peer_captions_for_width=descriptor.peer_captions_for_width,
+        preferred_fontsize_pt=scene.config.edge_label_fontsize,
     )
     world_perp = descriptor.offset_direction if scene.dimensions == 3 else None
     offset = (
@@ -325,20 +326,15 @@ def _plot_label_descriptors(
                     scene.params,
                     scene.dimensions,
                 )
-            fontsize = _tensor_label_fontsize_to_fit(
+            fontsize = _tensor_label_fontsize_for_render(
                 text=descriptor.text,
-                cap_pt=scene.params.font_tensor_label_max,
-                pixel_radius=pixel_radius,
+                config=scene.config,
+                p=scene.params,
+                pixel_radius=float(pixel_radius),
                 fig=scene.ax.figure,
+                dimensions=scene.dimensions,
             )
-            if scene.dimensions == 3:
-                cap_tensor = float(scene.params.font_tensor_label_max) * _LABEL_FONT_3D_SCALE
-                kwargs["fontsize"] = min(
-                    float(fontsize) * _LABEL_FONT_3D_SCALE,
-                    cap_tensor,
-                )
-            else:
-                kwargs["fontsize"] = float(fontsize)
+            kwargs["fontsize"] = float(fontsize)
         scene.plotter.plot_text(
             np.asarray(descriptor.position, dtype=float),
             descriptor.text,
@@ -362,14 +358,36 @@ def _build_tensor_label_descriptors(
             zorder = float(_ZORDER_LAYER_TENSOR_NAME)
         else:
             zorder = float(zorder_by_node.get(node_id, _ZORDER_LAYER_TENSOR_NAME))
+        node_position = scene.positions[node_id]
+        if scene.tensor_disk_radius_px_3d is not None and scene.dimensions == 3:
+            pixel_radius = float(scene.tensor_disk_radius_px_3d)
+        else:
+            from ._core.draw.disk_metrics import _tensor_disk_radius_px
+
+            pixel_radius = _tensor_disk_radius_px(
+                scene.ax,
+                node_position,
+                scene.params,
+                scene.dimensions,
+            )
+        label_text = format_tensor_node_label(node.name)
+        fontsize = _tensor_label_fontsize_for_render(
+            text=label_text,
+            config=scene.config,
+            p=scene.params,
+            pixel_radius=float(pixel_radius),
+            fig=scene.ax.figure,
+            dimensions=scene.dimensions,
+        )
         descriptors.append(
             _TextLabelDescriptor(
                 position=np.asarray(scene.positions[node_id], dtype=float).copy(),
-                text=format_tensor_node_label(node.name),
+                text=label_text,
                 kwargs={
                     "color": scene.config.tensor_label_color,
                     "ha": "center",
                     "va": "center",
+                    "fontsize": float(fontsize),
                     "zorder": zorder,
                     "gid": _TENSOR_LABEL_GID,
                 },
@@ -464,6 +482,7 @@ def _ensure_tensor_label_artists(scene: _InteractiveSceneState) -> None:
     if _should_refine_tensor_labels(scene.config, visible_tensor_count=len(scene.visible_node_ids)):
         _refit_tensor_labels_to_disks(
             ax=scene.ax,
+            config=scene.config,
             p=scene.params,
             dimensions=scene.dimensions,
             tensor_disk_radius_px_3d=scene.tensor_disk_radius_px_3d,
@@ -514,10 +533,25 @@ def _build_tensor_hover_payload(scene: _InteractiveSceneState) -> dict[int, tupl
             continue
         fontsize_raw = descriptor.kwargs.get("fontsize")
         if fontsize_raw is None:
-            fontsize_raw = (
-                float(scene.params.font_tensor_label_max) * _LABEL_FONT_3D_SCALE
-                if scene.dimensions == 3
-                else float(scene.params.font_tensor_label_max)
+            node_position = scene.positions[descriptor.node_id]
+            if scene.tensor_disk_radius_px_3d is not None and scene.dimensions == 3:
+                pixel_radius = float(scene.tensor_disk_radius_px_3d)
+            else:
+                from ._core.draw.disk_metrics import _tensor_disk_radius_px
+
+                pixel_radius = _tensor_disk_radius_px(
+                    scene.ax,
+                    node_position,
+                    scene.params,
+                    scene.dimensions,
+                )
+            fontsize_raw = _tensor_label_fontsize_for_render(
+                text=descriptor.text,
+                config=scene.config,
+                p=scene.params,
+                pixel_radius=float(pixel_radius),
+                fig=scene.ax.figure,
+                dimensions=scene.dimensions,
             )
         payload[int(descriptor.node_id)] = (descriptor.text, float(fontsize_raw))
     scene.tensor_hover_payload = dict(payload)

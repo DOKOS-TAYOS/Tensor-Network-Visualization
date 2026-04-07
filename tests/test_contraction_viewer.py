@@ -16,6 +16,7 @@ from matplotlib.widgets import Button, CheckButtons, Slider
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from tensor_network_viz import ContractionViewer2D, PlotConfig, pair_tensor
+from tensor_network_viz._contraction_viewer_ui import create_playback_details_panel
 from tensor_network_viz._core.graph import (
     _EdgeEndpoint,
     _GraphData,
@@ -96,6 +97,17 @@ def test_contraction_viewer_set_step_clamps_and_updates_visibility() -> None:
     assert v.current_step == 2
     for r in rects:
         assert r.get_visible()
+
+
+def test_playback_details_panel_disables_matplotlib_auto_wrap() -> None:
+    fig = matplotlib.pyplot.figure(figsize=(4, 3))
+
+    try:
+        _ax_details, text = create_playback_details_panel(fig)
+
+        assert text.get_wrap() is False
+    finally:
+        matplotlib.pyplot.close(fig)
 
 
 def test_enable_playback_false_build_ui_is_noop() -> None:

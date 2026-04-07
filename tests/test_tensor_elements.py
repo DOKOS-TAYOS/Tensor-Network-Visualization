@@ -114,19 +114,40 @@ def test_tensor_elements_config_has_expected_defaults() -> None:
     config = TensorElementsConfig()
 
     assert config.mode == "auto"
-    assert config.figsize == (7.2, 6.4)
     assert config.row_axes is None
     assert config.col_axes is None
+    assert config.figsize == (7.2, 6.4)
     assert config.max_matrix_shape == (256, 256)
-    assert config.histogram_bins == 40
-    assert config.histogram_max_samples == 100_000
-    assert config.topk_count == 8
-    assert config.zero_threshold == pytest.approx(1e-12)
-    assert config.log_magnitude_floor == pytest.approx(1e-12)
-    assert config.robust_percentiles is None
     assert config.shared_color_scale is False
+    assert config.robust_percentiles is None
     assert config.highlight_outliers is False
     assert config.outlier_zscore == pytest.approx(3.5)
+    assert config.histogram_bins == 40
+    assert config.histogram_max_samples == 100_000
+    assert config.zero_threshold == pytest.approx(1e-12)
+    assert config.log_magnitude_floor == pytest.approx(1e-12)
+    assert config.topk_count == 8
+
+
+def test_tensor_elements_config_public_signature_orders_mode_before_detail() -> None:
+    signature = inspect.signature(TensorElementsConfig)
+
+    assert tuple(signature.parameters) == (
+        "mode",
+        "row_axes",
+        "col_axes",
+        "figsize",
+        "max_matrix_shape",
+        "shared_color_scale",
+        "robust_percentiles",
+        "highlight_outliers",
+        "outlier_zscore",
+        "zero_threshold",
+        "log_magnitude_floor",
+        "histogram_bins",
+        "histogram_max_samples",
+        "topk_count",
+    )
 
 
 def test_tensor_elements_config_supports_grouped_modes() -> None:
@@ -662,7 +683,7 @@ def test_show_tensor_elements_singular_values_mode_renders_ordered_spectrum() ->
 
     assert_rendered_figure(fig, ax)
     assert "singular values" in ax.get_title().lower()
-    assert ax.get_yscale() == "linear"
+    assert ax.get_yscale() == "log"
     assert len(ax.lines) == 1
     np.testing.assert_allclose(ax.lines[0].get_ydata(), np.array([3.0, 1.0]))
 
@@ -683,6 +704,30 @@ def test_show_tensor_elements_singular_values_mode_switches_to_log_scale_for_wid
 
     assert_rendered_figure(fig, ax)
     assert ax.get_yscale() == "log"
+
+
+def test_show_tensor_elements_singular_values_mode_marks_zero_values_in_blood_red() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[3.0, 0.0], [0.0, 0.0]], dtype=float),
+        name="ZeroSpectrum",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="singular_values"),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert ax.get_yscale() == "log"
+    assert ax.collections
+    zero_marker = ax.collections[0]
+    np.testing.assert_allclose(
+        np.asarray(zero_marker.get_facecolors()[0], dtype=float),
+        matplotlib.colors.to_rgba("#7F1D1D"),
+    )
 
 
 def test_show_tensor_elements_singular_values_mode_supports_complex_tensors() -> None:
@@ -725,9 +770,12 @@ def test_show_tensor_elements_singular_values_mode_uses_rank3_matrixization() ->
     )
 
     assert_rendered_figure(fig, ax)
+    expected_singular_values = np.linalg.svd(expected_matrix, compute_uv=False)
+    default_config = TensorElementsConfig()
+    visual_floor = max(default_config.zero_threshold, default_config.log_magnitude_floor)
     np.testing.assert_allclose(
         ax.lines[0].get_ydata(),
-        np.linalg.svd(expected_matrix, compute_uv=False),
+        np.maximum(expected_singular_values, visual_floor),
     )
 
 
@@ -1479,6 +1527,30 @@ def test_show_tensor_elements_slider_sits_farther_right_of_mode_selector() -> No
     slider_left = slider_bounds[0]
 
     assert float(slider_left - mode_right) >= 0.075
+
+
+def test_show_tensor_elements_slider_uses_thicker_control_height() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.arange(6, dtype=float).reshape(2, 3),
+            name="A",
+            axis_names=("x", "y"),
+        ),
+        DummyTensorNetworkNode(
+            np.arange(12, dtype=float).reshape(3, 4),
+            name="B",
+            axis_names=("u", "v"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert_rendered_figure(fig, ax)
+    assert controller._slider_ax is not None
+    slider_bounds = controller._slider_ax.get_position().bounds
+
+    assert slider_bounds == pytest.approx((0.48, 0.045, 0.38, 0.065))
 
 
 def test_show_tensor_elements_widgets_switch_group_then_mode() -> None:

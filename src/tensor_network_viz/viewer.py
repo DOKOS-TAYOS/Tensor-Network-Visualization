@@ -65,9 +65,11 @@ def show_tensor_network(
             ``show_tensor_network`` infers the engine from ``network``.
         view: "2d" or "3d" visualization mode. ``None`` defaults to ``"2d"``
             unless ``ax`` is a 3D axes, in which case the view is inferred.
-        config: Optional styling; uses defaults if None. Use ``PlotConfig`` for
-            colors, labels, layout, ``hover_labels`` (interactive hover
-            tooltips), contraction highlighting, and related render behavior.
+        config: Optional plot configuration. When omitted, ``PlotConfig()`` is used.
+            ``PlotConfig`` groups the most visible toggles first
+            (nodes, labels, hover, contraction playback) and leaves geometry/styling
+            options later. It also includes optional ``tensor_label_fontsize`` and
+            ``edge_label_fontsize`` overrides.
         ax: Optional Matplotlib axes to render into. When passed, the 2D/3D
             selector is suppressed and the view is fixed to that axes.
         show_controls: If True, attach figure-level controls for view, hover,
@@ -90,7 +92,7 @@ def show_tensor_network(
         Tuple of (Figure, Axes) for further customization.
 
     Example:
-        >>> config = PlotConfig(figsize=(8, 6))
+        >>> config = PlotConfig(show_tensor_labels=True, hover_labels=True, figsize=(8, 6))
         >>> fig, ax = show_tensor_network(network, config=config)
     """
     style = config or PlotConfig()

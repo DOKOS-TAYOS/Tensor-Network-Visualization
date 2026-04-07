@@ -12,76 +12,56 @@ TensorLabelRefinement: TypeAlias = Literal["auto", "always", "never"]
 
 @dataclass(frozen=True)
 class PlotConfig:
-    """Configuration for tensor network plot styling.
+    """Configuration for ``show_tensor_network``.
 
-    Used by ``show_tensor_network`` and backend ``plot_*_network_*`` helpers.
+    The public constructor is intentionally ordered from high-level behavior first and
+    styling/detail later, so it reads naturally when used with keyword arguments.
 
     Attributes:
-        node_color: Fill color for tensor nodes (hex or named color).
-        label_color: Color for axis and edge labels.
+        show_nodes: Whether to draw tensor nodes with their full geometry. If ``False``,
+            use compact fixed-size markers instead.
+        show_tensor_labels: Whether to draw static tensor names on nodes.
+        show_index_labels: Whether to draw static index labels on edges.
+        hover_labels: Whether to enable hover tooltips for tensor names and edge labels.
+            This is independent from the static label toggles.
+        show_contraction_scheme: Whether to enable the interactive contraction slider.
+        contraction_scheme_cost_hover: Whether to show the per-step contraction-cost panel
+            together with the contraction slider.
+        contraction_tensor_inspector: Whether to enable the linked tensor-inspector window
+            when playback tensors are available.
+        tensor_label_refinement: Policy for the post-draw passes that shrink tensor labels
+            to fit their node marker. ``"always"`` always refits, ``"never"`` skips it,
+            and ``"auto"`` applies it only when it is still cheap.
+        approximate_3d_tensor_disk_px: Whether 3D tensor-label fitting should use a faster
+            nominal disk radius instead of a per-node projected radius.
+        figsize: Figure size in inches. ``None`` leaves Matplotlib's default.
+        positions: Optional mapping from node id to custom 2D or 3D coordinates.
+        validate_positions: Whether to warn about unknown or mismatched custom positions.
+        layout_iterations: Optional override for the force-layout iteration count.
+        tensor_label_fontsize: Preferred font size for tensor labels in points. ``None``
+            keeps the automatic fit-based behavior. When set, it is still treated as a
+            safe preferred size, so labels may shrink if needed to fit.
+        edge_label_fontsize: Preferred font size for edge labels in points. ``None`` keeps
+            the automatic bond-length heuristic.
+        node_radius: Base tensor-node radius in data units before draw scaling.
+        stub_length: Length of dangling-index stubs before draw scaling.
+        self_loop_radius: Radius used for self-loop edges before draw scaling.
+        line_width_2d: 2D line width for node outlines and edges.
+        line_width_3d: 3D line width for node outlines and edges.
+        node_color: Fill color for tensor nodes.
+        node_edge_color: Border color for tensor nodes.
+        node_color_degree_one: Fill color for visible degree-one tensors.
+        node_edge_color_degree_one: Border color for visible degree-one tensors.
+        tensor_label_color: Color for tensor names drawn on nodes.
+        label_color: Color for index labels.
         bond_edge_color: Color for contraction edges between tensors.
-        dangling_edge_color: Color for dangling index stubs.
-        figsize: Figure size as (width, height) in inches; None uses Matplotlib default.
-        show_tensor_labels: Whether to display tensor names on nodes.
-        show_index_labels: Whether to display axis names on edges.
-        node_radius: Base radius of tensor nodes in data units before draw scale; None uses
-            default (0.08). Draw scale is chosen so that, for the default radius, disk radius is
-            the shortest contraction-edge length times the renderer fraction (see
-            ``_SHORTEST_EDGE_RADIUS_FRACTION``); setting this scales that radius
-            proportionally.
-        stub_length: Length of dangling index stubs; None uses default (0.16).
-        self_loop_radius: Radius for self-contraction loops; None uses default (0.2).
-        line_width_2d: Line width for 2D plots (node outlines and tensor edges); None uses default.
-        line_width_3d: Line width for 3D plots (node outlines and tensor edges); None uses default.
-        show_nodes: Whether to render tensor nodes with their normal geometry (2D circles /
-            3D octahedra). If False, use compact fixed-size markers instead (2D points / 3D
-            screen-facing circles).
-        positions: Custom node positions for grid/PEPS layout; mapping from node id to
-            (x, y) for 2D or (x, y, z) for 3D. Tuple-like coordinates and NumPy arrays are both
-            accepted. None uses automatic layout.
-        node_edge_color: Border color for tensor nodes; use dark for contrast on light nodes.
-        node_color_degree_one: Fill for non-virtual tensors with graph degree 1 (any edge kinds).
-        node_edge_color_degree_one: Border for those same tensors.
-        tensor_label_color: Color for tensor names on nodes; use dark for readability.
-        layout_iterations: Force-directed layout iterations; None uses default (220).
-        validate_positions: If True, warn when custom positions have unknown keys or
-            wrong dimension count for the view.
-        tensor_label_refinement: Post-draw policy for shrinking tensor names so they fit the
-            node marker in 2D or 3D. ``"always"`` always runs the refit passes, ``"never"``
-            always skips them, and ``"auto"`` keeps the full behavior on smaller graphs while
-            skipping the extra passes on larger ones.
-        approximate_3d_tensor_disk_px: If True (default), tensor label disk radius in pixels
-            uses a single nominal scale from axis spans (cheap). If False, uses per-node
-            projection (slower, marginally more accurate under 3D perspective).
-        hover_labels: If True, enable hover tooltips for tensor names and bond index labels
-            (2D: hit-testing in axes space; 3D: projected screen distance). This is independent
-            from static tensor/index labels, so both can stay enabled at once. Use an interactive
-            Matplotlib window.
-        show_contraction_scheme: If True, enable the interactive contraction slider using
-            ``graph.contraction_steps`` or ``contraction_scheme_by_name``. The visualization is
-            dynamic only: already-contracted tensors change real shape, and group colors propagate
-            through the slider state.
-        contraction_scheme_alpha: Reserved for backwards compatibility; not used by the dynamic
-            contraction slider.
-        contraction_scheme_edge_alpha: Reserved for backwards compatibility; not used by the
-            dynamic contraction slider.
-        contraction_scheme_linewidth: Reserved for backwards compatibility; not used by the
-            dynamic contraction slider.
-        contraction_scheme_colors: Optional cycle of face colors (hex/named); None uses a built-in
-            categorical palette.
-        contraction_scheme_by_name: Optional override: each inner tuple is one step, tensor names
-            matching non-virtual ``node.name`` values. Duplicate names among visible tensors or
-            unknown names raise ``ValueError``. Each tuple is one real contraction event, and when
-            set it replaces ``graph.contraction_steps``.
-        contraction_scheme_cost_hover: If True, show contraction-step details in a fixed text
-            panel while the contraction slider is active. Requires metrics on ``graph`` (for
-            example ``EinsumTrace`` inputs with shapes or contracted TensorKrowch networks with
-            recoverable step metrics). Independent of ``hover_labels`` and kept under the old
-            name for API compatibility.
-        contraction_tensor_inspector: If True, and the input exposes recoverable playback tensors
-            (currently ``EinsumTrace`` and contracted TensorKrowch networks with usable result
-            history), enable a linked tensor inspector window that follows the contraction slider
-            step by step.
+        dangling_edge_color: Color for dangling-index stubs.
+        contraction_scheme_by_name: Optional explicit contraction scheme, expressed as
+            tuples of visible tensor names, one tuple per contraction step.
+        contraction_scheme_colors: Optional color cycle for contraction groups.
+        contraction_scheme_alpha: Reserved for backwards compatibility.
+        contraction_scheme_edge_alpha: Reserved for backwards compatibility.
+        contraction_scheme_linewidth: Reserved for backwards compatibility.
     """
 
     DEFAULT_NODE_RADIUS: ClassVar[float] = 0.08
@@ -92,6 +72,26 @@ class PlotConfig:
     DEFAULT_CONTRACTION_SCHEME_LINEWIDTH: ClassVar[float] = 0.12
     DEFAULT_LAYOUT_ITERATIONS: ClassVar[int] = 220
 
+    show_nodes: bool = True
+    show_tensor_labels: bool = False
+    show_index_labels: bool = False
+    hover_labels: bool = True
+    show_contraction_scheme: bool = False
+    contraction_scheme_cost_hover: bool = False
+    contraction_tensor_inspector: bool = False
+    tensor_label_refinement: TensorLabelRefinement = "auto"
+    approximate_3d_tensor_disk_px: bool = True
+    figsize: tuple[float, float] | None = (8, 6)
+    positions: PositionMapping | None = None
+    validate_positions: bool = False
+    layout_iterations: int | None = None
+    tensor_label_fontsize: float | None = None
+    edge_label_fontsize: float | None = None
+    node_radius: float | None = None
+    stub_length: float | None = None
+    self_loop_radius: float | None = None
+    line_width_2d: float | None = None
+    line_width_3d: float | None = None
     node_color: str = "#E8EEF5"
     node_edge_color: str = "#1E293B"
     node_color_degree_one: str = "#FEE2E2"
@@ -100,29 +100,11 @@ class PlotConfig:
     label_color: str = "#334155"
     bond_edge_color: str = "#0369A1"
     dangling_edge_color: str = "#BE123C"
-    figsize: tuple[float, float] | None = (8, 6)
-    show_tensor_labels: bool = False
-    show_index_labels: bool = False
-    node_radius: float | None = None
-    stub_length: float | None = None
-    self_loop_radius: float | None = None
-    line_width_2d: float | None = None
-    line_width_3d: float | None = None
-    show_nodes: bool = True
-    layout_iterations: int | None = None
-    positions: PositionMapping | None = None
-    validate_positions: bool = False
-    tensor_label_refinement: TensorLabelRefinement = "auto"
-    approximate_3d_tensor_disk_px: bool = True
-    hover_labels: bool = True
-    show_contraction_scheme: bool = False
+    contraction_scheme_by_name: tuple[tuple[str, ...], ...] | None = None
+    contraction_scheme_colors: tuple[str, ...] | None = None
     contraction_scheme_alpha: float = 0.0
     contraction_scheme_edge_alpha: float | None = None
     contraction_scheme_linewidth: float | None = None
-    contraction_scheme_colors: tuple[str, ...] | None = None
-    contraction_scheme_by_name: tuple[tuple[str, ...], ...] | None = None
-    contraction_scheme_cost_hover: bool = False
-    contraction_tensor_inspector: bool = False
 
 
 __all__ = ["EngineName", "PlotConfig", "TensorLabelRefinement", "ViewName"]

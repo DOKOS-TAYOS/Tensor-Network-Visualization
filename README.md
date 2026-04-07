@@ -169,11 +169,16 @@ Use `PlotConfig` for visual behavior:
 from tensor_network_viz import PlotConfig
 
 config = PlotConfig(
+    show_nodes=True,
     show_tensor_labels=True,
     show_index_labels=False,
     hover_labels=True,
     show_contraction_scheme=False,
+    contraction_scheme_cost_hover=False,
+    contraction_tensor_inspector=False,
     tensor_label_refinement="auto",
+    tensor_label_fontsize=None,
+    edge_label_fontsize=None,
 )
 ```
 
@@ -182,6 +187,7 @@ This is where you configure:
 - labels,
 - hover tooltips,
 - contraction-scheme overlays,
+- optional tensor/edge label font-size overrides,
 - styling,
 - layout iterations,
 - custom positions,
@@ -197,12 +203,19 @@ from tensor_network_viz import TensorElementsConfig
 
 config = TensorElementsConfig(
     mode="auto",
+    row_axes=None,
+    col_axes=None,
+    figsize=(7.2, 6.4),
     max_matrix_shape=(256, 256),
-    histogram_bins=40,
-    topk_count=8,
-    robust_percentiles=(1.0, 99.0),
     shared_color_scale=False,
+    robust_percentiles=(1.0, 99.0),
     highlight_outliers=False,
+    outlier_zscore=3.5,
+    zero_threshold=1e-12,
+    log_magnitude_floor=1e-12,
+    histogram_bins=40,
+    histogram_max_samples=100_000,
+    topk_count=8,
 )
 ```
 
@@ -214,7 +227,8 @@ This is where you configure:
 - histogram sampling and bin count,
 - data-summary depth (`topk_count`),
 - heatmap/spectral reduction via `max_matrix_shape`,
-- optional robust/shared scaling and outlier overlays.
+- optional robust/shared scaling and outlier overlays,
+- singular-value display floor and zero handling.
 
 If you want to start in a specific grouped view, pass `mode="real"`, `mode="imag"`,
 `mode="phase"`, `mode="log_magnitude"`, `mode="sparsity"`, `mode="nan_inf"`, `mode="sign"`,

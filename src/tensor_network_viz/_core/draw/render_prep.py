@@ -341,6 +341,7 @@ def _draw_edges_nodes_and_labels(
     ):
         _refit_tensor_labels_to_disks(
             ax=ax,
+            config=context.config,
             p=context.params,
             dimensions=context.dimensions,
             tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,

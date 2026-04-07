@@ -362,9 +362,9 @@ def finalize_demo_plot_config(
         show_index_labels=labels_edges,
         hover_labels=bool(getattr(args, "hover_labels", True)),
         show_contraction_scheme=scheme_enabled,
-        contraction_scheme_by_name=scheme_tensor_names if scheme_enabled else None,
         contraction_scheme_cost_hover=bool(getattr(args, "hover_cost", False)),
         contraction_tensor_inspector=bool(getattr(args, "tensor_inspector", False)),
+        contraction_scheme_by_name=scheme_tensor_names if scheme_enabled else None,
     )
 
 

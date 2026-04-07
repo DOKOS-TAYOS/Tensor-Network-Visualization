@@ -22,15 +22,60 @@ pytestmark = pytest.mark.filterwarnings("ignore:unit_cell_width.*:UserWarning")
 def test_plot_config_has_expected_defaults() -> None:
     config = PlotConfig()
     assert config.figsize == (8, 6)
+    assert config.show_nodes is True
     assert config.show_tensor_labels is False
     assert config.show_index_labels is False
+    assert config.show_contraction_scheme is False
+    assert config.contraction_scheme_cost_hover is False
+    assert config.contraction_tensor_inspector is False
     assert config.layout_iterations is None
     assert config.positions is None
     assert config.validate_positions is False
+    assert config.tensor_label_fontsize is None
+    assert config.edge_label_fontsize is None
     assert config.tensor_label_refinement == "auto"
     assert config.approximate_3d_tensor_disk_px is True
     assert config.hover_labels is True
-    assert config.contraction_tensor_inspector is False
+
+
+def test_plot_config_public_signature_orders_modes_before_detail() -> None:
+    signature = inspect.signature(PlotConfig)
+
+    assert tuple(signature.parameters) == (
+        "show_nodes",
+        "show_tensor_labels",
+        "show_index_labels",
+        "hover_labels",
+        "show_contraction_scheme",
+        "contraction_scheme_cost_hover",
+        "contraction_tensor_inspector",
+        "tensor_label_refinement",
+        "approximate_3d_tensor_disk_px",
+        "figsize",
+        "positions",
+        "validate_positions",
+        "layout_iterations",
+        "tensor_label_fontsize",
+        "edge_label_fontsize",
+        "node_radius",
+        "stub_length",
+        "self_loop_radius",
+        "line_width_2d",
+        "line_width_3d",
+        "node_color",
+        "node_edge_color",
+        "node_color_degree_one",
+        "node_edge_color_degree_one",
+        "tensor_label_color",
+        "label_color",
+        "bond_edge_color",
+        "dangling_edge_color",
+        "contraction_scheme_by_name",
+        "contraction_scheme_colors",
+        "contraction_scheme_alpha",
+        "contraction_scheme_edge_alpha",
+        "contraction_scheme_linewidth",
+    )
 
 
 def test_effective_layout_iterations_respects_explicit_setting() -> None:
@@ -46,14 +91,18 @@ def test_effective_layout_iterations_auto_scales_below_default_for_small_graphs(
 
 def test_plot_config_accepts_overrides() -> None:
     config = PlotConfig(
-        figsize=(10, 5),
         show_tensor_labels=False,
+        figsize=(10, 5),
         layout_iterations=100,
+        tensor_label_fontsize=13.0,
+        edge_label_fontsize=11.0,
         tensor_label_refinement="never",
     )
     assert config.figsize == (10, 5)
     assert config.show_tensor_labels is False
     assert config.layout_iterations == 100
+    assert config.tensor_label_fontsize == pytest.approx(13.0)
+    assert config.edge_label_fontsize == pytest.approx(11.0)
     assert config.tensor_label_refinement == "never"
 
 

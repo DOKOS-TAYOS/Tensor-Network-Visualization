@@ -90,7 +90,32 @@ def show_tensor_elements(
     show_controls: bool = True,
     show: bool = True,
 ) -> tuple[Figure, Axes]:
-    """Render tensor values in a single Matplotlib view with optional controls."""
+    """Render tensor values in a single Matplotlib figure.
+
+    Args:
+        data: Single tensor, iterable of tensors, supported backend-native tensor container,
+            or playback-aware inputs such as ``EinsumTrace``.
+        engine: Optional backend override. When omitted, the backend is inferred from ``data``.
+        config: Optional tensor-inspection configuration. When omitted,
+            ``TensorElementsConfig()`` is used. The config is ordered from mode/axis selection
+            first to scaling/detail options later.
+        ax: Optional Matplotlib axes. External axes are supported only for a single tensor.
+        show_controls: Whether to add the compact grouped controls and, when needed, the
+            tensor slider.
+        show: Whether to display the figure automatically after rendering.
+
+    Returns:
+        Tuple ``(figure, axes)`` for further customization.
+
+    Notes:
+        ``show_tensor_elements`` keeps one tensor active at a time. With multiple tensors,
+        the slider switches the active tensor while the selected mode/group stays in sync
+        with what is valid for that tensor.
+
+        The ``"singular_values"`` mode always uses a logarithmic y-scale. Values at or
+        below ``config.zero_threshold`` are shown at the visual floor and highlighted so
+        exact or near-zero singular values remain visible.
+    """
     style = config or TensorElementsConfig()
     package_logger.debug(
         "show_tensor_elements called with engine=%r show_controls=%s show=%s.",

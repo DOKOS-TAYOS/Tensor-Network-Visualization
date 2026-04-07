@@ -154,7 +154,7 @@ def _complexity_line(m: _ContractionStepMetrics) -> str | None:
     return f"Complexity: O({symbolic_terms})"
 
 
-def _wrap_panel_line(text: str, width: int = 74) -> str:
+def _wrap_panel_line(text: str, width: int = 96) -> str:
     return fill(
         text,
         width=width,

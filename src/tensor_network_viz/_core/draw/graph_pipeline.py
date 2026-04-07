@@ -3,9 +3,11 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from ..._interaction.scheme import _ContractionControls, _ContractionSchemeBundle
+from ..._interactive_scene import _apply_scene_hover_state
 from ..._matplotlib_state import (
     clear_contraction_controls,
     clear_scene,
+    get_scene,
     set_contraction_controls,
     set_scene,
 )
@@ -30,6 +32,24 @@ from .render_prep import (
     _register_render_hover,
     _RenderPrepContext,
 )
+from .scene_state import _InteractiveSceneState
+
+
+def _refresh_contraction_hover(
+    *,
+    ax: Any,
+    hover_state: Any,
+) -> None:
+    scene = get_scene(ax)
+    if isinstance(scene, _InteractiveSceneState):
+        hover_on = bool(scene.hover_state.tensor_hover or scene.hover_state.edge_hover)
+        _apply_scene_hover_state(scene, hover_on=hover_on)
+        return
+    _apply_render_hover_state(
+        hover_state,
+        scheme_patches_2d=(),
+        scheme_aabbs_3d=(),
+    )
 
 
 def _has_contraction_scheme_source(
@@ -172,10 +192,9 @@ def _draw_graph(
                     context=context,
                     strict=strict,
                 ),
-                refresh_hover=lambda scheme_patches_2d, scheme_aabbs_3d: _apply_render_hover_state(
-                    hover_state,
-                    scheme_patches_2d=(),
-                    scheme_aabbs_3d=(),
+                refresh_hover=lambda scheme_patches_2d, scheme_aabbs_3d: _refresh_contraction_hover(
+                    ax=ax,
+                    hover_state=hover_state,
                 ),
             )
         elif config.show_contraction_scheme:

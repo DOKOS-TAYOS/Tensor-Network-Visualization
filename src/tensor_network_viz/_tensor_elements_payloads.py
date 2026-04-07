@@ -69,6 +69,9 @@ class _SeriesPayload:
     y_values: NumericArray
     ylabel: str
     yscale: Literal["linear", "log"] = "linear"
+    overlay_x_values: NumericArray | None = None
+    overlay_y_values: NumericArray | None = None
+    overlay_color: str | None = None
 
 
 @dataclass(frozen=True)
@@ -424,17 +427,6 @@ def _build_distribution_payload(
     )
 
 
-def _use_log_scale_for_singular_values(values: NumericArray) -> bool:
-    value_array = np.asarray(values, dtype=float)
-    if np.any(value_array <= 0.0):
-        return False
-    positive_values = value_array
-    if positive_values.size < 2:
-        return False
-    dynamic_range = float(np.max(positive_values) / np.min(positive_values))
-    return dynamic_range >= 1_000.0
-
-
 def _build_singular_values_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
@@ -447,16 +439,30 @@ def _build_singular_values_payload(
         )
 
     singular_values = np.asarray(analysis.singular_values, dtype=float)
+    zero_threshold = float(config.zero_threshold)
+    visual_floor = float(max(config.zero_threshold, config.log_magnitude_floor))
+    zero_mask = singular_values <= zero_threshold
+    display_values = np.asarray(singular_values, dtype=float).copy()
+    display_values[zero_mask] = visual_floor
     mode_label = "singular values"
     if analysis.used_reduced_matrix:
         mode_label += f" (reduced {analysis.analysis_shape})"
+    x_values = np.arange(1, int(singular_values.size) + 1, dtype=float)
+    overlay_x_values: NumericArray | None = None
+    overlay_y_values: NumericArray | None = None
+    if np.any(zero_mask):
+        overlay_x_values = np.asarray(x_values[zero_mask], dtype=float)
+        overlay_y_values = np.full(int(np.count_nonzero(zero_mask)), visual_floor, dtype=float)
     return _SeriesPayload(
         mode_label=mode_label,
-        x_values=np.arange(1, int(singular_values.size) + 1, dtype=float),
+        x_values=x_values,
         xlabel="index",
-        y_values=singular_values,
+        y_values=display_values,
         ylabel="singular value",
-        yscale="log" if _use_log_scale_for_singular_values(singular_values) else "linear",
+        yscale="log",
+        overlay_x_values=overlay_x_values,
+        overlay_y_values=overlay_y_values,
+        overlay_color="#7F1D1D",
     )
 
 

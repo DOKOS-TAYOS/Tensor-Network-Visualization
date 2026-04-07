@@ -70,7 +70,7 @@ def create_playback_details_panel(fig: Figure) -> tuple[Axes, Text]:
         ha="left",
         va="top",
         fontsize=9.0,
-        wrap=True,
+        wrap=False,
     )
     return ax_details, text
 

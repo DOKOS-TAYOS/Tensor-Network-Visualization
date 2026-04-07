@@ -13,6 +13,7 @@ from tensor_network_viz._core.graph import (
 from tensor_network_viz.config import PlotConfig
 from tensor_network_viz.einsum_module._equation import _ParsedNaryEquation, parse_einsum_equation
 from tensor_network_viz.einsum_module.contraction_cost import (
+    _wrap_panel_line,
     format_contraction_step_tooltip,
     metrics_for_parsed_step,
 )
@@ -122,7 +123,13 @@ def test_format_tooltip_wraps_long_lines_in_panel_text() -> None:
     assert "Complexity: O(" in t
     assert "N_a" in t
     assert "N_l" in t
-    assert "\n    " in t
+    assert t.count("\n") >= 4
+
+
+def test_wrap_panel_line_uses_wider_cost_panel_width() -> None:
+    text = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi"
+
+    assert "\n" not in _wrap_panel_line(text)
 
 
 def test_build_graph_records_metrics_same_length_as_steps() -> None:

@@ -638,6 +638,7 @@ def _edge_index_fontsize_for_bond(
     dimensions: Literal[2, 3],
     is_physical: bool = False,
     peer_captions_for_width: tuple[str, ...] | None = None,
+    preferred_fontsize_pt: float | None = None,
 ) -> float:
     """Font size from **this** bond's on-screen length × span fraction.
 
@@ -650,6 +651,8 @@ def _edge_index_fontsize_for_bond(
     show = format_tensor_node_label(caption).strip()
     if not show:
         return 1.0
+    if preferred_fontsize_pt is not None:
+        return float(max(1.0, float(preferred_fontsize_pt)))
     bond_px = _bond_reference_span_px_for_font(ax, bond_start, bond_end, dimensions)
     target_px = float(_edge_index_label_span_frac(is_physical=is_physical)) * bond_px
     dpi = float(getattr(ax.figure, "dpi", None) or 100.0)

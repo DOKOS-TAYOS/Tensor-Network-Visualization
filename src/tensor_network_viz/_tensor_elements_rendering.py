@@ -218,6 +218,17 @@ def _render_panel(
             marker="o",
             markersize=4.5,
         )
+        if payload.overlay_x_values is not None and payload.overlay_y_values is not None:
+            overlay_x = np.asarray(payload.overlay_x_values, dtype=float)
+            overlay_y = np.asarray(payload.overlay_y_values, dtype=float)
+            if overlay_x.size and overlay_y.size:
+                panel.main_ax.scatter(
+                    overlay_x,
+                    overlay_y,
+                    s=40.0,
+                    color=payload.overlay_color or "#7F1D1D",
+                    zorder=3,
+                )
         panel.main_ax.set_xlabel(payload.xlabel)
         panel.main_ax.set_ylabel(payload.ylabel)
         panel.main_ax.set_yscale(payload.yscale)

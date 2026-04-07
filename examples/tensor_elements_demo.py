@@ -27,9 +27,9 @@ def _demo_config() -> Any:
         mode="auto",
         figsize=(7.4, 6.4),
         max_matrix_shape=(384, 384),
+        shared_color_scale=True,
         robust_percentiles=(1.0, 99.0),
         topk_count=10,
-        shared_color_scale=True,
     )
 
 

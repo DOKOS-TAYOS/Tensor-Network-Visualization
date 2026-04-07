@@ -115,6 +115,24 @@ def _fire_close_event(fig: matplotlib.figure.Figure) -> None:
     fig.canvas.callbacks.process("close_event", CloseEvent("close_event", fig.canvas))
 
 
+def _dispatch_motion_event_at_data(
+    ax: matplotlib.axes.Axes,
+    *,
+    x: float,
+    y: float,
+) -> MouseEvent:
+    ax.figure.canvas.draw()
+    x_display, y_display = ax.transData.transform((x, y))
+    event = MouseEvent(
+        "motion_notify_event",
+        ax.figure.canvas,
+        int(round(x_display)),
+        int(round(y_display)),
+    )
+    ax.figure.canvas.callbacks.process("motion_notify_event", event)
+    return event
+
+
 def _build_einsum_trace_for_inspector(*, keep_intermediates: bool = True) -> EinsumTrace:
     trace = EinsumTrace()
     left = np.arange(6, dtype=float).reshape(2, 3)
@@ -434,6 +452,40 @@ def test_plot_tensornetwork_network_2d_hover_labels_can_coexist_with_static_labe
         assert _draw_common._EDGE_INDEX_LABEL_GID in gids
         hover_cid = getattr(fig, "_tensor_network_viz_hover_cid", None)
         assert isinstance(hover_cid, int)
+    finally:
+        plt.close(fig)
+
+
+def test_plot_tensornetwork_network_2d_applies_optional_fontsize_overrides() -> None:
+    left = DummyTensorNetworkNode("A", ["left"])
+    right = DummyTensorNetworkNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = plot_tensornetwork_network_2d(
+        {left, right},
+        config=PlotConfig(
+            show_tensor_labels=True,
+            show_index_labels=True,
+            tensor_label_fontsize=13.0,
+            edge_label_fontsize=11.0,
+        ),
+    )
+    try:
+        tensor_label_sizes = [
+            text.get_fontsize()
+            for text in ax.texts
+            if text.get_gid() == _draw_common._TENSOR_LABEL_GID
+        ]
+        edge_label_sizes = [
+            text.get_fontsize()
+            for text in ax.texts
+            if text.get_gid() == _draw_common._EDGE_INDEX_LABEL_GID
+        ]
+
+        assert tensor_label_sizes
+        assert edge_label_sizes
+        assert tensor_label_sizes == pytest.approx([13.0, 13.0])
+        assert edge_label_sizes == pytest.approx([11.0, 11.0])
     finally:
         plt.close(fig)
 
@@ -1003,6 +1055,49 @@ def test_show_tensor_network_scheme_and_cost_hover_keep_visual_checkboxes_in_syn
     assert status_after_cost_hover[cost_index] is True
     assert controls.scheme_on is True
     assert controls.cost_hover_on is True
+
+
+def test_show_tensor_network_scheme_keeps_node_hover_active_after_step_changes() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            hover_labels=True,
+            show_contraction_scheme=True,
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    scene_controls = controls.current_scene.contraction_controls
+    assert scene_controls is not None
+    assert scene_controls._viewer is not None
+
+    scene_controls._viewer.set_step(0)
+    scene_controls._viewer.set_step(1)
+    visible_node_ids = tuple(int(node_id) for node_id in controls.current_scene.visible_node_ids)
+    hovered_node_id = next(
+        node_id
+        for node_id in visible_node_ids
+        if controls.current_scene.graph.nodes[node_id].name == "A"
+    )
+    hovered_position = np.asarray(controls.current_scene.positions[hovered_node_id], dtype=float)
+    _dispatch_motion_event_at_data(
+        ax,
+        x=float(hovered_position[0]),
+        y=float(hovered_position[1]),
+    )
+
+    hover_annotation = getattr(fig, "_tensor_network_viz_hover_ann", None)
+    assert hover_annotation is not None
+    assert hover_annotation.get_visible() is True
+    assert hover_annotation.get_text() == "A"
 
 
 def test_show_tn_einsum_trace_inspector_checkbox_auto_enables_scheme() -> None:

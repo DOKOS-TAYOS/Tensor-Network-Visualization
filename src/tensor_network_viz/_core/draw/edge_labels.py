@@ -90,6 +90,7 @@ def _plot_contraction_index_captions(
             dimensions=dimensions,
             is_physical=False,
             peer_captions_for_width=peer_for_width,
+            preferred_fontsize_pt=config.edge_label_fontsize,
         )
         text_kwargs = _edge_index_text_kwargs(
             config,

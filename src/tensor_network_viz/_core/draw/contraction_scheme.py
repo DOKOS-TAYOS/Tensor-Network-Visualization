@@ -319,9 +319,23 @@ def _scene_base_node_artists(scene: _InteractiveSceneState) -> tuple[Artist, ...
     return tuple(artist for artist in bundle.artists if isinstance(artist, Artist))
 
 
+def _scene_base_node_hover_target(scene: _InteractiveSceneState) -> object | None:
+    bundle = scene.node_artist_bundles.get(scene.active_node_mode)
+    if bundle is None:
+        return None
+    return bundle.hover_target
+
+
 def _set_scene_base_graph_visible(scene: _InteractiveSceneState, visible: bool) -> None:
     _set_artists_visible(_scene_base_node_artists(scene), visible)
     _set_artists_visible(tuple(scene.edge_artists), visible)
+
+
+def _refresh_scene_hover(scene: _InteractiveSceneState) -> None:
+    controls = scene.contraction_controls
+    refresh_hover = getattr(controls, "_refresh_hover", None)
+    if callable(refresh_hover):
+        refresh_hover()
 
 
 def _neutral_node_facecolor(
@@ -466,7 +480,7 @@ def _draw_scheme_nodes_2d(
     *,
     scene: _InteractiveSceneState,
     state: _ContractionPlaybackState,
-) -> list[Artist]:
+) -> tuple[list[Artist], PatchCollection | None]:
     node_degrees = _node_edge_degrees(scene.graph)
     grouped: dict[
         tuple[str, tuple[float, float, float, float], tuple[float, float, float, float]],
@@ -523,7 +537,40 @@ def _draw_scheme_nodes_2d(
         coll._tnv_node_count = len(coords)  # type: ignore[attr-defined]
         scene.ax.add_collection(coll)
         artists.append(coll)
-    return artists
+    hover_patches: list[Circle | Rectangle] = []
+    transparent = [(0.0, 0.0, 0.0, 0.0)]
+    for node_id in scene.visible_node_ids:
+        node_state = state.node_states.get(int(node_id))
+        if node_state is None:
+            continue
+        coord = np.asarray(scene.positions[node_id], dtype=float)
+        x = float(coord[0])
+        y = float(coord[1])
+        if node_state.contracted:
+            side = float(scene.params.r) * 2.0
+            hover_patches.append(
+                Rectangle(
+                    (x - float(scene.params.r), y - float(scene.params.r)),
+                    side,
+                    side,
+                )
+            )
+        else:
+            hover_patches.append(Circle((x, y), radius=float(scene.params.r)))
+    if not hover_patches:
+        return artists, None
+    hover_target = PatchCollection(
+        hover_patches,
+        facecolors=transparent,
+        edgecolors=transparent,
+        linewidths=0.0,
+        zorder=float(_ZORDER_NODE_DISK),
+        match_original=False,
+    )
+    hover_target.set_gid("tnv_contraction_scheme_hover_target")
+    scene.ax.add_collection(hover_target)
+    artists.append(hover_target)
+    return artists, hover_target
 
 
 def _draw_scheme_nodes_3d(
@@ -599,14 +646,14 @@ def _draw_scheme_nodes_3d(
 def _draw_scene_playback_state(
     scene: _InteractiveSceneState,
     state: _ContractionPlaybackState,
-) -> list[Artist]:
+) -> tuple[list[Artist], PatchCollection | None]:
     if scene.dimensions == 2:
         edge_artists = _draw_scheme_edges_2d(scene=scene, state=state)
-        node_artists = _draw_scheme_nodes_2d(scene=scene, state=state)
-        return [*edge_artists, *node_artists]
+        node_artists, hover_target = _draw_scheme_nodes_2d(scene=scene, state=state)
+        return [*edge_artists, *node_artists], hover_target
     edge_artists = _draw_scheme_edges_3d(scene=scene, state=state)
     node_artists = _draw_scheme_nodes_3d(scene=scene, state=state)
-    return [*edge_artists, *node_artists]
+    return [*edge_artists, *node_artists], None
 
 
 class _ContractionSceneApplier:
@@ -634,6 +681,8 @@ class _ContractionSceneApplier:
         if not self._enabled:
             _remove_artists(self._scene.scheme_artists)
             _set_scene_base_graph_visible(self._scene, True)
+            self._scene.node_patch_coll = _scene_base_node_hover_target(self._scene)
+            _refresh_scene_hover(self._scene)
             self._scene.ax.figure.canvas.draw_idle()
             return
         self.apply_step(self._current_step)
@@ -645,7 +694,15 @@ class _ContractionSceneApplier:
         _remove_artists(self._scene.scheme_artists)
         _set_scene_base_graph_visible(self._scene, False)
         state = self._states[self._current_step]
-        self._scene.scheme_artists = _draw_scene_playback_state(self._scene, state)
+        scheme_artists, hover_target = _draw_scene_playback_state(self._scene, state)
+        self._scene.scheme_artists = scheme_artists
+        if self._scene.dimensions == 2:
+            self._scene.node_patch_coll = (
+                hover_target
+                if hover_target is not None
+                else _scene_base_node_hover_target(self._scene)
+            )
+        _refresh_scene_hover(self._scene)
         self._scene.ax.figure.canvas.draw_idle()
 
 
