@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.3] — 2026-04-07
+
 ### Added
 
 - **Hide nodes in the viewer:** Option to exclude selected nodes from the interactive visualization so dense or branching tensor networks stay readable without changing the underlying graph data.
@@ -15,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Contraction scheme visualization:** Major improvements to how contraction steps and scheme highlights are rendered and read in the viewer, so dense or branching schedules stay much easier to follow.
+- **Public API parameters:** Public entry points keep the same overall behavior; argument lists are reorganized for a clearer, more consistent order in signatures, help, and documentation.
 - **Typing and controller structure:** Fixed the interactive tensor-inspector typing issue reported by `pyright`, extracted the linked tensor-inspector controller, and split tensor-element rendering/color-scaling helpers into a dedicated module to keep responsibilities narrower.
 - **Verification workflow docs:** README, guide, and contribution docs now document the `.venv`-first verification flow (`quality`, `tests`, `smoke`, `package`) used before release and CI troubleshooting.
 - **Refactor:** Great refactor to clean the code, and new logs and exceptions.
@@ -125,6 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[1.5.3]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.2...v1.5.0
