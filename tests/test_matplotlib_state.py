@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from typing import cast
+
 import matplotlib
+from matplotlib.figure import SubFigure
 
 matplotlib.use("Agg")
 
@@ -13,7 +16,7 @@ def test_request_canvas_redraw_resolves_subfigure_to_root_figure(
     monkeypatch,
 ) -> None:
     fig = plt.figure()
-    subfig = fig.subfigures(1, 1)
+    subfig = cast(SubFigure, fig.subfigures(1, 1))
     redraw_targets: list[object] = []
     draw_idle_calls: list[int] = []
 
