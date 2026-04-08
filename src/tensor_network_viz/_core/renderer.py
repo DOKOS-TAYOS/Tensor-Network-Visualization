@@ -516,6 +516,9 @@ def _plot_graph(
         for (node_id, axis_index), direction in geometry.directions.items()
         if node_id in draw_graph.nodes
     }
+    draw_contraction_groups = (
+        geometry.contraction_groups if draw_graph is graph else _group_contractions(draw_graph)
+    )
     _draw_graph(
         ax=resolved_ax,
         graph=draw_graph,
@@ -526,7 +529,7 @@ def _plot_graph(
         config=style,
         dimensions=dimensions,
         scale=geometry.scale,
-        contraction_groups=_group_contractions(draw_graph),
+        contraction_groups=draw_contraction_groups,
         bond_curve_pad=geometry.bond_curve_pad,
         build_contraction_controls=build_contraction_controls,
         contraction_controls_build_ui=contraction_controls_build_ui,

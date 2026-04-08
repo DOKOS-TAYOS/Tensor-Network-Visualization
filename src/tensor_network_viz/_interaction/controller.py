@@ -40,6 +40,7 @@ from ..config import (
     TensorNetworkFocus,
     ViewName,
 )
+from ..exceptions import TensorDataError, TensorDataTypeError
 from .controls import _InteractiveControlsLayout, _InteractiveControlsPanel
 from .state import (
     InteractiveFeatureState,
@@ -62,7 +63,8 @@ def _node_records_by_name(
 ) -> dict[str, _TensorRecord]:
     try:
         _, records = _extract_tensor_records(network, engine=engine)
-    except Exception:
+    except (TensorDataError, TensorDataTypeError) as exc:
+        package_logger.debug("Tensor inspector node records unavailable: %s", exc)
         return {}
     mapping: dict[str, _TensorRecord] = {}
     duplicate_names: set[str] = set()

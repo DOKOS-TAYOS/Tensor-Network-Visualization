@@ -43,6 +43,12 @@ _COMPARE_MODE_OPTIONS: tuple[TensorComparisonMode, ...] = (
 )
 
 
+def _comparison_tensor_mode(record: _TensorRecord, *, config: TensorElementsConfig) -> str:
+    if config.mode != "auto":
+        return config.mode
+    return "magnitude" if np.iscomplexobj(record.array) else "elements"
+
+
 def _require_single_record(
     records: list[_TensorRecord],
     *,
@@ -134,8 +140,10 @@ def _render_comparison_mode(
         ),
         redraw=False,
     )
-    if config.mode != "auto":
-        controller.set_mode(config.mode, redraw=False)
+    controller.set_mode(
+        _comparison_tensor_mode(controller._current_record(), config=config),
+        redraw=False,
+    )
     controller._figure.canvas.draw_idle()
 
 

@@ -138,7 +138,7 @@ def canonicalize_binary_einsum_expression(
     try:
         z_implicit = np.einsum(eq, zl, zr, optimize=True)
         z_explicit = np.einsum(explicit, zl, zr, optimize=True)
-    except Exception as exc:
+    except (TypeError, ValueError) as exc:
         raise ValueError(f"Invalid einsum equation {eq!r} for operand shapes.") from exc
     if z_implicit.shape != z_explicit.shape:
         raise ValueError(
@@ -197,7 +197,7 @@ def _nary_explicit_string(
     try:
         z_implicit = np.einsum(eq_in, *zs, optimize=True)
         z_explicit = np.einsum(explicit.replace(" ", ""), *zs, optimize=True)
-    except Exception as exc:
+    except (TypeError, ValueError) as exc:
         raise ValueError(f"Invalid einsum equation {eq_in!r} for operand shapes.") from exc
     if z_implicit.shape != z_explicit.shape:
         raise ValueError(
@@ -274,7 +274,7 @@ def _expand_equation_explicit(
     eq = equation.replace(" ", "")
     try:
         z_out = np.einsum(eq, zl, zr, optimize=True)
-    except Exception as exc:
+    except (TypeError, ValueError) as exc:
         raise ValueError(f"Invalid einsum equation for given operand shapes: {eq!r}") from exc
 
     out_ndim = z_out.ndim
@@ -327,6 +327,6 @@ def _validate_explicit_ranks(
     zr = np.zeros(right_shape, dtype=np.float64)
     try:
         np.einsum(eq, zl, zr, optimize=True)
-    except Exception as exc:
+    except (TypeError, ValueError) as exc:
         raise ValueError(f"Invalid einsum equation {eq!r} for operand shapes.") from exc
     return eq

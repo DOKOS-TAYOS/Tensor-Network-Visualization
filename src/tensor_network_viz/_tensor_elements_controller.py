@@ -124,6 +124,47 @@ class _TensorElementsFigureController:
     def _current_record(self) -> _TensorRecord:
         return self._records[self._tensor_index]
 
+    def _reset_payload_caches(self) -> None:
+        self._payload_cache.clear()
+        self._shared_color_scale_cache.clear()
+
+    def _set_group_mode_for_record(
+        self,
+        record: _TensorRecord,
+        *,
+        group: TensorElementsGroup,
+        preferred_mode: str | None,
+    ) -> None:
+        self._group, self._mode = _resolve_group_mode_for_record(
+            record,
+            group=group,
+            preferred_mode=preferred_mode,
+            config=self._config,
+        )
+
+    def _sync_controls_after_render(self) -> None:
+        self._sync_group_radio_active()
+        self._sync_mode_radio_active()
+        self._rebuild_analysis_controls()
+        self._sync_slider_label()
+
+    def _maybe_redraw(self, *, redraw: bool) -> None:
+        if redraw:
+            self._figure.canvas.draw_idle()
+
+    def _sync_slider_value(self, index: int) -> None:
+        if (
+            self._slider is None
+            or self._slider_callback_guard
+            or float(self._slider.val) == float(index)
+        ):
+            return
+        try:
+            self._slider_callback_guard = True
+            self._slider.set_val(float(index))
+        finally:
+            self._slider_callback_guard = False
+
     def _payload_cache_for_index(self, index: int) -> _TensorPayloadCacheEntry:
         if index not in self._payload_cache:
             self._payload_cache[index] = _TensorPayloadCacheEntry()
@@ -157,13 +198,12 @@ class _TensorElementsFigureController:
 
     def _initialize_selection(self) -> None:
         requested_mode = self._initial_requested_mode()
-        requested_group = _mode_group(requested_mode)
+        requested_group = cast(TensorElementsGroup, _mode_group(requested_mode))
         if self._allow_interactive_fallback:
-            self._group, self._mode = _resolve_group_mode_for_record(
+            self._set_group_mode_for_record(
                 self._current_record(),
                 group=requested_group,
                 preferred_mode=requested_mode,
-                config=self._config,
             )
             return
         self._group = requested_group
@@ -371,8 +411,7 @@ class _TensorElementsFigureController:
         self._analysis_method_radio.on_clicked(self._on_analysis_method_clicked)
 
     def _clear_analysis_caches(self) -> None:
-        self._payload_cache.clear()
-        self._shared_color_scale_cache.clear()
+        self._reset_payload_caches()
 
     def _set_analysis(self, analysis: TensorAnalysisConfig, *, redraw: bool = True) -> None:
         self._analysis = analysis
@@ -440,12 +479,8 @@ class _TensorElementsFigureController:
             payload=payload,
         )
         self._mode = resolved_mode
-        self._sync_group_radio_active()
-        self._sync_mode_radio_active()
-        self._rebuild_analysis_controls()
-        self._sync_slider_label()
-        if redraw:
-            self._figure.canvas.draw_idle()
+        self._sync_controls_after_render()
+        self._maybe_redraw(redraw=redraw)
 
     def _payload_for_current(self) -> tuple[str, _TensorElementsPayload]:
         resolved_mode, payload = self._payload_for_index_mode(self._tensor_index, self._mode)
@@ -498,23 +533,21 @@ class _TensorElementsFigureController:
         return replace(payload, color_limits=color_limits, outlier_mask=outlier_mask)
 
     def set_group(self, group: TensorElementsGroup | str, *, redraw: bool = True) -> None:
-        resolved_group = str(group)
-        self._group, self._mode = _resolve_group_mode_for_record(
+        resolved_group = cast(TensorElementsGroup, str(group))
+        self._set_group_mode_for_record(
             self._current_record(),
-            group=resolved_group,  # type: ignore[arg-type]
+            group=resolved_group,
             preferred_mode=self._mode if _mode_group(self._mode) == resolved_group else None,
-            config=self._config,
         )
         self._render_current(redraw=redraw)
 
     def set_mode(self, mode: TensorElementsMode | str, *, redraw: bool = True) -> None:
-        resolved_group = _mode_group(str(mode))
+        resolved_group = cast(TensorElementsGroup, _mode_group(str(mode)))
         if self._allow_interactive_fallback:
-            self._group, self._mode = _resolve_group_mode_for_record(
+            self._set_group_mode_for_record(
                 self._current_record(),
                 group=resolved_group,
                 preferred_mode=str(mode),
-                config=self._config,
             )
         else:
             self._group = resolved_group
@@ -525,22 +558,12 @@ class _TensorElementsFigureController:
         clamped = int(np.clip(index, 0, len(self._records) - 1))
         self._tensor_index = clamped
         if self._allow_interactive_fallback:
-            self._group, self._mode = _resolve_group_mode_for_record(
+            self._set_group_mode_for_record(
                 self._current_record(),
                 group=self._group,
                 preferred_mode=self._mode,
-                config=self._config,
             )
-        if (
-            self._slider is not None
-            and not self._slider_callback_guard
-            and float(self._slider.val) != float(clamped)
-        ):
-            try:
-                self._slider_callback_guard = True
-                self._slider.set_val(float(clamped))
-            finally:
-                self._slider_callback_guard = False
+        self._sync_slider_value(clamped)
         self._render_current(redraw=redraw)
 
     def set_single_record(self, record: _TensorRecord, *, redraw: bool = True) -> None:
@@ -548,14 +571,12 @@ class _TensorElementsFigureController:
             raise ValueError("set_single_record is only supported for single-record controllers.")
         self._records = [record]
         self._tensor_index = 0
-        self._payload_cache.clear()
-        self._shared_color_scale_cache.clear()
+        self._reset_payload_caches()
         if self._allow_interactive_fallback:
-            self._group, self._mode = _resolve_group_mode_for_record(
+            self._set_group_mode_for_record(
                 record,
                 group=self._group,
                 preferred_mode=self._mode,
-                config=self._config,
             )
         self._render_current(redraw=redraw)
 

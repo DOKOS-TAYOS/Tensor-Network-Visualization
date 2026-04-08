@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from collections.abc import Set as AbstractSet
 from itertools import tee
 from typing import Any
@@ -63,6 +63,22 @@ def _peek_input_attr(source: Any, attr_name: str) -> tuple[Any | None, Any]:
     return sample_item, _PreparedInputProxy(source, {attr_name: prepared_value})
 
 
+def _sample_matches(sample_item: Any | None, predicate: Callable[[Any], bool]) -> bool:
+    return sample_item is not None and bool(predicate(sample_item))
+
+
+def _peek_matching_attr(
+    source: Any,
+    attr_name: str,
+    *,
+    predicate: Callable[[Any], bool],
+) -> tuple[bool, Any]:
+    if not hasattr(source, attr_name):
+        return False, source
+    sample_item, prepared_source = _peek_input_attr(source, attr_name)
+    return _sample_matches(sample_item, predicate), prepared_source
+
+
 def _is_unordered_collection(value: Any) -> bool:
     return isinstance(value, AbstractSet) and not isinstance(value, (str, bytes, bytearray))
 
@@ -121,26 +137,34 @@ def _detect_network_engine_with_input(network: Any) -> tuple[EngineName, Any]:
 
     prepared_network = network
 
-    if hasattr(prepared_network, "tensors"):
-        tensor_sample, prepared_network = _peek_input_attr(prepared_network, "tensors")
-        if tensor_sample is None or hasattr(tensor_sample, "inds"):
-            package_logger.debug(
-                "Auto-detected tensor network engine='quimb' from %s.", type(network).__name__
-            )
-            return "quimb", prepared_network
+    matched, prepared_network = _peek_matching_attr(
+        prepared_network,
+        "tensors",
+        predicate=lambda item: hasattr(item, "inds"),
+    )
+    if matched:
+        package_logger.debug(
+            "Auto-detected tensor network engine='quimb' from %s.", type(network).__name__
+        )
+        return "quimb", prepared_network
 
-    if hasattr(prepared_network, "leaf_nodes"):
-        leaf_sample, prepared_network = _peek_input_attr(prepared_network, "leaf_nodes")
-        if leaf_sample is None or hasattr(leaf_sample, "axes_names"):
-            package_logger.debug(
-                "Auto-detected tensor network engine='tensorkrowch' from leaf_nodes."
-            )
-            return "tensorkrowch", prepared_network
-    if hasattr(prepared_network, "nodes"):
-        node_sample, prepared_network = _peek_input_attr(prepared_network, "nodes")
-        if node_sample is None or hasattr(node_sample, "axes_names"):
-            package_logger.debug("Auto-detected tensor network engine='tensorkrowch' from nodes.")
-            return "tensorkrowch", prepared_network
+    matched, prepared_network = _peek_matching_attr(
+        prepared_network,
+        "leaf_nodes",
+        predicate=lambda item: hasattr(item, "axes_names"),
+    )
+    if matched:
+        package_logger.debug("Auto-detected tensor network engine='tensorkrowch' from leaf_nodes.")
+        return "tensorkrowch", prepared_network
+
+    matched, prepared_network = _peek_matching_attr(
+        prepared_network,
+        "nodes",
+        predicate=lambda item: hasattr(item, "axes_names"),
+    )
+    if matched:
+        package_logger.debug("Auto-detected tensor network engine='tensorkrowch' from nodes.")
+        return "tensorkrowch", prepared_network
 
     sample_item, sampled_network = _peek_input_item(prepared_network)
     detected_engine = _detect_engine_from_network_sample(sample_item)
@@ -177,25 +201,41 @@ def _detect_tensor_engine_with_input(data: Any) -> tuple[EngineName, Any]:
 
     prepared_data = data
 
-    if hasattr(prepared_data, "tensors"):
-        tensor_sample, prepared_data = _peek_input_attr(prepared_data, "tensors")
-        if tensor_sample is None or hasattr(tensor_sample, "inds"):
-            package_logger.debug("Auto-detected tensor engine='quimb' from tensor container.")
-            return "quimb", prepared_data
+    matched, prepared_data = _peek_matching_attr(
+        prepared_data,
+        "tensors",
+        predicate=lambda item: hasattr(item, "inds"),
+    )
+    if matched:
+        package_logger.debug("Auto-detected tensor engine='quimb' from tensor container.")
+        return "quimb", prepared_data
 
-    if hasattr(prepared_data, "leaf_nodes"):
-        sample, prepared_data = _peek_input_attr(prepared_data, "leaf_nodes")
-        if sample is None or hasattr(sample, "axes_names"):
-            package_logger.debug("Auto-detected tensor engine='tensorkrowch' from leaf_nodes.")
-            return "tensorkrowch", prepared_data
-    if hasattr(prepared_data, "nodes"):
-        sample, prepared_data = _peek_input_attr(prepared_data, "nodes")
-        if sample is None or hasattr(sample, "axes_names"):
-            package_logger.debug("Auto-detected tensor engine='tensorkrowch' from nodes.")
-            return "tensorkrowch", prepared_data
-        if sample is None or hasattr(sample, "axis_names"):
-            package_logger.debug("Auto-detected tensor engine='tensornetwork' from nodes.")
-            return "tensornetwork", prepared_data
+    matched, prepared_data = _peek_matching_attr(
+        prepared_data,
+        "leaf_nodes",
+        predicate=lambda item: hasattr(item, "axes_names"),
+    )
+    if matched:
+        package_logger.debug("Auto-detected tensor engine='tensorkrowch' from leaf_nodes.")
+        return "tensorkrowch", prepared_data
+
+    matched, prepared_data = _peek_matching_attr(
+        prepared_data,
+        "nodes",
+        predicate=lambda item: hasattr(item, "axes_names"),
+    )
+    if matched:
+        package_logger.debug("Auto-detected tensor engine='tensorkrowch' from nodes.")
+        return "tensorkrowch", prepared_data
+
+    matched, prepared_data = _peek_matching_attr(
+        prepared_data,
+        "nodes",
+        predicate=lambda item: hasattr(item, "axis_names"),
+    )
+    if matched:
+        package_logger.debug("Auto-detected tensor engine='tensornetwork' from nodes.")
+        return "tensornetwork", prepared_data
 
     sample_item, sampled_input = _peek_input_item(prepared_data)
     detected_engine = _detect_engine_from_tensor_sample(sample_item)

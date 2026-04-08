@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import logging
 from types import SimpleNamespace
+from typing import Any
 
 import matplotlib
 
@@ -73,6 +74,47 @@ def test_show_tensor_elements_invalid_input_raises_tensor_data_error() -> None:
 
     assert exc_info.type.__name__ == "TensorDataError"
     assert isinstance(exc_info.value, ValueError)
+
+
+class _ExplodingArrayLike:
+    shape = (2,)
+
+    def __array__(self) -> Any:
+        raise RuntimeError("array boom")
+
+
+@pytest.mark.parametrize("attr_name", ["nodes", "leaf_nodes", "tensors"])
+def test_show_tensor_elements_ambiguous_empty_container_raises_inference_error(
+    attr_name: str,
+) -> None:
+    payload = SimpleNamespace(**{attr_name: []})
+
+    with pytest.raises(Exception, match="Could not infer tensor engine") as exc_info:
+        show_tensor_elements(payload, show=False)
+
+    assert exc_info.type.__name__ == "TensorDataError"
+    assert isinstance(exc_info.value, ValueError)
+
+
+@pytest.mark.parametrize("attr_name", ["nodes", "leaf_nodes", "tensors"])
+def test_show_tensor_network_ambiguous_empty_container_raises_inference_error(
+    attr_name: str,
+) -> None:
+    payload = SimpleNamespace(**{attr_name: []})
+
+    with pytest.raises(Exception, match="Could not infer tensor network engine") as exc_info:
+        show_tensor_network(payload, show=False, show_controls=False)
+
+    assert exc_info.type.__name__ == "VisualizationInputError"
+    assert isinstance(exc_info.value, ValueError)
+
+
+def test_show_tensor_elements_array_like_conversion_error_raises_tensor_data_type_error() -> None:
+    with pytest.raises(Exception, match="array boom") as exc_info:
+        show_tensor_elements(_ExplodingArrayLike(), show=False, show_controls=False)
+
+    assert exc_info.type.__name__ == "TensorDataTypeError"
+    assert isinstance(exc_info.value, TypeError)
 
 
 def test_load_backend_einsum_wraps_missing_optional_dependency(

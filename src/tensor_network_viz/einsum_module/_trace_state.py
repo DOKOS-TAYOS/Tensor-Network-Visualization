@@ -96,31 +96,62 @@ class _TraceState:
         )
 
     def commit_call(self, prepared: _PreparedCall, result: Any) -> None:
+        operand_updates = self._consumed_operand_updates(prepared)
+        result_id, result_record = self._result_record_for_commit(prepared, result)
+        trace_entry, reserved_names = self._trace_entry_for_commit(prepared, result)
+
+        for tensor_id, record in operand_updates:
+            self._set_record(tensor_id, record)
+        self._set_record(result_id, result_record)
+        self._pairs.append(trace_entry)
+        self._reserve_pair_names(*reserved_names)
+
+        new_tensor_count = sum(not op.record_exists for op in prepared.operands)
+        self._next_tensor_index += new_tensor_count
+        self._next_result_index += 1
+
+    def _consumed_operand_updates(
+        self,
+        prepared: _PreparedCall,
+    ) -> list[tuple[int, _TrackedTensor]]:
+        updates: list[tuple[int, _TrackedTensor]] = []
         for operand in prepared.operands:
             current = self._records.get(operand.tensor_id)
             if current is None:
-                self._set_record(
+                updates.append(
+                    (
+                        operand.tensor_id,
+                        _TrackedTensor(
+                            ref=_make_weakref(operand.tensor),
+                            name=operand.name,
+                            state="consumed",
+                        ),
+                    )
+                )
+                continue
+            updates.append(
+                (
                     operand.tensor_id,
                     _TrackedTensor(
-                        ref=_make_weakref(operand.tensor),
-                        name=operand.name,
+                        ref=current.ref,
+                        name=current.name,
                         state="consumed",
                     ),
                 )
-                continue
-            self._set_record(
-                operand.tensor_id,
-                _TrackedTensor(
-                    ref=current.ref,
-                    name=current.name,
-                    state="consumed",
-                ),
             )
+        return updates
 
+    def _result_record_for_commit(
+        self,
+        prepared: _PreparedCall,
+        result: Any,
+    ) -> tuple[int, _TrackedTensor]:
+        if any(result is operand.tensor for operand in prepared.operands):
+            raise ValueError("Backend returned a tensor that is already tracked by this trace.")
         result_id, existing_result = self._find_record(result)
         if existing_result is not None:
             raise ValueError("Backend returned a tensor that is already tracked by this trace.")
-        self._set_record(
+        return (
             result_id,
             _TrackedTensor(
                 ref=_make_weakref(result),
@@ -128,6 +159,12 @@ class _TraceState:
                 state="available",
             ),
         )
+
+    def _trace_entry_for_commit(
+        self,
+        prepared: _PreparedCall,
+        result: Any,
+    ) -> tuple[pair_tensor | einsum_trace_step, tuple[str, ...]]:
         n_op = len(prepared.operands)
         if n_op == 2:
             left, right = prepared.operands
@@ -140,40 +177,33 @@ class _TraceState:
                 "right_dtype": _dtype_text(right.tensor),
                 "right_shape": _shape_tuple(right.tensor),
             }
-            self._pairs.append(
+            return (
                 pair_tensor(
                     left.name,
                     right.name,
                     prepared.result_name,
                     prepared.expression,
                     metadata=metadata,
-                )
-            )
-            self._reserve_pair_names(left.name, right.name, prepared.result_name)
-        else:
-            metadata = {
-                "backend": prepared.backend,
-                "operand_dtypes": tuple(_dtype_text(op.tensor) for op in prepared.operands),
-                "operand_shapes": tuple(_shape_tuple(op.tensor) for op in prepared.operands),
-                "result_dtype": _dtype_text(result),
-                "result_shape": _shape_tuple(result),
-            }
-            self._pairs.append(
-                einsum_trace_step(
-                    tuple(op.name for op in prepared.operands),
-                    prepared.result_name,
-                    prepared.expression,
-                    metadata=metadata,
-                )
-            )
-            self._reserve_pair_names(
-                *(op.name for op in prepared.operands),
-                prepared.result_name,
+                ),
+                (left.name, right.name, prepared.result_name),
             )
 
-        new_tensor_count = sum(not op.record_exists for op in prepared.operands)
-        self._next_tensor_index += new_tensor_count
-        self._next_result_index += 1
+        metadata = {
+            "backend": prepared.backend,
+            "operand_dtypes": tuple(_dtype_text(op.tensor) for op in prepared.operands),
+            "operand_shapes": tuple(_shape_tuple(op.tensor) for op in prepared.operands),
+            "result_dtype": _dtype_text(result),
+            "result_shape": _shape_tuple(result),
+        }
+        return (
+            einsum_trace_step(
+                tuple(op.name for op in prepared.operands),
+                prepared.result_name,
+                prepared.expression,
+                metadata=metadata,
+            ),
+            tuple(op.name for op in prepared.operands) + (prepared.result_name,),
+        )
 
     def _resolve_operand(
         self,

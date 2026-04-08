@@ -18,6 +18,7 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgba
 
 import tensor_network_viz._core.renderer as core_renderer_module
+import tensor_network_viz._interaction.controller as interaction_controller_module
 import tensor_network_viz._interaction.tensor_inspector as tensor_inspector_module
 import tensor_network_viz.tensorkrowch.graph as tk_graph_module
 import tensor_network_viz.tensorkrowch.renderer as tk_renderer_module
@@ -1294,6 +1295,32 @@ def test_non_playback_tensorkrowch_inputs_show_tensor_inspector_when_tensors_are
         "Tensor inspector",
         "Diagnostics",
     ]
+
+
+def test_show_tensor_network_surfaces_unexpected_tensor_record_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    left.tensor = np.array([1.0, 2.0], dtype=float)  # type: ignore[attr-defined]
+    right.tensor = np.array([3.0, 4.0], dtype=float)  # type: ignore[attr-defined]
+    connect(left, 0, right, 0, name="bond")
+
+    def _raise_unexpected_error(_network: Any, *, engine: Any) -> Any:
+        raise RuntimeError(f"unexpected extraction failure for {engine}")
+
+    monkeypatch.setattr(
+        interaction_controller_module,
+        "_extract_tensor_records",
+        _raise_unexpected_error,
+    )
+
+    with pytest.raises(RuntimeError, match="unexpected extraction failure"):
+        show_tensor_network(
+            DummyNetwork(nodes=[left, right]),
+            engine="tensorkrowch",
+            show=False,
+        )
 
 
 def test_clicking_a_visible_tensor_opens_shared_inspector_for_non_playback_network() -> None:

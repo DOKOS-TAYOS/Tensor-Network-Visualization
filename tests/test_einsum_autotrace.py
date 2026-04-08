@@ -201,6 +201,22 @@ def test_einsum_trace_rejects_out_tensor_already_on_trace() -> None:
     assert len(trace) == 1
 
 
+def test_einsum_trace_rejects_out_reusing_current_operand_without_dirtying_trace() -> None:
+    trace = tv.EinsumTrace()
+    a = np.arange(4.0).reshape(2, 2)
+
+    with pytest.raises(ValueError, match="does not support out="):
+        tv.einsum("ij->ij", a, trace=trace, backend="numpy", out=a)
+
+    assert len(trace) == 0
+
+    result = tv.einsum("ij->ji", a, trace=trace, backend="numpy")
+
+    assert np.allclose(result, np.einsum("ij->ji", a))
+    assert len(trace) == 1
+    assert list(trace)[0].equation == "ij->ji"
+
+
 def test_einsum_trace_does_not_hide_unrelated_typeerror_from_out_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -226,6 +242,66 @@ def test_einsum_trace_does_not_hide_unrelated_typeerror_from_out_fallback(
 
     assert calls == [{"expression": "ij,j->i", "kwargs": {"out": out}}]
     assert len(trace) == 0
+
+
+def test_einsum_trace_does_not_mutate_when_backend_returns_tracked_tensor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz.einsum_module.trace as trace_module
+
+    original_loader = trace_module._load_backend_einsum
+
+    def fake_loader(_backend: str) -> object:
+        def fake_backend(_expression: str, *operands: object, **kwargs: object) -> object:
+            del kwargs
+            return operands[0]
+
+        return fake_backend
+
+    trace = tv.EinsumTrace()
+    a = np.arange(4.0).reshape(2, 2)
+
+    monkeypatch.setattr(trace_module, "_load_backend_einsum", fake_loader)
+    with pytest.raises(ValueError, match="already tracked"):
+        tv.einsum("ij->ij", a, trace=trace, backend="numpy")
+    assert len(trace) == 0
+
+    monkeypatch.setattr(trace_module, "_load_backend_einsum", original_loader)
+    result = tv.einsum("ij->ji", a, trace=trace, backend="numpy")
+
+    assert np.allclose(result, np.einsum("ij->ji", a))
+    assert len(trace) == 1
+    assert list(trace)[0].equation == "ij->ji"
+
+
+def test_einsum_trace_surfaces_unexpected_out_validation_failure_without_dirtying_trace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz.einsum_module.trace as trace_module
+
+    trace = tv.EinsumTrace()
+    a = np.ones((2, 2))
+    b = np.ones((2,))
+    out = np.empty((2,))
+    parsed = trace_module.parse_einsum_equation("ij,j->i", ((2, 2), (2,)))
+
+    def _raise_unexpected_error(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise RuntimeError("unexpected out validation failure")
+
+    with monkeypatch.context() as context:
+        context.setattr(trace_module, "parse_einsum_equation", lambda *_args, **_kwargs: parsed)
+        context.setattr(trace_module.np, "einsum", _raise_unexpected_error)
+        with pytest.raises(RuntimeError, match="unexpected out validation failure"):
+            tv.einsum("ij,j->i", a, b, trace=trace, backend="numpy", out=out)
+
+    assert len(trace) == 0
+
+    result = tv.einsum("ij,j->i", a, b, trace=trace, backend="numpy")
+
+    assert np.allclose(result, np.einsum("ij,j->i", a, b))
+    assert len(trace) == 1
+    assert list(trace)[0].equation == "ij,j->i"
 
 
 def test_einsum_trace_unary_and_ternary_use_einsum_trace_step() -> None:

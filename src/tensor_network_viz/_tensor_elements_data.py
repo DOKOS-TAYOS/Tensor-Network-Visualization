@@ -171,8 +171,10 @@ def _is_direct_array_like_tensor(value: Any) -> bool:
         return False
     try:
         array = np.asarray(value)
-    except Exception:
+    except (TypeError, ValueError):
         return False
+    except Exception as exc:
+        raise TypeError(str(exc)) from exc
     return array.dtype != np.dtype("O")
 
 
@@ -763,7 +765,7 @@ def _axis_names_for_einsum_step(step: pair_tensor | einsum_trace_step) -> tuple[
         return ()
     try:
         parsed = parse_einsum_equation(str(step.equation), operand_shapes)
-    except Exception:
+    except ValueError:
         return ()
     return tuple(str(axis_name) for axis_name in parsed.output_axes)
 
@@ -875,7 +877,12 @@ def _extract_tensor_records(
     resolved_engine = engine
     prepared_input = data
     if resolved_engine is None:
-        direct_array_records = _extract_direct_array_records(data)
+        try:
+            direct_array_records = _extract_direct_array_records(data)
+        except TypeError as exc:
+            raise TensorDataTypeError(str(exc)) from exc
+        except ValueError as exc:
+            raise TensorDataError(str(exc)) from exc
         if direct_array_records is not None:
             return "numpy", direct_array_records
         resolved_engine, prepared_input = _detect_tensor_elements_engine(data)

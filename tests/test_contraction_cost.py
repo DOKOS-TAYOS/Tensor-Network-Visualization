@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+import tensor_network_viz.einsum_module._equation as equation_module
 from tensor_network_viz import pair_tensor
 from tensor_network_viz._core.draw.contraction_scheme import _contraction_step_metrics_for_draw
 from tensor_network_viz._core.draw.hover import _register_2d_hover_labels
@@ -35,6 +36,42 @@ def test_metrics_matrix_multiply() -> None:
     assert m.operand_shapes == ((2, 3), (3, 4))
     assert m.output_labels == ("i", "k")
     assert m.contracted_labels == ("j",)
+
+
+@pytest.mark.parametrize(
+    ("call", "expected_message"),
+    [
+        (
+            lambda: parse_einsum_equation("ij,j->i", ((2, 3), (3,))),
+            "unexpected parse failure",
+        ),
+        (
+            lambda: equation_module.parse_equation_for_shapes("ij,j->i", (2, 3), (3,)),
+            "unexpected shape-parse failure",
+        ),
+        (
+            lambda: equation_module.canonicalize_binary_einsum_expression(
+                "ij,j",
+                left_shape=(2, 3),
+                right_shape=(3,),
+            ),
+            "unexpected canonicalization failure",
+        ),
+    ],
+)
+def test_einsum_equation_validation_surfaces_unexpected_numpy_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    call: object,
+    expected_message: str,
+) -> None:
+    def _raise_unexpected_error(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise RuntimeError(expected_message)
+
+    monkeypatch.setattr(equation_module.np, "einsum", _raise_unexpected_error)
+
+    with pytest.raises(RuntimeError, match=expected_message):
+        call()
 
 
 def test_metrics_flops_scale_with_operand_count() -> None:

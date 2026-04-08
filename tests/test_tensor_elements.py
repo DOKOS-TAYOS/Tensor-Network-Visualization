@@ -16,6 +16,7 @@ import pytest
 from matplotlib.axes import Axes
 from matplotlib.backend_bases import MouseButton, MouseEvent
 
+import tensor_network_viz._tensor_elements_data as tensor_elements_data_module
 from plotting_helpers import assert_rendered_figure
 from tensor_network_viz import (
     EinsumTrace,
@@ -361,6 +362,34 @@ def test_extract_einsum_playback_step_records_marks_missing_intermediate_tensors
     assert step_records[0].record is None
     assert step_records[1].record is not None
     assert step_records[1].record.name == "r1"
+
+
+def test_extract_einsum_playback_step_records_surfaces_unexpected_parse_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = EinsumTrace()
+    left = np.arange(6, dtype=float).reshape(2, 3)
+    right = np.arange(12, dtype=float).reshape(3, 4)
+
+    trace.bind("Left", left)
+    trace.bind("Right", right)
+    result = einsum("ab,bc->ac", left, right, trace=trace, backend="numpy")
+    trace._test_keepalive = [left, right, result]  # type: ignore[attr-defined]
+
+    def _raise_unexpected_error(
+        _equation: str,
+        _operand_shapes: tuple[tuple[int, ...], ...],
+    ) -> Any:
+        raise RuntimeError("unexpected equation parser failure")
+
+    monkeypatch.setattr(
+        tensor_elements_data_module,
+        "parse_einsum_equation",
+        _raise_unexpected_error,
+    )
+
+    with pytest.raises(RuntimeError, match="unexpected equation parser failure"):
+        _extract_einsum_playback_step_records(trace)
 
 
 def test_prepare_mode_payload_returns_typed_heatmap_payload() -> None:
