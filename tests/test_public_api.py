@@ -12,7 +12,14 @@ matplotlib.use("Agg")
 import pytest
 
 from plotting_helpers import assert_readable_image, assert_rendered_figure
-from tensor_network_viz import PlotConfig, show_tensor_network
+from tensor_network_viz import (
+    PlotConfig,
+    TensorComparisonConfig,
+    export_tensor_network_snapshot,
+    normalize_tensor_network,
+    show_tensor_comparison,
+    show_tensor_network,
+)
 from tensor_network_viz._core.renderer import _effective_layout_iterations
 from tensor_network_viz.config import EngineName
 
@@ -117,6 +124,49 @@ def test_show_tensor_network_public_signature_is_config_centric() -> None:
         "ax",
         "show_controls",
         "show",
+    )
+
+
+def test_show_tensor_comparison_public_signature_is_config_centric() -> None:
+    signature = inspect.signature(show_tensor_comparison)
+
+    assert tuple(signature.parameters) == (
+        "data",
+        "reference",
+        "engine",
+        "config",
+        "comparison_config",
+        "ax",
+        "show_controls",
+        "show",
+    )
+
+
+def test_tensor_comparison_config_has_expected_defaults() -> None:
+    config = TensorComparisonConfig()
+
+    assert config.mode == "reference"
+    assert config.topk_count == 8
+
+
+def test_normalize_tensor_network_public_signature_is_structural() -> None:
+    signature = inspect.signature(normalize_tensor_network)
+
+    assert tuple(signature.parameters) == (
+        "network",
+        "engine",
+    )
+
+
+def test_export_tensor_network_snapshot_public_signature_includes_layout_controls() -> None:
+    signature = inspect.signature(export_tensor_network_snapshot)
+
+    assert tuple(signature.parameters) == (
+        "network",
+        "engine",
+        "view",
+        "config",
+        "seed",
     )
 
 

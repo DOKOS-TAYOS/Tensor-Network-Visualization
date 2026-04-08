@@ -214,4 +214,4 @@ def test_feature_availability_disables_playback_features_when_bundle_failed() ->
     assert availability.scheme is False
     assert availability.playback is False
     assert availability.cost_hover is False
-    assert availability.tensor_inspector is False
+    assert availability.tensor_inspector is True

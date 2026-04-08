@@ -68,7 +68,7 @@ def feature_availability_from_scene(
         scheme=scheme_available,
         playback=playback_available,
         cost_hover=cost_hover_available,
-        tensor_inspector=bool(tensor_inspector_available and playback_available),
+        tensor_inspector=bool(tensor_inspector_available),
     )
 
 

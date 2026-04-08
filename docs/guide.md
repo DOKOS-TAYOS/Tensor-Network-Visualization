@@ -6,18 +6,28 @@ workflow guidance.
 
 ## Core Idea
 
-The public API is intentionally split into four responsibilities:
+The public API is intentionally split into a few small responsibilities:
 
 - `show_tensor_network(...)` manages the figure lifecycle.
 - `show_tensor_elements(...)` manages tensor element inspection figures.
+- `show_tensor_comparison(...)` manages one-current-vs-one-reference comparison figures.
+- `normalize_tensor_network(...)` exports the backend-normalized structural graph.
+- `export_tensor_network_snapshot(...)` exports the normalized graph plus resolved layout data.
 - `PlotConfig(...)` manages how tensor networks should look and behave.
 - `TensorElementsConfig(...)` manages how tensor inspection should look and behave.
+- `TensorComparisonConfig(...)` manages how tensor comparison should behave.
 
 If you remember only one thing, remember this:
 
 ```python
 fig, ax = show_tensor_network(network, config=PlotConfig(...))
 fig, ax = show_tensor_elements(data, config=TensorElementsConfig(...))
+fig, ax = show_tensor_comparison(
+    data,
+    reference,
+    config=TensorElementsConfig(...),
+    comparison_config=TensorComparisonConfig(...),
+)
 ```
 
 ## Public API
@@ -41,6 +51,20 @@ show_tensor_elements(
     *,
     engine=None,
     config=None,
+    ax=None,
+    show_controls=True,
+    show=True,
+)
+```
+
+```python
+show_tensor_comparison(
+    data,
+    reference,
+    *,
+    engine=None,
+    config=None,
+    comparison_config=None,
     ax=None,
     show_controls=True,
     show=True,
@@ -72,6 +96,25 @@ show_tensor_elements(
 | `ax` | Existing Matplotlib axis for single-tensor rendering only. |
 | `show_controls` | If `True`, add compact `group + mode` controls and, when several tensors are present, a tensor slider. |
 | `show` | If `True`, display the figure immediately. If `False`, just return `(fig, ax)`. |
+
+| Parameter | Meaning |
+| --- | --- |
+| `data` | The current tensor to inspect. |
+| `reference` | The reference tensor used for comparison. |
+| `engine` | Optional explicit backend: `"tensorkrowch"`, `"tensornetwork"`, `"quimb"`, `"tenpy"`, or `"einsum"`. |
+| `config` | A `TensorElementsConfig` instance for matrixization and rendering details. |
+| `comparison_config` | A `TensorComparisonConfig` instance for comparison mode and zero-aware behavior. |
+| `ax` | Existing Matplotlib axis for single-tensor rendering only. |
+| `show_controls` | If `True`, add the compare-mode selector together with the tensor-elements controls. |
+| `show` | If `True`, display the figure immediately. If `False`, just return `(fig, ax)`. |
+
+```python
+normalize_tensor_network(network, *, engine=None)
+export_tensor_network_snapshot(network, *, engine=None, view="2d", config=None, seed=0)
+```
+
+Both snapshot helpers return immutable public objects with `.to_dict()` methods so external tools
+can serialize or validate the backend-normalized graph and layout.
 
 ## Errors and Diagnostics
 
@@ -218,6 +261,11 @@ fig, ax = show_tensor_network(
 
 Use this when you want the embedded controls and interactive hover behavior.
 
+When the network exposes tensor values, clicking a visible tensor node opens the auxiliary tensor
+inspector directly. For playback-enabled traces, the inspector still follows the current
+contraction result by default, but a manual node click pins the inspector to that tensor until you
+click empty space to clear the manual selection.
+
 ### 2. Export a clean figure
 
 ```python
@@ -266,6 +314,31 @@ fig.savefig("tensor-elements.png", bbox_inches="tight")
 
 Use this when you want one tensor at a time, quick switches between grouped views, and a `data`
 summary without leaving the same figure.
+
+### 5. Compare a tensor against a reference
+
+```python
+fig, ax = show_tensor_comparison(
+    current_tensor,
+    reference_tensor,
+    config=TensorElementsConfig(mode="elements"),
+    comparison_config=TensorComparisonConfig(mode="relative_diff"),
+    show=False,
+)
+```
+
+Use `TensorComparisonConfig(mode=...)` to switch between `reference`, `abs_diff`,
+`relative_diff`, `ratio`, `sign_change`, `phase_change`, and `topk_changes`.
+
+### 6. Export the normalized graph for external tooling
+
+```python
+graph = normalize_tensor_network(network)
+snapshot = export_tensor_network_snapshot(network, view="3d")
+```
+
+Use these helpers when you want validators, snapshot tests, or custom tooling to consume the same
+backend-normalized structure that the plotting layer already uses internally.
 
 ## Supported Inputs
 

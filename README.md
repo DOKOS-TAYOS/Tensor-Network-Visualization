@@ -12,12 +12,15 @@ PyTorch/NumPy `einsum` tensor networks.
 
 ## What This Library Does
 
-Tensor-network libraries expose very different Python objects, but this package gives them two
-aligned plotting entry points:
+Tensor-network libraries expose very different Python objects, but this package gives them aligned
+inspection and export entry points:
 
 ```python
 fig, ax = show_tensor_network(...)
 fig, ax = show_tensor_elements(...)
+fig, ax = show_tensor_comparison(...)
+graph = normalize_tensor_network(...)
+snapshot = export_tensor_network_snapshot(...)
 ```
 
 Internally, the library:
@@ -28,7 +31,7 @@ Internally, the library:
 4. optionally adds figure controls for view/label/scheme toggles.
 
 The goal is to keep the public API small while still being useful for notebooks, papers, debugging,
-and saved figures.
+saved figures, and external tooling that wants the backend-normalized graph model.
 
 ## Install
 
@@ -178,6 +181,47 @@ to switch between them. The interactive controls are grouped: `basic` (`elements
   tensor slider.
 - `show`: if `False`, nothing is displayed automatically.
 
+### `show_tensor_comparison`
+
+Use `show_tensor_comparison` to compare one tensor against one reference tensor:
+
+```python
+show_tensor_comparison(
+    data,
+    reference,
+    *,
+    engine=None,
+    config=None,
+    comparison_config=None,
+    ax=None,
+    show_controls=True,
+    show=True,
+)
+```
+
+- `config`: still uses `TensorElementsConfig(...)` for matrixization and rendering style.
+- `comparison_config`: uses `TensorComparisonConfig(...)` for comparison-specific behavior.
+- comparison modes are `reference`, `abs_diff`, `relative_diff`, `ratio`, `sign_change`,
+  `phase_change`, and `topk_changes`.
+
+### Normalized snapshots
+
+Use the snapshot helpers when you want the backend-normalized graph and layout without touching any
+backend adapter internals:
+
+```python
+graph = normalize_tensor_network(network, engine=None)
+snapshot = export_tensor_network_snapshot(
+    network,
+    engine=None,
+    view="2d",
+    config=PlotConfig(),
+    seed=0,
+)
+```
+
+Both snapshot objects are immutable and expose `.to_dict()` for serialization.
+
 ### `PlotConfig`
 
 Use `PlotConfig` for visual behavior:
@@ -269,6 +313,11 @@ fig, ax = show_tensor_network(
 )
 ```
 
+When the network exposes inspectable tensor values, clicking a visible tensor node opens the shared
+auxiliary inspector directly. In playback-enabled traces, the same inspector can still follow the
+current contraction result or stay pinned to a manually selected node until you click empty space
+to clear the manual selection.
+
 ### Clean export with no embedded controls
 
 ```python
@@ -297,6 +346,38 @@ fig, ax = show_tensor_elements(
     show=False,
 )
 fig.savefig("tensor-elements.png", bbox_inches="tight")
+```
+
+### Compare tensors
+
+```python
+from tensor_network_viz import (
+    TensorComparisonConfig,
+    TensorElementsConfig,
+    show_tensor_comparison,
+)
+
+fig, ax = show_tensor_comparison(
+    current_tensor,
+    reference_tensor,
+    config=TensorElementsConfig(mode="elements"),
+    comparison_config=TensorComparisonConfig(mode="abs_diff"),
+    show=False,
+)
+fig.savefig("tensor-comparison.png", bbox_inches="tight")
+```
+
+### Export a normalized snapshot
+
+```python
+from tensor_network_viz import PlotConfig, export_tensor_network_snapshot
+
+snapshot = export_tensor_network_snapshot(
+    network,
+    config=PlotConfig(),
+    view="2d",
+)
+payload = snapshot.to_dict()
 ```
 
 ### Faster render for large graphs
@@ -415,6 +496,7 @@ For fuller backend examples, see [docs/backends.md](docs/backends.md).
 | `hover_labels` | Enable hover tooltips in interactive sessions. |
 | `show_contraction_scheme` | Enable the dynamic contraction slider with real node shape/color changes. |
 | `contraction_scheme_cost_hover` | Show contraction details in the slider panel. |
+| `contraction_tensor_inspector` | Enable the auxiliary tensor inspector with direct node selection and comparison controls. |
 | `tensor_label_refinement` | `"auto"`, `"always"`, or `"never"` for the expensive label-fit pass. |
 | `layout_iterations` | Force-layout effort. |
 | `positions` | Supply custom node coordinates. |
