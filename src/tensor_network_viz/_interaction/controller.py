@@ -3,12 +3,16 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, cast
 
+import numpy as np
 from matplotlib.axes import Axes
+from matplotlib.collections import PatchCollection, PathCollection
 from matplotlib.figure import Figure
 from matplotlib.widgets import CheckButtons, RadioButtons
+from mpl_toolkits.mplot3d import proj3d
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from .._core.draw.scene_state import _InteractiveSceneState
+from .._core.draw.tensors import _tensor_disk_radius_px
 from .._interactive_scene import (
     _apply_scene_hover_state,
     _ensure_edge_label_artists,
@@ -28,6 +32,7 @@ from .._tensor_elements_data import (
     _extract_playback_step_records,
     _PlaybackStepRecord,
 )
+from .._tensor_elements_support import _extract_tensor_records, _TensorRecord
 from ..config import EngineName, PlotConfig, ViewName
 from .controls import _InteractiveControlsLayout, _InteractiveControlsPanel
 from .state import (
@@ -41,6 +46,87 @@ from .tensor_inspector import _LinkedTensorInspectorController
 from .views import _InteractiveViewManager
 
 RenderedAxes = Axes | Axes3D
+
+
+def _node_records_by_name(
+    network: Any,
+    *,
+    engine: EngineName,
+) -> dict[str, _TensorRecord]:
+    try:
+        _, records = _extract_tensor_records(network, engine=engine)
+    except Exception:
+        return {}
+    mapping: dict[str, _TensorRecord] = {}
+    duplicate_names: set[str] = set()
+    for record in records:
+        if record.name in mapping:
+            duplicate_names.add(record.name)
+            continue
+        mapping[record.name] = record
+    for name in duplicate_names:
+        mapping.pop(name, None)
+    return mapping
+
+
+def _hit_visible_node_id(
+    scene: _InteractiveSceneState,
+    event: Any,
+) -> int | None:
+    if event.x is None or event.y is None:
+        return None
+    visible_node_ids = tuple(int(node_id) for node_id in scene.visible_node_ids)
+    if not visible_node_ids:
+        return None
+    if scene.dimensions == 2 and scene.node_patch_coll is not None:
+        node_patch_coll = scene.node_patch_coll
+        if isinstance(node_patch_coll, (PatchCollection, PathCollection)):
+            hit, props = node_patch_coll.contains(event)
+            if not hit:
+                return None
+            indices = props.get("ind")
+            if indices is None or len(indices) == 0:
+                return None
+            index = int(indices[0])
+            if 0 <= index < len(visible_node_ids):
+                return visible_node_ids[index]
+            return None
+        for index, collection in enumerate(node_patch_coll):
+            hit, _props = collection.contains(event)
+            if hit and 0 <= index < len(visible_node_ids):
+                return visible_node_ids[index]
+        return None
+    if scene.dimensions != 3:
+        return None
+
+    best_node_id: int | None = None
+    best_distance_sq = float("inf")
+    projection = scene.ax.get_proj()
+    for node_id in visible_node_ids:
+        position = np.asarray(scene.positions[node_id], dtype=float).reshape(-1)
+        if position.size < 3:
+            padded = np.zeros(3, dtype=float)
+            padded[: position.size] = position
+            position = padded
+        radius_px = (
+            float(scene.tensor_disk_radius_px_3d)
+            if scene.tensor_disk_radius_px_3d is not None
+            else float(_tensor_disk_radius_px(scene.ax, position, scene.params, 3))
+        )
+        x_proj, y_proj, _z_proj = proj3d.proj_transform(
+            float(position[0]),
+            float(position[1]),
+            float(position[2]),
+            projection,
+        )
+        point = np.asarray(scene.ax.transData.transform((x_proj, y_proj)), dtype=float).ravel()
+        dx = float(point[0]) - float(event.x)
+        dy = float(point[1]) - float(event.y)
+        distance_sq = dx * dx + dy * dy
+        if distance_sq <= radius_px * radius_px and distance_sq < best_distance_sq:
+            best_distance_sq = distance_sq
+            best_node_id = node_id
+    return best_node_id
 
 
 class _InteractiveTensorFigureController:
@@ -66,7 +152,10 @@ class _InteractiveTensorFigureController:
         self._external_ax = initial_ax is not None
         self._plot_2d, self._plot_3d = _get_plotters(engine)
         self._playback_step_records = _extract_playback_step_records(network)
-        self.tensor_inspector_available: bool = self._playback_step_records is not None
+        self._node_records_by_name = _node_records_by_name(network, engine=engine)
+        self.tensor_inspector_available: bool = bool(
+            self._playback_step_records is not None or self._node_records_by_name
+        )
         self._desired_state = feature_state_from_config(
             config,
             tensor_inspector_available=self.tensor_inspector_available,
@@ -81,10 +170,15 @@ class _InteractiveTensorFigureController:
         self._controls_panel: _InteractiveControlsPanel | None = None
         self._tensor_inspector: _LinkedTensorInspectorController | None = None
         self._figure_close_cid: int | None = None
+        self._button_press_cid: int | None = None
         self._initialized: bool = False
         if self.tensor_inspector_available:
             self._tensor_inspector = _LinkedTensorInspectorController(
-                step_records=cast(tuple[_PlaybackStepRecord, ...], self._playback_step_records),
+                step_records=cast(
+                    tuple[_PlaybackStepRecord, ...] | None,
+                    self._playback_step_records,
+                ),
+                node_records_by_name=self._node_records_by_name,
                 placeholder_engine=engine,
                 on_closed=self._on_tensor_inspector_closed,
             )
@@ -186,6 +280,10 @@ class _InteractiveTensorFigureController:
         set_active_axes(figure, ax)
         figure._tensor_network_viz_tensor_inspector = self._tensor_inspector  # type: ignore[attr-defined]
         self._figure_close_cid = figure.canvas.mpl_connect("close_event", self._on_figure_closed)
+        self._button_press_cid = figure.canvas.mpl_connect(
+            "button_press_event",
+            self._on_button_press,
+        )
         return figure, ax
 
     def _set_requested_state(self, **changes: bool) -> None:
@@ -312,8 +410,33 @@ class _InteractiveTensorFigureController:
         if self._figure_close_cid is not None and self.figure is not None:
             self.figure.canvas.mpl_disconnect(self._figure_close_cid)
             self._figure_close_cid = None
+        if self._button_press_cid is not None and self.figure is not None:
+            self.figure.canvas.mpl_disconnect(self._button_press_cid)
+            self._button_press_cid = None
         if self._tensor_inspector is not None:
             self._tensor_inspector.close_from_owner()
+
+    def _on_button_press(self, event: Any) -> None:
+        if event.button is None or self._tensor_inspector is None:
+            return
+        if event.inaxes is not self.current_scene.ax:
+            return
+        node_id = _hit_visible_node_id(self.current_scene, event)
+        if node_id is None:
+            if self._tensor_inspector.is_enabled:
+                self._tensor_inspector.clear_selected_node()
+            return
+        node = self.current_scene.graph.nodes.get(node_id)
+        if node is None or node.is_virtual or node.name not in self._node_records_by_name:
+            return
+        if not self._desired_state.tensor_inspector:
+            self._tensor_inspector.select_node(node.name, reveal=False)
+            self._desired_state = replace(self._desired_state, tensor_inspector=True)
+            self._apply_scene_state(self.current_scene)
+            return
+        if self._tensor_inspector.select_node(node.name, reveal=True):
+            self._active_state = replace(self._active_state, tensor_inspector=True)
+            self._sync_checkbuttons()
 
     def _apply_scene_state(self, scene: _InteractiveSceneState) -> None:
         availability = self._scene_availability(scene)

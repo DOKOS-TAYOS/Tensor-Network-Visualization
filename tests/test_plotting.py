@@ -134,6 +134,25 @@ def _dispatch_motion_event_at_data(
     return event
 
 
+def _dispatch_button_event_at_data(
+    ax: matplotlib.axes.Axes,
+    *,
+    x: float,
+    y: float,
+) -> MouseEvent:
+    ax.figure.canvas.draw()
+    x_display, y_display = ax.transData.transform((x, y))
+    event = MouseEvent(
+        "button_press_event",
+        ax.figure.canvas,
+        int(round(x_display)),
+        int(round(y_display)),
+        button=MouseButton.LEFT,
+    )
+    ax.figure.canvas.callbacks.process("button_press_event", event)
+    return event
+
+
 def _build_einsum_trace_for_inspector(*, keep_intermediates: bool = True) -> EinsumTrace:
     trace = EinsumTrace()
     left = np.arange(6, dtype=float).reshape(2, 3)
@@ -150,6 +169,21 @@ def _build_einsum_trace_for_inspector(*, keep_intermediates: bool = True) -> Ein
         keepalive.append(r0)
     trace._test_keepalive = keepalive  # type: ignore[attr-defined]
     return trace
+
+
+def _build_einsum_trace_for_comparison_inspector() -> tuple[EinsumTrace, np.ndarray, np.ndarray]:
+    trace = EinsumTrace()
+    left = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=float)
+    mid = np.array([[2.0, 0.0], [1.0, 2.0]], dtype=float)
+    right = np.array([[1.0, 1.0], [0.0, 2.0]], dtype=float)
+
+    trace.bind("Left", left)
+    trace.bind("Mid", mid)
+    trace.bind("Right", right)
+    r0 = einsum("ab,bc->ac", left, mid, trace=trace, backend="numpy")
+    r1 = einsum("ac,cd->ad", r0, right, trace=trace, backend="numpy")
+    trace._test_keepalive = [left, mid, right, r0, r1]  # type: ignore[attr-defined]
+    return trace, np.asarray(r0), np.asarray(r1)
 
 
 def connect(
@@ -1228,6 +1262,212 @@ def test_non_playback_tensorkrowch_inputs_hide_tensor_inspector_checkbox() -> No
         "Costs",
     ]
     assert "Tensor inspector" not in [label.get_text() for label in controls._checkbuttons.labels]
+
+
+def test_non_playback_tensorkrowch_inputs_show_tensor_inspector_when_tensors_are_materialized() -> (
+    None
+):
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    left.tensor = np.array([1.0, 2.0], dtype=float)  # type: ignore[attr-defined]
+    right.tensor = np.array([3.0, 4.0], dtype=float)  # type: ignore[attr-defined]
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
+        "Scheme",
+        "Costs",
+        "Tensor inspector",
+    ]
+
+
+def test_clicking_a_visible_tensor_opens_shared_inspector_for_non_playback_network() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    left.tensor = np.array([1.0, 2.0], dtype=float)  # type: ignore[attr-defined]
+    right.tensor = np.array([3.0, 4.0], dtype=float)  # type: ignore[attr-defined]
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    node_id = next(
+        node_id for node_id, node in controls.current_scene.graph.nodes.items() if node.name == "A"
+    )
+    node_position = np.asarray(controls.current_scene.positions[node_id], dtype=float)
+
+    _dispatch_button_event_at_data(
+        ax,
+        x=float(node_position[0]),
+        y=float(node_position[1]),
+    )
+
+    assert inspector._figure is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+    assert "a" in inspector_controls._panel.main_ax.get_title().lower()
+    assert controls.tensor_inspector_on is True
+
+
+def test_tensor_inspector_manual_node_selection_takes_precedence_until_cleared() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+
+    viewer = controls.current_scene.contraction_controls._viewer
+    assert viewer is not None
+    viewer.set_step(1)
+    assert "r0" in inspector_controls._panel.main_ax.get_title().lower()
+
+    left_node_id = next(
+        node_id
+        for node_id, node in controls.current_scene.graph.nodes.items()
+        if node.name == "Left"
+    )
+    left_position = np.asarray(controls.current_scene.positions[left_node_id], dtype=float)
+    _dispatch_button_event_at_data(
+        ax,
+        x=float(left_position[0]),
+        y=float(left_position[1]),
+    )
+    assert "left" in inspector_controls._panel.main_ax.get_title().lower()
+
+    viewer.set_step(2)
+    assert "left" in inspector_controls._panel.main_ax.get_title().lower()
+
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    _dispatch_button_event_at_data(
+        ax,
+        x=float(xlim[0]),
+        y=float(ylim[0]),
+    )
+    assert "r1" in inspector_controls._panel.main_ax.get_title().lower()
+
+
+def test_tensor_inspector_can_compare_against_previous_playback_step() -> None:
+    trace, r0, r1 = _build_einsum_trace_for_comparison_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+
+    viewer = controls.current_scene.contraction_controls._viewer
+    assert viewer is not None
+    viewer.set_step(2)
+    inspector.set_compare_mode("abs_diff")
+
+    expected = np.abs(r1 - r0)
+    assert (
+        np.asarray(
+            inspector_controls._panel.main_ax.images[0].get_array(),
+            dtype=float,
+        ).tolist()
+        == expected.tolist()
+    )
+
+
+def test_tensor_inspector_can_compare_against_captured_reference() -> None:
+    left = DummyTensorKrowchNode("A", ["left", "bond"])
+    right = DummyTensorKrowchNode("B", ["bond", "right"])
+    left.tensor = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=float)  # type: ignore[attr-defined]
+    right.tensor = np.array([[2.0, 4.0], [6.0, 8.0]], dtype=float)  # type: ignore[attr-defined]
+    connect(left, 1, right, 0, name="bond")
+
+    fig, ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+
+    node_id_a = next(
+        node_id for node_id, node in controls.current_scene.graph.nodes.items() if node.name == "A"
+    )
+    pos_a = np.asarray(controls.current_scene.positions[node_id_a], dtype=float)
+    _dispatch_button_event_at_data(
+        ax,
+        x=float(pos_a[0]),
+        y=float(pos_a[1]),
+    )
+    inspector.capture_reference()
+
+    node_id_b = next(
+        node_id for node_id, node in controls.current_scene.graph.nodes.items() if node.name == "B"
+    )
+    pos_b = np.asarray(controls.current_scene.positions[node_id_b], dtype=float)
+    _dispatch_button_event_at_data(
+        ax,
+        x=float(pos_b[0]),
+        y=float(pos_b[1]),
+    )
+    inspector.set_compare_mode("ratio")
+
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+    assert np.asarray(
+        inspector_controls._panel.main_ax.images[0].get_array(),
+        dtype=float,
+    ).tolist() == [[2.0, 2.0], [2.0, 2.0]]
 
 
 def test_show_tensor_network_show_controls_false_does_not_create_tensor_inspector_window() -> None:

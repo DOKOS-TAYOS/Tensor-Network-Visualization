@@ -24,7 +24,20 @@ from .exceptions import (
 if TYPE_CHECKING:
     from .contraction_viewer import ContractionViewer2D, ContractionViewer3D
     from .einsum_module.trace import EinsumTrace, einsum, einsum_trace_step, pair_tensor
+    from .snapshot import (
+        NormalizedContractionStepMetrics,
+        NormalizedTensorEdge,
+        NormalizedTensorEndpoint,
+        NormalizedTensorGraph,
+        NormalizedTensorNode,
+        TensorNetworkLayoutSnapshot,
+        TensorNetworkSnapshot,
+        export_tensor_network_snapshot,
+        normalize_tensor_network,
+    )
     from .tenpy.explicit import TenPyTensorNetwork, make_tenpy_tensor_network
+    from .tensor_comparison import show_tensor_comparison
+    from .tensor_comparison_config import TensorComparisonConfig
     from .tensor_elements import show_tensor_elements
     from .tensor_elements_config import TensorElementsConfig
     from .viewer import show_tensor_network
@@ -100,16 +113,51 @@ else:
             show=show,
         )
 
+    def show_tensor_comparison(
+        data: Any,
+        reference: Any,
+        *,
+        engine: EngineName | None = None,
+        config: "TensorElementsConfig | None" = None,
+        comparison_config: "TensorComparisonConfig | None" = None,
+        ax: Axes | None = None,
+        show_controls: bool = True,
+        show: bool = True,
+    ) -> tuple[Figure, Axes]:
+        """Lazily dispatch to ``tensor_network_viz.tensor_comparison.show_tensor_comparison``."""
+        from .tensor_comparison import show_tensor_comparison as _show_tensor_comparison
+
+        return _show_tensor_comparison(
+            data,
+            reference,
+            engine=engine,
+            config=config,
+            comparison_config=comparison_config,
+            ax=ax,
+            show_controls=show_controls,
+            show=show,
+        )
+
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "ContractionViewer2D": (".contraction_viewer", "ContractionViewer2D"),
     "ContractionViewer3D": (".contraction_viewer", "ContractionViewer3D"),
     "EinsumTrace": (".einsum_module.trace", "EinsumTrace"),
+    "NormalizedContractionStepMetrics": (".snapshot", "NormalizedContractionStepMetrics"),
+    "NormalizedTensorEdge": (".snapshot", "NormalizedTensorEdge"),
+    "NormalizedTensorEndpoint": (".snapshot", "NormalizedTensorEndpoint"),
+    "NormalizedTensorGraph": (".snapshot", "NormalizedTensorGraph"),
+    "NormalizedTensorNode": (".snapshot", "NormalizedTensorNode"),
     "TenPyTensorNetwork": (".tenpy.explicit", "TenPyTensorNetwork"),
+    "TensorComparisonConfig": (".tensor_comparison_config", "TensorComparisonConfig"),
     "TensorElementsConfig": (".tensor_elements_config", "TensorElementsConfig"),
+    "TensorNetworkLayoutSnapshot": (".snapshot", "TensorNetworkLayoutSnapshot"),
+    "TensorNetworkSnapshot": (".snapshot", "TensorNetworkSnapshot"),
     "einsum": (".einsum_module.trace", "einsum"),
     "einsum_trace_step": (".einsum_module.trace", "einsum_trace_step"),
+    "export_tensor_network_snapshot": (".snapshot", "export_tensor_network_snapshot"),
     "make_tenpy_tensor_network": (".tenpy.explicit", "make_tenpy_tensor_network"),
+    "normalize_tensor_network": (".snapshot", "normalize_tensor_network"),
     "pair_tensor": (".einsum_module.trace", "pair_tensor"),
 }
 
@@ -136,10 +184,18 @@ __all__ = [
     "EngineName",
     "EinsumTrace",
     "MissingOptionalDependencyError",
+    "NormalizedContractionStepMetrics",
+    "NormalizedTensorEdge",
+    "NormalizedTensorEndpoint",
+    "NormalizedTensorGraph",
+    "NormalizedTensorNode",
     "PlotConfig",
+    "TensorComparisonConfig",
     "TensorDataError",
     "TensorDataTypeError",
     "TensorElementsConfig",
+    "TensorNetworkLayoutSnapshot",
+    "TensorNetworkSnapshot",
     "TensorNetworkVizError",
     "TenPyTensorNetwork",
     "UnsupportedEngineError",
@@ -149,8 +205,11 @@ __all__ = [
     "clear_tensor_network_graph_cache",
     "einsum",
     "einsum_trace_step",
+    "export_tensor_network_snapshot",
     "make_tenpy_tensor_network",
+    "normalize_tensor_network",
     "pair_tensor",
+    "show_tensor_comparison",
     "show_tensor_elements",
     "show_tensor_network",
 ]
