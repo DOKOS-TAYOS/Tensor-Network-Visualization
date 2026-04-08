@@ -12,12 +12,15 @@ PyTorch/NumPy `einsum` tensor networks.
 
 ## What This Library Does
 
-Tensor-network libraries expose very different Python objects, but this package gives them two
-aligned plotting entry points:
+Tensor-network libraries expose very different Python objects, but this package gives them aligned
+inspection and export entry points:
 
 ```python
 fig, ax = show_tensor_network(...)
 fig, ax = show_tensor_elements(...)
+fig, ax = show_tensor_comparison(...)
+graph = normalize_tensor_network(...)
+snapshot = export_tensor_network_snapshot(...)
 ```
 
 Internally, the library:
@@ -28,7 +31,7 @@ Internally, the library:
 4. optionally adds figure controls for view/label/scheme toggles.
 
 The goal is to keep the public API small while still being useful for notebooks, papers, debugging,
-and saved figures.
+saved figures, and external tooling that wants the backend-normalized graph model.
 
 ## Install
 
@@ -44,6 +47,36 @@ python -m pip install tensor-network-visualization
 ```
 
 Base dependencies are only `numpy`, `matplotlib`, and `networkx`.
+
+## Documentation Map
+
+- Start here for installation and the public API overview.
+- Use [`docs/guide.md`](docs/guide.md) for workflow-oriented explanations.
+- Use [`docs/backends.md`](docs/backends.md) for backend-specific copy-paste examples.
+- Use [`examples/README.md`](examples/README.md) when you want to run the local demos from this repository.
+
+## Errors and Logging
+
+Public entry points now raise package-specific exceptions while remaining compatible with the
+built-in exception families they refine:
+
+- `VisualizationInputError`: unsupported or ambiguous network input.
+- `AxisConfigurationError`: incompatible `ax` / `view` combinations.
+- `UnsupportedEngineError`: unknown engine or backend name.
+- `TensorDataError`: unsupported or missing tensor data for `show_tensor_elements(...)`.
+- `MissingOptionalDependencyError`: missing optional backend dependency.
+
+All of them inherit from `TensorNetworkVizError`.
+
+The package logger name is `tensor_network_viz`. It installs a `logging.NullHandler()` by default,
+so importing the library does not change your application's logging configuration.
+
+```python
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logging.getLogger("tensor_network_viz").setLevel(logging.DEBUG)
+```
 
 ### Optional extras
 
@@ -76,7 +109,15 @@ python -m pip install -U pip
 python -m pip install "tensor-network-visualization[quimb]"
 ```
 
+Once the virtual environment is active, the `python ...` commands shown in the rest of this
+README work the same way on Windows and Linux.
+
 ## The API in One Minute
+
+`show_controls` and `show` are independent:
+
+- `show_controls=False` disables the embedded Matplotlib widgets and slider.
+- `show=False` skips automatic display and only returns `(fig, ax)`.
 
 ### `show_tensor_network`
 
@@ -99,7 +140,7 @@ show_tensor_network(
 - `view`: `"2d"` or `"3d"`. If omitted, it starts in `"2d"`.
 - `config`: all visual behavior lives here.
 - `ax`: render into an existing Matplotlib axis.
-- `show_controls`: if `False`, the figure is saved/rendered without the embedded control panel.
+- `show_controls`: if `False`, render a static figure without the embedded control panel.
 - `show`: if `False`, nothing is displayed automatically.
 
 ### `show_tensor_elements`
@@ -121,30 +162,97 @@ show_tensor_elements(
 When several tensors are present, the figure keeps one tensor active at a time and uses a slider
 to switch between them. The interactive controls are grouped: `basic` (`elements`, `magnitude`,
 `log_magnitude`, `distribution`, `data`), `complex` (`real`, `imag`, `phase`), and
-`diagnostic` (`sign`, `signed_value`, `sparsity`, `nan_inf`).
+`diagnostic` (`sign`, `signed_value`, `sparsity`, `nan_inf`, `singular_values`, `eigen_real`,
+`eigen_imag`), plus `analysis` (`slice`, `reduce`, `profiles`).
 
-- `data`: single tensor, iterable of tensors, supported backend-native tensor collections, or an
+- `data`: direct numeric tensor input (for example a NumPy array), direct iterables of tensors
+  preserving order and duplicates, supported backend-native tensor collections, or an
   `EinsumTrace` with live tensor values.
 - `engine`: optional backend override. If omitted, the library auto-detects it.
 - `config`: tensor-inspection behavior lives here.
-- `data` mode now includes global stats, per-axis summaries, and top-k coordinates by magnitude.
+- `data` mode includes global stats, per-axis summaries, and top-k coordinates by magnitude.
+- `singular_values` renders the singular-value spectrum for the same matrixized tensor used by the
+  heatmap views and is hidden automatically when the active tensor contains `NaN` or `Inf`.
+- `eigen_real` and `eigen_imag` render the real and imaginary parts of the eigenvalues for the same
+  matrixized tensor, ordered by eigenvalue magnitude. They appear only when the active analysis
+  matrix is finite and square.
 - `ax`: render a single tensor into an existing Matplotlib axis.
-- `show_controls`: if `True`, add compact Matplotlib `group + mode` controls and, when needed, a tensor slider.
+- `show_controls`: if `True`, add compact Matplotlib `group + mode` controls and, when needed, a
+  tensor slider.
 - `show`: if `False`, nothing is displayed automatically.
+
+### `show_tensor_comparison`
+
+Use `show_tensor_comparison` to compare one tensor against one reference tensor:
+
+```python
+show_tensor_comparison(
+    data,
+    reference,
+    *,
+    engine=None,
+    config=None,
+    comparison_config=None,
+    ax=None,
+    show_controls=True,
+    show=True,
+)
+```
+
+- `config`: still uses `TensorElementsConfig(...)` for matrixization and rendering style.
+- `comparison_config`: uses `TensorComparisonConfig(...)` for comparison-specific behavior.
+- comparison modes are `reference`, `abs_diff`, `relative_diff`, `ratio`, `sign_change`,
+  `phase_change`, and `topk_changes`.
+
+### Normalized snapshots
+
+Use the snapshot helpers when you want the backend-normalized graph and layout without touching any
+backend adapter internals:
+
+```python
+graph = normalize_tensor_network(network, engine=None)
+snapshot = export_tensor_network_snapshot(
+    network,
+    engine=None,
+    view="2d",
+    config=PlotConfig(),
+    seed=0,
+)
+```
+
+Both snapshot objects are immutable and expose `.to_dict()` for serialization.
 
 ### `PlotConfig`
 
 Use `PlotConfig` for visual behavior:
 
 ```python
-from tensor_network_viz import PlotConfig
+from tensor_network_viz import (
+    PlotConfig,
+    TensorNetworkDiagnosticsConfig,
+    TensorNetworkFocus,
+)
 
 config = PlotConfig(
+    show_nodes=True,
     show_tensor_labels=True,
     show_index_labels=False,
     hover_labels=True,
     show_contraction_scheme=False,
+    contraction_scheme_cost_hover=False,
+    contraction_tensor_inspector=False,
+    diagnostics=TensorNetworkDiagnosticsConfig(
+        show_overlay=False,
+        include_hover=True,
+    ),
+    focus=TensorNetworkFocus(
+        kind="neighborhood",
+        center="A",
+        radius=1,
+    ),
     tensor_label_refinement="auto",
+    tensor_label_fontsize=None,
+    edge_label_fontsize=None,
 )
 ```
 
@@ -152,7 +260,10 @@ This is where you configure:
 
 - labels,
 - hover tooltips,
+- diagnostics overlays and enriched hover payloads (`shape`, `dtype`, `bond dimension`, memory),
+- reproducible subnetwork focus (`neighborhood` radius 1/2 or shortest `path` by tensor name),
 - contraction-scheme overlays,
+- optional tensor/edge label font-size overrides,
 - styling,
 - layout iterations,
 - custom positions,
@@ -164,16 +275,31 @@ This is where you configure:
 Use `TensorElementsConfig` for tensor inspection behavior:
 
 ```python
-from tensor_network_viz import TensorElementsConfig
+from tensor_network_viz import TensorAnalysisConfig, TensorElementsConfig
 
 config = TensorElementsConfig(
     mode="auto",
+    row_axes=None,
+    col_axes=None,
+    analysis=TensorAnalysisConfig(
+        slice_axis="phys",
+        slice_index=0,
+        reduce_axes=("bond",),
+        reduce_method="mean",
+        profile_axis="phys",
+        profile_method="norm",
+    ),
+    figsize=(7.2, 6.4),
     max_matrix_shape=(256, 256),
-    histogram_bins=40,
-    topk_count=8,
-    robust_percentiles=(1.0, 99.0),
     shared_color_scale=False,
+    robust_percentiles=(1.0, 99.0),
     highlight_outliers=False,
+    outlier_zscore=3.5,
+    zero_threshold=1e-12,
+    log_magnitude_floor=1e-12,
+    histogram_bins=40,
+    histogram_max_samples=100_000,
+    topk_count=8,
 )
 ```
 
@@ -181,22 +307,30 @@ This is where you configure:
 
 - the active inspection mode,
 - row/column axis grouping for rank > 2 tensors,
+- analysis selectors for `slice`, `reduce`, and `profiles`,
 - heatmap downsampling limits,
 - histogram sampling and bin count,
 - data-summary depth (`topk_count`),
-- optional robust/shared scaling and outlier overlays.
+- heatmap/spectral reduction via `max_matrix_shape`,
+- optional robust/shared scaling and outlier overlays,
+- singular-value display floor and zero handling.
 
 If you want to start in a specific grouped view, pass `mode="real"`, `mode="imag"`,
-`mode="phase"`, `mode="log_magnitude"`, `mode="sparsity"`, `mode="nan_inf"`, `mode="sign"`, or
-`mode="signed_value"` directly in
-`TensorElementsConfig(...)`.
+`mode="phase"`, `mode="log_magnitude"`, `mode="sparsity"`, `mode="nan_inf"`, `mode="sign"`,
+`mode="signed_value"`, `mode="singular_values"`, `mode="eigen_real"`, `mode="eigen_imag"`,
+`mode="slice"`, `mode="reduce"`, or `mode="profiles"` directly in `TensorElementsConfig(...)`.
 
 ## Most Common Workflows
 
 ### Interactive figure with controls
 
 ```python
-from tensor_network_viz import PlotConfig, show_tensor_network
+from tensor_network_viz import (
+    PlotConfig,
+    TensorNetworkDiagnosticsConfig,
+    TensorNetworkFocus,
+    show_tensor_network,
+)
 
 fig, ax = show_tensor_network(
     network,
@@ -204,9 +338,16 @@ fig, ax = show_tensor_network(
         show_tensor_labels=False,
         show_index_labels=False,
         hover_labels=True,
+        diagnostics=TensorNetworkDiagnosticsConfig(show_overlay=True),
+        focus=TensorNetworkFocus(kind="neighborhood", center="A", radius=1),
     ),
 )
 ```
+
+When the network exposes inspectable tensor values, clicking a visible tensor node opens the shared
+auxiliary inspector directly. In playback-enabled traces, the same inspector can still follow the
+current contraction result or stay pinned to a manually selected node until you click empty space
+to clear the manual selection.
 
 ### Clean export with no embedded controls
 
@@ -228,14 +369,69 @@ fig.savefig("network.png", bbox_inches="tight")
 ### Inspect tensor values
 
 ```python
-from tensor_network_viz import TensorElementsConfig, show_tensor_elements
+from tensor_network_viz import TensorAnalysisConfig, TensorElementsConfig, show_tensor_elements
 
 fig, ax = show_tensor_elements(
     trace,
-    config=TensorElementsConfig(mode="auto"),
+    config=TensorElementsConfig(
+        mode="profiles",
+        analysis=TensorAnalysisConfig(profile_axis="phys", profile_method="norm"),
+    ),
     show=False,
 )
 fig.savefig("tensor-elements.png", bbox_inches="tight")
+```
+
+### Export a focused snapshot with diagnostics
+
+```python
+from tensor_network_viz import (
+    PlotConfig,
+    TensorNetworkDiagnosticsConfig,
+    TensorNetworkFocus,
+    export_tensor_network_snapshot,
+)
+
+snapshot = export_tensor_network_snapshot(
+    network,
+    config=PlotConfig(
+        diagnostics=TensorNetworkDiagnosticsConfig(include_hover=True),
+        focus=TensorNetworkFocus(kind="path", endpoints=("A", "C")),
+    ),
+)
+payload = snapshot.to_dict()
+```
+
+### Compare tensors
+
+```python
+from tensor_network_viz import (
+    TensorComparisonConfig,
+    TensorElementsConfig,
+    show_tensor_comparison,
+)
+
+fig, ax = show_tensor_comparison(
+    current_tensor,
+    reference_tensor,
+    config=TensorElementsConfig(mode="elements"),
+    comparison_config=TensorComparisonConfig(mode="abs_diff"),
+    show=False,
+)
+fig.savefig("tensor-comparison.png", bbox_inches="tight")
+```
+
+### Export a normalized snapshot
+
+```python
+from tensor_network_viz import PlotConfig, export_tensor_network_snapshot
+
+snapshot = export_tensor_network_snapshot(
+    network,
+    config=PlotConfig(),
+    view="2d",
+)
+payload = snapshot.to_dict()
 ```
 
 ### Faster render for large graphs
@@ -352,9 +548,9 @@ For fuller backend examples, see [docs/backends.md](docs/backends.md).
 | `show_tensor_labels` | Draw tensor names on nodes. |
 | `show_index_labels` | Draw index labels on bonds and dangling legs. |
 | `hover_labels` | Enable hover tooltips in interactive sessions. |
-| `show_contraction_scheme` | Draw contraction-step regions. |
-| `contraction_playback` | Start with playback controls enabled when controls are shown. |
-| `contraction_scheme_cost_hover` | Show contraction details in the playback panel. |
+| `show_contraction_scheme` | Enable the dynamic contraction slider with real node shape/color changes. |
+| `contraction_scheme_cost_hover` | Show contraction details in the slider panel. |
+| `contraction_tensor_inspector` | Enable the auxiliary tensor inspector with direct node selection and comparison controls. |
 | `tensor_label_refinement` | `"auto"`, `"always"`, or `"never"` for the expensive label-fit pass. |
 | `layout_iterations` | Force-layout effort. |
 | `positions` | Supply custom node coordinates. |
@@ -393,6 +589,7 @@ python examples/tensor_elements_demo.py
 | Hover tooltips do nothing | Use an interactive Matplotlib backend; hover is not useful for PNG-only runs. |
 | Big graphs are slow | Set `tensor_label_refinement="never"`, reduce `layout_iterations`, or pass `positions`. |
 | `Unsupported tensor network engine` | Install the matching extra or pass the correct backend object. |
+| `AxisConfigurationError` when passing `ax` | Use a 2D axis for `view="2d"`, a 3D axis for `view="3d"`, and only pass `ax` to `show_tensor_elements(...)` for a single tensor. |
 | `show_tensor_elements(...)` fails on TensorKrowch nodes | Materialize the node tensors first; shape-only nodes do not expose element values. |
 | `show_tensor_elements(...)` fails on manual `pair_tensor(...)` lists | Use an `EinsumTrace` with live tensors instead; manual trace steps only describe contractions. |
 | Blank / duplicate Jupyter figure | Assign `fig, ax = show_tensor_network(...)` instead of leaving the tuple as the last line. |
@@ -420,4 +617,13 @@ Run the project checks:
 
 ```powershell
 .\.venv\Scripts\python scripts\verify.py
+```
+
+Useful slices:
+
+```powershell
+.\.venv\Scripts\python scripts\verify.py quality
+.\.venv\Scripts\python scripts\verify.py tests
+.\.venv\Scripts\python scripts\verify.py smoke
+.\.venv\Scripts\python scripts\verify.py package
 ```

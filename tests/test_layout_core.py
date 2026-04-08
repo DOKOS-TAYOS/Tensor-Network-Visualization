@@ -13,6 +13,7 @@ from tensor_network_viz._core.graph import (
     _make_contraction_edge,
     _make_dangling_edge,
     _make_node,
+    _NodeData,
 )
 from tensor_network_viz._core.layout import (
     _analyze_layout_components_cached,
@@ -24,8 +25,12 @@ from tensor_network_viz._core.layout import (
     _is_dangling_leg_axis,
     _planar_contraction_bond_segments_2d,
     _segment_point_min_distance_sq_2d,
-    _segment_segment_min_distance_2d,
     _segments_cross_2d,
+)
+from tensor_network_viz._core.layout.direction_common import _behavior_direction_order_2d
+from tensor_network_viz._core.layout.free_directions_2d import (
+    _direction_angle_conflicts_2d,
+    _pick_candidate_direction_2d,
 )
 from tensor_network_viz._core.renderer import (
     _SHORTEST_EDGE_RADIUS_FRACTION,
@@ -111,6 +116,131 @@ def test_dangling_leg_axis_matches_open_edges() -> None:
     assert _is_dangling_leg_axis(g, 0, 1) is True
     assert _is_dangling_leg_axis(g, 0, 0) is False
     assert _is_dangling_leg_axis(g, 1, 0) is False
+
+
+def test_behavior_direction_order_2d_rotates_north_template() -> None:
+    north = _behavior_direction_order_2d("north")
+    south = _behavior_direction_order_2d("south")
+    east = _behavior_direction_order_2d("east")
+    west = _behavior_direction_order_2d("west")
+
+    expected_north = (
+        np.array([0.0, 1.0], dtype=float),
+        np.array([0.0, -1.0], dtype=float),
+        np.array([1.0, 0.0], dtype=float),
+        np.array([-1.0, 0.0], dtype=float),
+        np.array([1.0, 1.0], dtype=float) / np.sqrt(2.0),
+        np.array([-1.0, 1.0], dtype=float) / np.sqrt(2.0),
+        np.array([-1.0, -1.0], dtype=float) / np.sqrt(2.0),
+        np.array([1.0, -1.0], dtype=float) / np.sqrt(2.0),
+    )
+    expected_north_semidiagonals = (
+        np.array([math.cos(math.radians(67.5)), math.sin(math.radians(67.5))], dtype=float),
+        np.array([math.cos(math.radians(112.5)), math.sin(math.radians(112.5))], dtype=float),
+        np.array([math.cos(math.radians(157.5)), math.sin(math.radians(157.5))], dtype=float),
+        np.array([math.cos(math.radians(202.5)), math.sin(math.radians(202.5))], dtype=float),
+        np.array([math.cos(math.radians(247.5)), math.sin(math.radians(247.5))], dtype=float),
+        np.array([math.cos(math.radians(292.5)), math.sin(math.radians(292.5))], dtype=float),
+        np.array([math.cos(math.radians(337.5)), math.sin(math.radians(337.5))], dtype=float),
+        np.array([math.cos(math.radians(22.5)), math.sin(math.radians(22.5))], dtype=float),
+    )
+
+    for idx, expected in enumerate(expected_north):
+        assert np.allclose(north[idx], expected, atol=1e-9)
+    for idx, expected in enumerate(expected_north_semidiagonals, start=8):
+        assert np.allclose(north[idx], expected, atol=1e-9)
+
+    assert np.allclose(south[0], np.array([0.0, -1.0], dtype=float), atol=1e-9)
+    assert np.allclose(east[0], np.array([1.0, 0.0], dtype=float), atol=1e-9)
+    assert np.allclose(west[0], np.array([-1.0, 0.0], dtype=float), atol=1e-9)
+
+
+def test_direction_angle_conflicts_2d_respects_five_degree_threshold() -> None:
+    assert _direction_angle_conflicts_2d(
+        np.array([0.0, 1.0], dtype=float),
+        np.array([math.sin(math.radians(4.0)), math.cos(math.radians(4.0))], dtype=float),
+    )
+    assert _direction_angle_conflicts_2d(
+        np.array([0.0, 1.0], dtype=float),
+        np.array([math.sin(math.radians(176.0)), math.cos(math.radians(176.0))], dtype=float),
+    )
+    assert not _direction_angle_conflicts_2d(
+        np.array([0.0, 1.0], dtype=float),
+        np.array([math.sin(math.radians(10.0)), math.cos(math.radians(10.0))], dtype=float),
+    )
+
+
+def test_pick_candidate_direction_2d_returns_last_tried_when_all_fail() -> None:
+    candidates = (
+        np.array([0.0, 1.0], dtype=float),
+        np.array([1.0, 0.0], dtype=float),
+        np.array([0.0, -1.0], dtype=float),
+    )
+    picked = _pick_candidate_direction_2d(
+        candidates=candidates,
+        is_valid=lambda _candidate: False,
+    )
+
+    assert np.allclose(picked, candidates[-1], atol=1e-9)
+
+
+def test_compute_axis_directions_chain_2d_allows_opposite_free_axes_on_same_node() -> None:
+    graph = _build_chain_graph(length=3, dangling_axis_counts={1: 2})
+    positions = {
+        0: np.array([0.0, 0.0], dtype=float),
+        1: np.array([1.0, 0.0], dtype=float),
+        2: np.array([2.0, 0.0], dtype=float),
+    }
+
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=1.0)
+    free_axis_indices = [
+        axis_index
+        for axis_index, axis_name in enumerate(graph.nodes[1].axes_names)
+        if axis_name.startswith("d1_")
+    ]
+    picked = [
+        np.asarray(directions[(1, axis_index)], dtype=float) for axis_index in free_axis_indices
+    ]
+
+    assert np.allclose(picked[0], np.array([0.0, 1.0], dtype=float), atol=1e-6)
+    assert np.allclose(picked[1], np.array([0.0, -1.0], dtype=float), atol=1e-6)
+
+
+def test_compute_axis_directions_chain_2d_skips_random_bucket_when_cardinals_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.layout.free_directions_2d as free_directions_2d
+
+    graph = _build_chain_graph(length=3, dangling_axis_counts={1: 1})
+    positions = {
+        0: np.array([0.0, 0.0], dtype=float),
+        1: np.array([1.0, 0.0], dtype=float),
+        2: np.array([2.0, 0.0], dtype=float),
+    }
+    calls: list[int] = []
+
+    def counting_random_bucket(
+        *,
+        blocked: tuple[np.ndarray, ...],
+        count: int = 8,
+        rng: np.random.Generator | None = None,
+    ) -> tuple[np.ndarray, ...]:
+        calls.append(1)
+        return (
+            np.array([1.0, 0.0], dtype=float),
+            np.array([-1.0, 0.0], dtype=float),
+        )
+
+    monkeypatch.setattr(
+        free_directions_2d,
+        "_random_direction_bucket_2d",
+        counting_random_bucket,
+    )
+
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=1.0)
+
+    assert np.allclose(directions[(1, 2)], np.array([0.0, 1.0], dtype=float), atol=1e-6)
+    assert calls == []
 
 
 def test_physical_stub_2d_segment_clears_neighbor_node_disk() -> None:
@@ -395,6 +525,62 @@ def _build_grid_graph(rows: int, cols: int) -> _GraphData:
     return _GraphData(nodes=nodes, edges=tuple(edges))
 
 
+def _build_grid_graph_with_dangling_phys(rows: int, cols: int) -> _GraphData:
+    nodes = {}
+    edge_specs: list[tuple[int, int, str, str]] = []
+
+    def node_index(row: int, col: int) -> int:
+        return row * cols + col
+
+    for row in range(rows):
+        for col in range(cols):
+            axes_names = []
+            if col > 0:
+                axes_names.append("left")
+            if col < cols - 1:
+                axes_names.append("right")
+            if row > 0:
+                axes_names.append("down")
+            if row < rows - 1:
+                axes_names.append("up")
+            axes_names.append("phys")
+            nodes[node_index(row, col)] = _make_node(f"N{row}_{col}", tuple(axes_names))
+
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+
+    for row in range(rows):
+        for col in range(cols):
+            node_id = node_index(row, col)
+            if col < cols - 1:
+                right_id = node_index(row, col + 1)
+                edge_specs.append((node_id, right_id, "right", "left"))
+            if row < rows - 1:
+                up_id = node_index(row + 1, col)
+                edge_specs.append((node_id, up_id, "up", "down"))
+
+    edges = [
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][left_name], left_name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][right_name], right_name),
+            name=f"{left_id}_{right_id}",
+            label=None,
+        )
+        for left_id, right_id, left_name, right_name in edge_specs
+    ]
+    for node_id in sorted(nodes):
+        edges.append(
+            _make_dangling_edge(
+                _EdgeEndpoint(node_id, axis_lookup[node_id]["phys"], "phys"),
+                name=f"p{node_id}",
+                label=None,
+            )
+        )
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
 def _build_planar_cycle_graph() -> _GraphData:
     nodes = {
         0: _make_node("A", ("right", "up")),
@@ -427,6 +613,60 @@ def _build_planar_cycle_graph() -> _GraphData:
             name="da",
             label=None,
         ),
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
+def _build_planar_house_graph_with_phys() -> _GraphData:
+    nodes = {
+        0: _make_node("A", ("right", "up", "phys")),
+        1: _make_node("B", ("left", "up", "phys")),
+        2: _make_node("C", ("down", "right", "roof", "phys")),
+        3: _make_node("D", ("down", "left", "roof", "phys")),
+        4: _make_node("R", ("left_roof", "right_roof", "phys")),
+    }
+    edges = (
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 0, "right"),
+            _EdgeEndpoint(1, 0, "left"),
+            name="ab",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 1, "up"),
+            _EdgeEndpoint(2, 0, "down"),
+            name="ac",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(1, 1, "up"),
+            _EdgeEndpoint(3, 0, "down"),
+            name="bd",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(2, 1, "right"),
+            _EdgeEndpoint(3, 1, "left"),
+            name="cd",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(2, 2, "roof"),
+            _EdgeEndpoint(4, 0, "left_roof"),
+            name="ce",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(3, 2, "roof"),
+            _EdgeEndpoint(4, 1, "right_roof"),
+            name="de",
+            label=None,
+        ),
+        _make_dangling_edge(_EdgeEndpoint(0, 2, "phys"), name="p0", label=None),
+        _make_dangling_edge(_EdgeEndpoint(1, 2, "phys"), name="p1", label=None),
+        _make_dangling_edge(_EdgeEndpoint(2, 3, "phys"), name="p2", label=None),
+        _make_dangling_edge(_EdgeEndpoint(3, 3, "phys"), name="p3", label=None),
+        _make_dangling_edge(_EdgeEndpoint(4, 2, "phys"), name="p4", label=None),
     )
     return _GraphData(nodes=nodes, edges=edges)
 
@@ -572,6 +812,29 @@ def _build_complete_graph_5() -> _GraphData:
     return _GraphData(nodes=nodes, edges=tuple(edges))
 
 
+def _with_one_dangling_phys_per_node(graph: _GraphData) -> _GraphData:
+    nodes = {
+        node_id: _make_node(
+            node.name,
+            (*node.axes_names, "phys"),
+            label=node.label,
+            is_virtual=node.is_virtual,
+        )
+        for node_id, node in graph.nodes.items()
+    }
+    edges = list(graph.edges)
+    for node_id, node in sorted(nodes.items()):
+        axis_index = len(node.axes_names) - 1
+        edges.append(
+            _make_dangling_edge(
+                _EdgeEndpoint(node_id, axis_index, "phys"),
+                name=f"p{node_id}",
+                label=None,
+            )
+        )
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
 def _build_grid_with_leaf_nodes() -> _GraphData:
     nodes = {
         0: _make_node("P00", ("right", "up", "s")),
@@ -637,7 +900,7 @@ def _build_grid_with_leaf_nodes() -> _GraphData:
 
 
 def _build_peps_grid_with_leaf_vectors(rows: int, cols: int) -> tuple[_GraphData, dict[int, int]]:
-    nodes: dict[int, object] = {}
+    nodes: dict[int, _NodeData] = {}
     edges = []
     leaf_parent_by_id: dict[int, int] = {}
 
@@ -908,6 +1171,34 @@ def test_compute_layout_peps_leaf_vectors_2d_regular_grid_boundary_faces_prefer_
         assert np.allclose(direction, expected, atol=1e-6), (row, col, direction)
 
 
+def test_compute_axis_directions_grid_2d_phys_legs_follow_shell_behaviors() -> None:
+    graph = _build_grid_graph_with_dangling_phys(3, 3)
+    positions = {
+        row * 3 + col: np.array([float(col), float(row)], dtype=float)
+        for row in range(3)
+        for col in range(3)
+    }
+
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=1.0)
+
+    expected_by_site = {
+        (2, 0): np.array([0.0, 1.0], dtype=float),
+        (2, 1): np.array([0.0, 1.0], dtype=float),
+        (2, 2): np.array([0.0, 1.0], dtype=float),
+        (0, 0): np.array([0.0, -1.0], dtype=float),
+        (0, 1): np.array([0.0, -1.0], dtype=float),
+        (0, 2): np.array([0.0, -1.0], dtype=float),
+        (1, 0): np.array([-1.0, 0.0], dtype=float),
+        (1, 1): np.array([1.0, 1.0], dtype=float) / np.sqrt(2.0),
+        (1, 2): np.array([1.0, 0.0], dtype=float),
+    }
+
+    for (row, col), expected in expected_by_site.items():
+        node_id = row * 3 + col
+        axis_index = graph.nodes[node_id].axes_names.index("phys")
+        assert np.allclose(directions[(node_id, axis_index)], expected, atol=1e-6)
+
+
 def test_compute_layout_grid_2d_places_nodes_on_regular_lattice() -> None:
     graph = _build_grid_graph(2, 2)
 
@@ -949,6 +1240,176 @@ def test_compute_layout_3d_grid_uniform_nearest_neighbor_spacing() -> None:
     assert lengths
     mean_len = float(np.mean(lengths))
     assert all(math.isclose(L, mean_len, rel_tol=1e-5, abs_tol=1e-8) for L in lengths)
+
+
+def test_compute_layout_2d_grid3d_depth_projects_with_positive_x_and_negative_y() -> None:
+    graph = _build_3d_grid_graph(2, 2, 3)
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    component = _analyze_layout_components_cached(graph)[0]
+    assert component.grid3d_mapping is not None
+
+    node_id_by_coords = {coords: node_id for node_id, coords in component.grid3d_mapping.items()}
+    p000 = positions[node_id_by_coords[(0, 0, 0)]]
+    p001 = positions[node_id_by_coords[(0, 0, 1)]]
+    p002 = positions[node_id_by_coords[(0, 0, 2)]]
+
+    assert float(p001[0]) > float(p000[0])
+    assert float(p001[1]) < float(p000[1])
+    assert float(p002[0]) > float(p001[0])
+    assert float(p002[1]) < float(p001[1])
+
+
+def test_layered_visible_order_2d_draws_grid3d_from_far_face_to_near_face() -> None:
+    import tensor_network_viz._core.draw.render_prep as render_prep
+
+    graph = _build_3d_grid_graph(2, 2, 3)
+
+    layered_order = render_prep._layered_visible_order_2d(graph)
+    component = _analyze_layout_components_cached(graph)[0]
+    k_sequence = [component.grid3d_mapping[node_id][2] for node_id in layered_order]
+
+    assert k_sequence == sorted(k_sequence)
+
+
+def test_layered_tensor_label_zorders_2d_stay_above_all_node_disks() -> None:
+    import tensor_network_viz._core.draw.render_prep as render_prep
+
+    graph = _build_3d_grid_graph(2, 2, 3)
+
+    visible_order = list(render_prep._layered_visible_order_2d(graph))
+    label_zorders = render_prep._layered_tensor_label_zorders_2d(visible_order)
+    max_disk_zorder = max(
+        render_prep._ZORDER_LAYER_BASE
+        + index * render_prep._ZORDER_LAYER_STRIDE
+        + render_prep._ZORDER_LAYER_DISK
+        for index, _node_id in enumerate(visible_order)
+    )
+
+    assert label_zorders
+    assert all(zorder > max_disk_zorder for zorder in label_zorders.values())
+
+
+def test_register_render_hover_2d_uses_layered_visible_order_for_grid3d(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    import tensor_network_viz._core.draw.render_prep as render_prep
+
+    graph = _build_3d_grid_graph(2, 2, 3)
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    directions = _compute_axis_directions(graph, positions, dimensions=2)
+    scale = _resolve_draw_scale(graph, positions)
+
+    fig = Figure()
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
+    try:
+        context = render_prep._prepare_render_context(
+            ax=ax,
+            graph=graph,
+            positions=positions,
+            config=PlotConfig(hover_labels=True),
+            dimensions=2,
+            scale=scale,
+            show_tensor_labels=True,
+            show_index_labels=False,
+        )
+        render_prep._draw_edges_nodes_and_labels(
+            ax=ax,
+            context=context,
+            directions=directions,
+            show_tensor_labels=True,
+            show_index_labels=False,
+            tensor_disk_radius_px_3d=None,
+        )
+
+        captured: dict[str, tuple[int, ...]] = {}
+
+        def _capture_hover_state(
+            state: render_prep._RenderHoverState,
+            *,
+            scheme_patches_2d: object | None = None,
+            scheme_aabbs_3d: object | None = None,
+        ) -> None:
+            del scheme_patches_2d, scheme_aabbs_3d
+            captured["visible_node_ids"] = state.visible_node_ids
+
+        monkeypatch.setattr(render_prep, "_apply_saved_hover_state", _capture_hover_state)
+
+        render_prep._register_render_hover(
+            ax=ax,
+            context=context,
+            show_tensor_labels=True,
+            show_index_labels=False,
+            scheme_patches_2d=[],
+            scheme_aabbs_3d=[],
+            tensor_disk_radius_px_3d=None,
+        )
+
+        assert captured["visible_node_ids"] == render_prep._layered_visible_order_2d(graph)
+    finally:
+        fig.clear()
+
+
+def test_build_interactive_scene_state_2d_uses_layered_visible_order_for_grid3d() -> None:
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    import tensor_network_viz._core.draw.render_prep as render_prep
+
+    graph = _build_3d_grid_graph(2, 2, 3)
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    directions = _compute_axis_directions(graph, positions, dimensions=2)
+    scale = _resolve_draw_scale(graph, positions)
+
+    fig = Figure()
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
+    try:
+        context = render_prep._prepare_render_context(
+            ax=ax,
+            graph=graph,
+            positions=positions,
+            config=PlotConfig(hover_labels=True),
+            dimensions=2,
+            scale=scale,
+            show_tensor_labels=True,
+            show_index_labels=False,
+        )
+        render_prep._draw_edges_nodes_and_labels(
+            ax=ax,
+            context=context,
+            directions=directions,
+            show_tensor_labels=True,
+            show_index_labels=False,
+            tensor_disk_radius_px_3d=None,
+        )
+        hover_state = render_prep._RenderHoverState(
+            ax=ax,
+            figure=ax.figure,
+            dimensions=2,
+            node_patch_coll=render_prep._node_patch_collection_from_plotter(context),
+            visible_node_ids=(),
+            tensor_hover=dict(context.tensor_hover_by_node or {}),
+            edge_hover=tuple(context.hover_edge_targets or ()),
+            line_width_px_hint=float(context.params.lw),
+        )
+
+        scene = render_prep._build_interactive_scene_state(
+            ax=ax,
+            context=context,
+            directions=directions,
+            scale=scale,
+            hover_state=hover_state,
+            tensor_disk_radius_px_3d=None,
+        )
+
+        assert scene.visible_node_ids == render_prep._layered_visible_order_2d(graph)
+    finally:
+        fig.clear()
 
 
 def test_compute_layout_planar_cycle_3d_stays_on_single_plane() -> None:
@@ -1085,7 +1546,8 @@ def test_compute_axis_directions_cubic_phys_stubs_2d_clear_nonincident_projected
     positions = _compute_layout(graph, dimensions=2, seed=0)
     draw_scale = _resolve_draw_scale(graph, positions)
     directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=draw_scale)
-    bond_segments = _planar_contraction_bond_segments_2d(graph, positions, scale=draw_scale)
+    component = _analyze_layout_components_cached(graph)[0]
+    radius = float(PlotConfig.DEFAULT_NODE_RADIUS) * max(float(draw_scale), 1e-6)
 
     for edge in graph.edges:
         if edge.kind != "dangling":
@@ -1096,12 +1558,53 @@ def test_compute_axis_directions_cubic_phys_stubs_2d_clear_nonincident_projected
             directions[(endpoint.node_id, endpoint.axis_index)],
             dtype=float,
         ).reshape(-1)[:2]
-        start, end = _dangling_stub_segment_2d(origin, direction, draw_scale=draw_scale)
-        for left_id, right_id, bond_start, bond_end in bond_segments:
-            if endpoint.node_id in {left_id, right_id}:
-                continue
-            distance = _segment_segment_min_distance_2d(start, end, bond_start, bond_end)
-            assert distance >= 0.15 - 1e-9
+        _start, end = _dangling_stub_segment_2d(origin, direction, draw_scale=draw_scale)
+        first_neighbors = set(component.contraction_graph.neighbors(endpoint.node_id))
+        second_neighbors = {
+            second_id
+            for neighbor_id in first_neighbors
+            for second_id in component.contraction_graph.neighbors(neighbor_id)
+            if second_id != endpoint.node_id
+        }
+        for neighbor_id in sorted(first_neighbors | second_neighbors):
+            other = np.asarray(positions[neighbor_id], dtype=float).reshape(-1)[:2]
+            assert np.linalg.norm(end - other) >= radius - 1e-9
+
+
+def test_compute_axis_directions_grid3d_2d_top_and_bottom_shells_keep_free_cardinals() -> None:
+    graph = _build_3d_grid_graph_with_dangling_phys(2, 3, 2)
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    draw_scale = _resolve_draw_scale(graph, positions)
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=draw_scale)
+
+    y_by_node = {
+        node_id: round(float(np.asarray(position, dtype=float).reshape(-1)[1]), 6)
+        for node_id, position in positions.items()
+    }
+    top_y = max(y_by_node.values())
+    bottom_y = min(y_by_node.values())
+    top_node_ids = [node_id for node_id, y in y_by_node.items() if y == top_y]
+    bottom_node_ids = [node_id for node_id, y in y_by_node.items() if y == bottom_y]
+
+    assert top_node_ids
+    assert bottom_node_ids
+
+    for node_id in top_node_ids:
+        axis_index = graph.nodes[node_id].axes_names.index("phys")
+        assert np.allclose(
+            directions[(node_id, axis_index)],
+            np.array([0.0, 1.0], dtype=float),
+            atol=1e-6,
+        ), graph.nodes[node_id].name
+
+    for node_id in bottom_node_ids:
+        axis_index = graph.nodes[node_id].axes_names.index("phys")
+        assert np.allclose(
+            directions[(node_id, axis_index)],
+            np.array([0.0, -1.0], dtype=float),
+            atol=1e-6,
+        ), graph.nodes[node_id].name
 
 
 def test_compute_layout_virtual_hub_uses_incident_barycenter() -> None:
@@ -1157,6 +1660,122 @@ def test_tree_component_layout_2d_skips_force_layout_when_anchors_cover_all_node
     positions = _compute_component_layout_2d(graph, component, seed=0, iterations=1)
 
     assert set(positions) == set(graph.nodes)
+
+
+def test_compute_axis_directions_tree_2d_leaf_phys_legs_prefer_south_when_corridor_is_free() -> (
+    None
+):
+    graph = _build_binary_tree_graph_with_leaf_phys()
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    draw_scale = _resolve_draw_scale(graph, positions)
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=draw_scale)
+
+    for leaf_id in (3, 4, 5, 6):
+        axis_index = graph.nodes[leaf_id].axes_names.index("phys")
+        assert np.allclose(
+            directions[(leaf_id, axis_index)],
+            np.array([0.0, -1.0], dtype=float),
+            atol=1e-6,
+        ), graph.nodes[leaf_id].name
+
+
+def _neighbor_shell_ids(component: object, node_id: int) -> tuple[set[int], set[int]]:
+    first_neighbors = set(component.contraction_graph.neighbors(node_id))
+    second_neighbors = {
+        second_id
+        for neighbor_id in first_neighbors
+        for second_id in component.contraction_graph.neighbors(neighbor_id)
+        if second_id != node_id and second_id not in first_neighbors
+    }
+    return first_neighbors, second_neighbors
+
+
+def _assert_local_neighbor_rules_hold_2d(
+    graph: _GraphData,
+    positions: dict[int, np.ndarray],
+    directions: dict[tuple[int, int], np.ndarray],
+    *,
+    draw_scale: float,
+) -> None:
+    component = _analyze_layout_components_cached(graph)[0]
+    radius = float(PlotConfig.DEFAULT_NODE_RADIUS) * max(float(draw_scale), 1e-6)
+
+    for edge in graph.edges:
+        if edge.kind != "dangling":
+            continue
+        endpoint = edge.endpoints[0]
+        first_neighbors, second_neighbors = _neighbor_shell_ids(component, endpoint.node_id)
+        origin = np.asarray(positions[endpoint.node_id], dtype=float).reshape(-1)[:2]
+        direction = np.asarray(
+            directions[(endpoint.node_id, endpoint.axis_index)],
+            dtype=float,
+        ).reshape(-1)[:2]
+        _start, end = _dangling_stub_segment_2d(origin, direction, draw_scale=draw_scale)
+
+        for neighbor_id in sorted(first_neighbors | second_neighbors):
+            other = np.asarray(positions[neighbor_id], dtype=float).reshape(-1)[:2]
+            assert np.linalg.norm(end - other) >= radius - 1e-9
+
+        for other_edge in graph.edges:
+            if other_edge.kind == "contraction":
+                left_endpoint, right_endpoint = other_edge.endpoints
+                left_id = left_endpoint.node_id
+                right_id = right_endpoint.node_id
+                if endpoint.node_id in {left_id, right_id}:
+                    continue
+                if left_id not in first_neighbors | second_neighbors and right_id not in (
+                    first_neighbors | second_neighbors
+                ):
+                    continue
+                bond_start = np.asarray(positions[left_id], dtype=float).reshape(-1)[:2]
+                bond_end = np.asarray(positions[right_id], dtype=float).reshape(-1)[:2]
+                assert not _segments_cross_2d(_start, end, bond_start, bond_end)
+                continue
+
+            other_endpoint = other_edge.endpoints[0]
+            if other_endpoint.node_id not in first_neighbors | second_neighbors:
+                continue
+            other_direction = np.asarray(
+                directions[(other_endpoint.node_id, other_endpoint.axis_index)],
+                dtype=float,
+            ).reshape(-1)[:2]
+            other_start, other_end = _dangling_stub_segment_2d(
+                positions[other_endpoint.node_id],
+                other_direction,
+                draw_scale=draw_scale,
+            )
+            assert not _segments_cross_2d(_start, end, other_start, other_end)
+
+
+def test_compute_axis_directions_tree_2d_phys_legs_respect_local_neighbor_rules() -> None:
+    graph = _build_binary_tree_graph_with_leaf_phys()
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    draw_scale = _resolve_draw_scale(graph, positions)
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=draw_scale)
+
+    _assert_local_neighbor_rules_hold_2d(graph, positions, directions, draw_scale=draw_scale)
+
+
+def test_compute_axis_directions_planar_2d_phys_legs_respect_local_neighbor_rules() -> None:
+    graph = _build_planar_house_graph_with_phys()
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    draw_scale = _resolve_draw_scale(graph, positions)
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=draw_scale)
+
+    _assert_local_neighbor_rules_hold_2d(graph, positions, directions, draw_scale=draw_scale)
+
+
+def test_compute_axis_directions_generic_2d_phys_legs_respect_local_neighbor_rules() -> None:
+    graph = _with_one_dangling_phys_per_node(_build_complete_graph_5())
+
+    positions = _compute_layout(graph, dimensions=2, seed=0, iterations=50)
+    draw_scale = _resolve_draw_scale(graph, positions)
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=draw_scale)
+
+    _assert_local_neighbor_rules_hold_2d(graph, positions, directions, draw_scale=draw_scale)
 
 
 def test_weird_topology_2d_phys_stubs_do_not_cross() -> None:

@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 import matplotlib
 
 matplotlib.use("Agg")
 
+import matplotlib.pyplot as plt
+import numpy as np
+
 from tensor_network_viz import PlotConfig
+from tensor_network_viz._core.draw.fonts_and_scale import _draw_scale_params
+from tensor_network_viz._core.draw.plotter import _make_plotter
 from tensor_network_viz._core.graph import (
     _EdgeData,
     _EdgeEndpoint,
@@ -160,3 +166,94 @@ def test_resolve_positions_cache_key_tracks_dimensions_seed_and_iterations(monke
     _resolve_positions(graph, PlotConfig(layout_iterations=88), dimensions=2, seed=5)
 
     assert calls == [1, 1, 1, 1]
+
+
+def test_plot_graph_reuses_cached_geometry_for_same_key(monkeypatch) -> None:
+    import matplotlib.pyplot as plt
+
+    import tensor_network_viz._core.renderer as renderer
+
+    graph = _chain_graph(8)
+    config = PlotConfig(layout_iterations=77)
+
+    direction_calls: list[int] = []
+    scale_calls: list[int] = []
+    original_compute_axis_directions: Callable[..., Any] = renderer._compute_axis_directions
+    original_resolve_scale: Callable[..., Any] = renderer._resolve_draw_scale_and_bond_curve_pad
+
+    def counting_compute_axis_directions(*args: Any, **kwargs: Any) -> Any:
+        direction_calls.append(1)
+        return original_compute_axis_directions(*args, **kwargs)
+
+    def counting_resolve_scale(*args: Any, **kwargs: Any) -> Any:
+        scale_calls.append(1)
+        return original_resolve_scale(*args, **kwargs)
+
+    monkeypatch.setattr(renderer, "_compute_axis_directions", counting_compute_axis_directions)
+    monkeypatch.setattr(renderer, "_resolve_draw_scale_and_bond_curve_pad", counting_resolve_scale)
+
+    fig_a, _ax_a = renderer._plot_graph(
+        graph,
+        dimensions=2,
+        config=config,
+        seed=5,
+        renderer_name="test_cached_geometry_a",
+    )
+    fig_b, _ax_b = renderer._plot_graph(
+        graph,
+        dimensions=2,
+        config=config,
+        seed=5,
+        renderer_name="test_cached_geometry_b",
+    )
+    try:
+        assert direction_calls == [1]
+        assert scale_calls == [1]
+    finally:
+        plt.close(fig_a)
+        plt.close(fig_b)
+
+
+def test_2d_plotter_collections_disable_autolim(monkeypatch) -> None:
+    fig, ax = plt.subplots()
+    autolim_values: list[bool | None] = []
+    original_add_collection: Callable[..., Any] = ax.add_collection
+
+    def recording_add_collection(*args: Any, **kwargs: Any) -> Any:
+        autolim_values.append(kwargs.get("autolim"))
+        return original_add_collection(*args, **kwargs)
+
+    monkeypatch.setattr(ax, "add_collection", recording_add_collection)
+
+    plotter = _make_plotter(ax, dimensions=2)
+    params = _draw_scale_params(
+        PlotConfig(),
+        1.0,
+        fig=fig,
+        is_3d=False,
+    )
+    plotter.plot_line(
+        np.array([0.0, 0.0], dtype=float),
+        np.array([1.0, 0.0], dtype=float),
+        color="#123456",
+        linewidth=1.5,
+        zorder=1.0,
+    )
+    flush = getattr(plotter, "flush_edge_collections", None)
+    assert callable(flush)
+    flush()
+    draw_one = getattr(plotter, "draw_tensor_node", None)
+    assert callable(draw_one)
+    draw_one(
+        [0.0, 0.0],
+        config=PlotConfig(),
+        p=params,
+        degree_one=False,
+        mode="normal",
+        zorder=2.0,
+    )
+
+    plt.close(fig)
+
+    assert autolim_values
+    assert all(value is False for value in autolim_values)

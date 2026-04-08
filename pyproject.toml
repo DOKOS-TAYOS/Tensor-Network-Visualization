@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tensor-network-visualization"
-version = "1.5.1"
+version = "1.5.3"
 description = "Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced PyTorch/NumPy einsum tensor networks."
 authors = [{ name = "Alejandro Mata Ali" }]
 readme = "README.md"
@@ -60,8 +60,12 @@ tensor_network_viz = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-p no:cacheprovider"
+addopts = "-p no:cacheprovider -m \"not perf\""
 pythonpath = ["src"]
+markers = [
+    "perf: runtime-sensitive regression checks and throughput guards",
+    "smoke: lightweight render smoke checks",
+]
 
 [tool.ruff]
 line-length = 100
@@ -77,6 +81,4 @@ select = ["E", "F", "I", "B", "UP", "C4", "SIM", "RUF100"]
 "examples/**/*.py" = ["E402"]
 # Repo-root bench helpers insert ``src`` on sys.path before third-party imports.
 "scripts/**/*.py" = ["E402"]
-# Draw/layout splits mirror the old monolith: submodule star-import of tuning constants.
-"src/tensor_network_viz/_core/draw/*.py" = ["F403", "F405"]
 "src/tensor_network_viz/_core/layout/body.py" = ["F403", "F405"]

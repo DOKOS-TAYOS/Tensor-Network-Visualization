@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib
-import numpy as np
 
 _EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(_EXAMPLES_DIR) not in sys.path:
@@ -27,6 +26,7 @@ from demo_cli import (
     render_demo_tensor_network,
     resolve_example_definition,
 )
+from demo_tensors import build_demo_numpy_tensor
 
 TAGLINES: dict[str, str] = {
     "chain": "Explicit TenPyTensorNetwork open chain.",
@@ -112,20 +112,24 @@ def _build_native_excitation(n_sites: int) -> Any:
     return _ExcitationLikeChain(_build_native_uniform(n_sites))
 
 
-def _npc_tensor(axes: tuple[str, ...]) -> Any:
+def _npc_tensor(name: str, axes: tuple[str, ...]) -> Any:
     from tenpy.linalg import np_conserved as npc
 
     shape = tuple(axis_dimension(axis) for axis in axes)
     legs = [npc.LegCharge.from_trivial(dim) for dim in shape]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
-        return npc.Array.from_ndarray(np.ones(shape, dtype=float), legs, labels=list(axes))
+        return npc.Array.from_ndarray(
+            build_demo_numpy_tensor(name=name, shape=shape, dtype=float),
+            legs,
+            labels=list(axes),
+        )
 
 
 def _build_explicit_network(blueprint: GraphBlueprint) -> Any:
     from tensor_network_viz import make_tenpy_tensor_network
 
-    nodes = [(node.name, _npc_tensor(node.axes)) for node in blueprint.nodes]
+    nodes = [(node.name, _npc_tensor(node.name, node.axes)) for node in blueprint.nodes]
     return make_tenpy_tensor_network(nodes=nodes, bonds=blueprint.bonds)
 
 

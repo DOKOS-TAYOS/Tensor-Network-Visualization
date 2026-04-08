@@ -33,3 +33,11 @@ ENGINE_MODULE_MAP: dict[EngineName, tuple[str, str, str]] = {
         "plot_einsum_network_3d",
     ),
 }
+
+ENGINE_GRAPH_BUILDER_MAP: dict[EngineName, tuple[str, str]] = {
+    "tensorkrowch": ("tensor_network_viz.tensorkrowch.graph", "_build_graph"),
+    "tensornetwork": ("tensor_network_viz.tensornetwork.graph", "_build_graph"),
+    "quimb": ("tensor_network_viz.quimb.graph", "_build_graph"),
+    "tenpy": ("tensor_network_viz.tenpy.graph", "_build_graph"),
+    "einsum": ("tensor_network_viz.einsum_module.graph", "_build_graph"),
+}

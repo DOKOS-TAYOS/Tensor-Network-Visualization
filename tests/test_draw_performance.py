@@ -11,6 +11,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 
 from tensor_network_viz import PlotConfig
 from tensor_network_viz._core._draw_common import _draw_graph
@@ -40,6 +41,7 @@ def _chain_graph(n_nodes: int) -> _GraphData:
     return _GraphData(nodes=nodes, edges=tuple(edges))
 
 
+@pytest.mark.smoke
 def test_dense_2d_draw_fast_flags_complete() -> None:
     """Fast path (skip refit + index separation) must finish without error."""
     n = 48
@@ -70,6 +72,7 @@ def test_dense_2d_draw_fast_flags_complete() -> None:
         plt.close(fig)
 
 
+@pytest.mark.smoke
 def test_dense_2d_draw_full_quality_completes_reasonably() -> None:
     """Default label polish should still complete for moderate size (regression guard)."""
     n = 24

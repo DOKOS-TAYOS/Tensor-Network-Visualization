@@ -6,27 +6,36 @@ from typing import Any, Literal
 
 import numpy as np
 from matplotlib.figure import Figure
-from matplotlib.font_manager import FontProperties
-from matplotlib.textpath import TextPath
 
 from ...config import PlotConfig
 from .._label_format import format_tensor_node_label
 from ..graph import _GraphData
 from ..layout import NodePositions
-from .constants import *
+from .constants import (
+    _LABEL_FONT_3D_SCALE,
+    _TENSOR_LABEL_GID,
+    _TENSOR_LABEL_INSIDE_FILL,
+    _TEXT_RENDER_DIAGONAL_FACTOR,
+    _ZORDER_TENSOR_NAME,
+)
 from .disk_metrics import _tensor_disk_radius_px
-from .fonts_and_scale import _DrawScaleParams
+from .fonts_and_scale import _DrawScaleParams, _textpath_width_pts
+from .label_descriptors import _TextLabelDescriptor
 from .plotter import _PlotAdapter, _visible_degree_one_mask
 from .viewport_geometry import _stack_visible_tensor_coords
+
+_TEXT_REF_HEIGHT_POINTS: float = 9.5
 
 
 @functools.lru_cache(maxsize=1024)
 def _textpath_diagonal_points_ref10(text: str) -> float:
     """Diagonal of TextPath at ref fontsize=10pt in points (path units × calibration factor)."""
-    fp = FontProperties(size=10.0)
-    tp = TextPath((0.0, 0.0), text, prop=fp)
-    ex = tp.get_extents()
-    return float(math.hypot(float(ex.width), float(ex.height)) * _TEXT_RENDER_DIAGONAL_FACTOR)
+    if not text.strip():
+        return 0.0
+    width_points = _textpath_width_pts(text, fontsize_pt=10.0)
+    return float(
+        math.hypot(float(width_points), _TEXT_REF_HEIGHT_POINTS) * _TEXT_RENDER_DIAGONAL_FACTOR
+    )
 
 
 def _tensor_label_fontsize_to_fit(
@@ -50,6 +59,38 @@ def _tensor_label_fontsize_to_fit(
     return float(max(lo, min(hi, max_fs)))
 
 
+def _resolved_tensor_label_font_cap_pt(
+    *,
+    config: PlotConfig,
+    p: _DrawScaleParams,
+) -> float:
+    if config.tensor_label_fontsize is not None:
+        return float(max(3.0, float(config.tensor_label_fontsize)))
+    return float(p.font_tensor_label_max)
+
+
+def _tensor_label_fontsize_for_render(
+    *,
+    text: str,
+    config: PlotConfig,
+    p: _DrawScaleParams,
+    pixel_radius: float,
+    fig: Figure,
+    dimensions: Literal[2, 3],
+) -> float:
+    cap_pt = _resolved_tensor_label_font_cap_pt(config=config, p=p)
+    fontsize = _tensor_label_fontsize_to_fit(
+        text=text,
+        cap_pt=cap_pt,
+        pixel_radius=pixel_radius,
+        fig=fig,
+    )
+    if dimensions == 3 and config.tensor_label_fontsize is None:
+        cap_tensor = float(p.font_tensor_label_max) * _LABEL_FONT_3D_SCALE
+        return float(min(float(fontsize) * _LABEL_FONT_3D_SCALE, cap_tensor))
+    return float(fontsize)
+
+
 def _visible_node_ids_in_graph_order(graph: _GraphData) -> list[int]:
     """Visible tensors in ``graph.nodes`` dict order (same draw / layout semantics as before)."""
     return [node_id for node_id, node in graph.nodes.items() if not node.is_virtual]
@@ -65,6 +106,7 @@ def _draw_nodes(
     visible_node_ids: list[int] | None = None,
     node_degrees: dict[int, int] | None = None,
 ) -> np.ndarray:
+    node_mode = "normal" if config.show_nodes else "compact"
     if visible_node_ids is None:
         visible_node_ids = _visible_node_ids_in_graph_order(graph)
     if visible_node_ids:
@@ -72,7 +114,13 @@ def _draw_nodes(
             [np.asarray(positions[node_id], dtype=float) for node_id in visible_node_ids]
         )
         deg1 = _visible_degree_one_mask(graph, visible_node_ids, node_degrees=node_degrees)
-        plotter.draw_tensor_nodes(coords, config=config, p=p, degree_one_mask=deg1)
+        plotter.draw_tensor_nodes(
+            coords,
+            config=config,
+            p=p,
+            degree_one_mask=deg1,
+            mode=node_mode,
+        )
         return coords
     return _stack_visible_tensor_coords(graph, positions)
 
@@ -91,8 +139,9 @@ def _draw_labels(
     visible_draw_order: list[int] | None = None,
     tensor_label_zorder_by_node: dict[int, float] | None = None,
     tensor_disk_radius_px_3d: float | None = None,
+    label_sink: list[_TextLabelDescriptor] | None = None,
 ) -> None:
-    if show_tensor_labels or tensor_hover_by_node is not None:
+    if show_tensor_labels or tensor_hover_by_node is not None or label_sink is not None:
         fig = ax.figure
         ordered_ids: list[int]
         if visible_draw_order is not None:
@@ -109,23 +158,38 @@ def _draw_labels(
             else:
                 r_px = _tensor_disk_radius_px(ax, pos, p, dimensions)
             display_name = format_tensor_node_label(node.name)
-            fs = _tensor_label_fontsize_to_fit(
+            fs = _tensor_label_fontsize_for_render(
                 text=display_name,
-                cap_pt=p.font_tensor_label_max,
-                pixel_radius=r_px,
+                config=config,
+                p=p,
+                pixel_radius=float(r_px),
                 fig=fig,
+                dimensions=dimensions,
             )
-            if dimensions == 3:
-                cap_tensor = float(p.font_tensor_label_max) * _LABEL_FONT_3D_SCALE
-                fs = min(float(fs) * _LABEL_FONT_3D_SCALE, cap_tensor)
-            if tensor_hover_by_node is not None:
-                tensor_hover_by_node[node_id] = (display_name, float(fs))
-            if not show_tensor_labels:
-                continue
             if tensor_label_zorder_by_node is None:
                 z_lbl = float(_ZORDER_TENSOR_NAME)
             else:
                 z_lbl = float(tensor_label_zorder_by_node.get(node_id, _ZORDER_TENSOR_NAME))
+            if tensor_hover_by_node is not None:
+                tensor_hover_by_node[node_id] = (display_name, float(fs))
+            if label_sink is not None:
+                label_sink.append(
+                    _TextLabelDescriptor(
+                        position=np.asarray(pos, dtype=float).copy(),
+                        text=display_name,
+                        kwargs={
+                            "color": config.tensor_label_color,
+                            "ha": "center",
+                            "va": "center",
+                            "fontsize": float(fs),
+                            "zorder": float(z_lbl),
+                            "gid": _TENSOR_LABEL_GID,
+                        },
+                        node_id=int(node_id),
+                    )
+                )
+            if not show_tensor_labels:
+                continue
             plotter.plot_text(
                 pos,
                 display_name,
@@ -152,6 +216,7 @@ def _tensor_label_data_anchor(t: Any, *, dimensions: Literal[2, 3]) -> np.ndarra
 def _refit_tensor_labels_to_disks(
     *,
     ax: Any,
+    config: PlotConfig,
     p: _DrawScaleParams,
     dimensions: Literal[2, 3],
     tensor_disk_radius_px_3d: float | None = None,
@@ -161,7 +226,9 @@ def _refit_tensor_labels_to_disks(
     labels = [t for t in ax.texts if t.get_gid() == _TENSOR_LABEL_GID]
     if not labels:
         return
-    fs_cap = float(p.font_tensor_label_max) * (_LABEL_FONT_3D_SCALE if dimensions == 3 else 1.0)
+    fs_cap = _resolved_tensor_label_font_cap_pt(config=config, p=p)
+    if dimensions == 3 and config.tensor_label_fontsize is None:
+        fs_cap *= _LABEL_FONT_3D_SCALE
     n_ts = len(labels)
     max_passes = 5 if n_ts <= 35 else (3 if n_ts <= 75 else 2)
     for _ in range(max_passes):
@@ -192,7 +259,9 @@ __all__ = [
     "_draw_labels",
     "_draw_nodes",
     "_refit_tensor_labels_to_disks",
+    "_resolved_tensor_label_font_cap_pt",
     "_tensor_label_data_anchor",
+    "_tensor_label_fontsize_for_render",
     "_tensor_label_fontsize_to_fit",
     "_textpath_diagonal_points_ref10",
     "_visible_node_ids_in_graph_order",

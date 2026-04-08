@@ -1,8 +1,6 @@
 {
   "include": ["src", "tests"],
   "exclude": ["**/__pycache__", ".venv"],
-  "venvPath": ".",
-  "venv": ".venv",
   "pythonVersion": "3.11",
   "useLibraryCodeForTypes": true,
   "executionEnvironments": [
@@ -11,13 +9,13 @@
       "extraPaths": ["src", "examples"]
     }
   ],
-  "reportMissingImports": "warning",
+  "reportMissingImports": "error",
   "reportMissingModuleSource": "none",
   "reportUnsupportedDunderAll": "none",
   "reportUnusedExpression": "none",
-  "reportArgumentType": "warning",
-  "reportAssignmentType": "warning",
-  "reportReturnType": "warning",
+  "reportArgumentType": "error",
+  "reportAssignmentType": "error",
+  "reportReturnType": "error",
   "reportAttributeAccessIssue": "none",
-  "reportCallIssue": "warning"
+  "reportCallIssue": "error"
 }

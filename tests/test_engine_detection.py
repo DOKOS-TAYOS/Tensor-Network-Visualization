@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 import matplotlib
@@ -12,7 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pytest
 
-from tensor_network_viz import pair_tensor, show_tensor_network
+from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network
 from tensor_network_viz.viewer import _detect_engine
 
 
@@ -38,8 +38,24 @@ class DummyTensorNetworkNode:
 
 
 class DummyTensorKrowchNetwork:
-    def __init__(self, *, nodes: list[DummyTensorKrowchNode]) -> None:
+    def __init__(self, *, nodes: Iterable[DummyTensorKrowchNode]) -> None:
         self.nodes = nodes
+
+
+class DummyQuimbTensor:
+    def __init__(
+        self,
+        name: str,
+        inds: tuple[str, ...],
+    ) -> None:
+        self.name = name
+        self.inds = inds
+        self.tags = {name}
+
+
+class DummyQuimbNetwork:
+    def __init__(self, *, tensors: Iterable[DummyQuimbTensor]) -> None:
+        self.tensors = tensors
 
 
 def connect(
@@ -116,6 +132,41 @@ def test_show_tensor_network_autodetects_single_pass_iterable() -> None:
 
     assert fig is ax.figure
     assert ax.name != "3d"
+
+
+def test_show_tensor_network_keeps_first_node_for_single_pass_nodes_attribute() -> None:
+    left = DummyTensorKrowchNode("L", ["a", "b"])
+    right = DummyTensorKrowchNode("R", ["b", "c"])
+    connect(left, 1, right, 0, name="bond")
+    network = DummyTensorKrowchNetwork(nodes=iter([left, right]))
+
+    fig, ax = show_tensor_network(
+        network,
+        config=PlotConfig(show_tensor_labels=True),
+        show=False,
+        show_controls=False,
+    )
+
+    labels = {text.get_text() for text in ax.texts}
+    assert fig is ax.figure
+    assert labels >= {"L", "R"}
+
+
+def test_show_tensor_network_keeps_first_tensor_for_single_pass_tensors_attribute() -> None:
+    left = DummyQuimbTensor("Q0", ("a", "b"))
+    right = DummyQuimbTensor("Q1", ("c", "d"))
+    network = DummyQuimbNetwork(tensors=iter([left, right]))
+
+    fig, ax = show_tensor_network(
+        network,
+        config=PlotConfig(show_tensor_labels=True),
+        show=False,
+        show_controls=False,
+    )
+
+    labels = {text.get_text() for text in ax.texts}
+    assert fig is ax.figure
+    assert labels >= {"Q0", "Q1"}
 
 
 def test_show_tensor_network_rejects_unknown_input_when_engine_is_omitted() -> None:

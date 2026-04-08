@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
+
+from plotting_helpers import assert_readable_image
+from tensor_network_viz import EinsumTrace, show_tensor_network
+from tensor_network_viz._tensor_elements_data import (
+    _extract_einsum_playback_step_records,
+    _extract_playback_step_records,
+)
 
 _EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 if str(_EXAMPLES) not in sys.path:
@@ -187,7 +195,9 @@ def test_quimb_hyper_saves_figure_without_showing() -> None:
     )
 
     assert exit_code == 0
-    assert output_path.exists()
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
 
 
 def test_tenpy_imps_saves_figure_without_showing() -> None:
@@ -202,7 +212,9 @@ def test_tenpy_imps_saves_figure_without_showing() -> None:
     )
 
     assert exit_code == 0
-    assert output_path.exists()
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
 
 
 def test_tenpy_chain_saves_figure_without_showing() -> None:
@@ -217,7 +229,9 @@ def test_tenpy_chain_saves_figure_without_showing() -> None:
     )
 
     assert exit_code == 0
-    assert output_path.exists()
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
 
 
 def test_einsum_ellipsis_saves_figure_without_showing() -> None:
@@ -232,7 +246,87 @@ def test_einsum_ellipsis_saves_figure_without_showing() -> None:
     )
 
     assert exit_code == 0
-    assert output_path.exists()
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
+
+
+@pytest.mark.parametrize("example_name", ["mps", "ellipsis"])
+def test_einsum_auto_examples_keep_tensors_alive_for_tensor_inspector(example_name: str) -> None:
+    _require_torch()
+    run_demo = _load_example_module(Path("examples/run_demo.py"), f"run_demo_{example_name}_args")
+    einsum_demo = importlib.import_module("einsum_demo")
+
+    args = run_demo.parse_args(
+        ["einsum", example_name, "--view", "2d", "--tensor-inspector", "--no-show"]
+    )
+    trace = einsum_demo._trace_steps_for(example_name, args)
+
+    assert isinstance(trace, EinsumTrace)
+    step_records = _extract_einsum_playback_step_records(trace)
+    assert step_records
+    assert all(step.record is not None for step in step_records)
+
+
+@pytest.mark.parametrize("example_name", ["mps", "mpo"])
+def test_einsum_auto_examples_keep_inspector_and_costs_aligned_to_real_trace_steps(
+    example_name: str,
+) -> None:
+    _require_torch()
+    run_demo = _load_example_module(
+        Path("examples/run_demo.py"),
+        f"run_demo_{example_name}_inspector_alignment",
+    )
+    demo_cli = importlib.import_module("demo_cli")
+    einsum_demo = importlib.import_module("einsum_demo")
+
+    args = run_demo.parse_args(
+        ["einsum", example_name, "--view", "2d", "--tensor-inspector", "--no-show"]
+    )
+    trace = einsum_demo._trace_steps_for(example_name, args)
+    scheme_steps = einsum_demo._scheme_steps(example_name, args)
+
+    assert isinstance(trace, EinsumTrace)
+    assert scheme_steps is not None
+    assert len(scheme_steps) == len(trace)
+
+    config = demo_cli.finalize_demo_plot_config(
+        args,
+        engine="einsum",
+        scheme_tensor_names=scheme_steps,
+    )
+    fig, _ax = show_tensor_network(
+        trace,
+        engine="einsum",
+        view=args.view,
+        config=config,
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls.current_scene.contraction_controls is not None
+    viewer = controls.current_scene.contraction_controls._viewer
+    assert viewer is not None
+    assert viewer.current_step == len(trace)
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+    assert f"r{len(trace) - 1}" in inspector_controls._panel.main_ax.get_title()
+
+    controls.cost_hover_on = True
+    controls._apply_scene_state(controls.current_scene)
+    assert viewer._cost_panel_ax is not None
+    assert viewer._cost_panel_ax.get_visible()
+    assert viewer._cost_text_artist is not None
+    assert "Contraction:" in viewer._cost_text_artist.get_text()
 
 
 def test_tensornetwork_mera_ttn_saves_figure_without_showing() -> None:
@@ -255,7 +349,157 @@ def test_tensornetwork_mera_ttn_saves_figure_without_showing() -> None:
     )
 
     assert exit_code == 0
-    assert output_path.exists()
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
+
+
+def test_tensorkrowch_run_example_2d_calls_renderer_without_scope_patch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_example_module(
+        Path("examples/tensorkrowch_demo.py"), "tensorkrowch_demo_run_plain"
+    )
+    from matplotlib.figure import Figure
+
+    def fake_builder(
+        args: object,
+        definition: object,
+    ) -> object:
+        del args, definition
+        return module.BuiltExample(
+            network=object(),
+            plot_engine="tensorkrowch",
+            title="Title",
+        )
+
+    def fake_render_demo_tensor_network(
+        network: object,
+        *,
+        args: object,
+        engine: str,
+        view: str,
+        config: object,
+    ) -> tuple[Figure, object]:
+        del network, config
+        assert args is not None
+        assert engine == "tensorkrowch"
+        assert view == "2d"
+        return Figure(), object()
+
+    args = module.ExampleCliArgs(
+        engine="tensorkrowch",
+        example="mps",
+        view="2d",
+        labels_nodes=True,
+        labels_edges=False,
+        labels=None,
+        hover_labels=True,
+        scheme=False,
+        hover_cost=False,
+        tensor_inspector=False,
+        contracted=False,
+        from_scratch=False,
+        from_list=False,
+        save=None,
+        no_show=True,
+        n_sites=2,
+        lx=1,
+        ly=1,
+        lz=1,
+        mera_log2=1,
+        tree_depth=1,
+    )
+
+    fake_definition = module.ExampleDefinition(
+        name="mps",
+        aliases=(),
+        size_knobs=frozenset({"n_sites"}),
+        supports_native_object=True,
+        supports_from_scratch=True,
+        supports_list=True,
+        builder=fake_builder,
+        description="fake",
+    )
+
+    monkeypatch.setattr(
+        module,
+        "resolve_example_definition",
+        lambda definitions, requested: fake_definition,
+    )
+    monkeypatch.setattr(module, "render_demo_tensor_network", fake_render_demo_tensor_network)
+    monkeypatch.setattr(module, "apply_demo_caption", lambda fig, **kwargs: None)
+
+    module.run_example(args)
+
+
+def test_tensorkrowch_contracted_demo_uses_native_network_and_auto_scheme() -> None:
+    pytest.importorskip("tensorkrowch")
+    pytest.importorskip("torch")
+    module = _load_example_module(
+        Path("examples/tensorkrowch_demo.py"), "tensorkrowch_demo_contracted"
+    )
+    run_demo = _load_example_module(Path("examples/run_demo.py"), "run_demo_tk_contracted_args")
+
+    args = run_demo.parse_args(
+        ["tensorkrowch", "mps", "--contracted", "--scheme", "--n-sites", "6", "--no-show"]
+    )
+    definition = module.resolve_example_definition(module.EXAMPLES, "mps")
+    built = module._build_example(args, definition)
+
+    assert built.plot_engine == "tensorkrowch"
+    assert built.scheme_steps_by_name is None
+    assert "auto-recovered contraction history" in (built.footer or "")
+    assert hasattr(built.network, "resultant_nodes")
+    assert len(built.network.resultant_nodes) == 5
+
+
+def test_tensorkrowch_mps_demo_uses_pairwise_merge_contractions_by_default() -> None:
+    pytest.importorskip("tensorkrowch")
+    pytest.importorskip("torch")
+    module = _load_example_module(
+        Path("examples/tensorkrowch_demo.py"),
+        "tensorkrowch_demo_pairwise",
+    )
+    run_demo = _load_example_module(Path("examples/run_demo.py"), "run_demo_tk_pairwise_args")
+    from tensor_network_viz.tensorkrowch.graph import _build_graph as _build_tensorkrowch_graph
+
+    args = run_demo.parse_args(["tensorkrowch", "mps", "--scheme", "--n-sites", "6", "--no-show"])
+    definition = module.resolve_example_definition(module.EXAMPLES, "mps")
+    built = module._build_example(args, definition)
+
+    assert built.scheme_steps_by_name is None
+    graph = _build_tensorkrowch_graph(built.network)
+    assert graph.contraction_steps is not None
+    assert len(graph.contraction_steps) == 5
+    assert tuple(len(step) for step in graph.contraction_steps) == (2, 2, 2, 4, 6)
+
+
+def test_tensorkrowch_contracted_demo_saves_figure_without_showing() -> None:
+    pytest.importorskip("tensorkrowch")
+    pytest.importorskip("torch")
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_tk_contracted_save")
+    output_dir = Path(".tmp") / "example-tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "tensorkrowch-mps-contracted-demo.png"
+
+    exit_code = module.main(
+        [
+            "tensorkrowch",
+            "mps",
+            "--contracted",
+            "--n-sites",
+            "6",
+            "--save",
+            str(output_path),
+            "--no-show",
+        ]
+    )
+
+    assert exit_code == 0
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
 
 
 def test_run_all_examples_default_2d_matches_new_matrix() -> None:
@@ -320,7 +564,27 @@ def test_run_all_examples_list_mode_prints_without_running_subprocesses(
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert "examples/run_demo.py tensornetwork mera_ttn --view 2d --scheme" in captured.out
+    assert "examples/run_demo.py tensornetwork mera_ttn --view 2d" in captured.out
+
+
+def test_run_all_examples_contraction_group_includes_small_contracted_tensorkrowch_demo() -> None:
+    module = _load_example_module(
+        Path("examples/run_all_examples.py"), "run_all_examples_tk_contracted"
+    )
+
+    commands = module.select_example_commands(group="contraction", views="2d")
+    argvs = {command.argv for command in commands}
+
+    assert (
+        "examples/run_demo.py",
+        "tensorkrowch",
+        "mps",
+        "--view",
+        "2d",
+        "--contracted",
+        "--n-sites",
+        "6",
+    ) in argvs
 
 
 def test_run_all_examples_all_group_contains_more_commands_than_default() -> None:
@@ -332,6 +596,88 @@ def test_run_all_examples_all_group_contains_more_commands_than_default() -> Non
     assert len(all_commands) > len(default_commands)
 
 
+def test_representative_demo_tensors_are_deterministic_and_non_constant() -> None:
+    pytest.importorskip("torch")
+    pytest.importorskip("tensorkrowch")
+    pytest.importorskip("tensornetwork")
+    pytest.importorskip("quimb.tensor")
+    pytest.importorskip("tenpy")
+
+    demo_cli = importlib.import_module("demo_cli")
+    tk_demo = importlib.import_module("tensorkrowch_demo")
+    tn_demo = importlib.import_module("tensornetwork_demo")
+    quimb_demo = importlib.import_module("quimb_demo")
+    tenpy_demo = importlib.import_module("tenpy_demo")
+    einsum_demo = importlib.import_module("einsum_demo")
+
+    args = demo_cli.ExampleCliArgs(
+        engine="tensorkrowch",
+        example="mps",
+        view="2d",
+        labels_nodes=True,
+        labels_edges=False,
+        labels=None,
+        hover_labels=True,
+        scheme=False,
+        hover_cost=False,
+        tensor_inspector=False,
+        contracted=False,
+        from_scratch=False,
+        from_list=False,
+        save=None,
+        no_show=True,
+        n_sites=3,
+        lx=2,
+        ly=2,
+        lz=2,
+        mera_log2=2,
+        tree_depth=2,
+    )
+
+    tk_blueprint = tk_demo._build_blueprint("mps", args)
+    _tk_network_a, tk_nodes_a = tk_demo._build_tensorkrowch_network(tk_blueprint)
+    _tk_network_b, tk_nodes_b = tk_demo._build_tensorkrowch_network(tk_blueprint)
+    tk_array_a = np.asarray(tk_nodes_a[0].tensor)
+    tk_array_b = np.asarray(tk_nodes_b[0].tensor)
+    assert np.array_equal(tk_array_a, tk_array_b)
+    assert not np.allclose(tk_array_a, tk_array_a.flat[0])
+
+    tn_blueprint = tn_demo._build_blueprint("mps", args)
+    tn_nodes_a = tn_demo._build_tensornetwork_nodes(tn_blueprint)
+    tn_nodes_b = tn_demo._build_tensornetwork_nodes(tn_blueprint)
+    tn_array_a = np.asarray(tn_nodes_a[0].tensor)
+    tn_array_b = np.asarray(tn_nodes_b[0].tensor)
+    assert np.array_equal(tn_array_a, tn_array_b)
+    assert not np.allclose(tn_array_a, tn_array_a.flat[0])
+
+    quimb_blueprint = quimb_demo._build_blueprint("mps", args)
+    _quimb_network_a, quimb_tensors_a = quimb_demo._build_quimb_network(quimb_blueprint)
+    _quimb_network_b, quimb_tensors_b = quimb_demo._build_quimb_network(quimb_blueprint)
+    quimb_array_a = np.asarray(quimb_tensors_a[0].data)
+    quimb_array_b = np.asarray(quimb_tensors_b[0].data)
+    assert np.array_equal(quimb_array_a, quimb_array_b)
+    assert not np.allclose(quimb_array_a, quimb_array_a.flat[0])
+
+    tenpy_blueprint = tenpy_demo.build_chain_blueprint(3)
+    tenpy_network = tenpy_demo._build_explicit_network(tenpy_blueprint)
+    first_tenpy_tensor = tenpy_network.nodes[0][1]
+    tenpy_array = np.asarray(first_tenpy_tensor.to_ndarray())
+    assert not np.allclose(tenpy_array, tenpy_array.flat[0])
+
+    einsum_trace_a = einsum_demo._build_mps_auto(3)
+    einsum_trace_b = einsum_demo._build_mps_auto(3)
+    playback_a = _extract_playback_step_records(einsum_trace_a)
+    playback_b = _extract_playback_step_records(einsum_trace_b)
+    assert playback_a is not None
+    assert playback_b is not None
+    assert playback_a[0].record is not None
+    assert playback_b[0].record is not None
+    einsum_array_a = np.asarray(playback_a[0].record.array)
+    einsum_array_b = np.asarray(playback_b[0].record.array)
+    assert np.array_equal(einsum_array_a, einsum_array_b)
+    assert not np.allclose(einsum_array_a, einsum_array_a.flat[0])
+
+
 def test_tensor_elements_demo_saves_figure_without_showing(tmp_path: Path) -> None:
     module = _load_example_module(Path("examples/tensor_elements_demo.py"), "tensor_elements_demo")
     output_path = tmp_path / "tensor-elements-demo.png"
@@ -339,8 +685,8 @@ def test_tensor_elements_demo_saves_figure_without_showing(tmp_path: Path) -> No
     fig, _ = module.main(show=False)
     fig.savefig(output_path, bbox_inches="tight")
 
-    assert output_path.exists()
-    assert output_path.stat().st_size > 0
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
 
 
 def test_tensor_elements_structured_demo_includes_sparse_and_nonfinite_cases() -> None:

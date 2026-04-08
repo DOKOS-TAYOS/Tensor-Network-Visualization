@@ -63,3 +63,48 @@ def test_builder_identity_partitions_cache() -> None:
     assert ga is not gb
     assert calls_a == [1] and calls_b == [1]
     assert _get_or_build_graph(nw, build_a) is ga
+
+
+def test_get_or_build_graph_reuses_list_instance() -> None:
+    calls: list[int] = []
+    network = [object(), object()]
+
+    def build(_: object) -> _GraphData:
+        calls.append(1)
+        return _GraphData(nodes={0: _make_node("a", ())}, edges=())
+
+    g1 = _get_or_build_graph(network, build)
+    g2 = _get_or_build_graph(network, build)
+
+    assert g1 is g2
+    assert calls == [1]
+
+
+def test_get_or_build_graph_reuses_tuple_instance() -> None:
+    calls: list[int] = []
+    network = (object(), object())
+
+    def build(_: object) -> _GraphData:
+        calls.append(1)
+        return _GraphData(nodes={0: _make_node("a", ())}, edges=())
+
+    g1 = _get_or_build_graph(network, build)
+    g2 = _get_or_build_graph(network, build)
+
+    assert g1 is g2
+    assert calls == [1]
+
+
+def test_get_or_build_graph_does_not_reuse_single_pass_iterator() -> None:
+    calls: list[int] = []
+
+    def build(_: object) -> _GraphData:
+        calls.append(1)
+        return _GraphData(nodes={len(calls): _make_node("a", ())}, edges=())
+
+    iterator = iter([object(), object()])
+    g1 = _get_or_build_graph(iterator, build)
+    g2 = _get_or_build_graph(iterator, build)
+
+    assert g1 is not g2
+    assert calls == [1, 1]

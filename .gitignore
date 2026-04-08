@@ -1,4 +1,6 @@
 .venv/
+.wheel-venv/
+.sdist-venv/
 .worktrees/
 .tmp/
 .tmp_venv_*/

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from ..axis_directions import _AXIS_DIR_2D, _AXIS_DIR_3D
@@ -22,6 +24,54 @@ _DIAGONAL_DIRECTIONS_2D: tuple[np.ndarray, ...] = (
     np.array([-1.0, -1.0], dtype=float) / np.sqrt(2.0),
     np.array([1.0, -1.0], dtype=float) / np.sqrt(2.0),
 )
+_SEMIDIAGONAL_DIRECTIONS_2D: tuple[np.ndarray, ...] = tuple(
+    np.array(
+        [math.cos(math.radians(angle_degrees)), math.sin(math.radians(angle_degrees))],
+        dtype=float,
+    )
+    for angle_degrees in (67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5, 22.5)
+)
+_NORTH_BEHAVIOR_ORDER_2D: tuple[np.ndarray, ...] = (
+    np.array([0.0, 1.0], dtype=float),
+    np.array([0.0, -1.0], dtype=float),
+    np.array([1.0, 0.0], dtype=float),
+    np.array([-1.0, 0.0], dtype=float),
+    *_DIAGONAL_DIRECTIONS_2D,
+    *_SEMIDIAGONAL_DIRECTIONS_2D,
+)
+
+
+def _rotate_direction_2d(
+    direction: np.ndarray,
+    *,
+    quarter_turns_clockwise: int,
+) -> np.ndarray:
+    x_coord, y_coord = np.asarray(direction, dtype=float).reshape(-1)[:2]
+    turns = int(quarter_turns_clockwise) % 4
+    if turns == 0:
+        return np.array([x_coord, y_coord], dtype=float)
+    if turns == 1:
+        return np.array([y_coord, -x_coord], dtype=float)
+    if turns == 2:
+        return np.array([-x_coord, -y_coord], dtype=float)
+    return np.array([-y_coord, x_coord], dtype=float)
+
+
+def _behavior_direction_order_2d(behavior: str) -> tuple[np.ndarray, ...]:
+    turns_by_behavior = {
+        "north": 0,
+        "east": 1,
+        "south": 2,
+        "west": 3,
+    }
+    turns = turns_by_behavior.get(behavior.lower().strip(), 0)
+    return tuple(
+        _normalize_direction(
+            _rotate_direction_2d(direction, quarter_turns_clockwise=turns),
+            dimensions=2,
+        )
+        for direction in _NORTH_BEHAVIOR_ORDER_2D
+    )
 
 
 def _is_dangling_leg_axis(graph: _GraphData, node_id: int, axis_index: int) -> bool:
@@ -465,6 +515,7 @@ def _preferred_component_directions_3d(
 
 
 __all__ = [
+    "_behavior_direction_order_2d",
     "_dedupe_candidate_directions",
     "_direction_from_axis_name",
     "_direction_has_space",

@@ -30,8 +30,9 @@ class ExampleCliArgs:
     labels: bool | None
     hover_labels: bool
     scheme: bool
-    playback: bool
     hover_cost: bool
+    tensor_inspector: bool
+    contracted: bool | None
     from_scratch: bool
     from_list: bool
     save: Path | None
@@ -158,15 +159,28 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
     )
     add_bool_flag(
         parser,
-        name="playback",
-        default=False,
-        help_text="Enable contraction playback widgets; also enables scheme rendering.",
-    )
-    add_bool_flag(
-        parser,
         name="hover-cost",
         default=False,
         help_text="Show contraction-cost details during playback; also enables scheme rendering.",
+    )
+    add_bool_flag(
+        parser,
+        name="tensor-inspector",
+        default=False,
+        help_text=(
+            "Open the linked tensor inspector for EinsumTrace playback examples and for "
+            "contracted TensorKrowch playback when the result tensors can be recovered."
+        ),
+    )
+    add_bool_flag(
+        parser,
+        name="contracted",
+        default=None,
+        help_text=(
+            "For small TensorKrowch demos, contract the native network first so the "
+            "auto-recovered contraction history can be visualized. Supported small "
+            "TensorKrowch demos enable this by default; use --no-contracted to disable it."
+        ),
     )
     add_bool_flag(
         parser,
@@ -233,8 +247,9 @@ def namespace_to_cli_args(namespace: argparse.Namespace) -> ExampleCliArgs:
         labels=namespace.labels,
         hover_labels=bool(namespace.hover_labels),
         scheme=bool(namespace.scheme),
-        playback=bool(namespace.playback),
         hover_cost=bool(namespace.hover_cost),
+        tensor_inspector=bool(namespace.tensor_inspector),
+        contracted=namespace.contracted,
         from_scratch=bool(namespace.from_scratch),
         from_list=bool(namespace.from_list),
         save=namespace.save,
@@ -283,6 +298,38 @@ def cumulative_prefix_contraction_scheme(names: tuple[str, ...]) -> SchemeByName
     return tuple(tuple(names[:size]) for size in range(2, len(names) + 1))
 
 
+def pairwise_merge_group_contraction_scheme(groups: SchemeByName) -> SchemeByName:
+    active_groups = [tuple(group) for group in groups if group]
+    if not active_groups:
+        return ()
+    if len(active_groups) == 1:
+        return (active_groups[0],)
+
+    steps: list[tuple[str, ...]] = []
+    while len(active_groups) > 1:
+        next_groups: list[tuple[str, ...]] = []
+        index = 0
+        while index < len(active_groups):
+            left_group = active_groups[index]
+            if index + 1 >= len(active_groups):
+                next_groups.append(left_group)
+                index += 1
+                continue
+            right_group = active_groups[index + 1]
+            merged_group = (*left_group, *right_group)
+            steps.append(tuple(merged_group))
+            next_groups.append(tuple(merged_group))
+            index += 2
+        active_groups = next_groups
+    return tuple(steps)
+
+
+def pairwise_merge_contraction_scheme(names: tuple[str, ...]) -> SchemeByName:
+    return pairwise_merge_group_contraction_scheme(
+        tuple((name,) for name in names),
+    )
+
+
 def cubic_peps_tensor_names(lx: int, ly: int, lz: int) -> tuple[str, ...]:
     if min(lx, ly, lz) < 1:
         raise ValueError("lx, ly, lz must be >= 1")
@@ -307,17 +354,17 @@ def finalize_demo_plot_config(
         labels_edges = bool(labels_override)
     scheme_enabled = bool(
         getattr(args, "scheme", False)
-        or getattr(args, "playback", False)
         or getattr(args, "hover_cost", False)
+        or getattr(args, "tensor_inspector", False)
     )
     return PlotConfig(
         show_tensor_labels=labels_nodes,
         show_index_labels=labels_edges,
         hover_labels=bool(getattr(args, "hover_labels", True)),
         show_contraction_scheme=scheme_enabled,
-        contraction_scheme_by_name=scheme_tensor_names if scheme_enabled else None,
-        contraction_playback=bool(getattr(args, "playback", False)),
         contraction_scheme_cost_hover=bool(getattr(args, "hover_cost", False)),
+        contraction_tensor_inspector=bool(getattr(args, "tensor_inspector", False)),
+        contraction_scheme_by_name=scheme_tensor_names if scheme_enabled else None,
     )
 
 
@@ -329,6 +376,11 @@ def render_demo_tensor_network(
     view: ViewName,
     config: PlotConfig,
 ) -> tuple[Figure, RenderedAxes]:
+    if demo_runs_headless(args) and config.show_contraction_scheme:
+        raise ValueError(
+            "The contraction scheme is dynamic-only. Remove --scheme, or run without "
+            "--no-show/--save so the slider controls are available."
+        )
     return show_tensor_network(
         network,
         engine=engine,
@@ -686,6 +738,8 @@ __all__ = [
     "format_joined_names",
     "graph_tensor_names",
     "namespace_to_cli_args",
+    "pairwise_merge_contraction_scheme",
+    "pairwise_merge_group_contraction_scheme",
     "render_demo_tensor_network",
     "resolve_example_definition",
 ]

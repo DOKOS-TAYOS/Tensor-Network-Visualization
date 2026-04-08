@@ -16,6 +16,9 @@ If you are working locally, activate the project `.venv` first.
 source .venv/bin/activate
 ```
 
+After the virtual environment is active, the `python ...` commands below are the same on Windows
+and Linux.
+
 ## Main Launcher
 
 ```bash
@@ -42,19 +45,21 @@ python examples/tensor_elements_demo.py --demo structured
 It uses fairly large NumPy tensors, keeps one tensor active at a time with a slider, and exposes a
 grouped control flow: `basic` (`elements`, `magnitude`, `log_magnitude`, `distribution`, `data`),
 `complex` (`real`, `imag`, `phase`), and `diagnostic` (`sign`, `signed_value`, `sparsity`,
-`nan_inf`). The optional demos are: `matvec` (default, traced matrix-vector), `batch` (traced
-batched matmul), and `structured` (3D complex, dense, sparse, and non-finite TensorNetwork-style
-nodes).
+`nan_inf`, `singular_values`, `eigen_real`, `eigen_imag`). The optional demos are `matvec`
+(default traced matrix-vector), `batch` (traced batched matmul), and `structured` (3D complex,
+dense, sparse, and non-finite TensorNetwork-style nodes).
 
 If you want to inspect the new diagnostic-friendly tensors specifically, launch the structured demo
-and move the tensor slider until you reach `SparseMask` or `Specials`:
+and move the tensor slider until you reach `Lattice`, `SparseMask`, or `Specials`:
 
 ```bash
 python examples/tensor_elements_demo.py --demo structured
 ```
 
+- `Lattice`: useful for `singular_values`, `eigen_real`, and `eigen_imag`.
 - `SparseMask`: useful for the `sparsity` mode.
-- `Specials`: useful for the `nan_inf` mode because it contains `NaN`, `+Inf`, and `-Inf`.
+- `Specials`: useful for the `nan_inf` mode and for confirming that spectral modes are hidden when
+  non-finite values are present.
 
 ## Common Workflows
 
@@ -80,8 +85,22 @@ When `--no-show` or `--save` is used, the launcher calls
 ```bash
 python examples/run_demo.py einsum ellipsis --view 2d --scheme
 python examples/run_demo.py einsum mps --view 2d --scheme --playback
+python examples/run_demo.py einsum mps --view 2d --tensor-inspector
 python examples/run_demo.py tenpy chain --view 2d --scheme
+python examples/run_demo.py tensorkrowch mps --view 2d --n-sites 6 --scheme
+python examples/run_demo.py tensorkrowch mps --view 2d --n-sites 6 --hover-cost --tensor-inspector
 ```
+
+For the linked tensor inspector, use an auto-traced `EinsumTrace` example such as `mps`, `mpo`,
+`peps`, `ellipsis`, or `nway`. Manual `--from-scratch` / `--from-list` variants do not carry the
+live tensor values needed by the inspector. Contracted TensorKrowch demos can also drive the
+linked inspector and cost panel when the native network still preserves recoverable result nodes.
+
+For TensorKrowch, `--contracted` is intentionally limited to small native demos so the example can
+perform a real contraction first and then let the library recover the contraction history
+automatically. Right now the safe documented path is `mps` / `mpo` with `--n-sites 6`, and those
+small demos enable the contracted path by default. Use `--no-contracted` if you want to inspect
+the uncontracted native network instead.
 
 ## Useful Options
 
@@ -95,6 +114,8 @@ python examples/run_demo.py tenpy chain --view 2d --scheme
 | `--scheme` | Draw contraction-scheme overlays when available. |
 | `--playback` | Start with contraction playback enabled. |
 | `--hover-cost` | Show contraction-cost details in the playback panel. |
+| `--tensor-inspector` | Open the linked tensor inspector for `EinsumTrace` playback or contracted TensorKrowch playback with recoverable step tensors. |
+| `--contracted` | For small TensorKrowch demos, contract the native network first and show the recovered scheme. |
 | `--from-scratch` | Use the manual builder when that example supports it. |
 | `--from-list` | Pass list/iterable input when supported. |
 | `--save [PATH]` | Save the figure. If omitted, use the auto-generated path. |
@@ -276,6 +297,7 @@ Outputs are written to `.tmp/run-all-examples/` by default.
 
 ```bash
 python examples/run_demo.py tensorkrowch mps --view 2d
+python examples/run_demo.py tensorkrowch mps --view 2d --n-sites 6 --scheme
 python examples/run_demo.py quimb hyper --view 2d --save
 python examples/run_demo.py tenpy imps --view 2d --save tenpy_imps.png --no-show
 python examples/run_demo.py einsum ellipsis --view 3d

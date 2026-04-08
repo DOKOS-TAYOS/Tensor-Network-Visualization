@@ -56,15 +56,23 @@ def _hover_commands(commands: Sequence[ExampleCommand]) -> tuple[ExampleCommand,
 def _contraction_commands(view: Literal["2d", "3d"]) -> tuple[ExampleCommand, ...]:
     return (
         _command(
+            "tensorkrowch",
+            "mps",
+            view,
+            "--contracted",
+            "--n-sites",
+            "6",
+            slug=f"tensorkrowch_mps_{view}_contracted_scheme",
+        ),
+        _command(
             "tensornetwork",
             "mera_ttn",
             view,
-            "--scheme",
             slug=f"tensornetwork_mera_ttn_{view}_scheme",
         ),
-        _command("quimb", "hyper", view, "--scheme", slug=f"quimb_hyper_{view}_scheme"),
-        _command("tenpy", "chain", view, "--scheme", slug=f"tenpy_chain_{view}_scheme"),
-        _command("einsum", "mps", view, "--scheme", slug=f"einsum_mps_{view}_scheme"),
+        _command("quimb", "hyper", view, slug=f"quimb_hyper_{view}_scheme"),
+        _command("tenpy", "chain", view, slug=f"tenpy_chain_{view}_scheme"),
+        _command("einsum", "mps", view, slug=f"einsum_mps_{view}_scheme"),
     )
 
 

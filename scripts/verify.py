@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ class VerificationStep:
 
 
 VerificationGroup: TypeAlias = tuple[VerificationStep, ...]
+LOGGER = logging.getLogger("tensor_network_viz.verify")
 
 
 def _repo_root() -> Path:
@@ -23,13 +25,20 @@ def _repo_root() -> Path:
 
 def _command_groups() -> dict[str, VerificationGroup]:
     python = sys.executable
+    pytest_base = (python, "-m", "pytest", "-q")
     return {
         "quality": (
             VerificationStep("ruff-check", (python, "-m", "ruff", "check", ".")),
             VerificationStep("ruff-format", (python, "-m", "ruff", "format", "--check", ".")),
             VerificationStep("pyright", (python, "-m", "pyright")),
         ),
-        "tests": (VerificationStep("pytest", (python, "-m", "pytest", "-q")),),
+        "tests": (VerificationStep("pytest", pytest_base),),
+        "perf": (
+            VerificationStep(
+                "pytest-perf",
+                (*pytest_base, "-p", "no:cacheprovider", "--override-ini=addopts=", "-m", "perf"),
+            ),
+        ),
         "smoke": (
             VerificationStep(
                 "quimb-smoke",
@@ -44,7 +53,7 @@ def _command_groups() -> dict[str, VerificationGroup]:
                 ),
             ),
         ),
-        "wheel": (VerificationStep("build-wheel", (python, "-m", "build", "--wheel")),),
+        "package": (VerificationStep("build-dist", (python, "-m", "build", "--sdist", "--wheel")),),
     }
 
 
@@ -55,7 +64,7 @@ def _ordered_steps(mode: str) -> VerificationGroup:
             *command_groups["quality"],
             *command_groups["tests"],
             *command_groups["smoke"],
-            *command_groups["wheel"],
+            *command_groups["package"],
         )
     return command_groups[mode]
 
@@ -65,6 +74,7 @@ def _format_command(command: tuple[str, ...]) -> str:
 
 
 def _run_step(step: VerificationStep, repo_root: Path) -> None:
+    LOGGER.debug("Running verification step '%s' in %s.", step.label, repo_root)
     print(f"[verify] {step.label}")
     print(f"[verify] $ {_format_command(step.command)}")
     subprocess.run(step.command, cwd=repo_root, check=True)
@@ -77,9 +87,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "mode",
         nargs="?",
-        choices=("all", "quality", "tests", "smoke", "wheel"),
+        choices=("all", "quality", "tests", "perf", "smoke", "package"),
         default="all",
-        help="Verification slice to run. Defaults to the full pre-merge suite.",
+        help="Verification slice to run. Defaults to the full pre-merge suite without perf checks.",
     )
     return parser
 
@@ -88,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     repo_root = _repo_root()
+    LOGGER.debug("Starting verification mode='%s' in repo_root=%s.", args.mode, repo_root)
 
     try:
         for step in _ordered_steps(args.mode):

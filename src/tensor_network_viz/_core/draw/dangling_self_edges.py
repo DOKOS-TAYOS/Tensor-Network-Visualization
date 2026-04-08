@@ -10,8 +10,12 @@ from .._label_format import format_tensor_node_label
 from ..curves import _ellipse_points, _ellipse_points_3d, _require_self_endpoints
 from ..graph import _EdgeData, _endpoint_index_caption, _GraphData
 from ..layout import AxisDirections, NodePositions, _orthogonal_unit
-from .constants import *
+from .constants import (
+    _EDGE_INDEX_LABEL_ALONG_FRAC,
+    _PHYS_DANGLING_2D_FRAC_FROM_TIP,
+)
 from .fonts_and_scale import _DrawScaleParams
+from .label_descriptors import _TextLabelDescriptor
 from .labels_misc import (
     _curve_index_outside_disk,
     _dangling_hover_label_text,
@@ -59,7 +63,10 @@ def _draw_dangling_edge(
     direction = directions[(endpoint.node_id, endpoint.axis_index)]
     center = positions[endpoint.node_id]
     use_center_anchor = dimensions == 3 or graph.nodes[endpoint.node_id].is_virtual
-    if use_center_anchor:
+    if dimensions == 2 and not config.show_nodes and not graph.nodes[endpoint.node_id].is_virtual:
+        start = center
+        end = center + direction * p.stub
+    elif use_center_anchor:
         start = center
         end = center + direction * (p.r + p.stub)
     else:
@@ -116,6 +123,7 @@ def _draw_dangling_edge_labels(
     ax: Any,
     scale: float,
     zorder_label: float | None = None,
+    label_sink: list[_TextLabelDescriptor] | None = None,
 ) -> None:
     if not edge.label and not config.hover_labels:
         return
@@ -148,6 +156,11 @@ def _draw_dangling_edge_labels(
         return
 
     raw_label = edge.label
+    stub_segment = np.stack([np.asarray(start, dtype=float), np.asarray(end, dtype=float)], axis=0)
+    stub_length = _polyline_arc_length_total(stub_segment)
+    distance_from_tip = float(_PHYS_DANGLING_2D_FRAC_FROM_TIP) * stub_length
+    point, tangent = _point_tangent_along_polyline_from_end(stub_segment, distance_from_tip)
+
     fontsize = _edge_index_fontsize_for_bond(
         raw_label,
         bond_start=start,
@@ -155,6 +168,7 @@ def _draw_dangling_edge_labels(
         ax=ax,
         dimensions=dimensions,
         is_physical=True,
+        preferred_fontsize_pt=config.edge_label_fontsize,
     )
     text_kwargs = _edge_index_text_kwargs(
         config,
@@ -163,10 +177,6 @@ def _draw_dangling_edge_labels(
         bbox_pad=p.index_bbox_pad,
         zorder=zorder_label,
     )
-    stub_segment = np.stack([np.asarray(start, dtype=float), np.asarray(end, dtype=float)], axis=0)
-    stub_length = _polyline_arc_length_total(stub_segment)
-    distance_from_tip = float(_PHYS_DANGLING_2D_FRAC_FROM_TIP) * stub_length
-    point, tangent = _point_tangent_along_polyline_from_end(stub_segment, distance_from_tip)
     if dimensions == 2:
         start_2d = np.asarray(start[:2], dtype=float)
         end_2d = np.asarray(end[:2], dtype=float)
@@ -200,11 +210,18 @@ def _draw_dangling_edge_labels(
             scale=scale,
             fontsize_pt=float(fontsize),
         )
-    plotter.plot_text(
-        label_pos,
-        format_tensor_node_label(raw_label),
-        **{**text_kwargs, **align_kwargs},
-    )
+    formatted = format_tensor_node_label(raw_label)
+    kwargs = {**text_kwargs, **align_kwargs}
+    if label_sink is not None:
+        label_sink.append(
+            _TextLabelDescriptor(
+                position=np.asarray(label_pos, dtype=float).copy(),
+                text=formatted,
+                kwargs=dict(kwargs),
+            )
+        )
+        return
+    plotter.plot_text(label_pos, formatted, **kwargs)
 
 
 def _draw_self_loop_edge(
@@ -299,6 +316,7 @@ def _draw_self_loop_edge_labels(
     ax: Any,
     scale: float,
     zorder_label: float | None = None,
+    label_sink: list[_TextLabelDescriptor] | None = None,
 ) -> None:
     hover_targets = getattr(plotter, "_hover_edge_targets", None)
     if config.hover_labels and hover_targets is not None:
@@ -373,6 +391,7 @@ def _draw_self_loop_edge_labels(
             dimensions=dimensions,
             is_physical=False,
             peer_captions_for_width=peer_width,
+            preferred_fontsize_pt=config.edge_label_fontsize,
         )
         text_kwargs_a = {
             **_edge_index_text_kwargs(
@@ -388,11 +407,22 @@ def _draw_self_loop_edge_labels(
                 dimensions=dimensions,
             ),
         }
-        plotter.plot_text(
-            np.asarray(q_a, dtype=float) + offset_a,
-            format_tensor_node_label(caption_a),
-            **text_kwargs_a,
-        )
+        position_a = np.asarray(q_a, dtype=float) + offset_a
+        formatted_a = format_tensor_node_label(caption_a)
+        if label_sink is not None:
+            label_sink.append(
+                _TextLabelDescriptor(
+                    position=np.asarray(position_a, dtype=float).copy(),
+                    text=formatted_a,
+                    kwargs=dict(text_kwargs_a),
+                )
+            )
+        else:
+            plotter.plot_text(
+                position_a,
+                formatted_a,
+                **text_kwargs_a,
+            )
     if caption_b:
         offset_b = (
             -direction_unit
@@ -415,6 +445,7 @@ def _draw_self_loop_edge_labels(
             dimensions=dimensions,
             is_physical=False,
             peer_captions_for_width=peer_width,
+            preferred_fontsize_pt=config.edge_label_fontsize,
         )
         text_kwargs_b = {
             **_edge_index_text_kwargs(
@@ -430,9 +461,20 @@ def _draw_self_loop_edge_labels(
                 dimensions=dimensions,
             ),
         }
+        formatted_b = format_tensor_node_label(caption_b)
+        position_b = np.asarray(q_b, dtype=float) + offset_b
+        if label_sink is not None:
+            label_sink.append(
+                _TextLabelDescriptor(
+                    position=np.asarray(position_b, dtype=float).copy(),
+                    text=formatted_b,
+                    kwargs=dict(text_kwargs_b),
+                )
+            )
+            return
         plotter.plot_text(
-            np.asarray(q_b, dtype=float) + offset_b,
-            format_tensor_node_label(caption_b),
+            position_b,
+            formatted_b,
             **text_kwargs_b,
         )
 

@@ -73,3 +73,10 @@ def test_group_contractions_offsets_stable_across_calls() -> None:
     b = _group_contractions(g)
     assert a.offsets == b.offsets
     assert a.groups.keys() == b.groups.keys()
+
+
+def test_contractions_module_does_not_keep_unused_weight_helpers() -> None:
+    import tensor_network_viz._core.contractions as contractions
+
+    assert not hasattr(contractions, "_contraction_weights")
+    assert "weights" not in contractions._ContractionDerived.__dataclass_fields__

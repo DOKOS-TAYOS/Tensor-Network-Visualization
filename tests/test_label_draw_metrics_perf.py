@@ -21,6 +21,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 import numpy as np
+import pytest
 
 from tensor_network_viz._core.draw.disk_metrics import (
     _display_disk_radius_px_3d,
@@ -31,8 +32,34 @@ from tensor_network_viz._core.draw.fonts_and_scale import (
     _textpath_width_pts,
     _textpath_width_pts_cached,
 )
+from tensor_network_viz._core.draw.tensors import _textpath_diagonal_points_ref10
 
 
+def test_tensor_label_diagonal_estimate_avoids_exact_textpath(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.draw.tensors as tensors
+
+    tensors._textpath_diagonal_points_ref10.cache_clear()
+
+    def fail_textpath(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("tensor label diagonal estimate should avoid exact TextPath")
+
+    monkeypatch.setattr(tensors, "TextPath", fail_textpath, raising=False)
+    monkeypatch.setattr(
+        tensors,
+        "_textpath_width_pts",
+        lambda text, *, fontsize_pt: 12.0 if text else 0.0,
+        raising=False,
+    )
+
+    diagonal = _textpath_diagonal_points_ref10("bond12")
+
+    assert diagonal > 0.0
+
+
+@pytest.mark.perf
 def test_textpath_width_cache_speedup_on_repeat() -> None:
     labels = [f"bond{i}" for i in range(120)]
     _textpath_width_pts_cached.cache_clear()
@@ -56,6 +83,7 @@ def test_textpath_width_cache_speedup_on_repeat() -> None:
     )
 
 
+@pytest.mark.perf
 def test_3d_nominal_disk_px_cheaper_than_many_projections() -> None:
     import matplotlib.pyplot as plt
 

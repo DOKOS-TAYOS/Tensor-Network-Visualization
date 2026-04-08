@@ -6,6 +6,7 @@ import math
 import warnings
 import weakref
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Literal, TypeAlias, cast
 
 import matplotlib.pyplot as plt
@@ -14,14 +15,18 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
+from .._logging import package_logger
+from .._matplotlib_state import get_reserved_bottom
 from .._typing import PositionMapping, root_figure
 from ..config import PlotConfig
 from ._draw_common import _draw_graph
 from .contractions import _ContractionGroups, _group_contractions, _iter_contractions
 from .draw.constants import _CURVE_NEAR_PAIR_REF, _CURVE_OFFSET_FACTOR
+from .focus import filter_graph_for_focus
 from .graph import _GraphData
 from .graph_cache import _get_or_build_graph
 from .layout import (
+    AxisDirections,
     NodePositions,
     _analyze_layout_components_cached,
     _compute_axis_directions,
@@ -34,11 +39,25 @@ from .layout_structure import _LayoutComponent
 RenderedAxes: TypeAlias = Axes | Axes3D
 _Dimensions = Literal[2, 3]
 _LayoutCacheKey: TypeAlias = tuple[int, int, int]
+# Main axes: use almost the full figure width (interactive widgets sit in the bottom margin).
+_FIGURE_ADJUST_LEFT: float = 0.006
+_FIGURE_ADJUST_RIGHT: float = 0.994
 
 _layout_positions_by_id: dict[
     int,
     dict[_LayoutCacheKey, tuple[NodePositions, tuple[_LayoutComponent, ...]]],
 ] = {}
+_resolved_geometry_by_id: dict[int, dict[_LayoutCacheKey, _ResolvedGeometry]] = {}
+
+
+@dataclass(frozen=True)
+class _ResolvedGeometry:
+    positions: NodePositions
+    layout_components: tuple[_LayoutComponent, ...]
+    contraction_groups: _ContractionGroups
+    scale: float
+    bond_curve_pad: float
+    directions: AxisDirections
 
 
 def _layout_positions_bucket(
@@ -54,6 +73,22 @@ def _layout_positions_bucket(
 
     def _evict() -> None:
         _layout_positions_by_id.pop(key, None)
+
+    weakref.finalize(graph, _evict)
+    return bucket
+
+
+def _resolved_geometry_bucket(graph: _GraphData) -> dict[_LayoutCacheKey, _ResolvedGeometry]:
+    key = id(graph)
+    cached = _resolved_geometry_by_id.get(key)
+    if cached is not None:
+        return cached
+
+    bucket: dict[_LayoutCacheKey, _ResolvedGeometry] = {}
+    _resolved_geometry_by_id[key] = bucket
+
+    def _evict() -> None:
+        _resolved_geometry_by_id.pop(key, None)
 
     weakref.finalize(graph, _evict)
     return bucket
@@ -236,6 +271,9 @@ def _resolve_draw_scale(graph: _GraphData, positions: NodePositions) -> float:
     d_min = _min_contraction_edge_length(graph, positions)
     if d_min is not None:
         return _geometric_draw_scale(d_min)
+    package_logger.debug(
+        "Falling back to heuristic draw scale because no valid contraction-edge length was found."
+    )
     return _heuristic_draw_scale(graph, positions)
 
 
@@ -264,6 +302,10 @@ def _resolve_draw_scale_and_bond_curve_pad(
         if d_min is not None
         else _heuristic_draw_scale(graph, positions)
     )
+    if d_min is None:
+        package_logger.debug(
+            "Falling back to heuristic draw scale and curve padding for renderer graph."
+        )
 
     best_curve = 0.0
     for record in records:
@@ -364,6 +406,76 @@ def _resolve_positions(
     )
 
 
+def _resolve_geometry(
+    graph: _GraphData,
+    config: PlotConfig,
+    *,
+    dimensions: _Dimensions,
+    seed: int,
+) -> _ResolvedGeometry:
+    positions, layout_components = _resolve_positions(
+        graph,
+        config,
+        dimensions=dimensions,
+        seed=seed,
+    )
+    if config.positions is not None:
+        contraction_groups = _group_contractions(graph)
+        scale, bond_curve_pad = _resolve_draw_scale_and_bond_curve_pad(
+            graph,
+            positions,
+            contraction_groups,
+        )
+        directions = _compute_axis_directions(
+            graph,
+            positions,
+            dimensions=dimensions,
+            draw_scale=scale,
+            contraction_groups=contraction_groups,
+            layout_components=layout_components,
+        )
+        return _ResolvedGeometry(
+            positions=positions,
+            layout_components=layout_components,
+            contraction_groups=contraction_groups,
+            scale=scale,
+            bond_curve_pad=bond_curve_pad,
+            directions=directions,
+        )
+
+    iterations = _effective_layout_iterations(config, n_nodes=len(graph.nodes))
+    cache_key: _LayoutCacheKey = (int(dimensions), int(seed), int(iterations))
+    cache_bucket = _resolved_geometry_bucket(graph)
+    cached = cache_bucket.get(cache_key)
+    if cached is not None:
+        return cached
+
+    contraction_groups = _group_contractions(graph)
+    scale, bond_curve_pad = _resolve_draw_scale_and_bond_curve_pad(
+        graph,
+        positions,
+        contraction_groups,
+    )
+    directions = _compute_axis_directions(
+        graph,
+        positions,
+        dimensions=dimensions,
+        draw_scale=scale,
+        contraction_groups=contraction_groups,
+        layout_components=layout_components,
+    )
+    resolved = _ResolvedGeometry(
+        positions=positions,
+        layout_components=layout_components,
+        contraction_groups=contraction_groups,
+        scale=scale,
+        bond_curve_pad=bond_curve_pad,
+        directions=directions,
+    )
+    cache_bucket[cache_key] = resolved
+    return resolved
+
+
 def _plot_graph(
     graph: _GraphData,
     *,
@@ -380,49 +492,55 @@ def _plot_graph(
     build_scene_state: bool = True,
 ) -> tuple[Figure, RenderedAxes]:
     style = config or PlotConfig()
+    created_figure = ax is None
     fig, resolved_ax = _prepare_axes(
         ax=ax,
         figsize=style.figsize,
         renderer_name=renderer_name,
         dimensions=dimensions,
     )
-    positions, layout_components = _resolve_positions(
+    geometry = _resolve_geometry(
         graph,
         style,
         dimensions=dimensions,
         seed=seed,
     )
-    contraction_groups = _group_contractions(graph)
-    scale, bond_curve_pad = _resolve_draw_scale_and_bond_curve_pad(
-        graph, positions, contraction_groups
-    )
-    directions = _compute_axis_directions(
-        graph,
-        positions,
-        dimensions=dimensions,
-        draw_scale=scale,
-        contraction_groups=contraction_groups,
-        layout_components=layout_components,
-    )
+    draw_graph = filter_graph_for_focus(graph, style.focus)
+    draw_positions = {
+        node_id: geometry.positions[node_id]
+        for node_id in draw_graph.nodes
+        if node_id in geometry.positions
+    }
+    draw_directions = {
+        (node_id, axis_index): direction
+        for (node_id, axis_index), direction in geometry.directions.items()
+        if node_id in draw_graph.nodes
+    }
     _draw_graph(
         ax=resolved_ax,
-        graph=graph,
-        positions=positions,
-        directions=directions,
+        graph=draw_graph,
+        positions=draw_positions,
+        directions=draw_directions,
         show_tensor_labels=_resolve_flag(show_tensor_labels, style.show_tensor_labels),
         show_index_labels=_resolve_flag(show_index_labels, style.show_index_labels),
         config=style,
         dimensions=dimensions,
-        scale=scale,
-        contraction_groups=contraction_groups,
-        bond_curve_pad=bond_curve_pad,
+        scale=geometry.scale,
+        contraction_groups=_group_contractions(draw_graph),
+        bond_curve_pad=geometry.bond_curve_pad,
         build_contraction_controls=build_contraction_controls,
         contraction_controls_build_ui=contraction_controls_build_ui,
         register_contraction_controls_on_figure=register_contraction_controls_on_figure,
         build_scene_state=build_scene_state,
     )
-    reserved_bottom = float(getattr(fig, "_tensor_network_viz_reserved_bottom", 0.02))
-    fig.subplots_adjust(left=0.02, right=0.98, bottom=reserved_bottom, top=0.98)
+    if created_figure:
+        reserved_bottom = get_reserved_bottom(fig)
+        fig.subplots_adjust(
+            left=_FIGURE_ADJUST_LEFT,
+            right=_FIGURE_ADJUST_RIGHT,
+            bottom=reserved_bottom,
+            top=0.98,
+        )
     return fig, resolved_ax
 
 

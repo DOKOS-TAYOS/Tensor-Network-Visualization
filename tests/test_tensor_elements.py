@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import gc
 import inspect
-from collections.abc import Iterator
+import warnings
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 import matplotlib
@@ -14,13 +16,26 @@ import pytest
 from matplotlib.axes import Axes
 from matplotlib.backend_bases import MouseButton, MouseEvent
 
-from tensor_network_viz import TensorElementsConfig, pair_tensor, show_tensor_elements
+from plotting_helpers import assert_rendered_figure
+from tensor_network_viz import (
+    EinsumTrace,
+    TensorAnalysisConfig,
+    TensorElementsConfig,
+    einsum,
+    pair_tensor,
+    show_tensor_elements,
+)
+from tensor_network_viz._tensor_elements_data import (
+    _extract_einsum_playback_step_records,
+    _extract_playback_step_records,
+)
 from tensor_network_viz._tensor_elements_support import (
     _HeatmapPayload,
     _HistogramPayload,
     _matrixize_tensor,
     _prepare_mode_payload,
     _resolve_matrix_axes,
+    _SeriesPayload,
     _TensorRecord,
     _TextSummaryPayload,
 )
@@ -52,8 +67,21 @@ class DummyTensorKrowchNode:
 
 
 class DummyTensorKrowchNetwork:
-    def __init__(self, nodes: list[DummyTensorKrowchNode]) -> None:
+    def __init__(self, nodes: Iterable[DummyTensorKrowchNode]) -> None:
         self.nodes = nodes
+
+
+class DummyTensorKrowchContractedNetwork:
+    def __init__(
+        self,
+        *,
+        nodes: Iterable[DummyTensorKrowchNode],
+        leaf_nodes: Iterable[DummyTensorKrowchNode],
+        resultant_nodes: Iterable[DummyTensorKrowchNode],
+    ) -> None:
+        self.nodes = nodes
+        self.leaf_nodes = leaf_nodes
+        self.resultant_nodes = resultant_nodes
 
 
 class DummyQuimbTensor:
@@ -62,6 +90,15 @@ class DummyQuimbTensor:
         self.inds = inds
         self.tags = set(tags)
         self.shape = data.shape
+
+
+class DummyQuimbNetwork:
+    def __init__(self, tensors: Iterable[DummyQuimbTensor]) -> None:
+        self.tensors = tensors
+
+
+def _line_ydata_as_float(ax: Axes) -> np.ndarray[Any, np.dtype[np.float64]]:
+    return np.asarray(ax.lines[0].get_ydata(), dtype=float)
 
 
 def _widget_center_event(fig: matplotlib.figure.Figure, artist: object) -> MouseEvent:
@@ -89,41 +126,67 @@ def test_tensor_elements_config_has_expected_defaults() -> None:
     config = TensorElementsConfig()
 
     assert config.mode == "auto"
-    assert config.figsize == (7.2, 6.4)
     assert config.row_axes is None
     assert config.col_axes is None
+    assert config.analysis is None
+    assert config.figsize == (7.2, 6.4)
     assert config.max_matrix_shape == (256, 256)
-    assert config.histogram_bins == 40
-    assert config.histogram_max_samples == 100_000
-    assert config.topk_count == 8
-    assert config.zero_threshold == pytest.approx(1e-12)
-    assert config.log_magnitude_floor == pytest.approx(1e-12)
-    assert config.robust_percentiles is None
     assert config.shared_color_scale is False
+    assert config.robust_percentiles is None
     assert config.highlight_outliers is False
     assert config.outlier_zscore == pytest.approx(3.5)
+    assert config.histogram_bins == 40
+    assert config.histogram_max_samples == 100_000
+    assert config.zero_threshold == pytest.approx(1e-12)
+    assert config.log_magnitude_floor == pytest.approx(1e-12)
+    assert config.topk_count == 8
+
+
+def test_tensor_elements_config_public_signature_orders_mode_before_detail() -> None:
+    signature = inspect.signature(TensorElementsConfig)
+
+    assert tuple(signature.parameters) == (
+        "mode",
+        "row_axes",
+        "col_axes",
+        "analysis",
+        "figsize",
+        "max_matrix_shape",
+        "shared_color_scale",
+        "robust_percentiles",
+        "highlight_outliers",
+        "outlier_zscore",
+        "zero_threshold",
+        "log_magnitude_floor",
+        "histogram_bins",
+        "histogram_max_samples",
+        "topk_count",
+    )
 
 
 def test_tensor_elements_config_supports_grouped_modes() -> None:
-    config = TensorElementsConfig(mode="log_magnitude")
+    config = TensorElementsConfig(mode="slice")
 
-    assert config.mode == "log_magnitude"
+    assert config.mode == "slice"
 
 
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
+        ({"max_matrix_shape": (0, 256)}, "max_matrix_shape"),
         ({"topk_count": 0}, "topk_count"),
         ({"zero_threshold": 0.0}, "zero_threshold"),
         ({"log_magnitude_floor": 0.0}, "log_magnitude_floor"),
         ({"outlier_zscore": 0.0}, "outlier_zscore"),
+        ({"histogram_bins": 0}, "histogram_bins"),
+        ({"histogram_max_samples": 0}, "histogram_max_samples"),
         ({"robust_percentiles": (-1.0, 90.0)}, "robust_percentiles"),
         ({"robust_percentiles": (90.0, 90.0)}, "robust_percentiles"),
         ({"robust_percentiles": (20.0, 101.0)}, "robust_percentiles"),
     ],
 )
 def test_tensor_elements_config_validates_numeric_inputs(
-    kwargs: dict[str, object],
+    kwargs: dict[str, Any],
     match: str,
 ) -> None:
     with pytest.raises(ValueError, match=match):
@@ -152,7 +215,7 @@ def test_show_tensor_elements_returns_fig_ax_for_single_tensor_with_autodetect()
 
     fig, ax = show_tensor_elements(tensor, show=False)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.images
     assert "Left" in ax.get_title()
 
@@ -166,9 +229,138 @@ def test_show_tensor_elements_supports_single_quimb_like_tensor() -> None:
 
     fig, ax = show_tensor_elements(tensor, show=False)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.images
     assert "quimb" in ax.get_title().lower()
+
+
+def test_show_tensor_elements_supports_direct_numpy_array_input() -> None:
+    tensor = np.arange(6, dtype=float).reshape(2, 3)
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=False)
+
+    assert_rendered_figure(fig, ax)
+    assert ax.images
+    assert "tensor" in ax.get_title().lower()
+
+
+def test_show_tensor_elements_slice_mode_renders_requested_plane() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="SliceTensor",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(
+            mode="slice",
+            analysis=TensorAnalysisConfig(slice_axis="mid", slice_index=1),
+        ),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert "slice" in ax.get_title().lower()
+    assert np.allclose(np.asarray(ax.images[0].get_array(), dtype=float), tensor.tensor[:, 1, :])
+
+
+def test_show_tensor_elements_reduce_mode_renders_axis_mean_heatmap() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="ReduceTensor",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(
+            mode="reduce",
+            analysis=TensorAnalysisConfig(reduce_axes=("col",), reduce_method="mean"),
+        ),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert "reduce" in ax.get_title().lower()
+    assert np.allclose(
+        np.asarray(ax.images[0].get_array(), dtype=float),
+        np.mean(tensor.tensor, axis=2),
+    )
+
+
+def test_show_tensor_elements_profiles_mode_renders_axis_norm_profile() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="ProfileTensor",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(
+            mode="profiles",
+            analysis=TensorAnalysisConfig(profile_axis="mid", profile_method="norm"),
+        ),
+        show=False,
+        show_controls=False,
+    )
+
+    expected = np.sqrt(np.sum(np.square(tensor.tensor), axis=(0, 2)))
+
+    assert_rendered_figure(fig, ax)
+    assert "profiles" in ax.get_title().lower()
+    assert np.allclose(_line_ydata_as_float(ax), expected)
+
+
+def test_extract_einsum_playback_step_records_follow_trace_order_and_output_axes() -> None:
+    trace = EinsumTrace()
+    left = np.arange(6, dtype=float).reshape(2, 3)
+    mid = np.arange(12, dtype=float).reshape(3, 4)
+    right = np.arange(8, dtype=float).reshape(4, 2)
+
+    trace.bind("Left", left)
+    trace.bind("Mid", mid)
+    trace.bind("Right", right)
+    r0 = einsum("ab,bc->ac", left, mid, trace=trace, backend="numpy")
+    r1 = einsum("ac,cd->ad", r0, right, trace=trace, backend="numpy")
+    trace._test_keepalive = [left, mid, right, r0, r1]  # type: ignore[attr-defined]
+
+    step_records = _extract_einsum_playback_step_records(trace)
+
+    assert [step.result_name for step in step_records] == ["r0", "r1"]
+    assert [step.record.name if step.record is not None else None for step in step_records] == [
+        "r0",
+        "r1",
+    ]
+    assert step_records[0].record is not None
+    assert step_records[1].record is not None
+    assert step_records[0].record.axis_names == ("a", "c")
+    assert step_records[1].record.axis_names == ("a", "d")
+    assert tuple(step_records[0].record.array.shape) == (2, 4)
+    assert tuple(step_records[1].record.array.shape) == (2, 2)
+
+
+def test_extract_einsum_playback_step_records_marks_missing_intermediate_tensors() -> None:
+    trace = EinsumTrace()
+    left = np.arange(6, dtype=float).reshape(2, 3)
+    mid = np.arange(12, dtype=float).reshape(3, 4)
+    right = np.arange(8, dtype=float).reshape(4, 2)
+
+    r0 = einsum("ab,bc->ac", left, mid, trace=trace, backend="numpy")
+    r1 = einsum("ac,cd->ad", r0, right, trace=trace, backend="numpy")
+    trace._test_keepalive = [left, mid, right, r1]  # type: ignore[attr-defined]
+    del r0
+    gc.collect()
+
+    step_records = _extract_einsum_playback_step_records(trace)
+
+    assert [step.result_name for step in step_records] == ["r0", "r1"]
+    assert step_records[0].record is None
+    assert step_records[1].record is not None
+    assert step_records[1].record.name == "r1"
 
 
 def test_prepare_mode_payload_returns_typed_heatmap_payload() -> None:
@@ -221,6 +413,53 @@ def test_prepare_mode_payload_returns_typed_non_heatmap_payloads() -> None:
     assert "shape:" in data_payload.text.lower()
 
 
+def test_prepare_mode_payload_supports_slice_reduce_and_profiles() -> None:
+    record = _TensorRecord(
+        array=np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="AnalysisPayloads",
+        axis_names=("row", "mid", "col"),
+        engine="tensornetwork",
+    )
+    analysis = TensorAnalysisConfig(
+        slice_axis="mid",
+        slice_index=1,
+        reduce_axes=("col",),
+        reduce_method="mean",
+        profile_axis="col",
+        profile_method="norm",
+    )
+
+    slice_mode, slice_payload = _prepare_mode_payload(
+        record,
+        config=TensorElementsConfig(mode="slice", analysis=analysis),
+        mode="slice",
+    )
+    reduce_mode, reduce_payload = _prepare_mode_payload(
+        record,
+        config=TensorElementsConfig(mode="reduce", analysis=analysis),
+        mode="reduce",
+    )
+    profiles_mode, profiles_payload = _prepare_mode_payload(
+        record,
+        config=TensorElementsConfig(mode="profiles", analysis=analysis),
+        mode="profiles",
+    )
+
+    assert slice_mode == "slice"
+    assert isinstance(slice_payload, _HeatmapPayload)
+    assert tuple(slice_payload.matrix.shape) == (2, 4)
+    assert "slice" in slice_payload.mode_label
+
+    assert reduce_mode == "reduce"
+    assert isinstance(reduce_payload, _HeatmapPayload)
+    assert tuple(reduce_payload.matrix.shape) == (2, 1)
+    assert "reduce" in reduce_payload.mode_label
+
+    assert profiles_mode == "profiles"
+    assert isinstance(profiles_payload, _SeriesPayload)
+    assert "profiles" in profiles_payload.mode_label
+
+
 def test_show_tensor_elements_multiple_tensors_use_slider_and_single_axes() -> None:
     tensors = [
         DummyTensorNetworkNode(
@@ -246,6 +485,102 @@ def test_show_tensor_elements_multiple_tensors_use_slider_and_single_axes() -> N
     controller._slider.set_val(1.0)
 
     assert "B" in ax.get_title()
+
+
+def test_show_tensor_elements_direct_iterables_preserve_duplicate_tensors() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(6, dtype=float).reshape(2, 3),
+        name="Repeat",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements([tensor, tensor], show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert isinstance(ax, Axes)
+    assert controller._slider is not None
+    assert len(controller._records) == 2
+    assert "Repeat" in ax.get_title()
+
+
+def test_show_tensor_elements_keeps_first_node_for_single_pass_nodes_attribute() -> None:
+    tensors = [
+        DummyTensorKrowchNode(
+            name="A",
+            axes_names=("x", "y"),
+            tensor=np.arange(6, dtype=float).reshape(2, 3),
+            shape=(2, 3),
+        ),
+        DummyTensorKrowchNode(
+            name="B",
+            axes_names=("u", "v"),
+            tensor=np.arange(12, dtype=float).reshape(3, 4),
+            shape=(3, 4),
+        ),
+    ]
+    network = DummyTensorKrowchNetwork(iter(tensors))
+
+    fig, ax = show_tensor_elements(network, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert controller._slider is not None
+    assert "A" in ax.get_title()
+    controller._slider.set_val(1.0)
+    assert "B" in ax.get_title()
+
+
+def test_show_tensor_elements_keeps_first_leaf_node_for_single_pass_leaf_nodes_attribute() -> None:
+    tensors = [
+        DummyTensorKrowchNode(
+            name="A",
+            axes_names=("x", "y"),
+            tensor=np.arange(6, dtype=float).reshape(2, 3),
+            shape=(2, 3),
+        ),
+        DummyTensorKrowchNode(
+            name="B",
+            axes_names=("u", "v"),
+            tensor=np.arange(12, dtype=float).reshape(3, 4),
+            shape=(3, 4),
+        ),
+    ]
+    network = DummyTensorKrowchContractedNetwork(
+        nodes=tensors,
+        leaf_nodes=iter(tensors),
+        resultant_nodes=(),
+    )
+
+    fig, ax = show_tensor_elements(network, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert controller._slider is not None
+    assert "A" in ax.get_title()
+    controller._slider.set_val(1.0)
+    assert "B" in ax.get_title()
+
+
+def test_show_tensor_elements_keeps_first_tensor_for_single_pass_tensors_attribute() -> None:
+    tensors = [
+        DummyQuimbTensor(
+            np.arange(6, dtype=float).reshape(2, 3),
+            inds=("x", "y"),
+            tags=("Q0",),
+        ),
+        DummyQuimbTensor(
+            np.arange(12, dtype=float).reshape(3, 4),
+            inds=("u", "v"),
+            tags=("Q1",),
+        ),
+    ]
+    network = DummyQuimbNetwork(iter(tensors))
+
+    fig, ax = show_tensor_elements(network, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert controller._slider is not None
+    assert "Q0" in ax.get_title()
+    controller._slider.set_val(1.0)
+    assert "Q1" in ax.get_title()
 
 
 def test_show_tensor_elements_reuses_prepared_payloads_for_revisited_modes(
@@ -336,7 +671,7 @@ def test_show_tensor_elements_uses_magnitude_by_default_for_complex_tensors() ->
 
     fig, ax = show_tensor_elements(tensor, show=False, show_controls=False)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "magnitude" in ax.get_title().lower()
 
 
@@ -354,7 +689,7 @@ def test_show_tensor_elements_real_mode_renders_real_component() -> None:
         show_controls=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "real" in ax.get_title().lower()
 
 
@@ -372,7 +707,7 @@ def test_show_tensor_elements_imag_mode_renders_imag_component() -> None:
         show_controls=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "imag" in ax.get_title().lower()
 
 
@@ -390,7 +725,7 @@ def test_show_tensor_elements_phase_mode_produces_heatmap() -> None:
         show_controls=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.images
     assert "phase" in ax.get_title().lower()
 
@@ -443,7 +778,7 @@ def test_show_tensor_elements_sign_mode_is_discrete() -> None:
     image = ax.images[0].get_array()
     image_array = np.asarray(image, dtype=float)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "sign" in ax.get_title().lower()
     assert set(np.unique(image_array)) <= {-1.0, 0.0, 1.0}
 
@@ -462,7 +797,7 @@ def test_show_tensor_elements_signed_value_mode_is_continuous() -> None:
         show_controls=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "signed value" in ax.get_title().lower()
 
 
@@ -481,9 +816,50 @@ def test_show_tensor_elements_log_magnitude_mode_uses_log_scaled_magnitude() -> 
     )
     image_array = np.asarray(ax.images[0].get_array(), dtype=float)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "log" in ax.get_title().lower()
     np.testing.assert_allclose(image_array, np.array([[0.0, 2.0]]))
+
+
+def test_show_tensor_elements_data_mode_handles_all_nan_without_runtime_warnings() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[np.nan, np.nan]], dtype=float),
+        name="AllNaN",
+        axis_names=("row", "col"),
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        fig, ax = show_tensor_elements(
+            tensor,
+            config=TensorElementsConfig(mode="data"),
+            show=False,
+            show_controls=False,
+        )
+
+    assert_rendered_figure(fig, ax)
+    assert "allnan" in ax.get_title().lower()
+    assert ax.texts
+    assert "nan" in ax.texts[0].get_text().lower()
+
+
+def test_show_tensor_elements_distribution_mode_filters_nonfinite_values() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[0.0, np.nan, np.inf, -np.inf, 2.0]], dtype=float),
+        name="SpecialDistribution",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="distribution"),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert "distribution" in ax.get_title().lower()
+    assert ax.patches
 
 
 def test_show_tensor_elements_sparsity_mode_marks_near_zero_entries() -> None:
@@ -501,7 +877,7 @@ def test_show_tensor_elements_sparsity_mode_marks_near_zero_entries() -> None:
     )
     image_array = np.asarray(ax.images[0].get_array(), dtype=float)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "sparsity" in ax.get_title().lower()
     np.testing.assert_array_equal(image_array, np.array([[1.0, 1.0, 0.0]]))
 
@@ -521,7 +897,7 @@ def test_show_tensor_elements_nan_inf_mode_marks_special_values() -> None:
     )
     image_array = np.asarray(ax.images[0].get_array(), dtype=float)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     np.testing.assert_array_equal(image_array, np.array([[0.0, 1.0, 2.0, 3.0]]))
 
 
@@ -550,8 +926,242 @@ def test_show_tensor_elements_nan_inf_mode_marks_complex_nonfinite_components() 
     )
     image_array = np.asarray(ax.images[0].get_array(), dtype=float)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     np.testing.assert_array_equal(image_array, np.array([[0.0, 1.0, 2.0, 3.0]]))
+
+
+def test_show_tensor_elements_singular_values_mode_renders_ordered_spectrum() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[3.0, 0.0], [0.0, 1.0]], dtype=float),
+        name="Spectrum",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="singular_values"),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert "singular values" in ax.get_title().lower()
+    assert ax.get_yscale() == "log"
+    assert len(ax.lines) == 1
+    np.testing.assert_allclose(_line_ydata_as_float(ax), np.array([3.0, 1.0]))
+
+
+def test_show_tensor_elements_singular_values_mode_switches_to_log_scale_for_wide_ranges() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.diag(np.array([1_000_000.0, 1.0], dtype=float)),
+        name="WideSpectrum",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="singular_values"),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert ax.get_yscale() == "log"
+
+
+def test_show_tensor_elements_singular_values_mode_marks_zero_values_in_blood_red() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[3.0, 0.0], [0.0, 0.0]], dtype=float),
+        name="ZeroSpectrum",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="singular_values"),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert ax.get_yscale() == "log"
+    assert ax.collections
+    zero_marker = ax.collections[0]
+    np.testing.assert_allclose(
+        np.asarray(zero_marker.get_facecolors()[0], dtype=float),
+        matplotlib.colors.to_rgba("#7F1D1D"),
+    )
+
+
+def test_show_tensor_elements_singular_values_mode_supports_complex_tensors() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[3.0 + 4.0j, 0.0], [0.0, 2.0j]], dtype=np.complex128),
+        name="ComplexSpectrum",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="singular_values"),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    np.testing.assert_allclose(_line_ydata_as_float(ax), np.array([5.0, 2.0]))
+
+
+def test_show_tensor_elements_singular_values_mode_uses_rank3_matrixization() -> None:
+    tensor_data = np.arange(24, dtype=float).reshape(2, 3, 4)
+    tensor = DummyTensorNetworkNode(
+        tensor_data,
+        name="Rank3Spectrum",
+        axis_names=("a", "b", "c"),
+    )
+    expected_matrix, _ = _matrixize_tensor(
+        tensor_data,
+        axis_names=("a", "b", "c"),
+        row_axes=None,
+        col_axes=None,
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="singular_values"),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    expected_singular_values = np.linalg.svd(expected_matrix, compute_uv=False)
+    default_config = TensorElementsConfig()
+    visual_floor = max(default_config.zero_threshold, default_config.log_magnitude_floor)
+    np.testing.assert_allclose(
+        _line_ydata_as_float(ax),
+        np.maximum(expected_singular_values, visual_floor),
+    )
+
+
+def test_show_tensor_elements_singular_values_mode_supports_scalar_tensors() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.asarray(3.0, dtype=float),
+        name="ScalarSpectrum",
+        axis_names=(),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="singular_values"),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    np.testing.assert_allclose(_line_ydata_as_float(ax), np.array([3.0]))
+
+
+def test_show_tensor_elements_eigen_real_mode_renders_ranked_real_parts() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.diag(np.array([3.0 + 4.0j, -1.0 + 2.0j], dtype=np.complex128)),
+        name="EigenReal",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="eigen_real"),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert "eigenvalues (real)" in ax.get_title().lower()
+    assert ax.get_yscale() == "linear"
+    np.testing.assert_allclose(_line_ydata_as_float(ax), np.array([3.0, -1.0]))
+
+
+def test_show_tensor_elements_eigen_imag_mode_renders_ranked_imag_parts() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.diag(np.array([3.0 + 4.0j, -1.0 + 2.0j], dtype=np.complex128)),
+        name="EigenImag",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="eigen_imag"),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert "eigenvalues (imag)" in ax.get_title().lower()
+    assert ax.get_yscale() == "linear"
+    np.testing.assert_allclose(_line_ydata_as_float(ax), np.array([4.0, 2.0]))
+
+
+def test_show_tensor_elements_nonfinite_tensor_rejects_singular_values_mode() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[1.0, np.nan], [0.0, 1.0]], dtype=float),
+        name="NonFiniteSpectrum",
+        axis_names=("row", "col"),
+    )
+
+    with pytest.raises(ValueError, match="singular_values"):
+        show_tensor_elements(
+            tensor,
+            config=TensorElementsConfig(mode="singular_values"),
+            show=False,
+            show_controls=False,
+        )
+
+
+def test_show_tensor_elements_non_square_tensor_rejects_eigen_modes() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(6, dtype=float).reshape(2, 3),
+        name="RectangularSpectrum",
+        axis_names=("row", "col"),
+    )
+
+    with pytest.raises(ValueError, match="eigen_real"):
+        show_tensor_elements(
+            tensor,
+            config=TensorElementsConfig(mode="eigen_real"),
+            show=False,
+            show_controls=False,
+        )
+
+    with pytest.raises(ValueError, match="eigen_imag"):
+        show_tensor_elements(
+            tensor,
+            config=TensorElementsConfig(mode="eigen_imag"),
+            show=False,
+            show_controls=False,
+        )
+
+
+def test_show_tensor_elements_nonfinite_tensor_rejects_eigen_modes() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[1.0, np.nan], [0.0, 1.0]], dtype=float),
+        name="NonFiniteEigen",
+        axis_names=("row", "col"),
+    )
+
+    with pytest.raises(ValueError, match="eigen_real"):
+        show_tensor_elements(
+            tensor,
+            config=TensorElementsConfig(mode="eigen_real"),
+            show=False,
+            show_controls=False,
+        )
+
+    with pytest.raises(ValueError, match="eigen_imag"):
+        show_tensor_elements(
+            tensor,
+            config=TensorElementsConfig(mode="eigen_imag"),
+            show=False,
+            show_controls=False,
+        )
 
 
 def test_show_tensor_elements_data_mode_uses_main_axis_for_textual_summary() -> None:
@@ -569,7 +1179,7 @@ def test_show_tensor_elements_data_mode_uses_main_axis_for_textual_summary() -> 
     )
     all_text = "\n".join(text.get_text() for text in ax.texts)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "data" in ax.get_title().lower()
     assert not ax.images
     assert "shape:" in all_text.lower()
@@ -591,7 +1201,7 @@ def test_show_tensor_elements_data_mode_includes_axis_summary_and_topk() -> None
     )
     text_blob = "\n".join(text.get_text() for text in ax.texts)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "axis summary:" in text_blob.lower()
     assert "top 3 by magnitude:" in text_blob.lower()
     assert "row (size=2)" in text_blob
@@ -615,9 +1225,32 @@ def test_show_tensor_elements_data_mode_uses_magnitude_for_complex_topk() -> Non
     )
     text_blob = "\n".join(text.get_text() for text in ax.texts)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "mean|x|" in text_blob
     assert "row=0, col=1" in text_blob
+
+
+def test_show_tensor_elements_data_mode_excludes_spectral_analysis_details() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[3.0, 0.0], [0.0, 1.0]], dtype=float),
+        name="SquareSpectrum",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="data", topk_count=2),
+        show=False,
+        show_controls=False,
+    )
+    text_blob = "\n".join(text.get_text() for text in ax.texts)
+
+    assert_rendered_figure(fig, ax)
+    assert "spectral analysis:" not in text_blob.lower()
+    assert "matrixized shape:" not in text_blob.lower()
+    assert "stable rank:" not in text_blob.lower()
+    assert "condition number:" not in text_blob.lower()
+    assert "spectral radius:" not in text_blob.lower()
 
 
 def test_show_tensor_elements_downsamples_large_heatmaps() -> None:
@@ -635,10 +1268,9 @@ def test_show_tensor_elements_downsamples_large_heatmaps() -> None:
     )
 
     image = ax.images[0].get_array()
-    assert image is not None
     image_array = np.asarray(image, dtype=float)
     assert tuple(image_array.shape) == (64, 32)
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
 
 
 def test_show_tensor_elements_heatmap_adds_colorbar_axis_on_the_right() -> None:
@@ -708,7 +1340,7 @@ def test_show_tensor_elements_robust_scaling_ignores_outliers_and_nonfinite_valu
     )
     low, high = ax.images[0].get_clim()
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert np.isfinite(low)
     assert np.isfinite(high)
     assert high < 1000.0
@@ -758,7 +1390,7 @@ def test_show_tensor_elements_signed_value_robust_scaling_stays_symmetric() -> N
     )
     low, high = ax.images[0].get_clim()
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert high < 100.0
     assert low == pytest.approx(-high)
 
@@ -781,7 +1413,7 @@ def test_show_tensor_elements_outlier_overlay_appears_for_continuous_heatmaps() 
         show_controls=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert len(ax.collections) == 1
 
 
@@ -803,7 +1435,7 @@ def test_show_tensor_elements_outlier_overlay_skips_discrete_heatmaps() -> None:
         show_controls=False,
     )
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert not ax.collections
 
 
@@ -818,6 +1450,88 @@ def test_show_tensor_elements_rejects_shape_only_tensorkrowch_nodes() -> None:
 
     with pytest.raises(ValueError, match="materialized"):
         show_tensor_elements(network, show=False)
+
+
+def test_extract_playback_step_records_keeps_einsum_behavior() -> None:
+    trace = EinsumTrace()
+    left = np.arange(6, dtype=float).reshape(2, 3)
+    right = np.arange(15, dtype=float).reshape(3, 5)
+    trace.bind("A", left)
+    trace.bind("B", right)
+    result = einsum("ab,bc->ac", left, right, trace=trace, backend="numpy")
+    trace._test_keepalive = [left, right, result]  # type: ignore[attr-defined]
+
+    records = _extract_playback_step_records(trace)
+
+    assert records is not None
+    assert len(records) == 1
+    assert records[0].record is not None
+    assert records[0].result_name == "r0"
+
+
+def test_extract_playback_step_records_returns_none_for_tensorless_tensorkrowch_history() -> None:
+    left = DummyTensorKrowchNode(
+        name="A",
+        axes_names=("a", "b"),
+        tensor=np.ones((2, 3)),
+        shape=(2, 3),
+    )
+    right = DummyTensorKrowchNode(
+        name="B",
+        axes_names=("b", "c"),
+        tensor=np.ones((3, 5)),
+        shape=(3, 5),
+    )
+    result = DummyTensorKrowchNode(
+        name="contract_edges",
+        axes_names=("a", "c"),
+        tensor=None,
+        shape=(2, 5),
+    )
+    left.successors = {  # type: ignore[attr-defined]
+        "contract_edges": {
+            (left, right): type("S", (), {"node_ref": (left, right), "child": result})()
+        }
+    }
+    right.successors = {}  # type: ignore[attr-defined]
+    network = DummyTensorKrowchContractedNetwork(
+        nodes=[left, right, result],
+        leaf_nodes=[left, right],
+        resultant_nodes=[result],
+    )
+
+    records = _extract_playback_step_records(network)
+
+    assert records is None
+
+
+def test_extract_playback_step_records_supports_contracted_tensorkrowch_network() -> None:
+    tk = pytest.importorskip("tensorkrowch")
+    torch = pytest.importorskip("torch")
+
+    network = tk.TensorNetwork(name="demo")
+    left = tk.Node(
+        tensor=torch.arange(6, dtype=torch.float32).reshape(2, 3),
+        axes_names=("input", "bond"),
+        name="left",
+        network=network,
+    )
+    right = tk.Node(
+        tensor=torch.arange(15, dtype=torch.float32).reshape(3, 5),
+        axes_names=("bond", "output"),
+        name="right",
+        network=network,
+    )
+    left["bond"] ^ right["bond"]
+    _ = left @ right
+
+    records = _extract_playback_step_records(network)
+
+    assert records is not None
+    assert len(records) == 1
+    assert records[0].record is not None
+    assert records[0].record.engine == "tensorkrowch"
+    assert records[0].record.axis_names == ("input", "output")
 
 
 def test_show_tensor_elements_rejects_manual_pair_tensor_iterables() -> None:
@@ -865,7 +1579,7 @@ def test_show_tensor_elements_widgets_switch_modes() -> None:
     controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
     _click_radio_label(controller._mode_radio, 3)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "distribution" in ax.get_title().lower()
 
 
@@ -881,14 +1595,14 @@ def test_show_tensor_elements_widgets_offer_data_mode() -> None:
     _click_radio_label(controller._mode_radio, 4)
     text_blob = "\n".join(text.get_text() for text in ax.texts)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "data" in ax.get_title().lower()
     assert "shape:" in text_blob.lower()
 
 
 def test_show_tensor_elements_widgets_offer_new_basic_and_diagnostic_modes() -> None:
     tensor = DummyTensorNetworkNode(
-        np.arange(6, dtype=float).reshape(2, 3),
+        np.arange(4, dtype=float).reshape(2, 2),
         name="WidgetModes",
         axis_names=("row", "col"),
     )
@@ -900,9 +1614,285 @@ def test_show_tensor_elements_widgets_offer_new_basic_and_diagnostic_modes() -> 
     _click_radio_label(controller._group_radio, 2)
     diagnostic_modes = tuple(text.get_text() for text in controller._mode_radio.labels)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
+    assert tuple(text.get_text() for text in controller._group_radio.labels) == (
+        "basic",
+        "complex",
+        "diagnostic",
+        "analysis",
+    )
     assert basic_modes == ("elements", "magnitude", "log_magnitude", "distribution", "data")
-    assert diagnostic_modes == ("sign", "signed_value", "sparsity", "nan_inf")
+    assert diagnostic_modes == (
+        "sign",
+        "signed_value",
+        "sparsity",
+        "nan_inf",
+        "singular_values",
+        "eigen_real",
+        "eigen_imag",
+    )
+
+
+def test_show_tensor_elements_widgets_offer_analysis_modes() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="WidgetAnalysis",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 3)
+    analysis_modes = tuple(text.get_text() for text in controller._mode_radio.labels)
+
+    assert_rendered_figure(fig, ax)
+    assert analysis_modes == ("slice", "reduce", "profiles")
+
+
+def test_show_tensor_elements_analysis_modes_build_contextual_controls() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="WidgetAnalysisControls",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 3)
+    assert controller._analysis_axis_radio is not None
+    assert controller._analysis_slider is not None
+
+    _click_radio_label(controller._mode_radio, 1)
+    assert controller._analysis_checkbuttons is not None
+    assert controller._analysis_method_radio is not None
+
+    _click_radio_label(controller._mode_radio, 2)
+    assert controller._analysis_axis_radio is not None
+    assert controller._analysis_method_radio is not None
+    assert_rendered_figure(fig, ax)
+
+
+def test_show_tensor_elements_analysis_controls_fall_back_when_slider_changes_rank() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.arange(24, dtype=float).reshape(2, 3, 4),
+            name="Rank3",
+            axis_names=("row", "mid", "col"),
+        ),
+        DummyTensorNetworkNode(
+            np.arange(6, dtype=float).reshape(2, 3),
+            name="Rank2",
+            axis_names=("left", "right"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 3)
+    assert controller._analysis_axis_radio is not None
+    _click_radio_label(controller._analysis_axis_radio, 2)
+    assert controller._analysis_slider is not None
+    controller._analysis_slider.set_val(2.0)
+    controller._slider.set_val(1.0)
+
+    assert_rendered_figure(fig, ax)
+    assert controller._analysis_axis_radio is not None
+    assert controller._analysis_axis_radio.value_selected == "left"
+    assert controller._analysis_slider is not None
+    assert float(controller._analysis_slider.valmax) == pytest.approx(1.0)
+    assert float(controller._analysis_slider.val) == pytest.approx(0.0)
+
+
+def test_show_tensor_elements_widgets_hide_eigen_modes_for_non_square_tensor() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.array([[3.0, 0.0], [0.0, 1.0]], dtype=float),
+            name="FiniteSpectrum",
+            axis_names=("row", "col"),
+        ),
+        DummyTensorNetworkNode(
+            np.arange(6, dtype=float).reshape(2, 3),
+            name="RectangularSpectrum",
+            axis_names=("row", "col"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 2)
+    square_modes = tuple(text.get_text() for text in controller._mode_radio.labels)
+    controller._slider.set_val(1.0)
+    rectangular_modes = tuple(text.get_text() for text in controller._mode_radio.labels)
+
+    assert_rendered_figure(fig, ax)
+    assert "singular_values" in square_modes
+    assert "eigen_real" in square_modes
+    assert "eigen_imag" in square_modes
+    assert "singular_values" in rectangular_modes
+    assert "eigen_real" not in rectangular_modes
+    assert "eigen_imag" not in rectangular_modes
+
+
+def test_show_tensor_elements_widgets_hide_spectral_modes_for_nonfinite_tensor() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.array([[3.0, 0.0], [0.0, 1.0]], dtype=float),
+            name="FiniteSpectrum",
+            axis_names=("row", "col"),
+        ),
+        DummyTensorNetworkNode(
+            np.array([[1.0, np.nan], [0.0, 1.0]], dtype=float),
+            name="NonFiniteSpectrum",
+            axis_names=("row", "col"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 2)
+    finite_modes = tuple(text.get_text() for text in controller._mode_radio.labels)
+    controller._slider.set_val(1.0)
+    nonfinite_modes = tuple(text.get_text() for text in controller._mode_radio.labels)
+
+    assert_rendered_figure(fig, ax)
+    assert "singular_values" in finite_modes
+    assert "eigen_real" in finite_modes
+    assert "eigen_imag" in finite_modes
+    assert "singular_values" not in nonfinite_modes
+    assert "eigen_real" not in nonfinite_modes
+    assert "eigen_imag" not in nonfinite_modes
+
+
+def test_show_tensor_elements_group_selector_fits_diagnostic_label() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(6, dtype=float).reshape(2, 3),
+        name="WidgetModes",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+    assert controller._group_radio is not None
+
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    diagnostic_label = controller._group_radio.labels[2]
+    label_bbox = diagnostic_label.get_window_extent(renderer)
+    axis_bbox = controller._group_radio.ax.get_window_extent(renderer)
+
+    assert_rendered_figure(fig, ax)
+    assert label_bbox.x0 >= axis_bbox.x0
+    assert label_bbox.x1 <= axis_bbox.x1
+
+
+def test_show_tensor_elements_controls_use_same_tray_style_as_viewer_controls() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.arange(6, dtype=float).reshape(2, 3),
+            name="A",
+            axis_names=("x", "y"),
+        ),
+        DummyTensorNetworkNode(
+            np.arange(12, dtype=float).reshape(3, 4),
+            name="B",
+            axis_names=("u", "v"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert_rendered_figure(fig, ax)
+    assert controller._group_radio_ax is not None
+    assert controller._mode_radio_ax is not None
+    assert controller._slider_ax is not None
+
+    for control_ax in (
+        controller._group_radio_ax,
+        controller._mode_radio_ax,
+        controller._slider_ax,
+    ):
+        assert control_ax.patch.get_facecolor() == pytest.approx((0.97, 0.97, 0.99, 0.88))
+        assert control_ax.patch.get_linewidth() == pytest.approx(0.6)
+        for spine in control_ax.spines.values():
+            assert spine.get_visible()
+            assert spine.get_linewidth() == pytest.approx(0.6)
+
+
+def test_show_tensor_elements_mode_selector_sits_lower_than_plot_area() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(6, dtype=float).reshape(2, 3),
+        name="WidgetModes",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert_rendered_figure(fig, ax)
+    assert controller._mode_radio_ax is not None
+    mode_bounds = controller._mode_radio_ax.get_position().bounds
+    mode_top = mode_bounds[1] + mode_bounds[3]
+
+    assert float(mode_top) <= 0.19
+
+
+def test_show_tensor_elements_slider_sits_farther_right_of_mode_selector() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.arange(6, dtype=float).reshape(2, 3),
+            name="A",
+            axis_names=("x", "y"),
+        ),
+        DummyTensorNetworkNode(
+            np.arange(12, dtype=float).reshape(3, 4),
+            name="B",
+            axis_names=("u", "v"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert_rendered_figure(fig, ax)
+    assert controller._mode_radio_ax is not None
+    assert controller._slider_ax is not None
+
+    mode_bounds = controller._mode_radio_ax.get_position().bounds
+    slider_bounds = controller._slider_ax.get_position().bounds
+    mode_right = mode_bounds[0] + mode_bounds[2]
+    slider_left = slider_bounds[0]
+
+    assert float(slider_left - mode_right) >= 0.075
+
+
+def test_show_tensor_elements_slider_uses_thicker_control_height() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.arange(6, dtype=float).reshape(2, 3),
+            name="A",
+            axis_names=("x", "y"),
+        ),
+        DummyTensorNetworkNode(
+            np.arange(12, dtype=float).reshape(3, 4),
+            name="B",
+            axis_names=("u", "v"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert_rendered_figure(fig, ax)
+    assert controller._slider_ax is not None
+    slider_bounds = controller._slider_ax.get_position().bounds
+
+    assert slider_bounds == pytest.approx((0.48, 0.045, 0.38, 0.065))
 
 
 def test_show_tensor_elements_widgets_switch_group_then_mode() -> None:
@@ -917,7 +1907,7 @@ def test_show_tensor_elements_widgets_switch_group_then_mode() -> None:
     _click_radio_label(controller._group_radio, 1)
     _click_radio_label(controller._mode_radio, 1)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "imag" in ax.get_title().lower()
 
 
@@ -941,5 +1931,5 @@ def test_show_tensor_elements_slider_keeps_group_and_falls_back_to_valid_mode() 
     _click_radio_label(controller._mode_radio, 2)
     controller._slider.set_val(1.0)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert "real" in ax.get_title().lower()

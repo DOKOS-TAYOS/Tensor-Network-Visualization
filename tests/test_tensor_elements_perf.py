@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 import numpy as np
+import pytest
 
 from tensor_network_viz._tensor_elements_support import (
     _downsample_matrix,
@@ -55,6 +56,7 @@ def test_downsample_matrix_matches_contiguous_real_view() -> None:
     np.testing.assert_allclose(reduced_view, reduced_contiguous)
 
 
+@pytest.mark.perf
 def test_prepare_mode_payload_real_and_imag_stay_close_to_magnitude_runtime() -> None:
     record = _complex_record((128, 96, 24))
     config = TensorElementsConfig(max_matrix_shape=(64, 48))
@@ -70,4 +72,23 @@ def test_prepare_mode_payload_real_and_imag_stay_close_to_magnitude_runtime() ->
     assert imag_s < magnitude_s * 4.0, (
         f"expected imag view to stay close to magnitude "
         f"(magnitude={magnitude_s:.4f}s imag={imag_s:.4f}s)"
+    )
+
+
+@pytest.mark.perf
+def test_prepare_mode_payload_singular_values_stays_bounded_for_medium_tensors() -> None:
+    record = _complex_record((32, 24, 12))
+    config = TensorElementsConfig(max_matrix_shape=(64, 48))
+
+    magnitude_s = _measure_prepare_mode(record, config=config, mode="magnitude", repeats=4)
+    singular_values_s = _measure_prepare_mode(
+        record,
+        config=config,
+        mode="singular_values",
+        repeats=4,
+    )
+
+    assert singular_values_s < magnitude_s * 30.0, (
+        "expected singular-values view to remain within a broad runtime guard "
+        f"(magnitude={magnitude_s:.4f}s singular_values={singular_values_s:.4f}s)"
     )

@@ -30,9 +30,11 @@ from demo_cli import (
     demo_runs_headless,
     finalize_demo_plot_config,
     graph_tensor_names,
+    pairwise_merge_contraction_scheme,
     render_demo_tensor_network,
     resolve_example_definition,
 )
+from demo_tensors import build_demo_numpy_tensor
 
 TAGLINES: dict[str, str] = {
     "cubic_peps": "Cubic lattice with six-neighbor bulk tensors.",
@@ -70,7 +72,6 @@ def _build_blueprint(example: str, args: ExampleCliArgs) -> GraphBlueprint:
 
 
 def _build_tensornetwork_nodes(blueprint: GraphBlueprint) -> list[Any]:
-    import numpy as np
     import tensornetwork as tn
 
     nodes: dict[str, Any] = {}
@@ -78,7 +79,7 @@ def _build_tensornetwork_nodes(blueprint: GraphBlueprint) -> list[Any]:
     for node in blueprint.nodes:
         shape = tuple(axis_dimension(axis) for axis in node.axes)
         created = tn.Node(
-            np.ones(shape, dtype=float),
+            build_demo_numpy_tensor(name=node.name, shape=shape, dtype=float),
             name=node.name,
             axis_names=node.axes,
         )
@@ -93,7 +94,9 @@ def _build_tensornetwork_nodes(blueprint: GraphBlueprint) -> list[Any]:
 
 
 def _scheme_steps(example: str, blueprint: GraphBlueprint) -> tuple[tuple[str, ...], ...] | None:
-    if example in {"mps", "mpo", "ladder", "peps", "cubic_peps"}:
+    if example in {"mps", "mpo"}:
+        return pairwise_merge_contraction_scheme(graph_tensor_names(blueprint))
+    if example in {"ladder", "peps", "cubic_peps"}:
         return cumulative_prefix_contraction_scheme(graph_tensor_names(blueprint))
     return None
 

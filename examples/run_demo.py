@@ -35,6 +35,8 @@ EngineModule: dict[str, Any] = {
     "tensorkrowch": tensorkrowch_demo,
     "tensornetwork": tensornetwork_demo,
 }
+_SMALL_CONTRACTED_TENSORKROWCH_EXAMPLES = frozenset({"mps", "mpo"})
+_MAX_SMALL_CONTRACTED_N_SITES = 6
 
 
 def available_engines() -> tuple[str, ...]:
@@ -80,7 +82,18 @@ def _validate_and_normalize_args(
             f"Unknown example {args.example!r} for engine {engine!r}. "
             f"Available examples: {format_joined_names(available_example_names(definitions))}."
         )
-    normalized = replace(args, engine=engine, example=definition.name)
+    requested_contracted = args.contracted
+    resolved_contracted = bool(requested_contracted)
+    if requested_contracted is None:
+        resolved_contracted = bool(
+            engine == "tensorkrowch" and definition.name in _SMALL_CONTRACTED_TENSORKROWCH_EXAMPLES
+        )
+    normalized = replace(
+        args,
+        engine=engine,
+        example=definition.name,
+        contracted=resolved_contracted,
+    )
     if normalized.from_list and not definition.supports_list:
         parser.error(
             f"Example {definition.name!r} for engine {engine!r} does not support --from-list."
@@ -89,6 +102,21 @@ def _validate_and_normalize_args(
         parser.error(
             f"Example {definition.name!r} for engine {engine!r} does not support --from-scratch."
         )
+    if normalized.contracted:
+        if engine != "tensorkrowch":
+            parser.error("The launcher only supports --contracted for engine 'tensorkrowch'.")
+        if normalized.from_list:
+            parser.error(
+                "--contracted requires the native TensorKrowch network object; remove --from-list."
+            )
+        if definition.name not in _SMALL_CONTRACTED_TENSORKROWCH_EXAMPLES:
+            parser.error(
+                "--contracted is limited to small TensorKrowch demos (currently: mps, mpo)."
+            )
+        if normalized.n_sites > _MAX_SMALL_CONTRACTED_N_SITES:
+            parser.error(
+                "--contracted is limited to small TensorKrowch demos; use --n-sites 6 or less."
+            )
     if normalized.save == AUTO_SAVE_SENTINEL:
         normalized = replace(
             normalized,

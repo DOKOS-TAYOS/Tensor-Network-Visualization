@@ -1,6 +1,8 @@
 # Backend Examples
 
 This page collects copy-paste examples for each supported backend.
+Assume the corresponding optional dependency is installed and, when you are running from this
+repository, that the local `.venv` is already active.
 
 ## Tensor Inspection
 
@@ -45,6 +47,14 @@ fig, ax = show_tensor_network(
     ),
 )
 ```
+
+If you pass a TensorKrowch network **after** real contractions have been performed and the network
+still keeps usable `leaf_nodes` plus `resultant_nodes` history, `PlotConfig(show_contraction_scheme=True)`
+can reconstruct the contraction steps automatically. This recovery is conservative: unusual
+mutations or broken history simply disable the automatic scheme instead of guessing. When the
+recovered steps still expose result tensors and metric data, the same playback extras used by
+`einsum` also work here: `contraction_scheme_cost_hover=True` and
+`contraction_tensor_inspector=True`.
 
 ## TensorNetwork
 
@@ -166,7 +176,8 @@ fig, ax = show_tensor_network(
 
 ## Notes
 
-- You can often omit `engine=...` because `show_tensor_network` auto-detects the backend.
+- The examples keep `engine=...` when it makes the backend explicit, but you can often omit it
+  because `show_tensor_network(...)` auto-detects the backend.
 - `show_tensor_elements(...)` auto-detects the same backends, but it needs real tensor values.
 - Use `show_controls=False` when you want a clean saved figure with no embedded buttons/sliders.
 - Use `PlotConfig(...)` for labels, hover behavior, contraction schemes, and performance-related

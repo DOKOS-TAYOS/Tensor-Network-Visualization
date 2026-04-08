@@ -1,12 +1,10 @@
-"""Matplotlib-only interactive stepping through ordered contraction visuals.
+"""Matplotlib playback helpers for stepping through contraction schemes.
 
-Primary integration: ``show_tensor_network(..., config=PlotConfig(
-show_contraction_scheme=True, contraction_playback=True))`` adds a slider and
-Play / Pause / Reset on the same figure (2D widget axes only).
-
-For a richer visual policy, subclass ``ContractionViewer2D`` / ``ContractionViewer3D``
-and override ``_apply_step_visuals``. The draw pipeline attaches highlights; this module
-only adds matplotlib widgets and mutates existing artists.
+The main public integration path is ``show_tensor_network(..., config=PlotConfig(
+show_contraction_scheme=True))``. That path reuses this module to attach a slider plus
+playback buttons to an existing tensor-network figure without redrawing the scene from
+scratch. The standalone viewers remain useful for demos and tests that want the same step
+logic on arbitrary Matplotlib artists.
 """
 
 from __future__ import annotations
@@ -14,20 +12,65 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, Final, Literal, cast
+from typing import Any, Literal, Protocol, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
-from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
-from matplotlib.patches import FancyBboxPatch, Rectangle
+from matplotlib.patches import Rectangle
 from matplotlib.text import Text
-from matplotlib.widgets import Button, CheckButtons, Slider
+from matplotlib.widgets import Button, Slider
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
+from ._contraction_viewer_style import (
+    apply_scheme_2d_highlight_current as _apply_scheme_2d_highlight_current,
+)
+from ._contraction_viewer_style import (
+    apply_scheme_2d_highlight_past as _apply_scheme_2d_highlight_past,
+)
+from ._contraction_viewer_style import (
+    box_poly3d_faces as _box_poly3d_faces,
+)
+from ._contraction_viewer_style import (
+    is_tensor_network_scheme_artist as _is_tensor_network_scheme_artist,
+)
+from ._contraction_viewer_style import (
+    is_tensor_network_scheme_fancy_patch as _is_tensor_network_scheme_fancy_patch,
+)
+from ._contraction_viewer_style import (
+    restore_style as _restore_style,
+)
+from ._contraction_viewer_style import (
+    safe_set_alpha as _safe_set_alpha,
+)
+from ._contraction_viewer_style import (
+    safe_set_color as _safe_set_color,
+)
+from ._contraction_viewer_style import (
+    safe_set_linewidth as _safe_set_linewidth,
+)
+from ._contraction_viewer_style import (
+    safe_set_visible as _safe_set_visible,
+)
+from ._contraction_viewer_style import (
+    snapshot_style as _snapshot_style,
+)
+from ._contraction_viewer_ui import (
+    _PLAYBACK_MAIN_BOTTOM,
+)
+from ._contraction_viewer_ui import (
+    create_playback_buttons as _create_playback_buttons,
+)
+from ._contraction_viewer_ui import (
+    create_playback_details_panel as _create_playback_details_panel,
+)
+from ._contraction_viewer_ui import (
+    create_playback_slider as _create_playback_slider,
+)
+from ._matplotlib_state import set_contraction_viewer
 from ._typing import root_figure
 from ._ui_utils import _reserve_figure_bottom, _set_axes_visible, _set_widget_active
 from .config import PlotConfig
@@ -35,29 +78,11 @@ from .config import PlotConfig
 VisualizerMode = Literal["cumulative", "highlight_current", "window"]
 _SchemeAvailability = Literal["not_computed", "computed", "unavailable"]
 
-# Must stay aligned with ``_CONTRACTION_SCHEME_GID`` in ``_core.draw.contraction_scheme``.
-_TNV_CONTRACTION_SCHEME_PATCH_GID: Final[str] = "tnv_contraction_scheme"
-
-_TRANSPARENT: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
-_PLAYBACK_MAIN_BOTTOM: float = 0.40
-_PLAYBACK_DETAILS_BOUNDS: tuple[float, float, float, float] = (0.25, 0.116, 0.68, 0.12)
-_PLAYBACK_SLIDER_BOUNDS: tuple[float, float, float, float] = (0.25, 0.067, 0.33, 0.024)
-_PLAYBACK_BUTTON_START_X: float = 0.73
-_PLAYBACK_BUTTON_Y: float = 0.058
-_PLAYBACK_BUTTON_WIDTH: float = 0.055
-_PLAYBACK_BUTTON_HEIGHT: float = 0.038
-_PLAYBACK_BUTTON_GAP: float = 0.012
-_PLAYBACK_RESET_WIDTH: float = 0.065
-_CONTROLS_MAIN_BOTTOM: float = _PLAYBACK_MAIN_BOTTOM
-_CONTROLS_CHECKBOX_BOUNDS: tuple[float, float, float, float] = (0.02, 0.045, 0.13, 0.10)
-_SCHEME_LABELS: tuple[str, str, str] = ("Scheme", "Playback", "Costs")
-_CONTROL_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
-_CONTROL_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
-_CONTROL_CHECK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
-
 
 @dataclass
 class _ContractionSchemeBundle:
+    """Cached contraction-scheme artists, bounds, metrics, and playback helpers."""
+
     availability: _SchemeAvailability = "not_computed"
     steps: tuple[frozenset[int], ...] | None = None
     artists_by_step: list[Artist | None] | None = None
@@ -69,181 +94,12 @@ class _ContractionSchemeBundle:
     bounds_3d: tuple[float, float, float, float, float, float] | None = None
 
 
-def _is_tensor_network_scheme_artist(artist: Artist) -> bool:
-    """True for contraction-scheme artists tagged by the draw pipeline."""
-    getter = getattr(artist, "get_gid", None)
-    if not callable(getter):
-        return False
-    with suppress(TypeError, ValueError):
-        return getter() == _TNV_CONTRACTION_SCHEME_PATCH_GID
-    return False
-
-
-def _is_tensor_network_scheme_fancy_patch(artist: Artist) -> bool:
-    """True for 2D contraction-scheme hulls (playback restyle only; static draw unchanged)."""
-    return isinstance(artist, FancyBboxPatch) and _is_tensor_network_scheme_artist(artist)
-
-
-def _apply_scheme_2d_highlight_past(artist: Artist) -> None:
-    """Transparent fill and edge (like wire-only 3D: no colored hull)."""
-    _safe_set_visible(artist, True)
-    setter_fc = getattr(artist, "set_facecolor", None)
-    if callable(setter_fc):
-        with suppress(TypeError, ValueError):
-            setter_fc(_TRANSPARENT)
-    setter_ec = getattr(artist, "set_edgecolor", None)
-    if callable(setter_ec):
-        with suppress(TypeError, ValueError):
-            setter_ec(_TRANSPARENT)
-    _safe_set_linewidth(artist, 0.0)
-    _safe_clear_patch_alpha(artist)
-
-
-def _apply_scheme_2d_highlight_current(
-    artist: Artist,
-    *,
-    accent: Any,
-    fill_alpha: float,
-    edge_alpha: float,
-    linewidth: float,
-) -> None:
-    """Very faint tint inside; strong accent on border (aligns with 3D edge emphasis)."""
-    r, g, b, _ = to_rgba(accent)
-    face = (float(r), float(g), float(b), float(np.clip(fill_alpha, 0.0, 1.0)))
-    edge = to_rgba(accent, alpha=float(np.clip(edge_alpha, 0.0, 1.0)))
-    _safe_set_visible(artist, True)
-    setter_fc = getattr(artist, "set_facecolor", None)
-    if callable(setter_fc):
-        with suppress(TypeError, ValueError):
-            setter_fc(face)
-    setter_ec = getattr(artist, "set_edgecolor", None)
-    if callable(setter_ec):
-        with suppress(TypeError, ValueError):
-            setter_ec(edge)
-    _safe_set_linewidth(artist, float(linewidth))
-    _safe_clear_patch_alpha(artist)
-
-
-def _safe_set_visible(artist: Artist, visible: bool) -> None:
-    setter = getattr(artist, "set_visible", None)
-    if callable(setter):
-        with suppress(AttributeError, TypeError, ValueError):
-            setter(visible)
-
-
-def _safe_set_alpha(artist: Artist, alpha: float | None) -> None:
-    setter = getattr(artist, "set_alpha", None)
-    if callable(setter) and alpha is not None:
-        with suppress(AttributeError, TypeError, ValueError):
-            setter(alpha)
-
-
-def _safe_clear_patch_alpha(artist: Artist) -> None:
-    """So facecolor/edgecolor RGBA alphas are not multiplied by a stale artist alpha."""
-    setter = getattr(artist, "set_alpha", None)
-    if callable(setter):
-        with suppress(AttributeError, TypeError, ValueError):
-            setter(None)
-
-
-def _safe_set_color(artist: Artist, color: Any) -> None:
-    for name in ("set_edgecolor", "set_color", "set_facecolor"):
-        setter = getattr(artist, name, None)
-        if callable(setter):
-            try:
-                setter(color)
-                return
-            except (AttributeError, TypeError, ValueError):
-                continue
-
-
-def _safe_set_linewidth(artist: Artist, lw: float) -> None:
-    setter = getattr(artist, "set_linewidth", None)
-    if callable(setter):
-        try:
-            setter(lw)
-            return
-        except (AttributeError, TypeError, ValueError):
-            pass
-    setter2 = getattr(artist, "set_linewidths", None)
-    if callable(setter2):
-        with suppress(AttributeError, TypeError, ValueError):
-            setter2(lw)
-
-
-def _snapshot_style(artist: Artist) -> dict[str, Any]:
-    snap: dict[str, Any] = {}
-    for attr, key in (
-        ("get_edgecolor", "edgecolor"),
-        ("get_facecolor", "facecolor"),
-        ("get_color", "color"),
-        ("get_linewidth", "linewidth"),
-        ("get_linewidths", "linewidths"),
-        ("get_alpha", "alpha"),
-    ):
-        fn = getattr(artist, attr, None)
-        if callable(fn):
-            with suppress(AttributeError, TypeError, ValueError):
-                snap[key] = fn()
-    return snap
-
-
-def _restore_style(artist: Artist, snap: dict[str, Any]) -> None:
-    ec = snap.get("edgecolor")
-    if ec is not None:
-        _safe_set_color(artist, ec)
-    fc = snap.get("facecolor")
-    setter_fc = getattr(artist, "set_facecolor", None)
-    if callable(setter_fc) and fc is not None:
-        with suppress(AttributeError, TypeError, ValueError):
-            setter_fc(fc)
-    col = snap.get("color")
-    if col is not None and not hasattr(artist, "set_edgecolor"):
-        _safe_set_color(artist, col)
-    lw = snap.get("linewidth")
-    if lw is not None:
-        try:
-            _safe_set_linewidth(artist, float(np.ravel(lw)[0]))
-        except (TypeError, ValueError, IndexError):
-            _safe_set_linewidth(artist, float(lw))  # type: ignore[arg-type]
-    else:
-        lws = snap.get("linewidths")
-        if lws is not None:
-            with suppress(TypeError, ValueError, IndexError):
-                _safe_set_linewidth(artist, float(np.ravel(lws)[0]))
-    al = snap.get("alpha")
-    if al is not None:
-        try:
-            a0 = float(np.ravel(al)[0])
-        except (TypeError, ValueError, IndexError):
-            try:
-                a0 = float(al)  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                a0 = None
-        if a0 is not None:
-            _safe_set_alpha(artist, a0)
-
-
-def _box_poly3d_faces(
-    xmin: float,
-    xmax: float,
-    ymin: float,
-    ymax: float,
-    zmin: float,
-    zmax: float,
-) -> list:
-    return [
-        [(xmin, ymin, zmin), (xmax, ymin, zmin), (xmax, ymax, zmin), (xmin, ymax, zmin)],
-        [(xmin, ymin, zmax), (xmax, ymin, zmax), (xmax, ymax, zmax), (xmin, ymax, zmax)],
-        [(xmin, ymin, zmin), (xmax, ymin, zmin), (xmax, ymin, zmax), (xmin, ymin, zmax)],
-        [(xmin, ymax, zmin), (xmax, ymax, zmin), (xmax, ymax, zmax), (xmin, ymax, zmax)],
-        [(xmin, ymin, zmin), (xmin, ymax, zmin), (xmin, ymax, zmax), (xmin, ymin, zmax)],
-        [(xmax, ymin, zmin), (xmax, ymax, zmin), (xmax, ymax, zmax), (xmax, ymin, zmax)],
-    ]
-
-
 class _ContractionViewerBase:
-    """Shared stepping logic; UI is built only when ``enable_playback`` is True."""
+    """Shared stepping logic for contraction playback viewers.
+
+    The base class only mutates already-created Matplotlib artists. Subclasses decide how
+    those artists are created and which axes type they require.
+    """
 
     def __init__(
         self,
@@ -274,11 +130,7 @@ class _ContractionViewerBase:
         self.figure = fig
         self._ax_main = ax_main
         self.config = config
-        self._enable_playback = (
-            enable_playback
-            if enable_playback is not None
-            else (bool(config.contraction_playback) if config is not None else False)
-        )
+        self._enable_playback = enable_playback if enable_playback is not None else False
         self.mode = mode
         self.past_color = past_color
         self.current_color = current_color
@@ -320,6 +172,7 @@ class _ContractionViewerBase:
         self._cid_close: int | None = None
         self._cost_panel_ax: Axes | None = None
         self._cost_text_artist: Text | None = None
+        self._step_changed_callbacks: list[Callable[[int], None]] = []
 
     @property
     def num_steps(self) -> int:
@@ -421,7 +274,24 @@ class _ContractionViewerBase:
                 self._slider_callback_guard = False
 
         self._refresh_step_details_panel()
+        for callback in tuple(self._step_changed_callbacks):
+            callback(k_clamped)
         self.figure.canvas.draw_idle()
+
+    def add_step_changed_callback(
+        self,
+        callback: Callable[[int], None],
+        *,
+        call_immediately: bool = False,
+    ) -> None:
+        if callback not in self._step_changed_callbacks:
+            self._step_changed_callbacks.append(callback)
+        if call_immediately:
+            callback(self.current_step)
+
+    def remove_step_changed_callback(self, callback: Callable[[int], None]) -> None:
+        if callback in self._step_changed_callbacks:
+            self._step_changed_callbacks.remove(callback)
 
     def set_step_details_enabled(self, enabled: bool) -> None:
         self._details_enabled = bool(enabled)
@@ -430,22 +300,7 @@ class _ContractionViewerBase:
     def _build_step_details_panel(self) -> None:
         if self._cost_panel_ax is not None:
             return
-        ax_details = self.figure.add_axes(_PLAYBACK_DETAILS_BOUNDS)
-        ax_details.set_xticks([])
-        ax_details.set_yticks([])
-        ax_details.patch.set_alpha(0.0)
-        for spine in ax_details.spines.values():
-            spine.set_visible(False)
-        text = ax_details.text(
-            0.0,
-            1.0,
-            "",
-            transform=ax_details.transAxes,
-            ha="left",
-            va="top",
-            fontsize=9.0,
-            wrap=True,
-        )
+        ax_details, text = _create_playback_details_panel(self.figure)
         self._cost_panel_ax = ax_details
         self._cost_text_artist = text
         _set_axes_visible(ax_details, False)
@@ -480,28 +335,14 @@ class _ContractionViewerBase:
         n = self.num_steps
         _reserve_figure_bottom(self.figure, _PLAYBACK_MAIN_BOTTOM)
         self._build_step_details_panel()
-        ax_slider = self.figure.add_axes(_PLAYBACK_SLIDER_BOUNDS)
-        slider = Slider(
-            ax_slider,
-            "Step",
-            0,
-            float(max(0, n)),
-            valinit=float(self._initial_step if self._initial_step is not None else n),
-            valstep=1,
+        slider = _create_playback_slider(
+            self.figure,
+            num_steps=n,
+            initial_step=int(self._initial_step if self._initial_step is not None else n),
         )
         self.slider = slider
 
-        bx = _PLAYBACK_BUTTON_START_X
-        by = _PLAYBACK_BUTTON_Y
-        bw = _PLAYBACK_BUTTON_WIDTH
-        bh = _PLAYBACK_BUTTON_HEIGHT
-        gap = _PLAYBACK_BUTTON_GAP
-        ax_play = self.figure.add_axes((bx, by, bw, bh))
-        ax_pause = self.figure.add_axes((bx + bw + gap, by, bw, bh))
-        ax_reset = self.figure.add_axes((bx + 2.0 * (bw + gap), by, _PLAYBACK_RESET_WIDTH, bh))
-        btn_play = Button(ax_play, "Play")
-        btn_pause = Button(ax_pause, "Pause")
-        btn_reset = Button(ax_reset, "Reset")
+        btn_play, btn_pause, btn_reset = _create_playback_buttons(self.figure)
         self._btn_play = btn_play
         self._btn_pause = btn_pause
         self._btn_reset = btn_reset
@@ -605,6 +446,9 @@ class _ContractionViewerBase:
             _safe_set_visible(art, False)
         self.figure.canvas.draw_idle()
 
+    def show_dynamic_scheme(self) -> None:
+        self.figure.canvas.draw_idle()
+
     def show(self) -> None:
         """Standalone demos; in-library use relies on ``show_tensor_network`` / ``_show_figure``."""
         from .viewer import _show_figure
@@ -613,208 +457,8 @@ class _ContractionViewerBase:
         _show_figure(self.figure)
 
 
-class _ContractionControls:
-    """Per-figure controller for lazy contraction scheme, playback, and cost-hover toggles."""
-
-    def __init__(
-        self,
-        *,
-        fig: Figure,
-        ax: Axes | Axes3D,
-        config: PlotConfig,
-        build_controls: bool,
-        register_on_figure: bool,
-        bundle_builder: Callable[[bool], _ContractionSchemeBundle],
-        refresh_hover: Callable[
-            [
-                Sequence[tuple[Artist, str]],
-                Sequence[tuple[tuple[float, float, float, float, float, float], str, Artist]],
-            ],
-            None,
-        ],
-    ) -> None:
-        self.figure = fig
-        self.ax = ax
-        self.config = config
-        self._build_controls_ui = bool(build_controls)
-        self._register_on_figure = bool(register_on_figure)
-        self._bundle_builder = bundle_builder
-        self._refresh_hover_callback = refresh_hover
-        self._bundle = _ContractionSchemeBundle()
-        self._viewer: _ContractionViewerBase | None = None
-        self.scheme_on: bool = bool(config.show_contraction_scheme)
-        self.playback_on: bool = bool(config.contraction_playback)
-        self.cost_hover_on: bool = bool(config.contraction_scheme_cost_hover)
-        if self.cost_hover_on:
-            self.scheme_on = True
-            self.playback_on = True
-        elif self.playback_on:
-            self.scheme_on = True
-        self._controls_ax: Axes | None = None
-        self._checkbuttons: CheckButtons | None = None
-        self._checkbuttons_cid: int | None = None
-        self._callback_guard: bool = False
-
-        if self._build_controls_ui:
-            _reserve_figure_bottom(fig, _CONTROLS_MAIN_BOTTOM)
-            self._build_controls()
-        if self._register_on_figure:
-            fig._tensor_network_viz_contraction_controls = self  # type: ignore[attr-defined]
-        ax._tensor_network_viz_contraction_controls = self  # type: ignore[attr-defined]
-        if self.scheme_on:
-            self._ensure_bundle(strict=self.playback_on, swallow_errors=False)
-        self._apply_visual_state()
-        self._refresh_hover()
-
-    def _build_controls(self) -> None:
-        controls_ax = self.figure.add_axes(_CONTROLS_CHECKBOX_BOUNDS)
-        self._controls_ax = controls_ax
-        self._checkbuttons = CheckButtons(
-            controls_ax,
-            list(_SCHEME_LABELS),
-            [self.scheme_on, self.playback_on, self.cost_hover_on],
-            label_props=_CONTROL_LABEL_PROPS,
-            frame_props=_CONTROL_FRAME_PROPS,
-            check_props=_CONTROL_CHECK_PROPS,
-        )
-        self._checkbuttons_cid = self._checkbuttons.on_clicked(self._on_toggle)
-
-    def _set_checkbox_state(self, index: int, value: bool) -> None:
-        if self._checkbuttons is None:
-            return
-        current = bool(self._checkbuttons.get_status()[index])
-        if current == value:
-            return
-        self._callback_guard = True
-        try:
-            self._checkbuttons.set_active(index, state=value)
-        finally:
-            self._callback_guard = False
-
-    def _sync_checkbuttons(self) -> None:
-        self._set_checkbox_state(0, self.scheme_on)
-        self._set_checkbox_state(1, self.playback_on)
-        self._set_checkbox_state(2, self.cost_hover_on)
-
-    def _on_toggle(self, label: str | None) -> None:
-        if self._callback_guard or self._checkbuttons is None:
-            return
-        ui_scheme, ui_playback, ui_cost = [bool(v) for v in self._checkbuttons.get_status()]
-        self.set_states(
-            scheme_on=ui_scheme,
-            playback_on=ui_playback,
-            cost_hover_on=ui_cost,
-            source_label=label,
-        )
-
-    def set_states(
-        self,
-        *,
-        scheme_on: bool,
-        playback_on: bool,
-        cost_hover_on: bool,
-        source_label: str | None = None,
-    ) -> None:
-        prev_scheme = self.scheme_on
-        prev_playback = self.playback_on
-        prev_cost = self.cost_hover_on
-
-        new_scheme = bool(scheme_on)
-        new_playback = bool(playback_on)
-        new_cost = bool(cost_hover_on)
-        if new_cost:
-            new_scheme = True
-            new_playback = True
-        elif source_label is None:
-            if new_playback:
-                new_scheme = True
-        elif source_label == "Playback" and new_playback:
-            new_scheme = True
-
-        strict = bool(new_scheme or new_playback or new_cost)
-        if strict:
-            bundle = self._ensure_bundle(strict=True, swallow_errors=True)
-            if bundle is None:
-                self.scheme_on = prev_scheme
-                self.playback_on = prev_playback
-                self.cost_hover_on = prev_cost
-                self._sync_checkbuttons()
-                self._apply_visual_state()
-                self._refresh_hover()
-                return
-            self._viewer = bundle.viewer
-
-        self.scheme_on = new_scheme
-        self.playback_on = new_playback
-        self.cost_hover_on = new_cost
-        self._sync_checkbuttons()
-        self._apply_visual_state()
-        self._refresh_hover()
-
-    def _ensure_bundle(
-        self,
-        *,
-        strict: bool,
-        swallow_errors: bool = True,
-    ) -> _ContractionSchemeBundle | None:
-        if self._bundle.availability == "unavailable":
-            return None
-        if self._bundle.availability == "computed":
-            return self._bundle
-
-        try:
-            bundle = self._bundle_builder(strict)
-        except ValueError:
-            self._bundle.availability = "unavailable"
-            if swallow_errors:
-                return None
-            raise
-
-        self._bundle = bundle
-        self._viewer = bundle.viewer
-        if self._viewer is not None:
-            self._viewer.build_ui(initialize_step=False)
-            self._viewer.set_step_details_enabled(self.cost_hover_on)
-            self._viewer.set_playback_widgets_visible(False)
-            self.figure._tensor_network_viz_contraction_viewer = self._viewer  # type: ignore[attr-defined]
-        return bundle
-
-    def _scheme_entries_2d(self) -> tuple[tuple[Artist, str], ...]:
-        return ()
-
-    def _scheme_entries_3d(
-        self,
-    ) -> tuple[tuple[tuple[float, float, float, float, float, float], str, Artist], ...]:
-        return ()
-
-    def _apply_visual_state(self) -> None:
-        if self._viewer is None:
-            if not self.scheme_on:
-                self.figure.canvas.draw_idle()
-            return
-        self._viewer.set_step_details_enabled(self.cost_hover_on)
-
-        if not self.scheme_on:
-            self._viewer.pause()
-            self._viewer.set_playback_widgets_visible(False)
-            self._viewer.hide_scheme_artists()
-            return
-
-        if self.playback_on:
-            self._viewer.set_playback_widgets_visible(True)
-            self._viewer.set_step(self._viewer.current_step)
-            return
-
-        self._viewer.pause()
-        self._viewer.set_playback_widgets_visible(False)
-        self._viewer.show_static_scheme()
-
-    def _refresh_hover(self) -> None:
-        self._refresh_hover_callback((), ())
-
-
 class ContractionViewer2D(_ContractionViewerBase):
-    """Step through 2D patches (e.g. ``FancyBboxPatch``, ``Rectangle``)."""
+    """Playback viewer for 2D Matplotlib artists such as patches and rectangles."""
 
     def __init__(
         self,
@@ -854,6 +498,7 @@ class ContractionViewer2D(_ContractionViewerBase):
         edgecolor: str | tuple[float, ...] = "navy",
         **kwargs: Any,
     ) -> ContractionViewer2D:
+        """Create a 2D viewer from ``(x, y, width, height)`` rectangle tuples."""
         if fig is None and ax is not None:
             fig = root_figure(ax.figure)
         if fig is None:
@@ -876,7 +521,7 @@ class ContractionViewer2D(_ContractionViewerBase):
 
 
 class ContractionViewer3D(_ContractionViewerBase):
-    """Step through 3D line or poly collections."""
+    """Playback viewer for 3D Matplotlib collections."""
 
     def __init__(
         self,
@@ -916,6 +561,7 @@ class ContractionViewer3D(_ContractionViewerBase):
         edgecolor: str | tuple[float, ...] = "0.2",
         **kwargs: Any,
     ) -> ContractionViewer3D:
+        """Create a 3D viewer from axis-aligned ``(min_corner, max_corner)`` boxes."""
         if fig is None and ax is not None:
             fig = root_figure(ax.figure)
         if fig is None:
@@ -938,6 +584,47 @@ class ContractionViewer3D(_ContractionViewerBase):
             ax.add_collection3d(poly)
             artists.append(poly)
         return cls(artists, fig=fig, ax=ax, **kwargs)
+
+
+class _SceneStepApplier(Protocol):
+    """Protocol for scene objects that can redraw themselves for one playback step."""
+
+    def apply_step(self, step: int) -> None: ...
+    def set_enabled(self, enabled: bool) -> None: ...
+
+
+class _TensorNetworkContractionViewer(_ContractionViewerBase):
+    """Viewer adapter that drives tensor-network scene playback without standalone artists."""
+
+    def __init__(
+        self,
+        *,
+        step_count: int,
+        scene_applier: _SceneStepApplier,
+        fig: Figure,
+        ax: Axes | Axes3D,
+        step_details_by_step: Sequence[str | None] | None,
+        config: PlotConfig,
+    ) -> None:
+        super().__init__(
+            [None] * int(step_count),
+            fig=fig,
+            ax_main=ax,
+            step_details_by_step=step_details_by_step,
+            config=config,
+            enable_playback=True,
+        )
+        self._scene_applier = scene_applier
+        self.add_step_changed_callback(self._scene_applier.apply_step, call_immediately=False)
+
+    def hide_scheme_artists(self) -> None:
+        self._scene_applier.set_enabled(False)
+        self.figure.canvas.draw_idle()
+
+    def show_dynamic_scheme(self) -> None:
+        self._scene_applier.set_enabled(True)
+        self._scene_applier.apply_step(self.current_step)
+        self.figure.canvas.draw_idle()
 
 
 def attach_playback_to_tensor_network_figure(
@@ -970,8 +657,32 @@ def attach_playback_to_tensor_network_figure(
         )
     if build_ui:
         v.build_ui()
-    fig._tensor_network_viz_contraction_viewer = v  # type: ignore[attr-defined]
+    set_contraction_viewer(fig, v)
     return v
+
+
+def attach_tensor_network_playback_to_figure(
+    *,
+    step_count: int,
+    scene_applier: _SceneStepApplier,
+    step_details_by_step: Sequence[str | None] | None,
+    fig: Figure,
+    ax: Axes | Axes3D,
+    config: PlotConfig,
+    build_ui: bool = True,
+) -> _ContractionViewerBase:
+    viewer = _TensorNetworkContractionViewer(
+        step_count=step_count,
+        scene_applier=scene_applier,
+        fig=fig,
+        ax=ax,
+        step_details_by_step=step_details_by_step,
+        config=config,
+    )
+    if build_ui:
+        viewer.build_ui()
+    set_contraction_viewer(fig, viewer)
+    return viewer
 
 
 __all__ = [

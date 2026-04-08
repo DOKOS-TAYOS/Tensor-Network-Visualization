@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any, Literal, Protocol
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol, TypeAlias
 
 import numpy as np
 from matplotlib import patheffects
+from matplotlib.artist import Artist
 from matplotlib.axes import Axes
-from matplotlib.collections import LineCollection, PatchCollection
+from matplotlib.collections import LineCollection, PatchCollection, PathCollection
 from matplotlib.patches import Circle
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
@@ -14,7 +16,15 @@ from ...config import PlotConfig
 from ..graph import (
     _GraphData,
 )
-from .constants import *
+from .constants import (
+    _EDGE_LINE_CAP_STYLE,
+    _EDGE_LINE_JOIN_STYLE,
+    _OCTAHEDRON_EDGE_LINEWIDTH_FACTOR,
+    _OCTAHEDRON_EDGE_LINEWIDTH_MIN,
+    _OCTAHEDRON_TRI_COUNT,
+    _UNIT_NODE_TRIS,
+    _ZORDER_NODE_DISK,
+)
 from .fonts_and_scale import _DrawScaleParams
 from .viewport_geometry import (
     _apply_axis_limits_with_outset,
@@ -24,6 +34,18 @@ from .viewport_geometry import (
 
 _EDGE_OUTLINE_COLOR: str = "black"
 _EDGE_OUTLINE_LINEWIDTH_DELTA: float = 0.35
+_COMPACT_NODE_MARKER_AREA_2D_PT2: float = 16.0
+_COMPACT_NODE_MARKER_AREA_3D_PT2: float = 22.0
+_COMPACT_NODE_MARKER_LINEWIDTH_PT: float = 0.7
+
+NodeRenderMode: TypeAlias = Literal["normal", "compact"]
+
+
+@dataclass(frozen=True)
+class _NodeArtistBundle:
+    mode: NodeRenderMode
+    artists: tuple[Any, ...]
+    hover_target: Any | None
 
 
 def _edge_outline_effects(linewidth: float) -> list[patheffects.AbstractPathEffect]:
@@ -81,7 +103,10 @@ class _PlotAdapter(Protocol):
         config: PlotConfig,
         p: _DrawScaleParams,
         degree_one_mask: np.ndarray,
+        mode: NodeRenderMode,
     ) -> None: ...
+    def get_node_artist_bundle(self) -> _NodeArtistBundle | None: ...
+    def get_edge_artists(self) -> tuple[Any, ...]: ...
     def style_axes(self, coords: np.ndarray, *, view_margin: float) -> None: ...
 
 
@@ -100,8 +125,10 @@ def _make_plotter(
                 "_ax",
                 "_edge_segments",
                 "_hover_edge_targets",
+                "_edge_artists",
                 "_node_disk_collection",
                 "_node_disk_collections",
+                "_node_artist_bundle",
             )
 
             def __init__(
@@ -112,12 +139,21 @@ def _make_plotter(
                 self._ax = ax_2d
                 self._edge_segments: list[tuple[float, str, float, np.ndarray]] = []
                 self._hover_edge_targets = hover_edges
-                self._node_disk_collection: PatchCollection | None = None
-                self._node_disk_collections: list[PatchCollection] = []
+                self._edge_artists: list[Artist] = []
+                self._node_disk_collection: PatchCollection | PathCollection | None = None
+                self._node_disk_collections: list[PatchCollection | PathCollection] = []
+                self._node_artist_bundle: _NodeArtistBundle | None = None
 
             def clear_node_disk_collections(self) -> None:
                 self._node_disk_collections.clear()
                 self._node_disk_collection = None
+                self._node_artist_bundle = None
+
+            def get_node_artist_bundle(self) -> _NodeArtistBundle | None:
+                return self._node_artist_bundle
+
+            def get_edge_artists(self) -> tuple[Artist, ...]:
+                return tuple(self._edge_artists)
 
             def flush_edge_collections(self) -> None:
                 """Batch buffered edges into a few LineCollections (call after all edges drawn)."""
@@ -137,7 +173,8 @@ def _make_plotter(
                         joinstyle=_EDGE_LINE_JOIN_STYLE,
                     )
                     coll.set_path_effects(_edge_outline_effects(float(lw)))
-                    ax_.add_collection(coll)
+                    ax_.add_collection(coll, autolim=False)
+                    self._edge_artists.append(coll)
                 self._edge_segments.clear()
 
             def plot_line(self, start: np.ndarray, end: np.ndarray, **kwargs: Any) -> None:
@@ -170,21 +207,38 @@ def _make_plotter(
                 config: PlotConfig,
                 p: _DrawScaleParams,
                 degree_one: bool,
+                mode: NodeRenderMode,
                 zorder: float,
             ) -> None:
-                patch = Circle((float(coord[0]), float(coord[1])), radius=p.r)
                 fc = config.node_color_degree_one if degree_one else config.node_color
                 ec = config.node_edge_color_degree_one if degree_one else config.node_edge_color
-                coll = PatchCollection(
-                    [patch],
-                    facecolors=[fc],
-                    edgecolors=[ec],
-                    linewidths=float(p.lw),
-                    zorder=zorder,
-                    match_original=False,
-                )
-                self._ax.add_collection(coll)
+                if mode == "compact":
+                    coll = self._ax.scatter(
+                        [float(coord[0])],
+                        [float(coord[1])],
+                        s=_COMPACT_NODE_MARKER_AREA_2D_PT2,
+                        c=[fc],
+                        edgecolors=[ec],
+                        linewidths=_COMPACT_NODE_MARKER_LINEWIDTH_PT,
+                        zorder=zorder,
+                    )
+                else:
+                    patch = Circle((float(coord[0]), float(coord[1])), radius=p.r)
+                    coll = PatchCollection(
+                        [patch],
+                        facecolors=[fc],
+                        edgecolors=[ec],
+                        linewidths=float(p.lw),
+                        zorder=zorder,
+                        match_original=False,
+                    )
+                    self._ax.add_collection(coll, autolim=False)
                 self._node_disk_collections.append(coll)
+                self._node_artist_bundle = _NodeArtistBundle(
+                    mode=mode,
+                    artists=tuple(self._node_disk_collections),
+                    hover_target=tuple(self._node_disk_collections),
+                )
 
             def draw_tensor_nodes(
                 self,
@@ -193,13 +247,11 @@ def _make_plotter(
                 config: PlotConfig,
                 p: _DrawScaleParams,
                 degree_one_mask: np.ndarray,
+                mode: NodeRenderMode,
             ) -> None:
                 n = int(coords.shape[0])
                 if n == 0:
                     return
-                patches = [
-                    Circle((float(coords[i, 0]), float(coords[i, 1])), radius=p.r) for i in range(n)
-                ]
                 faces = [
                     config.node_color_degree_one if degree_one_mask[i] else config.node_color
                     for i in range(n)
@@ -207,17 +259,37 @@ def _make_plotter(
                 c1 = config.node_edge_color_degree_one
                 c0 = config.node_edge_color
                 edges_ = [c1 if degree_one_mask[i] else c0 for i in range(n)]
-                coll = PatchCollection(
-                    patches,
-                    facecolors=faces,
-                    edgecolors=edges_,
-                    linewidths=float(p.lw),
-                    zorder=_ZORDER_NODE_DISK,
-                    match_original=False,
-                )
-                self._ax.add_collection(coll)
+                if mode == "compact":
+                    coll = self._ax.scatter(
+                        coords[:, 0],
+                        coords[:, 1],
+                        s=_COMPACT_NODE_MARKER_AREA_2D_PT2,
+                        c=faces,
+                        edgecolors=edges_,
+                        linewidths=_COMPACT_NODE_MARKER_LINEWIDTH_PT,
+                        zorder=_ZORDER_NODE_DISK,
+                    )
+                else:
+                    patches = [
+                        Circle((float(coords[i, 0]), float(coords[i, 1])), radius=p.r)
+                        for i in range(n)
+                    ]
+                    coll = PatchCollection(
+                        patches,
+                        facecolors=faces,
+                        edgecolors=edges_,
+                        linewidths=float(p.lw),
+                        zorder=_ZORDER_NODE_DISK,
+                        match_original=False,
+                    )
+                    self._ax.add_collection(coll, autolim=False)
                 self._node_disk_collection = coll
                 self._node_disk_collections = [coll]
+                self._node_artist_bundle = _NodeArtistBundle(
+                    mode=mode,
+                    artists=(coll,),
+                    hover_target=coll,
+                )
 
             def style_axes(self, coords: np.ndarray, *, view_margin: float) -> None:
                 _apply_axis_limits_with_outset(
@@ -229,6 +301,14 @@ def _make_plotter(
     class _3DPlotter:
         def __init__(self, hover_edges: list[tuple[np.ndarray, str]] | None) -> None:
             self._hover_edge_targets = hover_edges
+            self._edge_artists: list[Artist] = []
+            self._node_artist_bundle: _NodeArtistBundle | None = None
+
+        def get_node_artist_bundle(self) -> _NodeArtistBundle | None:
+            return self._node_artist_bundle
+
+        def get_edge_artists(self) -> tuple[Artist, ...]:
+            return tuple(self._edge_artists)
 
         def plot_line(self, start: np.ndarray, end: np.ndarray, **kwargs: Any) -> None:
             _apply_edge_line_style(kwargs)
@@ -236,6 +316,7 @@ def _make_plotter(
             linewidth = float(kwargs.get("linewidth", 1.0))
             for artist in artists:
                 artist.set_path_effects(_edge_outline_effects(linewidth))
+                self._edge_artists.append(artist)
 
         def plot_curve(self, curve: np.ndarray, **kwargs: Any) -> None:
             _apply_edge_line_style(kwargs)
@@ -243,6 +324,7 @@ def _make_plotter(
             linewidth = float(kwargs.get("linewidth", 1.0))
             for artist in artists:
                 artist.set_path_effects(_edge_outline_effects(linewidth))
+                self._edge_artists.append(artist)
 
         def plot_text(self, pos: np.ndarray, text: str, **kwargs: Any) -> None:
             _apply_text_no_clip(kwargs)
@@ -255,10 +337,42 @@ def _make_plotter(
             config: PlotConfig,
             p: _DrawScaleParams,
             degree_one_mask: np.ndarray,
+            mode: NodeRenderMode,
         ) -> None:
             n_nod = int(coords.shape[0])
             if n_nod == 0:
                 return
+            face_list: list[str] = []
+            edge_list: list[str] = []
+            for i in range(n_nod):
+                fc = config.node_color_degree_one if degree_one_mask[i] else config.node_color
+                ec = (
+                    config.node_edge_color_degree_one
+                    if degree_one_mask[i]
+                    else config.node_edge_color
+                )
+                face_list.append(fc)
+                edge_list.append(ec)
+            if mode == "compact":
+                coll = ax.scatter(
+                    coords[:, 0],
+                    coords[:, 1],
+                    coords[:, 2],
+                    s=_COMPACT_NODE_MARKER_AREA_3D_PT2,
+                    c=face_list,
+                    edgecolors=edge_list,
+                    linewidths=_COMPACT_NODE_MARKER_LINEWIDTH_PT,
+                    depthshade=False,
+                )
+                if hasattr(coll, "set_sort_zpos"):
+                    coll.set_sort_zpos(_ZORDER_NODE_DISK)
+                self._node_artist_bundle = _NodeArtistBundle(
+                    mode=mode,
+                    artists=(coll,),
+                    hover_target=None,
+                )
+                return
+
             # Unit octahedron vertices lie on axes at distance 1; scale by p.r so circumradius = p.r
             # (same metric as 2D disks; radius tracks shortest bond via renderer fraction).
             scaled = _UNIT_NODE_TRIS * p.r
@@ -269,25 +383,24 @@ def _make_plotter(
                 float(p.lw) * _OCTAHEDRON_EDGE_LINEWIDTH_FACTOR,
                 _OCTAHEDRON_EDGE_LINEWIDTH_MIN,
             )
-            face_list: list[str] = []
-            edge_list: list[str] = []
-            for i in range(n_nod):
-                fc = config.node_color_degree_one if degree_one_mask[i] else config.node_color
-                ec = (
-                    config.node_edge_color_degree_one
-                    if degree_one_mask[i]
-                    else config.node_edge_color
-                )
-                face_list.extend([fc] * _OCTAHEDRON_TRI_COUNT)
-                edge_list.extend([ec] * _OCTAHEDRON_TRI_COUNT)
+            tri_faces: list[str] = []
+            tri_edges: list[str] = []
+            for fc, ec in zip(face_list, edge_list, strict=False):
+                tri_faces.extend([fc] * _OCTAHEDRON_TRI_COUNT)
+                tri_edges.extend([ec] * _OCTAHEDRON_TRI_COUNT)
             coll = Poly3DCollection(
                 polys,
-                facecolors=face_list,
-                edgecolors=edge_list,
+                facecolors=tri_faces,
+                edgecolors=tri_edges,
                 linewidths=node_edge_lw,
             )
             coll.set_sort_zpos(_ZORDER_NODE_DISK)
             ax.add_collection3d(coll)
+            self._node_artist_bundle = _NodeArtistBundle(
+                mode=mode,
+                artists=(coll,),
+                hover_target=None,
+            )
 
         def style_axes(self, coords: np.ndarray, *, view_margin: float) -> None:
             _apply_axis_limits_with_outset(ax, coords, view_margin=view_margin, dimensions=3)
@@ -297,6 +410,7 @@ def _make_plotter(
 
 __all__ = [
     "_PlotAdapter",
+    "_NodeArtistBundle",
     "_graph_edge_degree",
     "_make_plotter",
     "_node_edge_degrees",

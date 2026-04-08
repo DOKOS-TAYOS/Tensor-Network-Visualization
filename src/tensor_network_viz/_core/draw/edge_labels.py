@@ -16,6 +16,7 @@ from ..graph import (
 )
 from ..layout import NodePositions
 from .fonts_and_scale import _DrawScaleParams
+from .label_descriptors import _TextLabelDescriptor
 from .labels_misc import _edge_index_text_kwargs
 from .plotter import _PlotAdapter
 from .viewport_geometry import (
@@ -46,6 +47,7 @@ def _plot_contraction_index_captions(
     ax: Any,
     scale: float,
     zorder_label: float | None = None,
+    label_sink: list[_TextLabelDescriptor] | None = None,
 ) -> None:
     ep_l, ep_r = _require_contraction_endpoints(edge)
     cap_l: str | None = _endpoint_index_caption(ep_l, edge, graph)
@@ -88,6 +90,7 @@ def _plot_contraction_index_captions(
             dimensions=dimensions,
             is_physical=False,
             peer_captions_for_width=peer_for_width,
+            preferred_fontsize_pt=config.edge_label_fontsize,
         )
         text_kwargs = _edge_index_text_kwargs(
             config,
@@ -129,11 +132,18 @@ def _plot_contraction_index_captions(
                 scale=scale,
                 fontsize_pt=float(fontsize),
             )
-        plotter.plot_text(
-            position,
-            format_tensor_node_label(cap),
-            **{**text_kwargs, **align_kwargs},
-        )
+        formatted = format_tensor_node_label(cap)
+        kwargs = {**text_kwargs, **align_kwargs}
+        if label_sink is not None:
+            label_sink.append(
+                _TextLabelDescriptor(
+                    position=np.asarray(position, dtype=float).copy(),
+                    text=formatted,
+                    kwargs=dict(kwargs),
+                )
+            )
+            continue
+        plotter.plot_text(position, formatted, **kwargs)
 
 
 __all__ = ["_plot_contraction_index_captions"]

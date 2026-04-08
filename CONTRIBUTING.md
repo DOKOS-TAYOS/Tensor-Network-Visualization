@@ -29,9 +29,11 @@ For larger changes, open an issue first to discuss scope and approach.
   - Linux/macOS: `source .venv/bin/activate`
 3. Install the pinned development requirements:
   ```bash
-   pip install -r requirements.dev.txt
+   python -m pip install -r requirements.dev.txt
   ```
    This installs the pinned local toolchain plus the optional backends required for the full test suite.
+
+All commands below assume the project `.venv` is active.
 
 ## Running Tests
 
@@ -48,6 +50,44 @@ With the project venv (Windows):
 ```
 
 Add tests for new features or bug fixes. All tests must pass before opening a PR.
+
+Preferred full verification flow from the project `.venv`:
+
+```powershell
+.\.venv\Scripts\python scripts\verify.py quality
+.\.venv\Scripts\python scripts\verify.py tests
+.\.venv\Scripts\python scripts\verify.py smoke
+.\.venv\Scripts\python scripts\verify.py package
+```
+
+On Linux/macOS with the venv activated:
+
+```bash
+python scripts/verify.py quality
+python scripts/verify.py tests
+python scripts/verify.py smoke
+python scripts/verify.py package
+```
+
+### Optional: focused smoke and performance runs
+
+Pytest markers are available for the render-specific regression checks:
+
+```bash
+pytest -m smoke
+pytest -m perf
+```
+
+Use `smoke` for lightweight draw sanity checks and `perf` for runtime-sensitive guards.
+For larger local comparisons outside CI, run:
+
+```bash
+python scripts/bench_render_workflows.py
+```
+
+That benchmark compares first render vs repeated render, network object vs list input,
+and static render vs interactive controls through the public `show_tensor_network(...)`
+entry point.
 
 ### Optional: manual example smoke checks
 
@@ -129,8 +169,17 @@ python scripts/verify.py
 - **Target:** Python 3.11+
 - **Ruff rules:** E, F, I, B, UP, C4, SIM
 - **Typing:** Use type hints on public functions and modules; the codebase is `py.typed`
+- **Exceptions:** prefer `tensor_network_viz.exceptions` classes at public boundaries instead of raw `ValueError` / `ImportError` when you are surfacing user-facing library errors
+- **Logging:** use the `tensor_network_viz` logger; never call `logging.basicConfig()` from library code
 
 Run `python scripts/verify.py` before committing. If you prefer, you can still run `ruff`, `pyright`, and `pytest` individually.
+
+When you finish a Python task locally, run:
+
+```powershell
+.\.venv\Scripts\python -m ruff check . --fix
+.\.venv\Scripts\python -m ruff format .
+```
 
 ## Opening Useful Issues
 
@@ -163,7 +212,10 @@ Adding a new engine (e.g. a new tensor-network library) requires:
   - `graph.py` — convert backend-native objects to `_GraphData` (see `_core/graph.py`)
   - `renderer.py` — implement `plot_<engine>_network_2d` and `plot_<engine>_network_3d` using the shared `_core` drawing layer
   - `__init__.py` — export the two plot functions
-2. **Registration** in `config.py` (add to `EngineName`) and `_registry.py` (add to `_ENGINE_CONFIG`).
+2. **Registration** in `config.py` / `_engine_specs.py`:
+  - add the new literal to `EngineName`
+  - add the module/function triple to `ENGINE_MODULE_MAP` in `src/tensor_network_viz/_engine_specs.py`
+  - `_registry.py` reads that map to resolve the public plotters
 3. **Optional dependency** in `pyproject.toml` under `[project.optional-dependencies]`.
 4. **Tests** in `tests/test_integration_<engine>.py` and optional `tests/test_<engine>_backend.py`.
 5. **Example script** in `examples/<engine>_demo.py` and an entry in `examples/README.md`.
@@ -187,6 +239,8 @@ Before opening a pull request, confirm:
 - `ruff check .` and `ruff format .` pass
 - `pyright` passes
 - `pytest` passes
+- `scripts/verify.py smoke` passes
+- `scripts/verify.py package` passes
 - New code has type hints and tests where appropriate
 - Documentation and examples are updated if behavior changed
 - PR description explains the change and links related issues

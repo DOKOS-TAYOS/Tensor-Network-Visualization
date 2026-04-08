@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import functools
 import math
-from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 from matplotlib.axes import Axes
@@ -12,8 +10,14 @@ from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.textpath import TextPath
 
+from ..._matplotlib_state import (
+    get_zoom_cids,
+    get_zoom_font_state,
+    set_zoom_cids,
+    set_zoom_font_state,
+)
 from ...config import PlotConfig
-from .constants import *
+from .constants import _FIGURE_MIN_PX_REF
 
 
 def _figure_size_sqrt_ratio(fig: Figure) -> float:
@@ -131,7 +135,7 @@ _ZOOM_FONT_CLAMP: tuple[float, float] = (0.28, 5.5)
 
 
 def _on_2d_limits_changed(ax: Axes) -> None:
-    state = getattr(ax, "_tensor_network_viz_zoom_fonts", None)
+    state = get_zoom_font_state(ax)
     if state is None:
         return
     x0, x1 = ax.get_xlim()
@@ -147,25 +151,23 @@ def _on_2d_limits_changed(ax: Axes) -> None:
 
 
 def _register_2d_zoom_font_scaling(ax: Axes) -> None:
-    old_cids: list[Any] = getattr(ax, "_tensor_network_viz_zoom_cids", [])
-    for cid in old_cids:
-        with suppress(ValueError, KeyError):
-            ax.callbacks.disconnect(cid)
     x0, x1 = ax.get_xlim()
     y0, y1 = ax.get_ylim()
     ref_span = max(float(x1 - x0), float(y1 - y0), 1e-9)
     sizes = {t: float(t.get_fontsize()) for t in ax.texts}
-    ax._tensor_network_viz_zoom_fonts = {
-        "ref_span": ref_span,
-        "sizes": sizes,
-    }
+    set_zoom_font_state(ax, ref_span=ref_span, sizes=sizes)
+
+    old_cids = get_zoom_cids(ax)
+    if old_cids:
+        _on_2d_limits_changed(ax)
+        return
 
     def _cb(_: object) -> None:
         _on_2d_limits_changed(ax)
 
     cx = ax.callbacks.connect("xlim_changed", _cb)
     cy = ax.callbacks.connect("ylim_changed", _cb)
-    ax._tensor_network_viz_zoom_cids = [cx, cy]
+    set_zoom_cids(ax, [cx, cy])
 
 
 __all__ = [

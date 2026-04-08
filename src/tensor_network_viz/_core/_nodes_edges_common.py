@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from .graph import (
+    _coerce_shape,
     _EdgeEndpoint,
+    _element_count_for_shape,
+    _estimated_nbytes_for_node,
+    _finalize_graph_diagnostics,
     _GraphData,
     _make_contraction_edge,
     _make_dangling_edge,
@@ -61,6 +65,33 @@ def _get_network_nodes(
     )
 
 
+def _node_tensor_payload(node: Any) -> Any | None:
+    """Return the tensor-like payload used for diagnostics, when available."""
+    for attr in ("tensor", "data"):
+        value = getattr(node, attr, None)
+        if value is not None:
+            return value
+    to_ndarray = getattr(node, "to_ndarray", None)
+    if callable(to_ndarray):
+        return to_ndarray()
+    return None
+
+
+def _node_tensor_metadata(
+    node: Any,
+) -> tuple[tuple[int, ...] | None, str | None, int | None, int | None]:
+    """Extract shape, dtype, element count, and estimated bytes from one backend node."""
+    tensor = _node_tensor_payload(node)
+    shape = _coerce_shape(getattr(node, "shape", None))
+    if shape is None and tensor is not None:
+        shape = _coerce_shape(getattr(tensor, "shape", None))
+    dtype_attr = None if tensor is None else getattr(tensor, "dtype", None)
+    dtype_text = None if dtype_attr is None else str(dtype_attr)
+    element_count = _element_count_for_shape(shape)
+    estimated_nbytes = _estimated_nbytes_for_node(shape, dtype_text, element_count=element_count)
+    return shape, dtype_text, element_count, estimated_nbytes
+
+
 def _build_graph_from_nodes_edges(
     network: Any,
     *,
@@ -92,9 +123,14 @@ def _build_graph_from_nodes_edges(
             )
 
         node_id = id(node)
+        shape, dtype_text, element_count, estimated_nbytes = _node_tensor_metadata(node)
         nodes[node_id] = _make_node(
             name=name,
             axes_names=axes_names,
+            shape=shape,
+            dtype=dtype_text,
+            element_count=element_count,
+            estimated_nbytes=estimated_nbytes,
         )
 
         for axis_index, edge in enumerate(node_edges):
@@ -135,4 +171,4 @@ def _build_graph_from_nodes_edges(
         left_endpoint, right_endpoint = endpoints
         edges.append(_make_contraction_edge(left_endpoint, right_endpoint, name=name))
 
-    return _GraphData(nodes=nodes, edges=tuple(edges))
+    return _finalize_graph_diagnostics(_GraphData(nodes=nodes, edges=tuple(edges)))

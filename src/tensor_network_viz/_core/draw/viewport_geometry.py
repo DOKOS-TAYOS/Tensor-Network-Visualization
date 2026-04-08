@@ -15,7 +15,25 @@ from ..graph import (
 from ..layout import (
     NodePositions,
 )
-from .constants import *
+from .constants import (
+    _AXIS_TIE_EPS,
+    _CURVE_NEAR_PAIR_REF,
+    _CURVE_OFFSET_FACTOR,
+    _CURVE_TANGENT_BLEND_LAMBDA,
+    _EDGE_INDEX_LABEL_FONT_GLOBAL_SCALE,
+    _EDGE_INDEX_LABEL_SPAN_FRAC_CONTRACT,
+    _EDGE_INDEX_LABEL_SPAN_FRAC_PHYS,
+    _EDGE_INDEX_LABEL_WIDTH_CALIB,
+    _EDGE_LINE_CAP_STYLE,
+    _EDGE_LINE_JOIN_STYLE,
+    _INDEX_LABEL_2D_PERP_EXTRA,
+    _INDEX_LABEL_2D_STROKE_PAD,
+    _LABEL_FONT_3D_SCALE,
+    _PHYSICAL_INDEX_LABEL_FONT_SCALE,
+    _STROKE_LABEL_EM_PERP_FRAC,
+    _STROKE_LABEL_EM_PERP_MAX_HW_MULT,
+    _STROKE_LABEL_GEOM_NORMAL_DOT_MIN,
+)
 from .fonts_and_scale import _DrawScaleParams, _textpath_width_pts
 from .vectors import _perpendicular_3d
 
@@ -620,6 +638,7 @@ def _edge_index_fontsize_for_bond(
     dimensions: Literal[2, 3],
     is_physical: bool = False,
     peer_captions_for_width: tuple[str, ...] | None = None,
+    preferred_fontsize_pt: float | None = None,
 ) -> float:
     """Font size from **this** bond's on-screen length × span fraction.
 
@@ -632,6 +651,8 @@ def _edge_index_fontsize_for_bond(
     show = format_tensor_node_label(caption).strip()
     if not show:
         return 1.0
+    if preferred_fontsize_pt is not None:
+        return float(max(1.0, float(preferred_fontsize_pt)))
     bond_px = _bond_reference_span_px_for_font(ax, bond_start, bond_end, dimensions)
     target_px = float(_edge_index_label_span_frac(is_physical=is_physical)) * bond_px
     dpi = float(getattr(ax.figure, "dpi", None) or 100.0)

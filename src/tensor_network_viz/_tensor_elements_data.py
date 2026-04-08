@@ -1,31 +1,63 @@
+"""Normalization and analysis helpers for tensor-elements rendering."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
-from itertools import tee
-from typing import Any, TypeAlias
+from itertools import combinations
+from math import inf, log
+from typing import Any, Literal, TypeAlias
 
 import numpy as np
 
 from ._engine_specs import EngineName
+from ._input_inspection import (
+    _detect_tensor_engine_with_input,
+    _is_tenpy_tensor,
+    _is_unordered_collection,
+)
+from ._logging import package_logger
+from .einsum_module._equation import parse_einsum_equation
 from .einsum_module.trace import EinsumTrace, einsum_trace_step, pair_tensor
+from .exceptions import TensorDataError, TensorDataTypeError, UnsupportedEngineError
 from .quimb.graph import _quimb_tensor_parsed, _tensors_sorted_with_meta
 from .tenpy.explicit import TenPyTensorNetwork
+from .tensor_elements_config import TensorAnalysisConfig, TensorAxisSelector, TensorElementsConfig
+from .tensorkrowch._history import _recover_contraction_history
 
 NumericArray: TypeAlias = np.ndarray[Any, Any]
+TensorElementsSourceName: TypeAlias = EngineName | Literal["numpy"]
 
 
 @dataclass(frozen=True)
 class _TensorRecord:
+    """Normalized tensor entry extracted from a supported backend.
+
+    Attributes:
+        array: Concrete NumPy array used by the rendering pipeline.
+        axis_names: Axis labels associated with ``array``.
+        engine: Backend that produced the tensor.
+        name: Stable display name shown in controls and summaries.
+    """
+
     array: NumericArray
     axis_names: tuple[str, ...]
-    engine: EngineName
+    engine: TensorElementsSourceName
     name: str
 
 
 @dataclass(frozen=True)
 class _TensorStats:
+    """Human-readable summary statistics for one tensor.
+
+    Attributes:
+        dtype_text: Display-ready dtype description.
+        element_count: Number of scalar entries in the tensor.
+        is_complex: Whether the tensor contains complex values.
+        shape: Tensor shape used in the summary.
+        text: Multiline textual summary rendered in ``data`` mode.
+    """
+
     dtype_text: str
     element_count: int
     is_complex: bool
@@ -35,6 +67,16 @@ class _TensorStats:
 
 @dataclass(frozen=True)
 class _MatrixMetadata:
+    """Metadata describing how a tensor was matrixized for inspection views.
+
+    Attributes:
+        col_axes: Axis indices grouped into the matrix columns.
+        col_names: Display names for the column axes.
+        original_shape: Shape of the source tensor before reshaping.
+        row_axes: Axis indices grouped into the matrix rows.
+        row_names: Display names for the row axes.
+    """
+
     col_axes: tuple[int, ...]
     col_names: tuple[str, ...]
     original_shape: tuple[int, ...]
@@ -42,95 +84,409 @@ class _MatrixMetadata:
     row_names: tuple[str, ...]
 
 
-def _first_non_none(items: Iterable[Any]) -> Any | None:
-    for item in items:
-        if item is not None:
-            return item
-    return None
+@dataclass(frozen=True)
+class _SpectralAnalysis:
+    """Derived singular-value and eigenvalue information for one tensor.
+
+    Attributes:
+        analysis_shape: Shape of the matrix actually analyzed after optional downsampling.
+        col_names: Column-axis names used in the matrix view.
+        eigenvalues: Eigenvalues when the analysis matrix is square, else ``None``.
+        issue: Reason why the spectral analysis is unavailable, if any.
+        matrix_shape: Shape of the full matrixized tensor before reduction.
+        row_names: Row-axis names used in the matrix view.
+        singular_values: Singular values for the analysis matrix, if available.
+        used_reduced_matrix: Whether downsampling changed the matrix before analysis.
+    """
+
+    analysis_shape: tuple[int, int]
+    col_names: tuple[str, ...]
+    eigenvalues: NumericArray | None
+    issue: str | None
+    matrix_shape: tuple[int, int]
+    row_names: tuple[str, ...]
+    singular_values: NumericArray | None
+    used_reduced_matrix: bool
 
 
-def _peek_item(source: Any) -> tuple[Any | None, Any]:
-    if isinstance(source, dict):
-        return _first_non_none(source.values()), source
-    if isinstance(source, (str, bytes, bytearray)) or not isinstance(source, Iterable):
-        return None, source
+@dataclass(frozen=True)
+class _ResolvedTensorAnalysis:
+    """Concrete analytical selectors for one tensor record and one analysis mode."""
 
-    iterator = iter(source)
-    if iterator is source:
-        probe_iter, runtime_iter = tee(iterator)
-        return _first_non_none(probe_iter), runtime_iter
-    return _first_non_none(iterator), source
-
-
-def _is_unordered_collection(value: Any) -> bool:
-    return isinstance(value, AbstractSet) and not isinstance(value, (str, bytes, bytearray))
-
-
-def _is_tenpy_tensor(value: Any) -> bool:
-    return callable(getattr(value, "get_leg_labels", None)) and callable(
-        getattr(value, "to_ndarray", None)
-    )
+    original_axis_names: tuple[str, ...]
+    post_slice_axis_names: tuple[str, ...]
+    profile_axis: int | None
+    profile_axis_name: str | None
+    profile_method: Literal["mean", "norm"]
+    reduce_axes: tuple[int, ...]
+    reduce_axis_names: tuple[str, ...]
+    reduce_method: Literal["mean", "norm"]
+    slice_active: bool
+    slice_axis: int | None
+    slice_axis_name: str | None
+    slice_axis_size: int
+    slice_index: int
 
 
-def _is_tenpy_like(value: Any) -> bool:
-    return (
-        isinstance(value, TenPyTensorNetwork)
-        or callable(getattr(value, "get_W", None))
-        or (callable(getattr(value, "get_X", None)) and hasattr(value, "uMPS_GS"))
-        or callable(getattr(value, "get_B", None))
-        or _is_tenpy_tensor(value)
-    )
+@dataclass(frozen=True)
+class _PlaybackStepRecord:
+    """Tensor payload associated with one playback step result.
+
+    Attributes:
+        result_name: Name of the result tensor produced by the step.
+        record: Normalized tensor data for the result, when available.
+    """
+
+    result_name: str
+    record: _TensorRecord | None
 
 
-def _detect_engine_from_sample(sample_item: Any | None) -> EngineName | None:
-    if isinstance(sample_item, (pair_tensor, einsum_trace_step)):
-        return "einsum"
-    if _is_tenpy_like(sample_item):
-        return "tenpy"
-    if hasattr(sample_item, "data") and hasattr(sample_item, "inds"):
-        return "quimb"
-    if hasattr(sample_item, "axes_names"):
-        return "tensorkrowch"
-    if hasattr(sample_item, "axis_names") and hasattr(sample_item, "tensor"):
-        return "tensornetwork"
-    return None
+_EinsumPlaybackStepRecord = _PlaybackStepRecord
 
 
 def _detect_tensor_elements_engine(data: Any) -> tuple[EngineName, Any]:
-    if isinstance(data, EinsumTrace):
-        return "einsum", data
-    if _is_tenpy_like(data):
-        return "tenpy", data
+    """Detect the tensor backend and preserve any prepared input wrapper."""
+    return _detect_tensor_engine_with_input(data)
 
-    direct_engine = _detect_engine_from_sample(data)
-    if direct_engine is not None:
-        return direct_engine, data
 
-    if hasattr(data, "tensors"):
-        tensor_sample, _ = _peek_item(data.tensors)
-        if tensor_sample is None or hasattr(tensor_sample, "inds"):
-            return "quimb", data
-
-    if hasattr(data, "leaf_nodes"):
-        sample, _ = _peek_item(data.leaf_nodes)
-        if sample is None or hasattr(sample, "axes_names"):
-            return "tensorkrowch", data
-    if hasattr(data, "nodes"):
-        sample, _ = _peek_item(data.nodes)
-        if sample is None or hasattr(sample, "axes_names"):
-            return "tensorkrowch", data
-        if sample is None or hasattr(sample, "axis_names"):
-            return "tensornetwork", data
-
-    sample_item, sampled_input = _peek_item(data)
-    detected_engine = _detect_engine_from_sample(sample_item)
-    if detected_engine is not None:
-        return detected_engine, sampled_input
-
-    raise ValueError(
-        "Could not infer tensor engine from input of type "
-        f"{type(data).__name__!r}. Pass engine= explicitly or provide a supported tensor input."
+def _looks_like_backend_tensor_input(value: Any) -> bool:
+    return (
+        isinstance(value, EinsumTrace)
+        or _is_tenpy_tensor(value)
+        or hasattr(value, "tensors")
+        or hasattr(value, "leaf_nodes")
+        or hasattr(value, "nodes")
+        or hasattr(value, "axes_names")
+        or (hasattr(value, "axis_names") and hasattr(value, "tensor"))
+        or (hasattr(value, "inds") and hasattr(value, "data"))
     )
+
+
+def _is_direct_array_like_tensor(value: Any) -> bool:
+    if isinstance(value, (str, bytes, bytearray, dict)):
+        return False
+    if _looks_like_backend_tensor_input(value):
+        return False
+    if not hasattr(value, "shape") and not hasattr(value, "__array__"):
+        return False
+    try:
+        array = np.asarray(value)
+    except Exception:
+        return False
+    return array.dtype != np.dtype("O")
+
+
+def _direct_array_record_name(index: int, *, total: int) -> str:
+    if total <= 1:
+        return "Tensor"
+    return f"Tensor {index + 1}"
+
+
+def _extract_direct_array_records(data: Any) -> list[_TensorRecord] | None:
+    if _is_direct_array_like_tensor(data):
+        return [
+            _TensorRecord(
+                array=_to_numpy_array(data),
+                axis_names=(),
+                engine="numpy",
+                name=_direct_array_record_name(0, total=1),
+            )
+        ]
+    if isinstance(data, (str, bytes, bytearray, dict)) or _looks_like_backend_tensor_input(data):
+        return None
+    if not isinstance(data, Iterable):
+        return None
+    try:
+        items = list(data)
+    except TypeError:
+        return None
+    if not items or not all(_is_direct_array_like_tensor(item) for item in items):
+        return None
+    return [
+        _TensorRecord(
+            array=_to_numpy_array(item),
+            axis_names=(),
+            engine="numpy",
+            name=_direct_array_record_name(index, total=len(items)),
+        )
+        for index, item in enumerate(items)
+    ]
+
+
+def _normalize_axis_selector(
+    selector: TensorAxisSelector,
+    *,
+    axis_names: tuple[str, ...],
+    ndim: int,
+) -> int:
+    """Resolve one row/column selector to a concrete axis index.
+
+    Args:
+        selector: Axis name or integer index supplied by the user.
+        axis_names: Known axis names for the tensor.
+        ndim: Tensor rank.
+
+    Returns:
+        The resolved non-negative axis index.
+
+    Raises:
+        ValueError: If the axis name is unknown or the index is out of bounds.
+    """
+    if isinstance(selector, str):
+        if not axis_names:
+            raise ValueError("Axis names are not available for this tensor.")
+        try:
+            return axis_names.index(selector)
+        except ValueError as exc:
+            raise ValueError(
+                f"Unknown axis name {selector!r}. Available axes are {axis_names!r}."
+            ) from exc
+    index = int(selector)
+    if index < 0:
+        index += ndim
+    if index < 0 or index >= ndim:
+        raise ValueError(f"Axis index {selector!r} is out of bounds for ndim={ndim}.")
+    return index
+
+
+def _normalize_axis_group(
+    selectors: tuple[TensorAxisSelector, ...] | None,
+    *,
+    axis_names: tuple[str, ...],
+    ndim: int,
+) -> tuple[int, ...] | None:
+    """Resolve a user-provided row/column selector tuple to axis indices.
+
+    Args:
+        selectors: User-provided axis selectors or ``None``.
+        axis_names: Known axis names for the tensor.
+        ndim: Tensor rank.
+
+    Returns:
+        The resolved axis indices, or ``None`` when the selector group was omitted.
+
+    Raises:
+        ValueError: If any selector is invalid or the group contains duplicates.
+    """
+    if selectors is None:
+        return None
+    resolved = tuple(
+        _normalize_axis_selector(selector, axis_names=axis_names, ndim=ndim)
+        for selector in selectors
+    )
+    if len(set(resolved)) != len(resolved):
+        raise ValueError("row_axes and col_axes must not contain duplicate axes.")
+    return resolved
+
+
+def _resolve_axis_selector_with_fallback(
+    selector: TensorAxisSelector | None,
+    *,
+    axis_names: tuple[str, ...],
+    ndim: int,
+    fallback_index: int | None,
+    fallback: bool,
+) -> tuple[int | None, bool]:
+    if selector is None:
+        return fallback_index, False
+    try:
+        return _normalize_axis_selector(selector, axis_names=axis_names, ndim=ndim), False
+    except ValueError:
+        if not fallback:
+            raise
+        return fallback_index, True
+
+
+def _resolve_axis_group_with_fallback(
+    selectors: tuple[TensorAxisSelector, ...] | None,
+    *,
+    axis_names: tuple[str, ...],
+    ndim: int,
+    fallback_axes: tuple[int, ...],
+    fallback: bool,
+) -> tuple[int, ...]:
+    if selectors is None:
+        return fallback_axes
+    try:
+        resolved = _normalize_axis_group(selectors, axis_names=axis_names, ndim=ndim)
+    except ValueError:
+        if not fallback:
+            raise
+        return fallback_axes
+    return () if resolved is None else resolved
+
+
+def _axis_names_for_shape(axis_names: tuple[str, ...], *, ndim: int) -> tuple[str, ...]:
+    if len(axis_names) >= ndim:
+        return axis_names[:ndim]
+    generated = tuple(f"axis{index}" for index in range(len(axis_names), ndim))
+    return axis_names + generated
+
+
+def _balanced_axes_for_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
+    """Choose a deterministic row-axis partition for matrixized tensor views."""
+    ndim = len(shape)
+    if ndim == 0:
+        return ()
+    if ndim == 1:
+        return (0,)
+
+    if ndim > 16:
+        selected: list[int] = [0]
+        row_log = log(float(shape[0]))
+        col_log = sum(log(float(dim)) for dim in shape[1:])
+        for index in range(1, ndim):
+            dim_log = log(float(shape[index]))
+            if row_log <= col_log:
+                selected.append(index)
+                row_log += dim_log
+                col_log -= dim_log
+        if len(selected) == ndim:
+            return tuple(selected[:-1])
+        return tuple(selected)
+
+    total_log = sum(log(float(dim)) for dim in shape)
+    best_axes: tuple[int, ...] | None = None
+    best_score = inf
+    best_rank_gap = inf
+    for size in range(1, ndim):
+        for combo in combinations(range(1, ndim), size - 1):
+            candidate = (0,) + combo
+            row_log = sum(log(float(shape[index])) for index in candidate)
+            col_log = total_log - row_log
+            score = abs(row_log - col_log)
+            rank_gap = abs(len(candidate) - (ndim - len(candidate)))
+            if (
+                score < best_score
+                or (np.isclose(score, best_score) and rank_gap < best_rank_gap)
+                or (
+                    np.isclose(score, best_score)
+                    and rank_gap == best_rank_gap
+                    and (best_axes is None or candidate < best_axes)
+                )
+            ):
+                best_axes = candidate
+                best_score = score
+                best_rank_gap = rank_gap
+    assert best_axes is not None
+    return best_axes
+
+
+def _resolve_matrix_axes(
+    *,
+    shape: tuple[int, ...],
+    row_axes: tuple[TensorAxisSelector, ...] | None,
+    col_axes: tuple[TensorAxisSelector, ...] | None,
+    axis_names: tuple[str, ...],
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Resolve the row/column axis split used by matrixized inspection modes.
+
+    Args:
+        shape: Shape of the source tensor.
+        row_axes: Optional user-selected row axes.
+        col_axes: Optional user-selected column axes.
+        axis_names: Known axis names for the tensor.
+
+    Returns:
+        Two tuples containing the resolved row-axis and column-axis indices.
+
+    Raises:
+        ValueError: If the explicit row/column groups overlap or do not cover the tensor.
+    """
+    ndim = len(shape)
+    if ndim == 0:
+        return (), ()
+
+    resolved_rows = _normalize_axis_group(row_axes, axis_names=axis_names, ndim=ndim)
+    resolved_cols = _normalize_axis_group(col_axes, axis_names=axis_names, ndim=ndim)
+
+    if resolved_rows is None and resolved_cols is None:
+        resolved_rows = _balanced_axes_for_shape(shape)
+        resolved_cols = tuple(index for index in range(ndim) if index not in resolved_rows)
+        return resolved_rows, resolved_cols
+
+    if resolved_rows is None:
+        assert resolved_cols is not None
+        resolved_rows = tuple(index for index in range(ndim) if index not in resolved_cols)
+    if resolved_cols is None:
+        assert resolved_rows is not None
+        resolved_cols = tuple(index for index in range(ndim) if index not in resolved_rows)
+
+    if set(resolved_rows).intersection(resolved_cols):
+        raise ValueError("row_axes and col_axes must be disjoint.")
+    if set(resolved_rows) | set(resolved_cols) != set(range(ndim)):
+        raise ValueError("row_axes and col_axes must cover every axis exactly once.")
+    return resolved_rows, resolved_cols
+
+
+def _matrixize_tensor(
+    array: NumericArray,
+    *,
+    axis_names: tuple[str, ...],
+    row_axes: tuple[TensorAxisSelector, ...] | None,
+    col_axes: tuple[TensorAxisSelector, ...] | None,
+) -> tuple[NumericArray, _MatrixMetadata]:
+    """Reshape a tensor into the matrix used by heatmap and spectral views.
+
+    Args:
+        array: Tensor values to reshape.
+        axis_names: Axis labels associated with ``array``.
+        row_axes: Optional axes assigned to matrix rows.
+        col_axes: Optional axes assigned to matrix columns.
+
+    Returns:
+        The matrixized tensor together with metadata describing the reshape.
+    """
+    shape = tuple(int(dimension) for dimension in array.shape)
+    resolved_axis_names = _axis_names_for_shape(axis_names, ndim=len(shape))
+    resolved_rows, resolved_cols = _resolve_matrix_axes(
+        shape=shape,
+        row_axes=row_axes,
+        col_axes=col_axes,
+        axis_names=resolved_axis_names,
+    )
+    if array.ndim == 0:
+        matrix = np.asarray(array).reshape(1, 1)
+    else:
+        order = resolved_rows + resolved_cols
+        transposed = np.transpose(array, axes=order) if order else array
+        row_size = int(np.prod([shape[index] for index in resolved_rows], dtype=int)) or 1
+        col_size = int(np.prod([shape[index] for index in resolved_cols], dtype=int)) or 1
+        matrix = np.reshape(transposed, (row_size, col_size))
+    metadata = _MatrixMetadata(
+        col_axes=resolved_cols,
+        col_names=tuple(resolved_axis_names[index] for index in resolved_cols),
+        original_shape=shape,
+        row_axes=resolved_rows,
+        row_names=tuple(resolved_axis_names[index] for index in resolved_rows),
+    )
+    return matrix, metadata
+
+
+def _downsample_axis_mean(array: NumericArray, *, axis: int, target_size: int) -> NumericArray:
+    source = np.asarray(array)
+    if int(target_size) <= 0:
+        raise ValueError("max_matrix_shape must contain exactly two positive integers.")
+    length = int(source.shape[axis])
+    if length <= target_size:
+        return source
+
+    edges = np.linspace(0, length, target_size + 1, dtype=int)
+    moved = np.moveaxis(source, axis, 0)
+    contiguous = np.ascontiguousarray(moved)
+    slices: list[NumericArray] = []
+    for start, stop in zip(edges[:-1], edges[1:], strict=True):
+        safe_stop = min(max(stop, start + 1), length)
+        slices.append(np.nanmean(contiguous[start:safe_stop], axis=0, keepdims=True))
+    reduced = np.concatenate(slices, axis=0)
+    return np.moveaxis(reduced, 0, axis)
+
+
+def _downsample_matrix(matrix: NumericArray, *, max_shape: tuple[int, int]) -> NumericArray:
+    max_rows, max_cols = max_shape
+    reduced = _downsample_axis_mean(np.asarray(matrix), axis=0, target_size=int(max_rows))
+    reduced = _downsample_axis_mean(reduced, axis=1, target_size=int(max_cols))
+    return reduced
 
 
 def _name_sort_key(item: Any) -> tuple[str, tuple[str, ...], str, str]:
@@ -176,30 +532,36 @@ def _collect_items(
     if isinstance(source, dict):
         raw_items = list(source.values())
         should_sort = False
+        deduplicate = True
     elif attr_sources and any(hasattr(source, attr) for attr in attr_sources):
         raw_items = _iter_attr_values(source, attr_sources)
         should_sort = False
+        deduplicate = True
     elif isinstance(source, (str, bytes, bytearray)):
         raise TypeError("Tensor collection input must be iterable.")
     elif isinstance(source, Iterable):
         raw_items = list(source)
         should_sort = _is_unordered_collection(source)
+        deduplicate = False
     else:
         raise TypeError("Tensor collection input must be a supported tensor object or iterable.")
 
-    unique: list[Any] = []
-    seen: set[int] = set()
-    for item in raw_items:
-        if item is None:
-            continue
-        item_id = id(item)
-        if item_id in seen:
-            continue
-        seen.add(item_id)
-        unique.append(item)
+    if deduplicate:
+        items: list[Any] = []
+        seen: set[int] = set()
+        for item in raw_items:
+            if item is None:
+                continue
+            item_id = id(item)
+            if item_id in seen:
+                continue
+            seen.add(item_id)
+            items.append(item)
+    else:
+        items = [item for item in raw_items if item is not None]
     if should_sort:
-        unique.sort(key=_name_sort_key)
-    return unique
+        items.sort(key=_name_sort_key)
+    return items
 
 
 def _to_numpy_array(value: Any) -> NumericArray:
@@ -252,7 +614,7 @@ def _extract_tensornetwork_records(data: Any) -> list[_TensorRecord]:
 def _extract_tensorkrowch_records(data: Any) -> list[_TensorRecord]:
     items = _collect_items(
         data,
-        attr_sources=("leaf_nodes", "nodes"),
+        attr_sources=_tensorkrowch_attr_sources(data),
         direct_predicate=lambda item: hasattr(item, "axes_names"),
     )
     records: list[_TensorRecord] = []
@@ -276,6 +638,16 @@ def _extract_tensorkrowch_records(data: Any) -> list[_TensorRecord]:
             )
         )
     return records
+
+
+def _tensorkrowch_attr_sources(data: Any) -> tuple[str, ...]:
+    leaf_nodes = getattr(data, "leaf_nodes", None)
+    if isinstance(leaf_nodes, dict):
+        if leaf_nodes:
+            return ("leaf_nodes",)
+    elif leaf_nodes:
+        return ("leaf_nodes",)
+    return ("leaf_nodes", "nodes")
 
 
 def _extract_quimb_records(data: Any) -> list[_TensorRecord]:
@@ -367,31 +739,170 @@ def _extract_einsum_records(data: Any) -> list[_TensorRecord]:
     return records
 
 
+def _operand_shapes_for_einsum_step(
+    step: pair_tensor | einsum_trace_step,
+) -> tuple[tuple[int, ...], ...] | None:
+    metadata = step.metadata or {}
+    operand_shapes = metadata.get("operand_shapes")
+    if operand_shapes is not None:
+        return tuple(tuple(int(dim) for dim in shape) for shape in operand_shapes)
+    if isinstance(step, pair_tensor):
+        left_shape = metadata.get("left_shape")
+        right_shape = metadata.get("right_shape")
+        if left_shape is not None and right_shape is not None:
+            return (
+                tuple(int(dim) for dim in left_shape),
+                tuple(int(dim) for dim in right_shape),
+            )
+    return None
+
+
+def _axis_names_for_einsum_step(step: pair_tensor | einsum_trace_step) -> tuple[str, ...]:
+    operand_shapes = _operand_shapes_for_einsum_step(step)
+    if operand_shapes is None:
+        return ()
+    try:
+        parsed = parse_einsum_equation(str(step.equation), operand_shapes)
+    except Exception:
+        return ()
+    return tuple(str(axis_name) for axis_name in parsed.output_axes)
+
+
+def _extract_einsum_playback_step_records(data: Any) -> tuple[_PlaybackStepRecord, ...]:
+    if not isinstance(data, EinsumTrace):
+        raise TypeError("Playback tensor inspection only supports real EinsumTrace objects.")
+
+    state = data._state
+    state._sweep_dead_records()
+    live_tensors_by_name: dict[str, Any] = {}
+    for tracked in state._records.values():
+        tensor = tracked.ref()
+        if tensor is None:
+            continue
+        live_tensors_by_name[str(tracked.name)] = tensor
+
+    step_records: list[_PlaybackStepRecord] = []
+    for step in state.pairs:
+        result_name = str(step.result_name)
+        tensor = live_tensors_by_name.get(result_name)
+        if tensor is None:
+            step_records.append(
+                _PlaybackStepRecord(
+                    result_name=result_name,
+                    record=None,
+                )
+            )
+            continue
+        step_records.append(
+            _PlaybackStepRecord(
+                result_name=result_name,
+                record=_TensorRecord(
+                    array=_to_numpy_array(tensor),
+                    axis_names=_axis_names_for_einsum_step(step),
+                    engine="einsum",
+                    name=result_name,
+                ),
+            )
+        )
+    return tuple(step_records)
+
+
+def _extract_tensorkrowch_playback_step_records(
+    data: Any,
+) -> tuple[_PlaybackStepRecord, ...] | None:
+    if not hasattr(data, "resultant_nodes") or not hasattr(data, "leaf_nodes"):
+        return None
+
+    recovered = _recover_contraction_history(data)
+    if recovered is None or not recovered.step_result_nodes:
+        return None
+
+    step_records: list[_PlaybackStepRecord] = []
+    for index, node in enumerate(recovered.step_result_nodes):
+        tensor = getattr(node, "tensor", None)
+        if tensor is None:
+            return None
+        name = "" if getattr(node, "name", None) is None else str(node.name)
+        step_name = name or f"step_{index}"
+        step_records.append(
+            _PlaybackStepRecord(
+                result_name=step_name,
+                record=_TensorRecord(
+                    array=_to_numpy_array(tensor),
+                    axis_names=_stringify_sequence(getattr(node, "axes_names", ())),
+                    engine="tensorkrowch",
+                    name=step_name,
+                ),
+            )
+        )
+    return tuple(step_records)
+
+
+def _extract_playback_step_records(data: Any) -> tuple[_PlaybackStepRecord, ...] | None:
+    """Recover playback result tensors when the input carries contraction history."""
+    if isinstance(data, EinsumTrace):
+        return _extract_einsum_playback_step_records(data)
+
+    try:
+        resolved_engine, prepared_input = _detect_tensor_elements_engine(data)
+    except (TypeError, ValueError):
+        return None
+
+    if resolved_engine == "tensorkrowch":
+        return _extract_tensorkrowch_playback_step_records(prepared_input)
+    return None
+
+
 def _extract_tensor_records(
     data: Any,
     *,
     engine: EngineName | None,
-) -> tuple[EngineName, list[_TensorRecord]]:
+) -> tuple[TensorElementsSourceName, list[_TensorRecord]]:
+    """Extract normalized tensor records from supported public inputs.
+
+    Args:
+        data: Tensor input passed to ``show_tensor_elements(...)``.
+        engine: Optional explicit backend override.
+
+    Returns:
+        The resolved backend name and the normalized tensor records ready for rendering.
+
+    Raises:
+        UnsupportedEngineError: If ``engine`` names an unknown backend.
+        TensorDataTypeError: If the backend input type is structurally incompatible.
+        TensorDataError: If the input is valid in principle but exposes no usable tensors.
+    """
     resolved_engine = engine
     prepared_input = data
     if resolved_engine is None:
+        direct_array_records = _extract_direct_array_records(data)
+        if direct_array_records is not None:
+            return "numpy", direct_array_records
         resolved_engine, prepared_input = _detect_tensor_elements_engine(data)
 
-    if resolved_engine == "tensornetwork":
-        records = _extract_tensornetwork_records(prepared_input)
-    elif resolved_engine == "tensorkrowch":
-        records = _extract_tensorkrowch_records(prepared_input)
-    elif resolved_engine == "quimb":
-        records = _extract_quimb_records(prepared_input)
-    elif resolved_engine == "tenpy":
-        records = _extract_tenpy_records(prepared_input)
-    elif resolved_engine == "einsum":
-        records = _extract_einsum_records(prepared_input)
-    else:
-        raise ValueError(f"Unsupported tensor engine: {resolved_engine}")
+    package_logger.debug("Extracting tensor records with engine=%r.", resolved_engine)
+    try:
+        if resolved_engine == "tensornetwork":
+            records = _extract_tensornetwork_records(prepared_input)
+        elif resolved_engine == "tensorkrowch":
+            records = _extract_tensorkrowch_records(prepared_input)
+        elif resolved_engine == "quimb":
+            records = _extract_quimb_records(prepared_input)
+        elif resolved_engine == "tenpy":
+            records = _extract_tenpy_records(prepared_input)
+        elif resolved_engine == "einsum":
+            records = _extract_einsum_records(prepared_input)
+        else:
+            raise UnsupportedEngineError(f"Unsupported tensor engine: {resolved_engine}")
+    except UnsupportedEngineError:
+        raise
+    except TypeError as exc:
+        raise TensorDataTypeError(str(exc)) from exc
+    except ValueError as exc:
+        raise TensorDataError(str(exc)) from exc
 
     if not records:
-        raise ValueError("The input does not expose any tensors to visualize.")
+        raise TensorDataError("The input does not expose any tensors to visualize.")
     return resolved_engine, records
 
 
@@ -399,6 +910,45 @@ def _format_float(value: float) -> str:
     if np.isnan(value):
         return "nan"
     return f"{value:.4g}"
+
+
+def _non_nan_values(values: NumericArray) -> NumericArray:
+    array = np.asarray(values, dtype=float)
+    return array[~np.isnan(array)]
+
+
+def _safe_min_max_mean_std(values: NumericArray) -> tuple[float, float, float, float]:
+    non_nan = _non_nan_values(values)
+    if non_nan.size == 0:
+        nan = float("nan")
+        return nan, nan, nan, nan
+    with np.errstate(invalid="ignore", divide="ignore", over="ignore", under="ignore"):
+        return (
+            float(np.min(non_nan)),
+            float(np.max(non_nan)),
+            float(np.mean(non_nan)),
+            float(np.std(non_nan)),
+        )
+
+
+def _safe_nanmean_axis(values: NumericArray, *, axis: int | tuple[int, ...]) -> NumericArray:
+    array = np.asarray(values, dtype=float)
+    valid_mask = ~np.isnan(array)
+    counts = np.sum(valid_mask, axis=axis)
+    totals = np.sum(np.where(valid_mask, array, 0.0), axis=axis, dtype=float)
+    result = np.full(np.shape(totals), np.nan, dtype=float)
+    np.divide(totals, counts, out=result, where=counts > 0)
+    return result
+
+
+def _safe_nan_norm_axis(values: NumericArray, *, axis: int | tuple[int, ...]) -> NumericArray:
+    array = np.asarray(values, dtype=float)
+    valid_mask = ~np.isnan(array)
+    squared = np.square(np.where(valid_mask, array, 0.0))
+    totals = np.sum(squared, axis=axis, dtype=float)
+    counts = np.sum(valid_mask, axis=axis)
+    norms = np.sqrt(totals)
+    return np.where(counts > 0, norms, np.nan)
 
 
 def _format_scalar(value: complex | float) -> str:
@@ -419,6 +969,200 @@ def _resolved_axis_names(record: _TensorRecord) -> tuple[str, ...]:
         else:
             axis_names.append(f"axis{axis_index}")
     return tuple(axis_names)
+
+
+def _resolve_tensor_analysis(
+    record: _TensorRecord,
+    *,
+    analysis: TensorAnalysisConfig | None,
+    mode: str,
+    fallback: bool = False,
+) -> _ResolvedTensorAnalysis:
+    """Resolve analytical selectors for one tensor, optionally falling back per tensor."""
+    array = np.asarray(record.array)
+    original_axis_names = _resolved_axis_names(record)
+    explicit_slice_requested = analysis is not None and analysis.slice_axis is not None
+    slice_active = bool(array.ndim > 0 and (mode == "slice" or explicit_slice_requested))
+
+    slice_axis: int | None = None
+    slice_axis_name: str | None = None
+    slice_axis_size = 1
+    slice_index = 0
+    post_slice_axis_names = original_axis_names
+    if slice_active:
+        slice_axis, slice_used_fallback = _resolve_axis_selector_with_fallback(
+            None if analysis is None else analysis.slice_axis,
+            axis_names=original_axis_names,
+            ndim=array.ndim,
+            fallback_index=0,
+            fallback=fallback,
+        )
+        assert slice_axis is not None
+        slice_axis_name = original_axis_names[slice_axis]
+        slice_axis_size = int(array.shape[slice_axis])
+        requested_slice_index = (
+            0 if analysis is None or slice_used_fallback else int(analysis.slice_index)
+        )
+        slice_index = min(requested_slice_index, max(slice_axis_size - 1, 0))
+        post_slice_axis_names = tuple(
+            name for axis_index, name in enumerate(original_axis_names) if axis_index != slice_axis
+        )
+
+    post_slice_ndim = len(post_slice_axis_names)
+    default_reduce_axes = tuple(range(2, post_slice_ndim))
+    reduce_axes = _resolve_axis_group_with_fallback(
+        None if analysis is None or mode != "reduce" else analysis.reduce_axes,
+        axis_names=post_slice_axis_names,
+        ndim=post_slice_ndim,
+        fallback_axes=default_reduce_axes,
+        fallback=fallback,
+    )
+    reduce_axis_names = tuple(post_slice_axis_names[axis_index] for axis_index in reduce_axes)
+
+    default_profile_axis = None if post_slice_ndim == 0 else 0
+    profile_axis, _profile_used_fallback = _resolve_axis_selector_with_fallback(
+        None if analysis is None or mode != "profiles" else analysis.profile_axis,
+        axis_names=post_slice_axis_names,
+        ndim=post_slice_ndim,
+        fallback_index=default_profile_axis,
+        fallback=fallback,
+    )
+    profile_axis_name = None if profile_axis is None else post_slice_axis_names[profile_axis]
+
+    return _ResolvedTensorAnalysis(
+        original_axis_names=original_axis_names,
+        post_slice_axis_names=post_slice_axis_names,
+        profile_axis=profile_axis,
+        profile_axis_name=profile_axis_name,
+        profile_method="mean" if analysis is None else analysis.profile_method,
+        reduce_axes=reduce_axes,
+        reduce_axis_names=reduce_axis_names,
+        reduce_method="mean" if analysis is None else analysis.reduce_method,
+        slice_active=slice_active,
+        slice_axis=slice_axis,
+        slice_axis_name=slice_axis_name,
+        slice_axis_size=slice_axis_size,
+        slice_index=slice_index,
+    )
+
+
+def _analysis_config_from_resolved(
+    analysis: _ResolvedTensorAnalysis,
+) -> TensorAnalysisConfig:
+    """Build a normalized public analysis config from the resolved per-tensor state."""
+    return TensorAnalysisConfig(
+        slice_axis=analysis.slice_axis_name if analysis.slice_active else None,
+        slice_index=analysis.slice_index,
+        reduce_axes=analysis.reduce_axis_names or None,
+        reduce_method=analysis.reduce_method,
+        profile_axis=analysis.profile_axis_name,
+        profile_method=analysis.profile_method,
+    )
+
+
+def _selector_names_for_record(
+    selectors: tuple[TensorAxisSelector, ...] | None,
+    *,
+    record: _TensorRecord,
+) -> tuple[str, ...] | None:
+    if selectors is None:
+        return None
+    axis_names = _resolved_axis_names(record)
+    resolved = tuple(
+        axis_names[_normalize_axis_selector(selector, axis_names=axis_names, ndim=len(axis_names))]
+        for selector in selectors
+    )
+    return resolved or None
+
+
+def _project_selector_names(
+    axis_names: tuple[str, ...],
+    selector_names: tuple[str, ...] | None,
+) -> tuple[str, ...] | None:
+    if selector_names is None:
+        return None
+    projected = tuple(name for name in selector_names if name in axis_names)
+    return projected or None
+
+
+def _matrixize_record(
+    record: _TensorRecord,
+    *,
+    config: TensorElementsConfig,
+    selector_source: _TensorRecord | None = None,
+) -> tuple[NumericArray, _MatrixMetadata]:
+    """Matrixize one tensor record while preserving name-based row/column selectors."""
+    source_record = record if selector_source is None else selector_source
+    row_selector_names = _selector_names_for_record(config.row_axes, record=source_record)
+    col_selector_names = _selector_names_for_record(config.col_axes, record=source_record)
+    resolved_axis_names = _resolved_axis_names(record)
+    return _matrixize_tensor(
+        np.asarray(record.array),
+        axis_names=resolved_axis_names,
+        row_axes=_project_selector_names(resolved_axis_names, row_selector_names),
+        col_axes=_project_selector_names(resolved_axis_names, col_selector_names),
+    )
+
+
+def _slice_tensor_record(
+    record: _TensorRecord,
+    *,
+    analysis: _ResolvedTensorAnalysis,
+) -> _TensorRecord:
+    """Apply the resolved slice operation to one tensor record."""
+    resolved_axis_names = _resolved_axis_names(record)
+    if not analysis.slice_active or analysis.slice_axis is None:
+        return _TensorRecord(
+            array=np.asarray(record.array),
+            axis_names=resolved_axis_names,
+            engine=record.engine,
+            name=record.name,
+        )
+    sliced = np.take(
+        np.asarray(record.array),
+        indices=int(analysis.slice_index),
+        axis=int(analysis.slice_axis),
+    )
+    sliced_axis_names = tuple(
+        name
+        for axis_index, name in enumerate(resolved_axis_names)
+        if axis_index != analysis.slice_axis
+    )
+    return _TensorRecord(
+        array=np.asarray(sliced),
+        axis_names=sliced_axis_names,
+        engine=record.engine,
+        name=record.name,
+    )
+
+
+def _reduce_tensor_record(
+    record: _TensorRecord,
+    *,
+    analysis: _ResolvedTensorAnalysis,
+) -> _TensorRecord:
+    """Apply the resolved reduction axes and method to one tensor record."""
+    sliced_record = _slice_tensor_record(record, analysis=analysis)
+    if not analysis.reduce_axes:
+        return sliced_record
+    metric_array = np.asarray(_summary_metric_array(np.asarray(sliced_record.array)), dtype=float)
+    reducer = _safe_nanmean_axis if analysis.reduce_method == "mean" else _safe_nan_norm_axis
+    reduce_axis: int | tuple[int, ...]
+    reduce_axis = (
+        analysis.reduce_axes[0] if len(analysis.reduce_axes) == 1 else analysis.reduce_axes
+    )
+    reduced = reducer(metric_array, axis=reduce_axis)
+    remaining_names = tuple(
+        name
+        for axis_index, name in enumerate(_resolved_axis_names(sliced_record))
+        if axis_index not in set(analysis.reduce_axes)
+    )
+    return _TensorRecord(
+        array=np.asarray(reduced),
+        axis_names=remaining_names,
+        engine=sliced_record.engine,
+        name=sliced_record.name,
+    )
 
 
 def _format_range(values: NumericArray) -> str:
@@ -447,8 +1191,8 @@ def _build_axis_summary_lines(record: _TensorRecord) -> list[str]:
     for axis_index, (axis_name, axis_size) in enumerate(zip(axis_names, shape, strict=True)):
         other_axes = tuple(index for index in range(array.ndim) if index != axis_index)
         if other_axes:
-            marginal_mean = np.nanmean(metrics, axis=other_axes)
-            marginal_norm = np.sqrt(np.nansum(np.square(metrics), axis=other_axes))
+            marginal_mean = _safe_nanmean_axis(metrics, axis=other_axes)
+            marginal_norm = _safe_nan_norm_axis(metrics, axis=other_axes)
         else:
             marginal_mean = metrics
             marginal_norm = np.abs(metrics)
@@ -498,7 +1242,182 @@ def _build_topk_lines(record: _TensorRecord, *, count: int) -> list[str]:
     return lines
 
 
-def _build_data_summary_text(record: _TensorRecord, *, topk_count: int) -> str:
+def _spectral_analysis_for_record(
+    record: _TensorRecord,
+    *,
+    config: TensorElementsConfig,
+) -> _SpectralAnalysis:
+    """Compute spectral diagnostics for the matrixized view of one tensor.
+
+    Args:
+        record: Tensor selected for inspection.
+        config: Active tensor-elements configuration.
+
+    Returns:
+        A spectral-analysis bundle containing singular values, optional eigenvalues, and
+        any issue that prevented the analysis from running.
+    """
+    matrix, metadata = _matrixize_tensor(
+        np.asarray(record.array),
+        axis_names=record.axis_names,
+        row_axes=config.row_axes,
+        col_axes=config.col_axes,
+    )
+    matrix_shape = (int(matrix.shape[0]), int(matrix.shape[1]))
+    reduced_matrix = _downsample_matrix(matrix, max_shape=config.max_matrix_shape)
+    analysis_shape = (int(reduced_matrix.shape[0]), int(reduced_matrix.shape[1]))
+    used_reduced_matrix = analysis_shape != matrix_shape
+
+    if not np.all(np.isfinite(matrix)):
+        return _SpectralAnalysis(
+            analysis_shape=analysis_shape,
+            col_names=metadata.col_names,
+            eigenvalues=None,
+            issue="matrix contains NaN or Inf values",
+            matrix_shape=matrix_shape,
+            row_names=metadata.row_names,
+            singular_values=None,
+            used_reduced_matrix=used_reduced_matrix,
+        )
+
+    try:
+        singular_values = np.asarray(np.linalg.svd(reduced_matrix, compute_uv=False), dtype=float)
+        eigenvalues = None
+        if analysis_shape[0] == analysis_shape[1]:
+            eigenvalues = np.asarray(np.linalg.eigvals(reduced_matrix))
+    except np.linalg.LinAlgError as exc:
+        return _SpectralAnalysis(
+            analysis_shape=analysis_shape,
+            col_names=metadata.col_names,
+            eigenvalues=None,
+            issue=f"linear algebra failed ({exc.__class__.__name__})",
+            matrix_shape=matrix_shape,
+            row_names=metadata.row_names,
+            singular_values=None,
+            used_reduced_matrix=used_reduced_matrix,
+        )
+
+    return _SpectralAnalysis(
+        analysis_shape=analysis_shape,
+        col_names=metadata.col_names,
+        eigenvalues=eigenvalues,
+        issue=None,
+        matrix_shape=matrix_shape,
+        row_names=metadata.row_names,
+        singular_values=singular_values,
+        used_reduced_matrix=used_reduced_matrix,
+    )
+
+
+def _format_name_list(names: tuple[str, ...]) -> str:
+    if not names:
+        return "-"
+    return ", ".join(names)
+
+
+def _format_percent(value: float) -> str:
+    return f"{_format_float(100.0 * value)}%"
+
+
+def _topk_singular_value_lines(values: NumericArray, *, count: int) -> list[str]:
+    requested_count = min(int(count), int(values.size))
+    lines = [f"top {int(count)} singular values:"]
+    for rank, singular_value in enumerate(values[:requested_count], start=1):
+        lines.append(f"{rank}. sigma{rank}={_format_float(float(singular_value))}")
+    return lines
+
+
+def _topk_eigenvalue_lines(values: NumericArray, *, count: int) -> list[str]:
+    requested_count = min(int(count), int(values.size))
+    lines = [f"top {int(count)} eigenvalues by magnitude:"]
+    ranked = sorted(
+        np.ravel(values).tolist(),
+        key=lambda value: (-float(np.abs(value)), float(np.real(value)), float(np.imag(value))),
+    )
+    for rank, eigenvalue in enumerate(ranked[:requested_count], start=1):
+        lines.append(
+            f"{rank}. |lambda|={_format_float(float(np.abs(eigenvalue)))}, "
+            f"lambda={_format_scalar(eigenvalue)}"
+        )
+    return lines
+
+
+def _build_spectral_summary_lines(
+    record: _TensorRecord,
+    *,
+    config: TensorElementsConfig,
+    topk_count: int,
+) -> list[str]:
+    analysis = _spectral_analysis_for_record(record, config=config)
+    lines = [
+        "spectral analysis:",
+        f"- matrixized shape: {analysis.matrix_shape}",
+        f"- matrix rows: {_format_name_list(analysis.row_names)}",
+        f"- matrix cols: {_format_name_list(analysis.col_names)}",
+    ]
+
+    if analysis.used_reduced_matrix:
+        lines.append(
+            "- analysis matrix: "
+            f"reduced to {analysis.analysis_shape} via max_matrix_shape={config.max_matrix_shape}"
+        )
+    else:
+        lines.append("- analysis matrix: full matrix")
+
+    if analysis.issue is not None:
+        lines.append(f"- spectral analysis unavailable: {analysis.issue}")
+        return lines
+
+    assert analysis.singular_values is not None
+    singular_values = np.asarray(analysis.singular_values, dtype=float)
+    if singular_values.size == 0:
+        lines.append("- spectral analysis unavailable: empty singular spectrum")
+        return lines
+
+    sigma_max = float(np.max(singular_values))
+    sigma_min = float(np.min(singular_values))
+    positive_singular_values = singular_values[singular_values > 0.0]
+    if positive_singular_values.size == 0:
+        condition_number = float("inf") if sigma_max > 0.0 else 1.0
+    else:
+        condition_number = float(sigma_max / np.min(positive_singular_values))
+    frobenius_sq = float(np.sum(np.square(singular_values)))
+    stable_rank = float(frobenius_sq / (sigma_max * sigma_max)) if sigma_max > 0.0 else 0.0
+    energy_numerator = float(
+        np.sum(np.square(singular_values[: min(int(topk_count), singular_values.size)]))
+    )
+    energy_ratio = float(energy_numerator / frobenius_sq) if frobenius_sq > 0.0 else 1.0
+
+    lines.extend(
+        [
+            f"- singular-value range: {_format_float(sigma_min)} .. {_format_float(sigma_max)}",
+            f"- condition number: {_format_float(condition_number)}",
+            f"- stable rank: {_format_float(stable_rank)}",
+            f"- top {int(topk_count)} energy: {_format_percent(energy_ratio)}",
+        ]
+    )
+    lines.extend(
+        f"- {line}" for line in _topk_singular_value_lines(singular_values, count=topk_count)
+    )
+
+    if analysis.eigenvalues is None:
+        lines.append("- eigenvalues: not available for non-square matrices")
+        return lines
+
+    eigenvalues = np.asarray(analysis.eigenvalues)
+    spectral_radius = float(np.max(np.abs(eigenvalues))) if eigenvalues.size else 0.0
+    lines.append(f"- spectral radius: {_format_float(spectral_radius)}")
+    lines.extend(f"- {line}" for line in _topk_eigenvalue_lines(eigenvalues, count=topk_count))
+    return lines
+
+
+def _build_data_summary_text(
+    record: _TensorRecord,
+    *,
+    config: TensorElementsConfig,
+    topk_count: int,
+) -> str:
+    """Assemble the multiline textual summary used by ``data`` mode."""
     sections = [
         _build_stats(record).text,
         "\n".join(_build_axis_summary_lines(record)),
@@ -534,31 +1453,27 @@ def _build_stats(record: _TensorRecord) -> _TensorStats:
 
     if np.iscomplexobj(array):
         magnitude = np.abs(flat)
+        min_mag, max_mag, mean_mag, std_mag = _safe_min_max_mean_std(magnitude)
+        real_min, real_max, _, _ = _safe_min_max_mean_std(np.real(flat))
+        imag_min, imag_max, _, _ = _safe_min_max_mean_std(np.imag(flat))
         lines.append(
             "magnitude: "
-            f"min={_format_float(float(np.nanmin(magnitude)))}, "
-            f"max={_format_float(float(np.nanmax(magnitude)))}, "
-            f"mean={_format_float(float(np.nanmean(magnitude)))}, "
-            f"std={_format_float(float(np.nanstd(magnitude)))}"
+            f"min={_format_float(min_mag)}, "
+            f"max={_format_float(max_mag)}, "
+            f"mean={_format_float(mean_mag)}, "
+            f"std={_format_float(std_mag)}"
         )
-        lines.append(
-            "real range: "
-            f"{_format_float(float(np.nanmin(np.real(flat))))} .. "
-            f"{_format_float(float(np.nanmax(np.real(flat))))}"
-        )
-        lines.append(
-            "imag range: "
-            f"{_format_float(float(np.nanmin(np.imag(flat))))} .. "
-            f"{_format_float(float(np.nanmax(np.imag(flat))))}"
-        )
+        lines.append(f"real range: {_format_float(real_min)} .. {_format_float(real_max)}")
+        lines.append(f"imag range: {_format_float(imag_min)} .. {_format_float(imag_max)}")
     else:
         values = np.real(flat)
+        value_min, value_max, value_mean, value_std = _safe_min_max_mean_std(values)
         lines.append(
             "stats: "
-            f"min={_format_float(float(np.nanmin(values)))}, "
-            f"max={_format_float(float(np.nanmax(values)))}, "
-            f"mean={_format_float(float(np.nanmean(values)))}, "
-            f"std={_format_float(float(np.nanstd(values)))}"
+            f"min={_format_float(value_min)}, "
+            f"max={_format_float(value_max)}, "
+            f"mean={_format_float(value_mean)}, "
+            f"std={_format_float(value_std)}"
         )
 
     return _TensorStats(
@@ -572,12 +1487,28 @@ def _build_stats(record: _TensorRecord) -> _TensorStats:
 
 __all__ = [
     "NumericArray",
+    "_EinsumPlaybackStepRecord",
     "_MatrixMetadata",
+    "_PlaybackStepRecord",
+    "_ResolvedTensorAnalysis",
+    "_SpectralAnalysis",
     "_TensorRecord",
     "_TensorStats",
+    "_analysis_config_from_resolved",
     "_build_axis_summary_lines",
     "_build_data_summary_text",
     "_build_stats",
     "_build_topk_lines",
+    "_downsample_matrix",
+    "_extract_playback_step_records",
+    "_extract_einsum_playback_step_records",
     "_extract_tensor_records",
+    "_matrixize_record",
+    "_matrixize_tensor",
+    "_reduce_tensor_record",
+    "_resolve_tensor_analysis",
+    "_resolve_matrix_axes",
+    "_resolved_axis_names",
+    "_slice_tensor_record",
+    "_spectral_analysis_for_record",
 ]

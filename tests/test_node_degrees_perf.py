@@ -9,6 +9,7 @@ from __future__ import annotations
 import time
 
 import numpy as np
+import pytest
 
 from tensor_network_viz._core.draw.plotter import (
     _graph_edge_degree,
@@ -54,6 +55,7 @@ def test_visible_degree_one_mask_with_shared_degrees() -> None:
     np.testing.assert_array_equal(m1, m2)
 
 
+@pytest.mark.perf
 def test_precomputed_degrees_much_faster_than_per_node_scan() -> None:
     n = 8000
     g = _chain_graph(n)

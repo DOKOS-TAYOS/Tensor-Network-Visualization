@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -11,21 +12,32 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from matplotlib.backend_bases import MouseButton, MouseEvent
+from matplotlib.backend_bases import CloseEvent, MouseButton, MouseEvent
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.collections import LineCollection
+from matplotlib.colors import to_rgba
 
 import tensor_network_viz._core.renderer as core_renderer_module
+import tensor_network_viz._interaction.tensor_inspector as tensor_inspector_module
 import tensor_network_viz.tensorkrowch.graph as tk_graph_module
 import tensor_network_viz.tensorkrowch.renderer as tk_renderer_module
 import tensor_network_viz.tensornetwork.graph as tn_graph_module
 import tensor_network_viz.tensornetwork.renderer as tn_renderer_module
 import tensor_network_viz.viewer as viewer_module
 from plotting_helpers import (
+    assert_rendered_figure,
     line_collection_segment_count,
     line_collection_segments,
     patch_collection_circle_count,
+    path3d_collection_facecolors,
+    path3d_collection_point_count,
+    path3d_collection_sizes,
+    path_collection_point_count,
+    point_collection_facecolors,
+    point_collection_sizes,
+    poly3d_node_collection_count,
 )
-from tensor_network_viz import PlotConfig, show_tensor_network
+from tensor_network_viz import EinsumTrace, PlotConfig, einsum, show_tensor_network
 from tensor_network_viz._core import _draw_common
 from tensor_network_viz._core.graph import (
     _EdgeEndpoint,
@@ -95,6 +107,85 @@ def _click_checkbutton(checkbuttons: Any, index: int) -> None:
     checkbuttons._clicked(event)
 
 
+def _checkbutton_index(checkbuttons: Any, label_text: str) -> int:
+    labels = [label.get_text() for label in checkbuttons.labels]
+    return labels.index(label_text)
+
+
+def _fire_close_event(fig: matplotlib.figure.Figure) -> None:
+    fig.canvas.callbacks.process("close_event", CloseEvent("close_event", fig.canvas))
+
+
+def _dispatch_motion_event_at_data(
+    ax: matplotlib.axes.Axes,
+    *,
+    x: float,
+    y: float,
+) -> MouseEvent:
+    ax.figure.canvas.draw()
+    x_display, y_display = ax.transData.transform((x, y))
+    event = MouseEvent(
+        "motion_notify_event",
+        ax.figure.canvas,
+        int(round(x_display)),
+        int(round(y_display)),
+    )
+    ax.figure.canvas.callbacks.process("motion_notify_event", event)
+    return event
+
+
+def _dispatch_button_event_at_data(
+    ax: matplotlib.axes.Axes,
+    *,
+    x: float,
+    y: float,
+) -> MouseEvent:
+    ax.figure.canvas.draw()
+    x_display, y_display = ax.transData.transform((x, y))
+    event = MouseEvent(
+        "button_press_event",
+        ax.figure.canvas,
+        int(round(x_display)),
+        int(round(y_display)),
+        button=MouseButton.LEFT,
+    )
+    ax.figure.canvas.callbacks.process("button_press_event", event)
+    return event
+
+
+def _build_einsum_trace_for_inspector(*, keep_intermediates: bool = True) -> EinsumTrace:
+    trace = EinsumTrace()
+    left = np.arange(6, dtype=float).reshape(2, 3)
+    mid = np.arange(12, dtype=float).reshape(3, 4)
+    right = np.arange(8, dtype=float).reshape(4, 2)
+
+    trace.bind("Left", left)
+    trace.bind("Mid", mid)
+    trace.bind("Right", right)
+    r0 = einsum("ab,bc->ac", left, mid, trace=trace, backend="numpy")
+    r1 = einsum("ac,cd->ad", r0, right, trace=trace, backend="numpy")
+    keepalive = [left, mid, right, r1]
+    if keep_intermediates:
+        keepalive.append(r0)
+    trace._test_keepalive = keepalive  # type: ignore[attr-defined]
+    return trace
+
+
+def _build_einsum_trace_for_comparison_inspector() -> tuple[EinsumTrace, np.ndarray, np.ndarray]:
+    trace = EinsumTrace()
+    left = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=float)
+    mid = np.array([[2.0, 0.0], [1.0, 2.0]], dtype=float)
+    right = np.array([[1.0, 1.0], [0.0, 2.0]], dtype=float)
+
+    trace.bind("Left", left)
+    trace.bind("Mid", mid)
+    trace.bind("Right", right)
+    r0 = einsum("ab,bc->ac", left, mid, trace=trace, backend="numpy")
+    r1 = einsum("ac,cd->ad", r0, right, trace=trace, backend="numpy")
+    trace._test_keepalive = [left, mid, right, r0, r1]  # type: ignore[attr-defined]
+    return trace, np.asarray(r0), np.asarray(r1)
+
+
 def connect(
     node1: Any,
     axis1: int,
@@ -116,6 +207,10 @@ def connect(
 def close_figures():
     yield
     plt.close("all")
+
+
+def test_plot_config_show_nodes_defaults_to_true() -> None:
+    assert PlotConfig().show_nodes is True
 
 
 def test_build_tensorkrowch_graph_disconnected_components() -> None:
@@ -238,7 +333,7 @@ def test_plot_tensorkrowch_network_2d_draws_simple_contraction() -> None:
     )
 
     labels = {text.get_text() for text in ax.texts}
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert labels >= {"A", "B", "left", "right"}
     assert line_collection_segment_count(ax) == 1
 
@@ -254,7 +349,7 @@ def test_plot_tensorkrowch_network_2d_accepts_list_of_nodes() -> None:
     )
 
     labels = {text.get_text() for text in ax.texts}
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert labels >= {"A", "B", "left", "right"}
     assert line_collection_segment_count(ax) == 1
 
@@ -270,7 +365,7 @@ def test_plot_tensornetwork_network_2d_accepts_node_collection() -> None:
     )
 
     labels = {text.get_text() for text in ax.texts}
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert labels >= {"A", "B", "left", "right"}
     assert line_collection_segment_count(ax) == 1
 
@@ -327,7 +422,7 @@ def test_plot_graph_2d_keeps_virtual_dangling_index_labels_in_view() -> None:
     x0, x1 = ax.get_xlim()
     y0, y1 = ax.get_ylim()
     label_positions = [text.get_position() for text in ax.texts if text.get_text() == "out"]
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert label_positions
     label_x, label_y = label_positions[0]
     assert x0 <= label_x <= x1
@@ -347,7 +442,8 @@ def test_plot_tensornetwork_network_2d_hover_labels_skips_static_label_artists()
         gids = {t.get_gid() for t in ax.texts if t.get_gid()}
         assert _draw_common._TENSOR_LABEL_GID not in gids
         assert _draw_common._EDGE_INDEX_LABEL_GID not in gids
-        assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+        hover_cid = getattr(fig, "_tensor_network_viz_hover_cid", None)
+        assert isinstance(hover_cid, int)
     finally:
         plt.close(fig)
 
@@ -365,7 +461,8 @@ def test_plot_tensornetwork_network_3d_hover_labels_skips_static_label_artists()
         gids = {t.get_gid() for t in ax.texts if t.get_gid()}
         assert _draw_common._TENSOR_LABEL_GID not in gids
         assert _draw_common._EDGE_INDEX_LABEL_GID not in gids
-        assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+        hover_cid = getattr(fig, "_tensor_network_viz_hover_cid", None)
+        assert isinstance(hover_cid, int)
     finally:
         plt.close(fig)
 
@@ -388,7 +485,42 @@ def test_plot_tensornetwork_network_2d_hover_labels_can_coexist_with_static_labe
         gids = {t.get_gid() for t in ax.texts if t.get_gid()}
         assert _draw_common._TENSOR_LABEL_GID in gids
         assert _draw_common._EDGE_INDEX_LABEL_GID in gids
-        assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+        hover_cid = getattr(fig, "_tensor_network_viz_hover_cid", None)
+        assert isinstance(hover_cid, int)
+    finally:
+        plt.close(fig)
+
+
+def test_plot_tensornetwork_network_2d_applies_optional_fontsize_overrides() -> None:
+    left = DummyTensorNetworkNode("A", ["left"])
+    right = DummyTensorNetworkNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = plot_tensornetwork_network_2d(
+        {left, right},
+        config=PlotConfig(
+            show_tensor_labels=True,
+            show_index_labels=True,
+            tensor_label_fontsize=13.0,
+            edge_label_fontsize=11.0,
+        ),
+    )
+    try:
+        tensor_label_sizes = [
+            text.get_fontsize()
+            for text in ax.texts
+            if text.get_gid() == _draw_common._TENSOR_LABEL_GID
+        ]
+        edge_label_sizes = [
+            text.get_fontsize()
+            for text in ax.texts
+            if text.get_gid() == _draw_common._EDGE_INDEX_LABEL_GID
+        ]
+
+        assert tensor_label_sizes
+        assert edge_label_sizes
+        assert tensor_label_sizes == pytest.approx([13.0, 13.0])
+        assert edge_label_sizes == pytest.approx([11.0, 11.0])
     finally:
         plt.close(fig)
 
@@ -406,12 +538,39 @@ def test_show_tensor_network_default_interactive_controls_start_in_2d() -> None:
 
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.name != "3d"
     assert controls.current_view == "2d"
     assert controls.hover_on is True
     assert controls.tensor_labels_on is False
     assert controls.edge_labels_on is False
+    assert controls._radio_ax is not None and controls._radio_ax in fig.axes
+    assert controls._check_ax is not None and controls._check_ax in fig.axes
+    assert len(fig.axes) >= 3
+
+
+def test_show_tensor_network_interactive_controls_include_nodes_toggle() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    assert [label.get_text() for label in controls._checkbuttons.labels][:4] == [
+        "Hover",
+        "Nodes",
+        "Tensor labels",
+        "Edge labels",
+    ]
+    assert controls.nodes_on is True
+    assert controls._checkbuttons.ax in fig.axes
 
 
 def test_show_tensor_network_builds_3d_view_lazily_once(
@@ -512,7 +671,8 @@ def test_show_tensor_network_reuses_tensor_and_edge_label_artists_when_toggled()
     edge_label_ids_before = tuple(id(text) for text in controls.current_scene.edge_label_artists)
     assert tensor_label_ids_before
     assert edge_label_ids_before
-    assert getattr(fig, "_tensor_network_viz_hover_cid", None) is not None
+    hover_cid = getattr(fig, "_tensor_network_viz_hover_cid", None)
+    assert isinstance(hover_cid, int)
 
     controls.set_tensor_labels_enabled(False)
     controls.set_edge_labels_enabled(False)
@@ -524,6 +684,180 @@ def test_show_tensor_network_reuses_tensor_and_edge_label_artists_when_toggled()
     )
     assert edge_label_ids_before == tuple(
         id(text) for text in controls.current_scene.edge_label_artists
+    )
+
+
+def test_show_tensor_network_offscreen_agg_skips_draw_idle_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    draw_idle_calls: list[FigureCanvasAgg] = []
+    original_draw_idle = FigureCanvasAgg.draw_idle
+
+    def counting_draw_idle(self: FigureCanvasAgg) -> None:
+        draw_idle_calls.append(self)
+        original_draw_idle(self)
+
+    monkeypatch.setattr(FigureCanvasAgg, "draw_idle", counting_draw_idle)
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+
+    controls.set_tensor_labels_enabled(True)
+    controls.set_edge_labels_enabled(True)
+    controls.set_view("3d")
+
+    assert draw_idle_calls == []
+
+
+def test_show_tensor_network_nodes_toggle_reuses_cached_view_and_label_artists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._interactive_scene as interactive_scene_module
+
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+
+    controls.set_tensor_labels_enabled(True)
+    controls.set_edge_labels_enabled(True)
+    scene_before = controls.current_scene
+    tensor_label_ids_before = tuple(id(text) for text in scene_before.tensor_label_artists)
+    edge_label_ids_before = tuple(id(text) for text in scene_before.edge_label_artists)
+
+    def _unexpected_rebuild(*args: object, **kwargs: object) -> object:
+        raise AssertionError("node toggle should not rebuild label descriptors")
+
+    def _unexpected_render(*args: object, **kwargs: object) -> object:
+        raise AssertionError("node toggle should not rerender the view")
+
+    monkeypatch.setattr(
+        interactive_scene_module,
+        "_build_tensor_label_descriptors",
+        _unexpected_rebuild,
+    )
+    monkeypatch.setattr(
+        interactive_scene_module,
+        "_build_edge_label_descriptors",
+        _unexpected_rebuild,
+    )
+    monkeypatch.setattr(controls, "_render_view", _unexpected_render)
+
+    controls.set_nodes_enabled(False)
+    controls.set_nodes_enabled(True)
+
+    assert controls.current_scene is scene_before
+    assert tensor_label_ids_before == tuple(
+        id(text) for text in controls.current_scene.tensor_label_artists
+    )
+    assert edge_label_ids_before == tuple(
+        id(text) for text in controls.current_scene.edge_label_artists
+    )
+
+
+def test_show_tensor_network_builds_compact_node_artists_once_per_view() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+
+    controls.set_nodes_enabled(False)
+    scene = controls.current_scene
+    compact_bundle = scene.node_artist_bundles["compact"]
+    assert scene.active_node_mode == "compact"
+
+    controls.set_nodes_enabled(True)
+    controls.set_nodes_enabled(False)
+
+    assert scene.node_artist_bundles["compact"] is compact_bundle
+    assert scene.active_node_mode == "compact"
+
+
+def test_show_tensor_network_nodes_toggle_persists_across_2d_and_3d_views() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+
+    controls.set_nodes_enabled(False)
+    controls.set_view("3d")
+    scene_3d = controls.current_scene
+    compact_bundle_3d = scene_3d.node_artist_bundles["compact"]
+    assert scene_3d.active_node_mode == "compact"
+
+    controls.set_nodes_enabled(True)
+    controls.set_nodes_enabled(False)
+    assert scene_3d.node_artist_bundles["compact"] is compact_bundle_3d
+
+    controls.set_view("2d")
+    assert controls.current_scene.active_node_mode == "compact"
+
+
+def test_show_tensor_network_nodes_toggle_updates_2d_dangling_anchor() -> None:
+    node = DummyTensorKrowchNode("A", ["left"])
+    connect(node, 0, name="left")
+    center = np.array([0.0, 0.0], dtype=float)
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(leaf_nodes=[node]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            stub_length=0.2,
+            positions={id(node): (float(center[0]), float(center[1]))},
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    ax_2d = controls._view_caches["2d"].ax
+    assert ax_2d is not None
+
+    seg_before = np.asarray(line_collection_segments(ax_2d)[0], dtype=float)
+    length_before = float(np.linalg.norm(seg_before[1] - seg_before[0]))
+    assert float(np.min(np.linalg.norm(seg_before - center, axis=1))) > 0.0
+
+    controls.set_nodes_enabled(False)
+
+    seg_after = np.asarray(line_collection_segments(ax_2d)[0], dtype=float)
+    assert float(np.min(np.linalg.norm(seg_after - center, axis=1))) == pytest.approx(0.0)
+    assert float(np.linalg.norm(seg_after[1] - seg_after[0])) == pytest.approx(
+        length_before,
+        rel=1e-6,
     )
 
 
@@ -567,7 +901,7 @@ def test_show_tensor_network_discards_stale_hover_annotations_when_switching_vie
     assert "stale-3d" not in texts_3d
 
 
-def test_show_tensor_network_places_view_menu_above_options_and_keeps_playback_clear() -> None:
+def test_show_tensor_network_places_view_selector_between_options_and_playback_slider() -> None:
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
@@ -577,7 +911,6 @@ def test_show_tensor_network_places_view_menu_above_options_and_keeps_playback_c
         engine="tensorkrowch",
         config=PlotConfig(
             show_contraction_scheme=True,
-            contraction_playback=True,
             contraction_scheme_by_name=(("A", "B"),),
         ),
         show=False,
@@ -601,12 +934,12 @@ def test_show_tensor_network_places_view_menu_above_options_and_keeps_playback_c
     radio_right = radio_bounds[0] + radio_bounds[2]
     check_right = check_bounds[0] + check_bounds[2]
     slider_right = slider_bounds[0] + slider_bounds[2]
-    check_top = check_bounds[1] + check_bounds[3]
 
-    assert radio_bounds[1] >= check_top
-    assert check_bounds[2] <= 0.19
-    assert radio_bounds[2] <= 0.10
-    assert slider_bounds[0] >= max(radio_right, check_right)
+    assert check_bounds[2] <= 0.21
+    assert radio_bounds[0] >= check_right - 0.02
+    assert radio_bounds[2] <= 0.09
+    assert slider_bounds[0] >= radio_right - 0.02
+    assert abs(radio_bounds[1] - check_bounds[1]) < 0.02
     assert play_bounds[0] > slider_right
 
 
@@ -620,7 +953,6 @@ def test_show_tensor_network_disables_hidden_view_slider_widgets_after_switch() 
         engine="tensorkrowch",
         config=PlotConfig(
             show_contraction_scheme=True,
-            contraction_playback=True,
             contraction_scheme_by_name=(("A", "B"),),
         ),
         show=False,
@@ -689,7 +1021,6 @@ def test_show_tensor_network_hides_cost_panel_for_inactive_view_after_switch() -
         engine="einsum",
         config=PlotConfig(
             show_contraction_scheme=True,
-            contraction_playback=True,
             contraction_scheme_cost_hover=True,
         ),
         show=False,
@@ -735,25 +1066,26 @@ def test_show_tensor_network_scheme_checkbox_visual_state_matches_scheme_toggle(
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
+    scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
 
-    _click_checkbutton(controls._checkbuttons, 3)
+    _click_checkbutton(controls._checkbuttons, scheme_index)
 
     status_after_enable = tuple(bool(v) for v in controls._checkbuttons.get_status())
-    assert status_after_enable[3] is True
+    assert status_after_enable[scheme_index] is True
     assert controls.scheme_on is True
     assert controls.current_scene.contraction_controls is not None
     assert controls.current_scene.contraction_controls.scheme_on is True
 
-    _click_checkbutton(controls._checkbuttons, 3)
+    _click_checkbutton(controls._checkbuttons, scheme_index)
 
     status_after_disable = tuple(bool(v) for v in controls._checkbuttons.get_status())
-    assert status_after_disable[3] is False
+    assert status_after_disable[scheme_index] is False
     assert controls.scheme_on is False
     assert controls.current_scene.contraction_controls is not None
     assert controls.current_scene.contraction_controls.scheme_on is False
 
 
-def test_show_tensor_network_playback_and_cost_hover_keep_visual_checkboxes_in_sync() -> None:
+def test_show_tensor_network_scheme_and_cost_hover_keep_visual_checkboxes_in_sync() -> None:
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
@@ -772,27 +1104,512 @@ def test_show_tensor_network_playback_and_cost_hover_keep_visual_checkboxes_in_s
     assert controls._checkbuttons is not None
     assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
         "Scheme",
-        "Playback",
         "Costs",
+        "Diagnostics",
     ]
+    scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
+    cost_index = _checkbutton_index(controls._checkbuttons, "Costs")
 
-    _click_checkbutton(controls._checkbuttons, 4)
+    _click_checkbutton(controls._checkbuttons, scheme_index)
 
-    status_after_playback = tuple(bool(v) for v in controls._checkbuttons.get_status())
-    assert status_after_playback[3] is True
-    assert status_after_playback[4] is True
+    status_after_scheme = tuple(bool(v) for v in controls._checkbuttons.get_status())
+    assert status_after_scheme[scheme_index] is True
     assert controls.scheme_on is True
-    assert controls.playback_on is True
 
-    _click_checkbutton(controls._checkbuttons, 5)
+    _click_checkbutton(controls._checkbuttons, cost_index)
 
     status_after_cost_hover = tuple(bool(v) for v in controls._checkbuttons.get_status())
-    assert status_after_cost_hover[3] is True
-    assert status_after_cost_hover[4] is True
-    assert status_after_cost_hover[5] is True
+    assert status_after_cost_hover[scheme_index] is True
+    assert status_after_cost_hover[cost_index] is True
     assert controls.scheme_on is True
-    assert controls.playback_on is True
     assert controls.cost_hover_on is True
+
+
+def test_show_tensor_network_scheme_keeps_node_hover_active_after_step_changes() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            hover_labels=True,
+            show_contraction_scheme=True,
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    scene_controls = controls.current_scene.contraction_controls
+    assert scene_controls is not None
+    assert scene_controls._viewer is not None
+
+    scene_controls._viewer.set_step(0)
+    scene_controls._viewer.set_step(1)
+    visible_node_ids = tuple(int(node_id) for node_id in controls.current_scene.visible_node_ids)
+    hovered_node_id = next(
+        node_id
+        for node_id in visible_node_ids
+        if controls.current_scene.graph.nodes[node_id].name == "A"
+    )
+    hovered_position = np.asarray(controls.current_scene.positions[hovered_node_id], dtype=float)
+    _dispatch_motion_event_at_data(
+        ax,
+        x=float(hovered_position[0]),
+        y=float(hovered_position[1]),
+    )
+
+    hover_annotation = getattr(fig, "_tensor_network_viz_hover_ann", None)
+    assert hover_annotation is not None
+    assert hover_annotation.get_visible() is True
+    assert hover_annotation.get_text() == "A"
+
+
+def test_show_tn_einsum_trace_inspector_checkbox_auto_enables_scheme() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(
+            contraction_tensor_inspector=False,
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    assert [label.get_text() for label in controls._checkbuttons.labels][-4:] == [
+        "Scheme",
+        "Costs",
+        "Tensor inspector",
+        "Diagnostics",
+    ]
+    scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
+    inspector_index = _checkbutton_index(controls._checkbuttons, "Tensor inspector")
+
+    _click_checkbutton(controls._checkbuttons, inspector_index)
+
+    status_after_enable = tuple(bool(v) for v in controls._checkbuttons.get_status())
+    assert status_after_enable[scheme_index] is True
+    assert status_after_enable[inspector_index] is True
+    assert controls.scheme_on is True
+    assert controls.tensor_inspector_on is True
+    assert getattr(fig, "_tensor_network_viz_tensor_inspector", None) is not None
+
+
+def test_show_tn_reenabling_tensor_inspector_reveals_auxiliary_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = _build_einsum_trace_for_inspector()
+    revealed: list[matplotlib.figure.Figure] = []
+
+    monkeypatch.setattr(
+        tensor_inspector_module,
+        "_reveal_auxiliary_figure",
+        lambda figure: revealed.append(figure),
+    )
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(
+            contraction_tensor_inspector=False,
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    inspector_index = _checkbutton_index(controls._checkbuttons, "Tensor inspector")
+
+    _click_checkbutton(controls._checkbuttons, inspector_index)
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    assert revealed == [inspector._figure]
+
+    _click_checkbutton(controls._checkbuttons, inspector_index)
+    assert inspector._figure is None
+
+    _click_checkbutton(controls._checkbuttons, inspector_index)
+
+    assert inspector._figure is not None
+    assert revealed == [revealed[0], inspector._figure]
+
+
+def test_non_playback_tensorkrowch_inputs_hide_tensor_inspector_checkbox() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
+        "Scheme",
+        "Costs",
+        "Diagnostics",
+    ]
+    assert "Tensor inspector" not in [label.get_text() for label in controls._checkbuttons.labels]
+
+
+def test_non_playback_tensorkrowch_inputs_show_tensor_inspector_when_tensors_are_materialized() -> (
+    None
+):
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    left.tensor = np.array([1.0, 2.0], dtype=float)  # type: ignore[attr-defined]
+    right.tensor = np.array([3.0, 4.0], dtype=float)  # type: ignore[attr-defined]
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    assert [label.get_text() for label in controls._checkbuttons.labels][-4:] == [
+        "Scheme",
+        "Costs",
+        "Tensor inspector",
+        "Diagnostics",
+    ]
+
+
+def test_clicking_a_visible_tensor_opens_shared_inspector_for_non_playback_network() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    left.tensor = np.array([1.0, 2.0], dtype=float)  # type: ignore[attr-defined]
+    right.tensor = np.array([3.0, 4.0], dtype=float)  # type: ignore[attr-defined]
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    node_id = next(
+        node_id for node_id, node in controls.current_scene.graph.nodes.items() if node.name == "A"
+    )
+    node_position = np.asarray(controls.current_scene.positions[node_id], dtype=float)
+
+    _dispatch_button_event_at_data(
+        ax,
+        x=float(node_position[0]),
+        y=float(node_position[1]),
+    )
+
+    assert inspector._figure is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+    assert "a" in inspector_controls._panel.main_ax.get_title().lower()
+    assert controls.tensor_inspector_on is True
+
+
+def test_tensor_inspector_manual_node_selection_takes_precedence_until_cleared() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+
+    viewer = controls.current_scene.contraction_controls._viewer
+    assert viewer is not None
+    viewer.set_step(1)
+    assert "r0" in inspector_controls._panel.main_ax.get_title().lower()
+
+    left_node_id = next(
+        node_id
+        for node_id, node in controls.current_scene.graph.nodes.items()
+        if node.name == "Left"
+    )
+    left_position = np.asarray(controls.current_scene.positions[left_node_id], dtype=float)
+    _dispatch_button_event_at_data(
+        ax,
+        x=float(left_position[0]),
+        y=float(left_position[1]),
+    )
+    assert "left" in inspector_controls._panel.main_ax.get_title().lower()
+
+    viewer.set_step(2)
+    assert "left" in inspector_controls._panel.main_ax.get_title().lower()
+
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    _dispatch_button_event_at_data(
+        ax,
+        x=float(xlim[0]),
+        y=float(ylim[0]),
+    )
+    assert "r1" in inspector_controls._panel.main_ax.get_title().lower()
+
+
+def test_tensor_inspector_can_compare_against_previous_playback_step() -> None:
+    trace, r0, r1 = _build_einsum_trace_for_comparison_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+
+    viewer = controls.current_scene.contraction_controls._viewer
+    assert viewer is not None
+    viewer.set_step(2)
+    inspector.set_compare_mode("abs_diff")
+
+    expected = np.abs(r1 - r0)
+    assert (
+        np.asarray(
+            inspector_controls._panel.main_ax.images[0].get_array(),
+            dtype=float,
+        ).tolist()
+        == expected.tolist()
+    )
+
+
+def test_tensor_inspector_can_compare_against_captured_reference() -> None:
+    left = DummyTensorKrowchNode("A", ["left", "bond"])
+    right = DummyTensorKrowchNode("B", ["bond", "right"])
+    left.tensor = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=float)  # type: ignore[attr-defined]
+    right.tensor = np.array([[2.0, 4.0], [6.0, 8.0]], dtype=float)  # type: ignore[attr-defined]
+    connect(left, 1, right, 0, name="bond")
+
+    fig, ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+
+    node_id_a = next(
+        node_id for node_id, node in controls.current_scene.graph.nodes.items() if node.name == "A"
+    )
+    pos_a = np.asarray(controls.current_scene.positions[node_id_a], dtype=float)
+    _dispatch_button_event_at_data(
+        ax,
+        x=float(pos_a[0]),
+        y=float(pos_a[1]),
+    )
+    inspector.capture_reference()
+
+    node_id_b = next(
+        node_id for node_id, node in controls.current_scene.graph.nodes.items() if node.name == "B"
+    )
+    pos_b = np.asarray(controls.current_scene.positions[node_id_b], dtype=float)
+    _dispatch_button_event_at_data(
+        ax,
+        x=float(pos_b[0]),
+        y=float(pos_b[1]),
+    )
+    inspector.set_compare_mode("ratio")
+
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+    assert np.asarray(
+        inspector_controls._panel.main_ax.images[0].get_array(),
+        dtype=float,
+    ).tolist() == [[2.0, 2.0], [2.0, 2.0]]
+
+
+def test_show_tensor_network_show_controls_false_does_not_create_tensor_inspector_window() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show_controls=False,
+        show=False,
+    )
+
+    assert getattr(fig, "_tensor_network_viz_interactive_controls", None) is None
+    assert getattr(fig, "_tensor_network_viz_tensor_inspector", None) is None
+
+
+def test_show_tensor_network_einsum_tensor_inspector_tracks_playback_and_view_switch() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+    assert "r1" in inspector_controls._panel.main_ax.get_title()
+
+    assert controls.current_scene.contraction_controls is not None
+    viewer = controls.current_scene.contraction_controls._viewer
+    assert viewer is not None
+    viewer.set_step(1)
+    assert "r0" in inspector_controls._panel.main_ax.get_title()
+
+    viewer.reset()
+    assert inspector_controls._panel.main_ax.texts
+    assert inspector_controls._panel.main_ax.texts[0].get_text() == "No contraction selected yet."
+
+    viewer.play()
+    viewer._tick_playback()
+    assert "r0" in inspector_controls._panel.main_ax.get_title()
+    viewer._tick_playback()
+    assert "r1" in inspector_controls._panel.main_ax.get_title()
+
+    controls.set_view("3d")
+    assert controls.current_scene.contraction_controls is not None
+    viewer_3d = controls.current_scene.contraction_controls._viewer
+    assert viewer_3d is not None
+    viewer_3d.set_step(1)
+    assert "r0" in inspector_controls._panel.main_ax.get_title()
+
+
+def test_show_tensor_network_manual_close_of_tensor_inspector_clears_toggle_state() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+
+    _fire_close_event(inspector._figure)
+
+    status_after_close = tuple(bool(v) for v in controls._checkbuttons.get_status())
+    assert status_after_close[6] is False
+    assert controls.tensor_inspector_on is False
+
+
+def test_show_tensor_network_costs_and_tensor_inspector_can_coexist() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(
+            contraction_scheme_cost_hover=True,
+            contraction_tensor_inspector=True,
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls.cost_hover_on is True
+    assert controls.tensor_inspector_on is True
+
+    assert controls.current_scene.contraction_controls is not None
+    viewer = controls.current_scene.contraction_controls._viewer
+    assert viewer is not None
+    assert viewer._cost_panel_ax is not None
+    assert viewer._cost_text_artist is not None
+    assert viewer._cost_panel_ax.get_visible()
+    assert "Contraction:" in viewer._cost_text_artist.get_text()
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+    assert "r1" in inspector_controls._panel.main_ax.get_title()
+
+
+def test_show_tensor_network_main_figure_close_closes_tensor_inspector() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+
+    _fire_close_event(fig)
+
+    assert inspector._figure is None
 
 
 def test_show_tensor_network_with_external_ax_hides_view_selector() -> None:
@@ -836,23 +1653,114 @@ def test_show_tensor_network_show_controls_false_hides_all_figure_controls() -> 
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
 
-    fig, ax = show_tensor_network(
+    with pytest.raises(ValueError, match="show_controls=True"):
+        show_tensor_network(
+            DummyNetwork(nodes=[left, right]),
+            engine="tensorkrowch",
+            config=PlotConfig(
+                show_contraction_scheme=True,
+                contraction_scheme_by_name=(("A", "B"),),
+            ),
+            show_controls=False,
+            show=False,
+        )
+
+
+def test_viewer_static_render_keeps_interactive_viewer_module_lazy() -> None:
+    sys.modules.pop("tensor_network_viz.viewer", None)
+    sys.modules.pop("tensor_network_viz.interactive_viewer", None)
+
+    viewer_runtime = importlib.import_module("tensor_network_viz.viewer")
+
+    assert "tensor_network_viz.interactive_viewer" not in sys.modules
+
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig_static, _ax_static = viewer_runtime.show_tensor_network(
         DummyNetwork(nodes=[left, right]),
         engine="tensorkrowch",
-        config=PlotConfig(
-            show_contraction_scheme=True,
-            contraction_playback=True,
-            contraction_scheme_by_name=(("A", "B"),),
-        ),
         show_controls=False,
         show=False,
     )
+    try:
+        assert "tensor_network_viz.interactive_viewer" not in sys.modules
+    finally:
+        plt.close(fig_static)
 
-    assert getattr(fig, "_tensor_network_viz_interactive_controls", None) is None
-    assert getattr(fig, "_tensor_network_viz_contraction_controls", None) is None
-    assert getattr(fig, "_tensor_network_viz_contraction_viewer", None) is None
-    assert len(fig.axes) == 1
-    assert getattr(ax, "_tensor_network_viz_scene", None) is None
+    fig_interactive, _ax_interactive = viewer_runtime.show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show_controls=True,
+        show=False,
+    )
+    try:
+        assert "tensor_network_viz.interactive_viewer" in sys.modules
+    finally:
+        plt.close(fig_interactive)
+
+
+def test_show_tensor_network_precomputes_label_descriptors_for_menu_toggles() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    scene = controls.current_scene
+
+    assert scene.tensor_label_descriptors is not None
+    assert len(scene.tensor_label_descriptors) == 2
+    assert scene.edge_label_descriptors is not None
+    assert len(scene.edge_label_descriptors) == 2
+    assert scene.tensor_label_artists == []
+    assert scene.edge_label_artists == []
+
+
+def test_show_tensor_network_menu_toggles_reuse_precomputed_label_descriptors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._interactive_scene as interactive_scene_module
+
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+
+    def _unexpected_rebuild(*args: object, **kwargs: object) -> object:
+        raise AssertionError("label descriptors should already be cached in the scene")
+
+    monkeypatch.setattr(
+        interactive_scene_module,
+        "_build_tensor_label_descriptors",
+        _unexpected_rebuild,
+    )
+    monkeypatch.setattr(
+        interactive_scene_module,
+        "_build_edge_label_descriptors",
+        _unexpected_rebuild,
+    )
+
+    controls.set_tensor_labels_enabled(True)
+    controls.set_edge_labels_enabled(True)
+
+    assert len(controls.current_scene.tensor_label_artists) == 2
+    assert len(controls.current_scene.edge_label_artists) == 2
 
 
 def test_plot_tensorkrowch_network_2d_draws_tensor_nodes_as_circle_patches() -> None:
@@ -863,6 +1771,85 @@ def test_plot_tensorkrowch_network_2d_draws_tensor_nodes_as_circle_patches() -> 
     _, ax = plot_tensorkrowch_network_2d(DummyNetwork(nodes=[left, right]))
 
     assert patch_collection_circle_count(ax) == 2
+
+
+def test_plot_tensorkrowch_network_2d_show_nodes_false_draws_points() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    _, ax = plot_tensorkrowch_network_2d(
+        DummyNetwork(nodes=[left, right]),
+        config=PlotConfig(show_nodes=False),
+    )
+
+    assert patch_collection_circle_count(ax) == 0
+    assert path_collection_point_count(ax) == 2
+
+
+def test_plot_tensorkrowch_network_2d_show_nodes_false_ignores_node_radius() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    _, ax_small = plot_tensorkrowch_network_2d(
+        DummyNetwork(nodes=[left, right]),
+        config=PlotConfig(show_nodes=False, node_radius=0.04),
+    )
+    _, ax_large = plot_tensorkrowch_network_2d(
+        DummyNetwork(nodes=[left, right]),
+        config=PlotConfig(show_nodes=False, node_radius=0.5),
+    )
+
+    assert path_collection_point_count(ax_small) == 2
+    assert path_collection_point_count(ax_large) == 2
+    assert point_collection_sizes(ax_small) == point_collection_sizes(ax_large)
+
+
+def test_plot_tensorkrowch_network_2d_show_nodes_false_keeps_degree_one_color() -> None:
+    node = DummyTensorKrowchNode("A", ["left"])
+    connect(node, 0, name="left")
+    config = PlotConfig(show_nodes=False)
+
+    _, ax = plot_tensorkrowch_network_2d(DummyNetwork(leaf_nodes=[node]), config=config)
+
+    facecolors = point_collection_facecolors(ax)
+    assert facecolors == [tuple(float(value) for value in to_rgba(config.node_color_degree_one))]
+
+
+def test_plot_tensorkrowch_network_2d_show_nodes_false_dangling_reaches_node_center() -> None:
+    node = DummyTensorKrowchNode("A", ["left"])
+    connect(node, 0, name="left")
+    center = np.array([0.0, 0.0], dtype=float)
+    stub_length = 0.2
+
+    _, ax_normal = plot_tensorkrowch_network_2d(
+        DummyNetwork(leaf_nodes=[node]),
+        config=PlotConfig(
+            show_nodes=True,
+            stub_length=stub_length,
+            positions={id(node): (float(center[0]), float(center[1]))},
+        ),
+    )
+    _, ax = plot_tensorkrowch_network_2d(
+        DummyNetwork(leaf_nodes=[node]),
+        config=PlotConfig(
+            show_nodes=False,
+            stub_length=stub_length,
+            positions={id(node): (float(center[0]), float(center[1]))},
+        ),
+    )
+
+    segs = line_collection_segments(ax)
+    assert len(segs) == 1
+    seg = np.asarray(segs[0], dtype=float)
+    seg_normal = np.asarray(line_collection_segments(ax_normal)[0], dtype=float)
+    distances = np.linalg.norm(seg - center, axis=1)
+    assert float(np.min(distances)) == pytest.approx(0.0)
+    assert float(np.linalg.norm(seg[1] - seg[0])) == pytest.approx(
+        float(np.linalg.norm(seg_normal[1] - seg_normal[0])),
+        rel=1e-6,
+    )
 
 
 def test_extent_scale_factor_reflects_long_dense_chain_vs_pair() -> None:
@@ -907,7 +1894,7 @@ def test_plot_tensorkrowch_network_2d_accepts_full_custom_positions() -> None:
 
     fig, ax = plot_tensorkrowch_network_2d(DummyNetwork(nodes=[left, right]), config=config)
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert line_collection_segment_count(ax) == 1
 
 
@@ -976,10 +1963,54 @@ def test_plot_tensorkrowch_network_3d_returns_3d_axes() -> None:
 
     fig, ax = plot_tensorkrowch_network_3d(DummyNetwork(nodes=[left, right]))
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.name == "3d"
     assert len(ax.lines) == 1
     assert len(ax.collections) >= 1
+
+
+def test_plot_tensorkrowch_network_3d_show_nodes_false_draws_marker_nodes() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0)
+
+    _, ax = plot_tensorkrowch_network_3d(
+        DummyNetwork(nodes=[left, right]),
+        config=PlotConfig(show_nodes=False),
+    )
+
+    assert poly3d_node_collection_count(ax) == 0
+    assert path3d_collection_point_count(ax) == 2
+
+
+def test_plot_tensorkrowch_network_3d_show_nodes_false_ignores_node_radius() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0)
+
+    _, ax_small = plot_tensorkrowch_network_3d(
+        DummyNetwork(nodes=[left, right]),
+        config=PlotConfig(show_nodes=False, node_radius=0.04),
+    )
+    _, ax_large = plot_tensorkrowch_network_3d(
+        DummyNetwork(nodes=[left, right]),
+        config=PlotConfig(show_nodes=False, node_radius=0.5),
+    )
+
+    assert path3d_collection_point_count(ax_small) == 2
+    assert path3d_collection_point_count(ax_large) == 2
+    assert path3d_collection_sizes(ax_small) == path3d_collection_sizes(ax_large)
+
+
+def test_plot_tensorkrowch_network_3d_show_nodes_false_keeps_degree_one_color() -> None:
+    node = DummyTensorKrowchNode("A", ["left"])
+    connect(node, 0, name="left")
+    config = PlotConfig(show_nodes=False)
+
+    _, ax = plot_tensorkrowch_network_3d(DummyNetwork(leaf_nodes=[node]), config=config)
+
+    facecolors = path3d_collection_facecolors(ax)
+    assert facecolors == [tuple(float(value) for value in to_rgba(config.node_color_degree_one))]
 
 
 def test_plot_tensornetwork_network_3d_returns_3d_axes() -> None:
@@ -989,7 +2020,7 @@ def test_plot_tensornetwork_network_3d_returns_3d_axes() -> None:
 
     fig, ax = plot_tensornetwork_network_3d([left, right])
 
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
     assert ax.name == "3d"
     assert len(ax.lines) == 1
 
@@ -1016,6 +2047,25 @@ def test_plot_tensornetwork_network_3d_rejects_2d_axis() -> None:
     plt.close(fig)
 
 
+def test_show_tensor_network_with_external_axis_does_not_relayout_sibling_subplots() -> None:
+    left = DummyTensorNetworkNode("A", ["left"])
+    right = DummyTensorNetworkNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+    fig, axes = plt.subplots(1, 2, figsize=(6, 3))
+    sibling_bounds_before = axes[1].get_position().bounds
+
+    _fig, ax = show_tensor_network(
+        [left, right],
+        ax=axes[0],
+        show=False,
+        show_controls=False,
+    )
+
+    assert ax is axes[0]
+    assert np.allclose(axes[1].get_position().bounds, sibling_bounds_before)
+    plt.close(fig)
+
+
 def test_show_tensor_network_displays_selected_renderer(monkeypatch: pytest.MonkeyPatch) -> None:
     node = DummyTensorKrowchNode("A", ["left"])
     connect(node, 0, name="edge")
@@ -1033,7 +2083,7 @@ def test_show_tensor_network_displays_selected_renderer(monkeypatch: pytest.Monk
     )
 
     assert shown["value"] is True
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
 
 
 def test_show_figure_uses_ipython_display_in_jupyter_kernel(
@@ -1087,7 +2137,7 @@ def test_show_tensor_network_supports_tensornetwork_engine(
     )
 
     assert called["value"] is True
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
 
 
 def test_show_tensor_network_supports_quimb_engine(
@@ -1113,7 +2163,7 @@ def test_show_tensor_network_supports_quimb_engine(
     )
 
     assert called["value"] is True
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
 
 
 def test_show_tensor_network_supports_tenpy_engine(
@@ -1139,7 +2189,7 @@ def test_show_tensor_network_supports_tenpy_engine(
     )
 
     assert called["value"] is True
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
 
 
 def test_show_tensor_network_supports_einsum_engine(
@@ -1166,7 +2216,7 @@ def test_show_tensor_network_supports_einsum_engine(
     )
 
     assert called["value"] is True
-    assert fig is ax.figure
+    assert_rendered_figure(fig, ax)
 
 
 def test_tensornetwork_renderer_does_not_import_tensorkrowch_private_modules() -> None:

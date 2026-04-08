@@ -85,6 +85,7 @@ def _compute_layout_from_components(
     *,
     iterations: int = 220,
 ) -> NodePositions:
+    """Lay out each connected component independently and then pack them together."""
     node_ids = list(graph.nodes)
     component_positions: list[NodePositions] = []
     for index, component in enumerate(components):
@@ -110,6 +111,7 @@ def _compute_layout(
     *,
     iterations: int = 220,
 ) -> NodePositions:
+    """Compute normalized 2D or 3D positions for the full tensor-network graph."""
     node_ids = list(graph.nodes)
     if len(node_ids) == 1:
         return {node_ids[0]: np.zeros(dimensions, dtype=float)}
@@ -131,6 +133,7 @@ def _compute_component_layout_2d(
     seed: int,
     iterations: int,
 ) -> NodePositions:
+    """Lay out one component in 2D, then restore virtual hubs and trimmed leaves."""
     node_ids = list(component.node_ids)
     trimmed_leaf_ids = {leaf_id for leaf_id, _ in component.trimmed_leaf_parents}
     layout_node_ids = [node_id for node_id in node_ids if node_id not in trimmed_leaf_ids]
@@ -183,6 +186,7 @@ def _lift_component_layout_3d(
     component: _LayoutComponent,
     positions_2d: NodePositions,
 ) -> NodePositions:
+    """Lift a 2D component layout into 3D and add structure-specific depth cues."""
     positions = {
         node_id: np.array([coords[0], coords[1], 0.0], dtype=float)
         for node_id, coords in positions_2d.items()
@@ -207,6 +211,7 @@ def _pack_component_positions(
     *,
     dimensions: int,
 ) -> NodePositions:
+    """Pack already-laid-out components along the x-axis with a stable gap."""
     if len(component_positions) == 1:
         return component_positions[0]
 

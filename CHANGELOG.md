@@ -8,11 +8,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- **Network diagnostics overlays:** `PlotConfig` now accepts `TensorNetworkDiagnosticsConfig(...)` so network figures and normalized snapshots can expose backend-normalized `shape`, `dtype`, `element_count`, estimated memory, and per-edge `bond_dimension` consistently across engines.
+- **Focused subnetwork views:** `PlotConfig.focus` now supports reproducible `neighborhood` and `path` filtering in both interactive rendering and `export_tensor_network_snapshot(...)`, while preserving the coordinates from the full-graph layout.
+- **Analytical tensor-element views:** `show_tensor_elements(...)` now adds the `analysis` control group with `slice`, `reduce`, and `profiles` modes, plus `TensorAnalysisConfig(...)` for programmatic axis selection, reductions, and 1D profiling.
+
+### Changed
+
+- **Interactive controls:** the network viewer now exposes `Diagnostics` and focus controls in the Matplotlib tray, and tensor-element figures add contextual analysis widgets that adapt to the current mode and active tensor.
+
+## [1.5.3] — 2026-04-07
+
+### Added
+
+- **Hide nodes in the viewer:** Option to exclude selected nodes from the interactive visualization so dense or branching tensor networks stay readable without changing the underlying graph data.
+- **Public diagnostics contract:** Added package-specific exceptions (`TensorNetworkVizError`, `VisualizationInputError`, `AxisConfigurationError`, `UnsupportedEngineError`, `TensorDataError`, `MissingOptionalDependencyError`) and a documented `tensor_network_viz` logger with a default `NullHandler`.
+- **Spectral tensor diagnostics:** `show_tensor_elements` now exposes `singular_values`, `eigen_real`, and `eigen_imag` diagnostic modes for the current matrixization, with graceful hiding when the analysis is not applicable.
+
+### Changed
+
+- **Contraction scheme visualization:** Major improvements to how contraction steps and scheme highlights are rendered and read in the viewer, so dense or branching schedules stay much easier to follow.
+- **Public API parameters:** Public entry points keep the same overall behavior; argument lists are reorganized for a clearer, more consistent order in signatures, help, and documentation.
+- **Typing and controller structure:** Fixed the interactive tensor-inspector typing issue reported by `pyright`, extracted the linked tensor-inspector controller, and split tensor-element rendering/color-scaling helpers into a dedicated module to keep responsibilities narrower.
+- **Verification workflow docs:** README, guide, and contribution docs now document the `.venv`-first verification flow (`quality`, `tests`, `smoke`, `package`) used before release and CI troubleshooting.
+- **Refactor:** Great refactor to clean the code, and new logs and exceptions.
+
+## [1.5.2] — 2026-04-05
+
+### Added
 - **Tensor element diagnostics:** `show_tensor_elements` now supports `log_magnitude`, `sparsity`, and `nan_inf` views, richer `data` summaries with per-axis stats plus top-k coordinates, optional robust/shared color scaling, and outlier overlays for continuous heatmaps.
+- **Contraction-progress visualization:** Tensors can be inspected visually as contraction steps unfold (step-by-step alongside the network or scheme view).
+
+### Changed
+- **Free-index geometry & performance:** More reliable layout for free (dangling) index directions in 2D, with shorter runtimes; internal structure simplified and several bottlenecks removed in the layout/render path.
+- **Interactive UI:** Polished control menus and drawing regions; clearer, more useful detail in the computational complexity panel.
 
 ### Documentation
 - **Tensor inspection docs:** Refreshed the README, guide, backend examples, and demo configuration to cover the new tensor-element diagnostics and scaling controls.
-
 
 ## [1.5.1] — 2026-04-04
 
@@ -107,6 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[1.5.3]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.2...v1.5.3
+[1.5.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.4.1...v1.4.2

@@ -1,8 +1,7 @@
+"""Public tensor-network rendering entry point and figure display helpers."""
+
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import replace
-from itertools import tee
 from typing import Any, TypeAlias, cast
 
 import matplotlib.pyplot as plt
@@ -10,12 +9,12 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
+from ._input_inspection import _detect_network_engine_with_input
+from ._logging import package_logger
 from ._registry import _get_plotters
 from ._typing import FigureLike, root_figure
 from .config import EngineName, PlotConfig, ViewName
-from .einsum_module.trace import EinsumTrace, einsum_trace_step, pair_tensor
-from .interactive_viewer import show_tensor_network_interactive
-from .tenpy.explicit import TenPyTensorNetwork
+from .exceptions import AxisConfigurationError
 
 RenderedAxes: TypeAlias = Axes | Axes3D
 
@@ -36,81 +35,9 @@ def _show_figure(fig: FigureLike) -> None:
     plt.show()
 
 
-def _first_non_none(items: Iterable[Any]) -> Any | None:
-    """Return the first non-None item from an iterable, if any."""
-    for item in items:
-        if item is not None:
-            return item
-    return None
-
-
-def _peek_network_item(source: Any) -> tuple[Any | None, Any]:
-    """Peek one item from iterable input while preserving single-pass iterators."""
-    if isinstance(source, dict):
-        return _first_non_none(source.values()), source
-    if isinstance(source, (str, bytes, bytearray)) or not isinstance(source, Iterable):
-        return None, source
-
-    iterator = iter(source)
-    if iterator is source:
-        probe_iter, runtime_iter = tee(iterator)
-        return _first_non_none(probe_iter), runtime_iter
-    return _first_non_none(iterator), source
-
-
-def _is_tenpy_like(network: Any) -> bool:
-    """Return True when *network* matches one of the supported TeNPy entry points."""
-    return (
-        isinstance(network, TenPyTensorNetwork)
-        or callable(getattr(network, "get_W", None))
-        or (callable(getattr(network, "get_X", None)) and hasattr(network, "uMPS_GS"))
-        or callable(getattr(network, "get_B", None))
-    )
-
-
-def _detect_engine_from_sample(sample_item: Any | None) -> EngineName | None:
-    """Infer an engine from one representative item when possible."""
-    if isinstance(sample_item, (pair_tensor, einsum_trace_step)):
-        return "einsum"
-    if hasattr(sample_item, "inds"):
-        return "quimb"
-    if hasattr(sample_item, "axes_names"):
-        return "tensorkrowch"
-    if hasattr(sample_item, "axis_names"):
-        return "tensornetwork"
-    return None
-
-
 def _detect_engine_with_network(network: Any) -> tuple[EngineName, Any]:
     """Infer the backend engine and preserve single-pass iterables when needed."""
-    if isinstance(network, EinsumTrace):
-        return "einsum", network
-    if _is_tenpy_like(network):
-        return "tenpy", network
-
-    if hasattr(network, "tensors"):
-        tensor_sample, _ = _peek_network_item(network.tensors)
-        if tensor_sample is None or hasattr(tensor_sample, "inds"):
-            return "quimb", network
-
-    if hasattr(network, "leaf_nodes"):
-        leaf_sample, _ = _peek_network_item(network.leaf_nodes)
-        if leaf_sample is None or hasattr(leaf_sample, "axes_names"):
-            return "tensorkrowch", network
-    if hasattr(network, "nodes"):
-        node_sample, _ = _peek_network_item(network.nodes)
-        if node_sample is None or hasattr(node_sample, "axes_names"):
-            return "tensorkrowch", network
-
-    sample_item, sampled_network = _peek_network_item(network)
-    detected_engine = _detect_engine_from_sample(sample_item)
-    if detected_engine is not None:
-        return detected_engine, sampled_network
-
-    raise ValueError(
-        "Could not infer tensor network engine from input of type "
-        f"{type(network).__name__!r}. Pass engine= explicitly or provide a supported backend input."
-    )
+    return _detect_network_engine_with_input(network)
 
 
 def _detect_engine(network: Any) -> EngineName:
@@ -140,9 +67,11 @@ def show_tensor_network(
             ``show_tensor_network`` infers the engine from ``network``.
         view: "2d" or "3d" visualization mode. ``None`` defaults to ``"2d"``
             unless ``ax`` is a 3D axes, in which case the view is inferred.
-        config: Optional styling; uses defaults if None. Use ``PlotConfig`` for
-            colors, labels, layout, ``hover_labels`` (interactive hover
-            tooltips), contraction highlighting, and related render behavior.
+        config: Optional plot configuration. When omitted, ``PlotConfig()`` is used.
+            ``PlotConfig`` groups the most visible toggles first
+            (nodes, labels, hover, contraction playback) and leaves geometry/styling
+            options later. It also includes optional ``tensor_label_fontsize`` and
+            ``edge_label_fontsize`` overrides.
         ax: Optional Matplotlib axes to render into. When passed, the 2D/3D
             selector is suppressed and the view is fixed to that axes.
         show_controls: If True, attach figure-level controls for view, hover,
@@ -155,40 +84,59 @@ def show_tensor_network(
 
     Note:
         Repeated calls with the **same** ``network`` instance reuse the normalized
-        graph structure until the object is collected or you call
-        ``clear_tensor_network_graph_cache(network)`` after in-place changes.
+        graph structure for regular objects and for re-iterable builtin containers
+        such as ``list``, ``tuple``, and ``dict``. One-shot iterators are rebuilt on
+        each call. After in-place changes, call
+        ``clear_tensor_network_graph_cache(network)`` so the next draw re-extracts the
+        structure.
 
     Returns:
         Tuple of (Figure, Axes) for further customization.
 
+    Raises:
+        AxisConfigurationError: If ``ax`` and ``view`` request incompatible dimensions, or
+            if the resolved view name is unsupported.
+        ValueError: If ``show_contraction_scheme=True`` is requested together with
+            ``show_controls=False``.
+
     Example:
-        >>> config = PlotConfig(figsize=(8, 6))
+        >>> config = PlotConfig(show_tensor_labels=True, hover_labels=True, figsize=(8, 6))
         >>> fig, ax = show_tensor_network(network, config=config)
     """
     style = config or PlotConfig()
+    package_logger.debug(
+        "show_tensor_network called with engine=%r view=%r show_controls=%s show=%s.",
+        engine,
+        view,
+        show_controls,
+        show,
+    )
     ax_view: ViewName | None = None
     if ax is not None:
         ax_view = "3d" if getattr(ax, "name", "") == "3d" else "2d"
     resolved_view = ax_view or "2d" if view is None else view
     if ax_view is not None and resolved_view != ax_view:
-        raise ValueError(f"Provided ax is {ax_view}, but view={resolved_view!r} was requested.")
+        raise AxisConfigurationError(
+            f"Provided ax is {ax_view}, but view={resolved_view!r} was requested."
+        )
     if resolved_view not in ("2d", "3d"):
-        raise ValueError(f"Unsupported tensor network view: {resolved_view}")
+        raise AxisConfigurationError(f"Unsupported tensor network view: {resolved_view}")
     network_input = network
     if engine is None:
         resolved_engine, network_input = _detect_engine_with_network(network)
     else:
         resolved_engine = engine
+    package_logger.debug(
+        "Rendering tensor network with engine=%r resolved_view=%r.", resolved_engine, resolved_view
+    )
     plot_2d, plot_3d = _get_plotters(resolved_engine)
+    if style.show_contraction_scheme and not show_controls:
+        raise ValueError(
+            "show_contraction_scheme=True requires show_controls=True because the contraction "
+            "scheme is dynamic-only; it cannot be rendered with show_controls=False."
+        )
     if not show_controls:
         static_style = style
-        if style.contraction_playback or style.contraction_scheme_cost_hover:
-            static_style = replace(
-                static_style,
-                show_contraction_scheme=True,
-                contraction_playback=False,
-                contraction_scheme_cost_hover=False,
-            )
         if resolved_view == "2d":
             fig, ax_out = plot_2d(
                 network_input,
@@ -206,8 +154,10 @@ def show_tensor_network(
                 _build_scene_state=False,
             )
         else:
-            raise ValueError(f"Unsupported tensor network view: {resolved_view}")
+            raise AxisConfigurationError(f"Unsupported tensor network view: {resolved_view}")
     else:
+        from .interactive_viewer import show_tensor_network_interactive
+
         fig, ax_out = show_tensor_network_interactive(
             network_input,
             engine=resolved_engine,

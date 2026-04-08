@@ -1,21 +1,26 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
-from ...config import PlotConfig
-from ...contraction_viewer import (
-    _ContractionControls,
-    _ContractionSchemeBundle,
-    attach_playback_to_tensor_network_figure,
+from ..._interaction.scheme import _ContractionControls, _ContractionSchemeBundle
+from ..._interactive_scene import _apply_scene_hover_state
+from ..._matplotlib_state import (
+    clear_contraction_controls,
+    clear_scene,
+    get_scene,
+    set_contraction_controls,
+    set_scene,
 )
+from ...config import PlotConfig
+from ...contraction_viewer import attach_tensor_network_playback_to_figure
 from ...einsum_module.contraction_cost import format_contraction_step_panel_text
 from ..contractions import _ContractionGroups
 from ..graph import _GraphData
 from ..layout import AxisDirections, NodePositions
 from .contraction_scheme import (
+    _build_contraction_playback_states,
     _contraction_step_metrics_for_draw,
-    _draw_contraction_scheme,
+    _ContractionSceneApplier,
     _effective_contraction_steps,
 )
 from .disk_metrics import _tensor_disk_radius_px_3d_nominal
@@ -27,6 +32,24 @@ from .render_prep import (
     _register_render_hover,
     _RenderPrepContext,
 )
+from .scene_state import _InteractiveSceneState
+
+
+def _refresh_contraction_hover(
+    *,
+    ax: Any,
+    hover_state: Any,
+) -> None:
+    scene = get_scene(ax)
+    if isinstance(scene, _InteractiveSceneState):
+        hover_on = bool(scene.hover_state.tensor_hover or scene.hover_state.edge_hover)
+        _apply_scene_hover_state(scene, hover_on=hover_on)
+        return
+    _apply_render_hover_state(
+        hover_state,
+        scheme_patches_2d=(),
+        scheme_aabbs_3d=(),
+    )
 
 
 def _has_contraction_scheme_source(
@@ -37,74 +60,6 @@ def _has_contraction_scheme_source(
         return len(config.contraction_scheme_by_name) > 0
     steps = graph.contraction_steps
     return steps is not None and len(steps) > 0
-
-
-def _scheme_bounds_2d(
-    artists_by_step: list[Any | None],
-) -> tuple[float, float, float, float] | None:
-    xs: list[float] = []
-    ys: list[float] = []
-    for artist in artists_by_step:
-        if artist is None:
-            continue
-        get_x = getattr(artist, "get_x", None)
-        get_y = getattr(artist, "get_y", None)
-        get_width = getattr(artist, "get_width", None)
-        get_height = getattr(artist, "get_height", None)
-        if not all(callable(fn) for fn in (get_x, get_y, get_width, get_height)):
-            continue
-        cx = cast(Callable[[], Any], get_x)
-        cy = cast(Callable[[], Any], get_y)
-        cw = cast(Callable[[], Any], get_width)
-        ch = cast(Callable[[], Any], get_height)
-        x0 = float(cx())
-        y0 = float(cy())
-        x1 = x0 + float(cw())
-        y1 = y0 + float(ch())
-        xs.extend((x0, x1))
-        ys.extend((y0, y1))
-    if not xs or not ys:
-        return None
-    return (min(xs), max(xs), min(ys), max(ys))
-
-
-def _scheme_bounds_3d(
-    scheme_aabb: list[tuple[float, float, float, float, float, float] | None],
-) -> tuple[float, float, float, float, float, float] | None:
-    boxes = [box for box in scheme_aabb if box is not None]
-    if not boxes:
-        return None
-    xmin = min(box[0] for box in boxes)
-    xmax = max(box[1] for box in boxes)
-    ymin = min(box[2] for box in boxes)
-    ymax = max(box[3] for box in boxes)
-    zmin = min(box[4] for box in boxes)
-    zmax = max(box[5] for box in boxes)
-    return (xmin, xmax, ymin, ymax, zmin, zmax)
-
-
-def _expand_axes_for_scheme_bounds(
-    *,
-    ax: Any,
-    dimensions: Literal[2, 3],
-    bounds_2d: tuple[float, float, float, float] | None,
-    bounds_3d: tuple[float, float, float, float, float, float] | None,
-) -> None:
-    if dimensions == 2 and bounds_2d is not None:
-        xmin, xmax, ymin, ymax = bounds_2d
-        cur_x0, cur_x1 = ax.get_xlim()
-        cur_y0, cur_y1 = ax.get_ylim()
-        ax.set_xlim(min(float(cur_x0), xmin), max(float(cur_x1), xmax))
-        ax.set_ylim(min(float(cur_y0), ymin), max(float(cur_y1), ymax))
-        return
-    if dimensions == 3 and bounds_3d is not None:
-        xmin, xmax, ymin, ymax, zmin, zmax = bounds_3d
-        cur_x0, cur_x1 = ax.get_xlim3d()
-        cur_y0, cur_y1 = ax.get_ylim3d()
-        cur_z0, cur_z1 = ax.get_zlim3d()
-        ax.set_xlim3d(min(float(cur_x0), xmin), max(float(cur_x1), xmax))
-        ax.set_ylim3d(min(float(cur_y0), ymin), max(float(cur_y1), ymax))
-        ax.set_zlim3d(min(float(cur_z0), zmin), max(float(cur_z1), zmax))
 
 
 def _build_contraction_scheme_bundle(
@@ -122,24 +77,17 @@ def _build_contraction_scheme_bundle(
     scheme_steps_eff = _effective_contraction_steps(graph, config)
     if not scheme_steps_eff:
         raise ValueError("contraction scheme requires a non-empty contraction step sequence.")
-
-    per_step_artists, scheme_aabb = _draw_contraction_scheme(
-        ax=ax,
+    playback_states = _build_contraction_playback_states(
         graph=graph,
-        positions=positions,
         steps=scheme_steps_eff,
         config=config,
-        dimensions=dimensions,
-        scale=scale,
-        p=context.params,
     )
-    has_drawable_artists = any(artist is not None for artist in per_step_artists)
-    if strict and not has_drawable_artists:
+    if strict and len(playback_states) <= 1:
         raise ValueError("contraction scheme requires at least one drawable contraction step.")
 
     metrics_row = _contraction_step_metrics_for_draw(graph, scheme_steps_eff)
     step_details_list: list[str | None] = []
-    for index in range(len(per_step_artists)):
+    for index in range(len(scheme_steps_eff)):
         detail: str | None = None
         if metrics_row is not None and index < len(metrics_row):
             m = metrics_row[index]
@@ -147,9 +95,11 @@ def _build_contraction_scheme_bundle(
                 detail = format_contraction_step_panel_text(m)
         step_details_list.append(detail)
     step_details = tuple(step_details_list)
+    scene_applier = _ContractionSceneApplier(states=playback_states)
     viewer = (
-        attach_playback_to_tensor_network_figure(
-            artists_by_step=per_step_artists,
+        attach_tensor_network_playback_to_figure(
+            step_count=len(scheme_steps_eff),
+            scene_applier=scene_applier,
             step_details_by_step=step_details,
             fig=ax.figure,
             ax=ax,
@@ -159,24 +109,14 @@ def _build_contraction_scheme_bundle(
         if include_viewer
         else None
     )
-    bounds_2d = _scheme_bounds_2d(per_step_artists) if dimensions == 2 else None
-    bounds_3d = _scheme_bounds_3d(scheme_aabb) if dimensions == 3 else None
-    _expand_axes_for_scheme_bounds(
-        ax=ax,
-        dimensions=dimensions,
-        bounds_2d=bounds_2d,
-        bounds_3d=bounds_3d,
-    )
     return _ContractionSchemeBundle(
         availability="computed",
         steps=scheme_steps_eff,
-        artists_by_step=per_step_artists,
-        scheme_aabb=scheme_aabb,
+        playback_states=playback_states,
         metrics_row=tuple(metrics_row) if metrics_row is not None else None,
         step_details=step_details,
         viewer=viewer,
-        bounds_2d=bounds_2d,
-        bounds_3d=bounds_3d,
+        scene_applier=scene_applier,
     )
 
 
@@ -210,12 +150,6 @@ def _draw_graph(
         contraction_groups=contraction_groups,
         bond_curve_pad=bond_curve_pad,
     )
-
-    if config.contraction_playback and not config.show_contraction_scheme:
-        raise ValueError(
-            "contraction_playback=True requires show_contraction_scheme=True so contraction "
-            "steps can be drawn and stepped."
-        )
 
     tensor_disk_radius_px_3d: float | None = None
     if dimensions == 3 and config.approximate_3d_tensor_disk_px:
@@ -258,10 +192,9 @@ def _draw_graph(
                     context=context,
                     strict=strict,
                 ),
-                refresh_hover=lambda scheme_patches_2d, scheme_aabbs_3d: _apply_render_hover_state(
-                    hover_state,
-                    scheme_patches_2d=(),
-                    scheme_aabbs_3d=(),
+                refresh_hover=lambda scheme_patches_2d, scheme_aabbs_3d: _refresh_contraction_hover(
+                    ax=ax,
+                    hover_state=hover_state,
                 ),
             )
         elif config.show_contraction_scheme:
@@ -286,14 +219,13 @@ def _draw_graph(
             tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
         )
         scene.contraction_controls = controls
-        ax._tensor_network_viz_scene = scene  # type: ignore[attr-defined]
+        set_scene(ax, scene)
         if controls is not None:
-            ax._tensor_network_viz_contraction_controls = controls  # type: ignore[attr-defined]
+            set_contraction_controls(ax, controls)
+            controls.bind_scene(scene)
     else:
-        if hasattr(ax, "_tensor_network_viz_scene"):
-            delattr(ax, "_tensor_network_viz_scene")
-        if hasattr(ax, "_tensor_network_viz_contraction_controls"):
-            delattr(ax, "_tensor_network_viz_contraction_controls")
+        clear_scene(ax)
+        clear_contraction_controls(ax)
     if not _has_contraction_scheme_source(graph, config):
         return
 
