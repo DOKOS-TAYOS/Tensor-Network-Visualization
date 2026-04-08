@@ -13,6 +13,41 @@ TensorLabelRefinement: TypeAlias = Literal["auto", "always", "never"]
 
 
 @dataclass(frozen=True)
+class TensorNetworkDiagnosticsConfig:
+    """Configuration for graph diagnostics shown in overlays and hover payloads."""
+
+    show_overlay: bool = False
+    include_hover: bool = True
+
+
+@dataclass(frozen=True)
+class TensorNetworkFocus:
+    """Configuration for subnetwork focus in normalized snapshots and interactive views."""
+
+    kind: Literal["neighborhood", "path"]
+    center: str | None = None
+    radius: Literal[1, 2] = 1
+    endpoints: tuple[str, str] | None = None
+
+    def __post_init__(self) -> None:
+        """Validate radius and normalize endpoint names when provided."""
+        radius = int(self.radius)
+        if radius not in (1, 2):
+            raise ValueError("focus.radius must be 1 or 2.")
+        object.__setattr__(self, "radius", radius)
+
+        if self.endpoints is None:
+            return
+        if len(self.endpoints) != 2:
+            raise ValueError("focus.endpoints must contain exactly two tensor names.")
+        object.__setattr__(
+            self,
+            "endpoints",
+            (str(self.endpoints[0]), str(self.endpoints[1])),
+        )
+
+
+@dataclass(frozen=True)
 class PlotConfig:
     """Configuration for ``show_tensor_network``.
 
@@ -31,6 +66,8 @@ class PlotConfig:
             together with the contraction slider.
         contraction_tensor_inspector: Whether to enable the linked tensor-inspector window
             when playback tensors are available.
+        diagnostics: Optional diagnostics settings for shape / bond / memory overlays.
+        focus: Optional subnetwork focus settings shared by snapshots and interactive views.
         tensor_label_refinement: Policy for the post-draw passes that shrink tensor labels
             to fit their node marker. ``"always"`` always refits, ``"never"`` skips it,
             and ``"auto"`` applies it only when it is still cheap.
@@ -81,6 +118,8 @@ class PlotConfig:
     show_contraction_scheme: bool = False
     contraction_scheme_cost_hover: bool = False
     contraction_tensor_inspector: bool = False
+    diagnostics: TensorNetworkDiagnosticsConfig | None = None
+    focus: TensorNetworkFocus | None = None
     tensor_label_refinement: TensorLabelRefinement = "auto"
     approximate_3d_tensor_disk_px: bool = True
     figsize: tuple[float, float] | None = (8, 6)
@@ -109,4 +148,11 @@ class PlotConfig:
     contraction_scheme_linewidth: float | None = None
 
 
-__all__ = ["EngineName", "PlotConfig", "TensorLabelRefinement", "ViewName"]
+__all__ = [
+    "EngineName",
+    "PlotConfig",
+    "TensorLabelRefinement",
+    "TensorNetworkDiagnosticsConfig",
+    "TensorNetworkFocus",
+    "ViewName",
+]

@@ -187,6 +187,32 @@ config = PlotConfig(
 - `"always"`: best label fitting, slowest on large figures.
 - `"never"`: skip the expensive post-draw label-fit passes.
 
+### Diagnostics and focus
+
+```python
+from tensor_network_viz import (
+    PlotConfig,
+    TensorNetworkDiagnosticsConfig,
+    TensorNetworkFocus,
+)
+
+config = PlotConfig(
+    hover_labels=True,
+    diagnostics=TensorNetworkDiagnosticsConfig(
+        show_overlay=True,
+        include_hover=True,
+    ),
+    focus=TensorNetworkFocus(
+        kind="path",
+        endpoints=("Left", "Right"),
+    ),
+)
+```
+
+Use `diagnostics` when you want uniform backend-normalized `shape`, `dtype`, estimated memory, and
+bond-dimension information in the same figure. Use `focus` when you want a reproducible
+subnetwork export or a filtered interactive view without recomputing the global geometry.
+
 ### Custom positions
 
 ```python
@@ -223,6 +249,7 @@ views and then the concrete mode inside that family:
 - `complex`: `real`, `imag`, `phase`
 - `diagnostic`: `sign`, `signed_value`, `sparsity`, `nan_inf`, `singular_values`, `eigen_real`,
   `eigen_imag`
+- `analysis`: `slice`, `reduce`, `profiles`
 
 `data` mode combines the global tensor stats with a compact per-axis summary and the top-k entries
 by magnitude. The `singular_values` mode renders the singular-value spectrum derived from the same
@@ -243,6 +270,26 @@ config = TensorElementsConfig(
 ```
 
 If you omit `row_axes` / `col_axes`, the library chooses a deterministic balanced partition.
+
+### Analytical views for high-rank tensors
+
+```python
+from tensor_network_viz import TensorAnalysisConfig, TensorElementsConfig
+
+config = TensorElementsConfig(
+    mode="reduce",
+    analysis=TensorAnalysisConfig(
+        reduce_axes=("bond",),
+        reduce_method="mean",
+    ),
+)
+```
+
+Use `mode="slice"` to lock one axis at one index and keep the resulting plane visible as a
+heatmap. Use `mode="reduce"` to collapse selected axes with `mean` or `norm`, and
+`mode="profiles"` to turn one surviving axis into a 1D series. In interactive figures the control
+tray adds contextual widgets for the active analytical mode and falls back cleanly when you move
+between tensors with different ranks or axis names.
 
 ## Common Workflows
 
@@ -306,14 +353,19 @@ tensor.
 ```python
 fig, ax = show_tensor_elements(
     trace,
-    config=TensorElementsConfig(mode="auto"),
+    config=TensorElementsConfig(
+        mode="slice",
+        analysis=TensorAnalysisConfig(slice_axis="phys", slice_index=0),
+    ),
     show=False,
 )
 fig.savefig("tensor-elements.png", bbox_inches="tight")
 ```
 
 Use this when you want one tensor at a time, quick switches between grouped views, and a `data`
-summary without leaving the same figure.
+summary without leaving the same figure. For dense tensors, the `analysis` group is usually the
+fastest way to inspect one plane, one reduced summary, or one 1D profile without manually
+re-matrixizing the tensor outside the library.
 
 ### 5. Compare a tensor against a reference
 
@@ -334,11 +386,20 @@ Use `TensorComparisonConfig(mode=...)` to switch between `reference`, `abs_diff`
 
 ```python
 graph = normalize_tensor_network(network)
-snapshot = export_tensor_network_snapshot(network, view="3d")
+snapshot = export_tensor_network_snapshot(
+    network,
+    view="3d",
+    config=PlotConfig(
+        focus=TensorNetworkFocus(kind="neighborhood", center="A", radius=2),
+    ),
+)
 ```
 
 Use these helpers when you want validators, snapshot tests, or custom tooling to consume the same
-backend-normalized structure that the plotting layer already uses internally.
+backend-normalized structure that the plotting layer already uses internally. The normalized graph
+now carries node diagnostics (`shape`, `dtype`, `element_count`, `estimated_nbytes`) and edge
+`bond_dimension`, while focused snapshots keep the same coordinates as the corresponding full-view
+render.
 
 ## Supported Inputs
 

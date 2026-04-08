@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, cast
 
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from matplotlib.widgets import RadioButtons, Slider
+from matplotlib.widgets import CheckButtons, RadioButtons, Slider
 
 from ._matplotlib_state import set_tensor_elements_controls
+from ._tensor_elements_data import _analysis_config_from_resolved, _resolve_tensor_analysis
 from ._tensor_elements_rendering import (
     _compute_outlier_mask,
     _derive_color_limits,
@@ -28,20 +29,33 @@ from ._tensor_elements_support import (
     _valid_group_modes_for_record,
 )
 from ._ui_utils import _reserve_figure_bottom, _style_control_tray_axes
-from .tensor_elements_config import TensorElementsConfig, TensorElementsMode
+from .tensor_elements_config import TensorAnalysisConfig, TensorElementsConfig, TensorElementsMode
 
-TensorElementsGroup = Literal["basic", "complex", "diagnostic"]
+TensorElementsGroup = Literal["basic", "complex", "diagnostic", "analysis"]
 PrepareModePayloadFn = Callable[
     [_TensorRecord, TensorElementsConfig, str],
     tuple[str, _TensorElementsPayload],
 ]
 
-_GROUP_OPTIONS: Final[tuple[TensorElementsGroup, ...]] = ("basic", "complex", "diagnostic")
-_GROUP_SELECTOR_BOUNDS: Final[tuple[float, float, float, float]] = (0.02, 0.048, 0.15, 0.12)
+_ANALYSIS_METHOD_OPTIONS: Final[tuple[str, str]] = ("mean", "norm")
+_ANALYSIS_MODES: Final[frozenset[str]] = frozenset({"slice", "reduce", "profiles"})
+_GROUP_OPTIONS: Final[tuple[TensorElementsGroup, ...]] = (
+    "basic",
+    "complex",
+    "diagnostic",
+    "analysis",
+)
+_GROUP_SELECTOR_BOUNDS: Final[tuple[float, float, float, float]] = (0.02, 0.04, 0.15, 0.145)
 _MODE_SELECTOR_BOUNDS: Final[tuple[float, float, float, float]] = (0.19, 0.028, 0.21, 0.16)
 _TENSOR_SLIDER_BOUNDS: Final[tuple[float, float, float, float]] = (0.48, 0.045, 0.38, 0.065)
-_TENSOR_ELEMENTS_CONTROLS_BOTTOM: Final[float] = 0.24
+_ANALYSIS_AXIS_BOUNDS: Final[tuple[float, float, float, float]] = (0.42, 0.122, 0.16, 0.105)
+_ANALYSIS_CHECK_BOUNDS: Final[tuple[float, float, float, float]] = (0.42, 0.108, 0.18, 0.125)
+_ANALYSIS_METHOD_BOUNDS: Final[tuple[float, float, float, float]] = (0.61, 0.122, 0.13, 0.105)
+_ANALYSIS_SLIDER_BOUNDS: Final[tuple[float, float, float, float]] = (0.76, 0.135, 0.2, 0.05)
+_TENSOR_ELEMENTS_CONTROLS_BOTTOM: Final[float] = 0.31
 _INTERACTIVE_LABEL_PROPS: Final[dict[str, Sequence[Any]]] = {"fontsize": [9.5]}
+_INTERACTIVE_CHECK_FRAME_PROPS: Final[dict[str, float]] = {"s": 44.0, "linewidth": 0.9}
+_INTERACTIVE_CHECK_MARK_PROPS: Final[dict[str, float]] = {"s": 34.0, "linewidth": 1.0}
 _INTERACTIVE_RADIO_PROPS: Final[dict[str, float]] = {"s": 38.0, "linewidth": 0.9}
 _SLIDER_ACTIVE_COLOR: Final[str] = "#0369A1"
 _PLACEHOLDER_TEXT_BOX: Final[dict[str, Any]] = {
@@ -76,6 +90,7 @@ class _TensorElementsFigureController:
         self._prepare_mode_payload = prepare_mode_payload
         self._payload_cache = {} if initial_payload_cache is None else dict(initial_payload_cache)
         self._shared_color_scale_cache: dict[str, tuple[float, float] | None] = {}
+        self._analysis = config.analysis or TensorAnalysisConfig()
         self._tensor_index = 0
         self._group: TensorElementsGroup
         self._mode: str
@@ -83,8 +98,20 @@ class _TensorElementsFigureController:
         self._group_radio: RadioButtons | None = None
         self._mode_radio_ax: Axes | None = None
         self._mode_radio: RadioButtons | None = None
+        self._analysis_axis_ax: Axes | None = None
+        self._analysis_axis_radio: RadioButtons | None = None
+        self._analysis_check_ax: Axes | None = None
+        self._analysis_checkbuttons: CheckButtons | None = None
+        self._analysis_method_ax: Axes | None = None
+        self._analysis_method_radio: RadioButtons | None = None
+        self._analysis_slider_ax: Axes | None = None
+        self._analysis_slider: Slider | None = None
         self._slider_ax: Axes | None = None
         self._slider: Slider | None = None
+        self._analysis_axis_callback_guard = False
+        self._analysis_check_callback_guard = False
+        self._analysis_method_callback_guard = False
+        self._analysis_slider_callback_guard = False
         self._group_callback_guard = False
         self._mode_callback_guard = False
         self._slider_callback_guard = False
@@ -107,7 +134,19 @@ class _TensorElementsFigureController:
         cache_entry = self._payload_cache_for_index(index)
         if mode in cache_entry.payloads:
             return mode, cache_entry.payloads[mode]
-        resolved_mode, payload = self._prepare_mode_payload(record, self._config, mode)
+        active_config = self._config
+        if mode in _ANALYSIS_MODES:
+            resolved_analysis = _resolve_tensor_analysis(
+                record,
+                analysis=self._analysis,
+                mode=mode,
+                fallback=self._allow_interactive_fallback,
+            )
+            active_config = replace(
+                self._config,
+                analysis=_analysis_config_from_resolved(resolved_analysis),
+            )
+        resolved_mode, payload = self._prepare_mode_payload(record, active_config, mode)
         cache_entry.payloads[resolved_mode] = payload
         return resolved_mode, payload
 
@@ -219,6 +258,164 @@ class _TensorElementsFigureController:
             f"{self._tensor_index + 1}/{len(self._records)}: {record.name}"
         )
 
+    def _clear_analysis_controls(self) -> None:
+        for widget in (
+            self._analysis_axis_radio,
+            self._analysis_checkbuttons,
+            self._analysis_method_radio,
+            self._analysis_slider,
+        ):
+            if widget is not None and hasattr(widget, "disconnect_events"):
+                widget.disconnect_events()
+        for attr_name in (
+            "_analysis_axis_ax",
+            "_analysis_check_ax",
+            "_analysis_method_ax",
+            "_analysis_slider_ax",
+        ):
+            axes = getattr(self, attr_name)
+            if axes is not None:
+                axes.remove()
+                setattr(self, attr_name, None)
+        self._analysis_axis_radio = None
+        self._analysis_checkbuttons = None
+        self._analysis_method_radio = None
+        self._analysis_slider = None
+
+    def _rebuild_analysis_controls(self) -> None:
+        self._clear_analysis_controls()
+        if self._mode not in _ANALYSIS_MODES:
+            return
+        analysis = _resolve_tensor_analysis(
+            self._current_record(),
+            analysis=self._analysis,
+            mode=self._mode,
+            fallback=self._allow_interactive_fallback,
+        )
+        if self._mode == "slice":
+            if analysis.original_axis_names:
+                self._analysis_axis_ax = self._figure.add_axes(_ANALYSIS_AXIS_BOUNDS)
+                _style_control_tray_axes(self._analysis_axis_ax)
+                active_index = int(analysis.slice_axis or 0)
+                self._analysis_axis_radio = RadioButtons(
+                    self._analysis_axis_ax,
+                    analysis.original_axis_names,
+                    active=active_index,
+                    label_props=_INTERACTIVE_LABEL_PROPS,
+                    radio_props=_INTERACTIVE_RADIO_PROPS,
+                )
+                self._analysis_axis_radio.on_clicked(self._on_analysis_axis_clicked)
+            self._analysis_slider_ax = self._figure.add_axes(_ANALYSIS_SLIDER_BOUNDS)
+            _style_control_tray_axes(self._analysis_slider_ax)
+            self._analysis_slider = Slider(
+                self._analysis_slider_ax,
+                "Slice",
+                0.0,
+                float(max(analysis.slice_axis_size - 1, 0)),
+                valinit=float(analysis.slice_index),
+                valstep=1,
+                color=_SLIDER_ACTIVE_COLOR,
+            )
+            self._analysis_slider.on_changed(self._on_analysis_slider_changed)
+            return
+
+        if self._mode == "reduce":
+            if analysis.post_slice_axis_names:
+                self._analysis_check_ax = self._figure.add_axes(_ANALYSIS_CHECK_BOUNDS)
+                _style_control_tray_axes(self._analysis_check_ax)
+                self._analysis_checkbuttons = CheckButtons(
+                    self._analysis_check_ax,
+                    analysis.post_slice_axis_names,
+                    [
+                        axis_name in analysis.reduce_axis_names
+                        for axis_name in analysis.post_slice_axis_names
+                    ],
+                    label_props=_INTERACTIVE_LABEL_PROPS,
+                    frame_props=_INTERACTIVE_CHECK_FRAME_PROPS,
+                    check_props=_INTERACTIVE_CHECK_MARK_PROPS,
+                )
+                self._analysis_checkbuttons.on_clicked(self._on_analysis_check_clicked)
+            self._analysis_method_ax = self._figure.add_axes(_ANALYSIS_METHOD_BOUNDS)
+            _style_control_tray_axes(self._analysis_method_ax)
+            self._analysis_method_radio = RadioButtons(
+                self._analysis_method_ax,
+                _ANALYSIS_METHOD_OPTIONS,
+                active=_ANALYSIS_METHOD_OPTIONS.index(analysis.reduce_method),
+                label_props=_INTERACTIVE_LABEL_PROPS,
+                radio_props=_INTERACTIVE_RADIO_PROPS,
+            )
+            self._analysis_method_radio.on_clicked(self._on_analysis_method_clicked)
+            return
+
+        if analysis.post_slice_axis_names:
+            self._analysis_axis_ax = self._figure.add_axes(_ANALYSIS_AXIS_BOUNDS)
+            _style_control_tray_axes(self._analysis_axis_ax)
+            active_index = int(analysis.profile_axis or 0)
+            self._analysis_axis_radio = RadioButtons(
+                self._analysis_axis_ax,
+                analysis.post_slice_axis_names,
+                active=active_index,
+                label_props=_INTERACTIVE_LABEL_PROPS,
+                radio_props=_INTERACTIVE_RADIO_PROPS,
+            )
+            self._analysis_axis_radio.on_clicked(self._on_analysis_axis_clicked)
+        self._analysis_method_ax = self._figure.add_axes(_ANALYSIS_METHOD_BOUNDS)
+        _style_control_tray_axes(self._analysis_method_ax)
+        self._analysis_method_radio = RadioButtons(
+            self._analysis_method_ax,
+            _ANALYSIS_METHOD_OPTIONS,
+            active=_ANALYSIS_METHOD_OPTIONS.index(analysis.profile_method),
+            label_props=_INTERACTIVE_LABEL_PROPS,
+            radio_props=_INTERACTIVE_RADIO_PROPS,
+        )
+        self._analysis_method_radio.on_clicked(self._on_analysis_method_clicked)
+
+    def _clear_analysis_caches(self) -> None:
+        self._payload_cache.clear()
+        self._shared_color_scale_cache.clear()
+
+    def _set_analysis(self, analysis: TensorAnalysisConfig, *, redraw: bool = True) -> None:
+        self._analysis = analysis
+        self._clear_analysis_caches()
+        self._render_current(redraw=redraw)
+
+    def _on_analysis_axis_clicked(self, label: str | None) -> None:
+        if label is None or self._analysis_axis_callback_guard:
+            return
+        if self._mode == "slice":
+            self._set_analysis(replace(self._analysis, slice_axis=str(label), slice_index=0))
+            return
+        if self._mode == "profiles":
+            self._set_analysis(replace(self._analysis, profile_axis=str(label)))
+
+    def _on_analysis_check_clicked(self, _label: str | None) -> None:
+        if self._analysis_check_callback_guard or self._analysis_checkbuttons is None:
+            return
+        labels = tuple(text.get_text() for text in self._analysis_checkbuttons.labels)
+        statuses = tuple(bool(value) for value in self._analysis_checkbuttons.get_status())
+        selected_axes = tuple(
+            label for label, enabled in zip(labels, statuses, strict=True) if enabled
+        )
+        self._set_analysis(replace(self._analysis, reduce_axes=selected_axes))
+
+    def _on_analysis_method_clicked(self, label: str | None) -> None:
+        if label is None or self._analysis_method_callback_guard:
+            return
+        if self._mode == "reduce":
+            self._set_analysis(
+                replace(self._analysis, reduce_method=cast(Literal["mean", "norm"], label))
+            )
+            return
+        if self._mode == "profiles":
+            self._set_analysis(
+                replace(self._analysis, profile_method=cast(Literal["mean", "norm"], label))
+            )
+
+    def _on_analysis_slider_changed(self, value: float) -> None:
+        if self._analysis_slider_callback_guard:
+            return
+        self._set_analysis(replace(self._analysis, slice_index=int(round(value))))
+
     def _on_group_clicked(self, label: str | None) -> None:
         if label is None or self._group_callback_guard:
             return
@@ -245,6 +442,7 @@ class _TensorElementsFigureController:
         self._mode = resolved_mode
         self._sync_group_radio_active()
         self._sync_mode_radio_active()
+        self._rebuild_analysis_controls()
         self._sync_slider_label()
         if redraw:
             self._figure.canvas.draw_idle()

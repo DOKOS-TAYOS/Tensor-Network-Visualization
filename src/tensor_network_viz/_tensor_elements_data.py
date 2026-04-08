@@ -22,7 +22,7 @@ from .einsum_module.trace import EinsumTrace, einsum_trace_step, pair_tensor
 from .exceptions import TensorDataError, TensorDataTypeError, UnsupportedEngineError
 from .quimb.graph import _quimb_tensor_parsed, _tensors_sorted_with_meta
 from .tenpy.explicit import TenPyTensorNetwork
-from .tensor_elements_config import TensorAxisSelector, TensorElementsConfig
+from .tensor_elements_config import TensorAnalysisConfig, TensorAxisSelector, TensorElementsConfig
 from .tensorkrowch._history import _recover_contraction_history
 
 NumericArray: TypeAlias = np.ndarray[Any, Any]
@@ -107,6 +107,25 @@ class _SpectralAnalysis:
     row_names: tuple[str, ...]
     singular_values: NumericArray | None
     used_reduced_matrix: bool
+
+
+@dataclass(frozen=True)
+class _ResolvedTensorAnalysis:
+    """Concrete analytical selectors for one tensor record and one analysis mode."""
+
+    original_axis_names: tuple[str, ...]
+    post_slice_axis_names: tuple[str, ...]
+    profile_axis: int | None
+    profile_axis_name: str | None
+    profile_method: Literal["mean", "norm"]
+    reduce_axes: tuple[int, ...]
+    reduce_axis_names: tuple[str, ...]
+    reduce_method: Literal["mean", "norm"]
+    slice_active: bool
+    slice_axis: int | None
+    slice_axis_name: str | None
+    slice_axis_size: int
+    slice_index: int
 
 
 @dataclass(frozen=True)
@@ -258,6 +277,43 @@ def _normalize_axis_group(
     if len(set(resolved)) != len(resolved):
         raise ValueError("row_axes and col_axes must not contain duplicate axes.")
     return resolved
+
+
+def _resolve_axis_selector_with_fallback(
+    selector: TensorAxisSelector | None,
+    *,
+    axis_names: tuple[str, ...],
+    ndim: int,
+    fallback_index: int | None,
+    fallback: bool,
+) -> tuple[int | None, bool]:
+    if selector is None:
+        return fallback_index, False
+    try:
+        return _normalize_axis_selector(selector, axis_names=axis_names, ndim=ndim), False
+    except ValueError:
+        if not fallback:
+            raise
+        return fallback_index, True
+
+
+def _resolve_axis_group_with_fallback(
+    selectors: tuple[TensorAxisSelector, ...] | None,
+    *,
+    axis_names: tuple[str, ...],
+    ndim: int,
+    fallback_axes: tuple[int, ...],
+    fallback: bool,
+) -> tuple[int, ...]:
+    if selectors is None:
+        return fallback_axes
+    try:
+        resolved = _normalize_axis_group(selectors, axis_names=axis_names, ndim=ndim)
+    except ValueError:
+        if not fallback:
+            raise
+        return fallback_axes
+    return () if resolved is None else resolved
 
 
 def _axis_names_for_shape(axis_names: tuple[str, ...], *, ndim: int) -> tuple[str, ...]:
@@ -915,6 +971,200 @@ def _resolved_axis_names(record: _TensorRecord) -> tuple[str, ...]:
     return tuple(axis_names)
 
 
+def _resolve_tensor_analysis(
+    record: _TensorRecord,
+    *,
+    analysis: TensorAnalysisConfig | None,
+    mode: str,
+    fallback: bool = False,
+) -> _ResolvedTensorAnalysis:
+    """Resolve analytical selectors for one tensor, optionally falling back per tensor."""
+    array = np.asarray(record.array)
+    original_axis_names = _resolved_axis_names(record)
+    explicit_slice_requested = analysis is not None and analysis.slice_axis is not None
+    slice_active = bool(array.ndim > 0 and (mode == "slice" or explicit_slice_requested))
+
+    slice_axis: int | None = None
+    slice_axis_name: str | None = None
+    slice_axis_size = 1
+    slice_index = 0
+    post_slice_axis_names = original_axis_names
+    if slice_active:
+        slice_axis, slice_used_fallback = _resolve_axis_selector_with_fallback(
+            None if analysis is None else analysis.slice_axis,
+            axis_names=original_axis_names,
+            ndim=array.ndim,
+            fallback_index=0,
+            fallback=fallback,
+        )
+        assert slice_axis is not None
+        slice_axis_name = original_axis_names[slice_axis]
+        slice_axis_size = int(array.shape[slice_axis])
+        requested_slice_index = (
+            0 if analysis is None or slice_used_fallback else int(analysis.slice_index)
+        )
+        slice_index = min(requested_slice_index, max(slice_axis_size - 1, 0))
+        post_slice_axis_names = tuple(
+            name for axis_index, name in enumerate(original_axis_names) if axis_index != slice_axis
+        )
+
+    post_slice_ndim = len(post_slice_axis_names)
+    default_reduce_axes = tuple(range(2, post_slice_ndim))
+    reduce_axes = _resolve_axis_group_with_fallback(
+        None if analysis is None or mode != "reduce" else analysis.reduce_axes,
+        axis_names=post_slice_axis_names,
+        ndim=post_slice_ndim,
+        fallback_axes=default_reduce_axes,
+        fallback=fallback,
+    )
+    reduce_axis_names = tuple(post_slice_axis_names[axis_index] for axis_index in reduce_axes)
+
+    default_profile_axis = None if post_slice_ndim == 0 else 0
+    profile_axis, _profile_used_fallback = _resolve_axis_selector_with_fallback(
+        None if analysis is None or mode != "profiles" else analysis.profile_axis,
+        axis_names=post_slice_axis_names,
+        ndim=post_slice_ndim,
+        fallback_index=default_profile_axis,
+        fallback=fallback,
+    )
+    profile_axis_name = None if profile_axis is None else post_slice_axis_names[profile_axis]
+
+    return _ResolvedTensorAnalysis(
+        original_axis_names=original_axis_names,
+        post_slice_axis_names=post_slice_axis_names,
+        profile_axis=profile_axis,
+        profile_axis_name=profile_axis_name,
+        profile_method="mean" if analysis is None else analysis.profile_method,
+        reduce_axes=reduce_axes,
+        reduce_axis_names=reduce_axis_names,
+        reduce_method="mean" if analysis is None else analysis.reduce_method,
+        slice_active=slice_active,
+        slice_axis=slice_axis,
+        slice_axis_name=slice_axis_name,
+        slice_axis_size=slice_axis_size,
+        slice_index=slice_index,
+    )
+
+
+def _analysis_config_from_resolved(
+    analysis: _ResolvedTensorAnalysis,
+) -> TensorAnalysisConfig:
+    """Build a normalized public analysis config from the resolved per-tensor state."""
+    return TensorAnalysisConfig(
+        slice_axis=analysis.slice_axis_name if analysis.slice_active else None,
+        slice_index=analysis.slice_index,
+        reduce_axes=analysis.reduce_axis_names or None,
+        reduce_method=analysis.reduce_method,
+        profile_axis=analysis.profile_axis_name,
+        profile_method=analysis.profile_method,
+    )
+
+
+def _selector_names_for_record(
+    selectors: tuple[TensorAxisSelector, ...] | None,
+    *,
+    record: _TensorRecord,
+) -> tuple[str, ...] | None:
+    if selectors is None:
+        return None
+    axis_names = _resolved_axis_names(record)
+    resolved = tuple(
+        axis_names[_normalize_axis_selector(selector, axis_names=axis_names, ndim=len(axis_names))]
+        for selector in selectors
+    )
+    return resolved or None
+
+
+def _project_selector_names(
+    axis_names: tuple[str, ...],
+    selector_names: tuple[str, ...] | None,
+) -> tuple[str, ...] | None:
+    if selector_names is None:
+        return None
+    projected = tuple(name for name in selector_names if name in axis_names)
+    return projected or None
+
+
+def _matrixize_record(
+    record: _TensorRecord,
+    *,
+    config: TensorElementsConfig,
+    selector_source: _TensorRecord | None = None,
+) -> tuple[NumericArray, _MatrixMetadata]:
+    """Matrixize one tensor record while preserving name-based row/column selectors."""
+    source_record = record if selector_source is None else selector_source
+    row_selector_names = _selector_names_for_record(config.row_axes, record=source_record)
+    col_selector_names = _selector_names_for_record(config.col_axes, record=source_record)
+    resolved_axis_names = _resolved_axis_names(record)
+    return _matrixize_tensor(
+        np.asarray(record.array),
+        axis_names=resolved_axis_names,
+        row_axes=_project_selector_names(resolved_axis_names, row_selector_names),
+        col_axes=_project_selector_names(resolved_axis_names, col_selector_names),
+    )
+
+
+def _slice_tensor_record(
+    record: _TensorRecord,
+    *,
+    analysis: _ResolvedTensorAnalysis,
+) -> _TensorRecord:
+    """Apply the resolved slice operation to one tensor record."""
+    resolved_axis_names = _resolved_axis_names(record)
+    if not analysis.slice_active or analysis.slice_axis is None:
+        return _TensorRecord(
+            array=np.asarray(record.array),
+            axis_names=resolved_axis_names,
+            engine=record.engine,
+            name=record.name,
+        )
+    sliced = np.take(
+        np.asarray(record.array),
+        indices=int(analysis.slice_index),
+        axis=int(analysis.slice_axis),
+    )
+    sliced_axis_names = tuple(
+        name
+        for axis_index, name in enumerate(resolved_axis_names)
+        if axis_index != analysis.slice_axis
+    )
+    return _TensorRecord(
+        array=np.asarray(sliced),
+        axis_names=sliced_axis_names,
+        engine=record.engine,
+        name=record.name,
+    )
+
+
+def _reduce_tensor_record(
+    record: _TensorRecord,
+    *,
+    analysis: _ResolvedTensorAnalysis,
+) -> _TensorRecord:
+    """Apply the resolved reduction axes and method to one tensor record."""
+    sliced_record = _slice_tensor_record(record, analysis=analysis)
+    if not analysis.reduce_axes:
+        return sliced_record
+    metric_array = np.asarray(_summary_metric_array(np.asarray(sliced_record.array)), dtype=float)
+    reducer = _safe_nanmean_axis if analysis.reduce_method == "mean" else _safe_nan_norm_axis
+    reduce_axis: int | tuple[int, ...]
+    reduce_axis = (
+        analysis.reduce_axes[0] if len(analysis.reduce_axes) == 1 else analysis.reduce_axes
+    )
+    reduced = reducer(metric_array, axis=reduce_axis)
+    remaining_names = tuple(
+        name
+        for axis_index, name in enumerate(_resolved_axis_names(sliced_record))
+        if axis_index not in set(analysis.reduce_axes)
+    )
+    return _TensorRecord(
+        array=np.asarray(reduced),
+        axis_names=remaining_names,
+        engine=sliced_record.engine,
+        name=sliced_record.name,
+    )
+
+
 def _format_range(values: NumericArray) -> str:
     flat = np.ravel(np.asarray(values, dtype=float))
     non_nan = flat[~np.isnan(flat)]
@@ -1240,9 +1490,11 @@ __all__ = [
     "_EinsumPlaybackStepRecord",
     "_MatrixMetadata",
     "_PlaybackStepRecord",
+    "_ResolvedTensorAnalysis",
     "_SpectralAnalysis",
     "_TensorRecord",
     "_TensorStats",
+    "_analysis_config_from_resolved",
     "_build_axis_summary_lines",
     "_build_data_summary_text",
     "_build_stats",
@@ -1251,7 +1503,12 @@ __all__ = [
     "_extract_playback_step_records",
     "_extract_einsum_playback_step_records",
     "_extract_tensor_records",
+    "_matrixize_record",
     "_matrixize_tensor",
+    "_reduce_tensor_record",
+    "_resolve_tensor_analysis",
     "_resolve_matrix_axes",
+    "_resolved_axis_names",
+    "_slice_tensor_record",
     "_spectral_analysis_for_record",
 ]

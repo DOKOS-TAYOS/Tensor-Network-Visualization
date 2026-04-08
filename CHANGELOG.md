@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Network diagnostics overlays:** `PlotConfig` now accepts `TensorNetworkDiagnosticsConfig(...)` so network figures and normalized snapshots can expose backend-normalized `shape`, `dtype`, `element_count`, estimated memory, and per-edge `bond_dimension` consistently across engines.
+- **Focused subnetwork views:** `PlotConfig.focus` now supports reproducible `neighborhood` and `path` filtering in both interactive rendering and `export_tensor_network_snapshot(...)`, while preserving the coordinates from the full-graph layout.
+- **Analytical tensor-element views:** `show_tensor_elements(...)` now adds the `analysis` control group with `slice`, `reduce`, and `profiles` modes, plus `TensorAnalysisConfig(...)` for programmatic axis selection, reductions, and 1D profiling.
+
+### Changed
+
+- **Interactive controls:** the network viewer now exposes `Diagnostics` and focus controls in the Matplotlib tray, and tensor-element figures add contextual analysis widgets that adapt to the current mode and active tensor.
+
 ## [1.5.3] — 2026-04-07
 
 ### Added

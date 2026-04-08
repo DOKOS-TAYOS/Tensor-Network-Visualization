@@ -59,8 +59,63 @@ from ._core.draw.viewport_geometry import (
     _edge_index_fontsize_for_bond,
 )
 from ._matplotlib_state import get_artist_node_id, get_scene, set_artist_node_id
+from .config import TensorNetworkDiagnosticsConfig
 
 RenderedAxes = Axes | Axes3D
+
+
+def _diagnostic_hover_enabled(scene: _InteractiveSceneState) -> bool:
+    diagnostics = scene.config.diagnostics or TensorNetworkDiagnosticsConfig()
+    return bool(diagnostics.include_hover)
+
+
+def _format_memory_estimate(estimated_nbytes: int | None) -> str | None:
+    if estimated_nbytes is None:
+        return None
+    units = ("B", "KB", "MB", "GB", "TB")
+    value = float(estimated_nbytes)
+    unit_index = 0
+    while value >= 1024.0 and unit_index < len(units) - 1:
+        value /= 1024.0
+        unit_index += 1
+    if unit_index == 0:
+        return f"{int(value)} {units[unit_index]}"
+    return f"{value:.1f} {units[unit_index]}"
+
+
+def _join_hover_text(base_text: str, extra_lines: list[str]) -> str:
+    filtered_lines = [line for line in extra_lines if line]
+    if not filtered_lines:
+        return base_text
+    if not base_text:
+        return "\n".join(filtered_lines)
+    return base_text + "\n" + "\n".join(filtered_lines)
+
+
+def _node_hover_text(scene: _InteractiveSceneState, node_id: int, base_text: str) -> str:
+    if not _diagnostic_hover_enabled(scene):
+        return base_text
+    node = scene.graph.nodes[node_id]
+    extra_lines: list[str] = []
+    if node.shape is not None:
+        extra_lines.append(f"shape: {node.shape}")
+    if node.dtype is not None:
+        extra_lines.append(f"dtype: {node.dtype}")
+    if node.element_count is not None:
+        extra_lines.append(f"elements: {node.element_count}")
+    memory_text = _format_memory_estimate(node.estimated_nbytes)
+    if memory_text is not None:
+        extra_lines.append(f"memory: {memory_text}")
+    return _join_hover_text(base_text, extra_lines)
+
+
+def _edge_hover_text(scene: _InteractiveSceneState, edge: object, base_text: str) -> str:
+    if not _diagnostic_hover_enabled(scene):
+        return base_text
+    bond_dimension = getattr(edge, "bond_dimension", None)
+    if bond_dimension is None:
+        return base_text
+    return _join_hover_text(base_text, [f"bond dimension: {bond_dimension}"])
 
 
 def _set_artist_visible(artist: Artist, visible: bool) -> None:
@@ -523,7 +578,10 @@ def _build_tensor_hover_payload(scene: _InteractiveSceneState) -> dict[int, tupl
         node_id = get_artist_node_id(artist)
         if node_id is None:
             continue
-        payload[int(node_id)] = (str(artist.get_text()), float(artist.get_fontsize()))
+        payload[int(node_id)] = (
+            _node_hover_text(scene, int(node_id), str(artist.get_text())),
+            float(artist.get_fontsize()),
+        )
     if payload:
         scene.tensor_hover_payload = dict(payload)
         return payload
@@ -553,7 +611,10 @@ def _build_tensor_hover_payload(scene: _InteractiveSceneState) -> dict[int, tupl
                 fig=scene.ax.figure,
                 dimensions=scene.dimensions,
             )
-        payload[int(descriptor.node_id)] = (descriptor.text, float(fontsize_raw))
+        payload[int(descriptor.node_id)] = (
+            _node_hover_text(scene, int(descriptor.node_id), descriptor.text),
+            float(fontsize_raw),
+        )
     scene.tensor_hover_payload = dict(payload)
     return payload
 
@@ -572,7 +633,7 @@ def _build_edge_hover_payload(scene: _InteractiveSceneState) -> tuple[tuple[Any,
         elif edge.kind == "self":
             text = _self_loop_hover_label_text(edge, scene.graph)
         if text:
-            payload.append((entry.polyline, text))
+            payload.append((entry.polyline, _edge_hover_text(scene, edge, text)))
     scene.edge_hover_payload = tuple(payload)
     return tuple(payload)
 

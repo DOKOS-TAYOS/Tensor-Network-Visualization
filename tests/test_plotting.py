@@ -1102,9 +1102,10 @@ def test_show_tensor_network_scheme_and_cost_hover_keep_visual_checkboxes_in_syn
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
-    assert [label.get_text() for label in controls._checkbuttons.labels][-2:] == [
+    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
         "Scheme",
         "Costs",
+        "Diagnostics",
     ]
     scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
     cost_index = _checkbutton_index(controls._checkbuttons, "Costs")
@@ -1181,10 +1182,11 @@ def test_show_tn_einsum_trace_inspector_checkbox_auto_enables_scheme() -> None:
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
-    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
+    assert [label.get_text() for label in controls._checkbuttons.labels][-4:] == [
         "Scheme",
         "Costs",
         "Tensor inspector",
+        "Diagnostics",
     ]
     scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
     inspector_index = _checkbutton_index(controls._checkbuttons, "Tensor inspector")
@@ -1257,9 +1259,10 @@ def test_non_playback_tensorkrowch_inputs_hide_tensor_inspector_checkbox() -> No
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
-    assert [label.get_text() for label in controls._checkbuttons.labels][-2:] == [
+    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
         "Scheme",
         "Costs",
+        "Diagnostics",
     ]
     assert "Tensor inspector" not in [label.get_text() for label in controls._checkbuttons.labels]
 
@@ -1285,10 +1288,11 @@ def test_non_playback_tensorkrowch_inputs_show_tensor_inspector_when_tensors_are
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
-    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
+    assert [label.get_text() for label in controls._checkbuttons.labels][-4:] == [
         "Scheme",
         "Costs",
         "Tensor inspector",
+        "Diagnostics",
     ]
 
 

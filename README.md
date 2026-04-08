@@ -163,7 +163,7 @@ When several tensors are present, the figure keeps one tensor active at a time a
 to switch between them. The interactive controls are grouped: `basic` (`elements`, `magnitude`,
 `log_magnitude`, `distribution`, `data`), `complex` (`real`, `imag`, `phase`), and
 `diagnostic` (`sign`, `signed_value`, `sparsity`, `nan_inf`, `singular_values`, `eigen_real`,
-`eigen_imag`).
+`eigen_imag`), plus `analysis` (`slice`, `reduce`, `profiles`).
 
 - `data`: direct numeric tensor input (for example a NumPy array), direct iterables of tensors
   preserving order and duplicates, supported backend-native tensor collections, or an
@@ -227,7 +227,11 @@ Both snapshot objects are immutable and expose `.to_dict()` for serialization.
 Use `PlotConfig` for visual behavior:
 
 ```python
-from tensor_network_viz import PlotConfig
+from tensor_network_viz import (
+    PlotConfig,
+    TensorNetworkDiagnosticsConfig,
+    TensorNetworkFocus,
+)
 
 config = PlotConfig(
     show_nodes=True,
@@ -237,6 +241,15 @@ config = PlotConfig(
     show_contraction_scheme=False,
     contraction_scheme_cost_hover=False,
     contraction_tensor_inspector=False,
+    diagnostics=TensorNetworkDiagnosticsConfig(
+        show_overlay=False,
+        include_hover=True,
+    ),
+    focus=TensorNetworkFocus(
+        kind="neighborhood",
+        center="A",
+        radius=1,
+    ),
     tensor_label_refinement="auto",
     tensor_label_fontsize=None,
     edge_label_fontsize=None,
@@ -247,6 +260,8 @@ This is where you configure:
 
 - labels,
 - hover tooltips,
+- diagnostics overlays and enriched hover payloads (`shape`, `dtype`, `bond dimension`, memory),
+- reproducible subnetwork focus (`neighborhood` radius 1/2 or shortest `path` by tensor name),
 - contraction-scheme overlays,
 - optional tensor/edge label font-size overrides,
 - styling,
@@ -260,12 +275,20 @@ This is where you configure:
 Use `TensorElementsConfig` for tensor inspection behavior:
 
 ```python
-from tensor_network_viz import TensorElementsConfig
+from tensor_network_viz import TensorAnalysisConfig, TensorElementsConfig
 
 config = TensorElementsConfig(
     mode="auto",
     row_axes=None,
     col_axes=None,
+    analysis=TensorAnalysisConfig(
+        slice_axis="phys",
+        slice_index=0,
+        reduce_axes=("bond",),
+        reduce_method="mean",
+        profile_axis="phys",
+        profile_method="norm",
+    ),
     figsize=(7.2, 6.4),
     max_matrix_shape=(256, 256),
     shared_color_scale=False,
@@ -284,6 +307,7 @@ This is where you configure:
 
 - the active inspection mode,
 - row/column axis grouping for rank > 2 tensors,
+- analysis selectors for `slice`, `reduce`, and `profiles`,
 - heatmap downsampling limits,
 - histogram sampling and bin count,
 - data-summary depth (`topk_count`),
@@ -293,15 +317,20 @@ This is where you configure:
 
 If you want to start in a specific grouped view, pass `mode="real"`, `mode="imag"`,
 `mode="phase"`, `mode="log_magnitude"`, `mode="sparsity"`, `mode="nan_inf"`, `mode="sign"`,
-`mode="signed_value"`, `mode="singular_values"`, `mode="eigen_real"`, or `mode="eigen_imag"` directly in
-`TensorElementsConfig(...)`.
+`mode="signed_value"`, `mode="singular_values"`, `mode="eigen_real"`, `mode="eigen_imag"`,
+`mode="slice"`, `mode="reduce"`, or `mode="profiles"` directly in `TensorElementsConfig(...)`.
 
 ## Most Common Workflows
 
 ### Interactive figure with controls
 
 ```python
-from tensor_network_viz import PlotConfig, show_tensor_network
+from tensor_network_viz import (
+    PlotConfig,
+    TensorNetworkDiagnosticsConfig,
+    TensorNetworkFocus,
+    show_tensor_network,
+)
 
 fig, ax = show_tensor_network(
     network,
@@ -309,6 +338,8 @@ fig, ax = show_tensor_network(
         show_tensor_labels=False,
         show_index_labels=False,
         hover_labels=True,
+        diagnostics=TensorNetworkDiagnosticsConfig(show_overlay=True),
+        focus=TensorNetworkFocus(kind="neighborhood", center="A", radius=1),
     ),
 )
 ```
@@ -338,14 +369,37 @@ fig.savefig("network.png", bbox_inches="tight")
 ### Inspect tensor values
 
 ```python
-from tensor_network_viz import TensorElementsConfig, show_tensor_elements
+from tensor_network_viz import TensorAnalysisConfig, TensorElementsConfig, show_tensor_elements
 
 fig, ax = show_tensor_elements(
     trace,
-    config=TensorElementsConfig(mode="auto"),
+    config=TensorElementsConfig(
+        mode="profiles",
+        analysis=TensorAnalysisConfig(profile_axis="phys", profile_method="norm"),
+    ),
     show=False,
 )
 fig.savefig("tensor-elements.png", bbox_inches="tight")
+```
+
+### Export a focused snapshot with diagnostics
+
+```python
+from tensor_network_viz import (
+    PlotConfig,
+    TensorNetworkDiagnosticsConfig,
+    TensorNetworkFocus,
+    export_tensor_network_snapshot,
+)
+
+snapshot = export_tensor_network_snapshot(
+    network,
+    config=PlotConfig(
+        diagnostics=TensorNetworkDiagnosticsConfig(include_hover=True),
+        focus=TensorNetworkFocus(kind="path", endpoints=("A", "C")),
+    ),
+)
+payload = snapshot.to_dict()
 ```
 
 ### Compare tensors

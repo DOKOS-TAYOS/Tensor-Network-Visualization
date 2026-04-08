@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 import numpy as np
+from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 
-from ...config import PlotConfig
+from ...config import PlotConfig, TensorNetworkDiagnosticsConfig
 from ..contractions import _ContractionGroups, _group_contractions
 from ..graph import _GraphData
 from ..layout import AxisDirections, NodePositions, _analyze_layout_components_cached
@@ -68,6 +69,7 @@ class _RenderPrepContext:
     hover_edge_targets: list[tuple[np.ndarray, str]] | None
     tensor_hover_by_node: dict[int, tuple[str, float]] | None
     edge_geometry_sink: list[_RenderedEdgeGeometry]
+    diagnostic_artists: list[Artist]
     viewport_coords: np.ndarray
     view_margin: float
 
@@ -170,6 +172,86 @@ def _should_refine_tensor_labels(
     return visible_tensor_count < _AUTO_FAST_VISIBLE_TENSOR_THRESHOLD
 
 
+def _resolved_diagnostics_config(config: PlotConfig) -> TensorNetworkDiagnosticsConfig:
+    return config.diagnostics or TensorNetworkDiagnosticsConfig()
+
+
+def _format_memory_estimate(estimated_nbytes: int | None) -> str | None:
+    if estimated_nbytes is None:
+        return None
+    units = ("B", "KB", "MB", "GB", "TB")
+    value = float(estimated_nbytes)
+    unit_index = 0
+    while value >= 1024.0 and unit_index < len(units) - 1:
+        value /= 1024.0
+        unit_index += 1
+    if unit_index == 0:
+        return f"{int(value)} {units[unit_index]}"
+    return f"{value:.1f} {units[unit_index]}"
+
+
+def _node_overlay_text(context: _RenderPrepContext, node_id: int) -> str:
+    node = context.graph.nodes[node_id]
+    parts: list[str] = []
+    if node.shape is not None:
+        parts.append(f"shape={node.shape}")
+    memory_text = _format_memory_estimate(node.estimated_nbytes)
+    if memory_text is not None:
+        parts.append(memory_text)
+    return "\n".join(parts)
+
+
+def _edge_overlay_text(entry: _RenderedEdgeGeometry) -> str:
+    if entry.edge.bond_dimension is None:
+        return ""
+    return f"chi={entry.edge.bond_dimension}"
+
+
+def _draw_diagnostic_overlay(
+    *,
+    ax: Any,
+    context: _RenderPrepContext,
+) -> list[Artist]:
+    if not _resolved_diagnostics_config(context.config).show_overlay:
+        return []
+
+    before = len(ax.texts)
+    node_offset = float(context.params.r * 1.18)
+    for node_id in _render_visible_order(context):
+        overlay_text = _node_overlay_text(context, int(node_id))
+        if not overlay_text:
+            continue
+        position = np.asarray(context.positions[int(node_id)], dtype=float).copy()
+        if context.dimensions == 2:
+            position[1] += node_offset
+        else:
+            position[2] += node_offset
+        context.plotter.plot_text(
+            position,
+            overlay_text,
+            color="#475569",
+            fontsize=max(7.2, float(context.params.font_tensor_label_max) * 0.72),
+            ha="center",
+            va="bottom",
+            zorder=float(_ZORDER_LAYER_BASE + _ZORDER_LAYER_TENSOR_NAME),
+        )
+    for entry in context.edge_geometry_sink:
+        overlay_text = _edge_overlay_text(entry)
+        if not overlay_text:
+            continue
+        midpoint = np.mean(np.asarray(entry.polyline, dtype=float), axis=0)
+        context.plotter.plot_text(
+            midpoint,
+            overlay_text,
+            color="#334155",
+            fontsize=8.0,
+            ha="center",
+            va="center",
+            zorder=float(_ZORDER_LAYER_BASE + _ZORDER_LAYER_TENSOR_NAME),
+        )
+    return list(ax.texts[before:])
+
+
 def _prepare_render_context(
     *,
     ax: Any,
@@ -236,6 +318,7 @@ def _prepare_render_context(
         hover_edge_targets=hover_edge_targets,
         tensor_hover_by_node=tensor_hover_by_node,
         edge_geometry_sink=[],
+        diagnostic_artists=[],
         viewport_coords=pre_coords,
         view_margin=view_margin,
     )
@@ -348,6 +431,9 @@ def _draw_edges_nodes_and_labels(
         )
     if context.dimensions == 2:
         _register_2d_zoom_font_scaling(cast(Axes, ax))
+    object.__setattr__(
+        context, "diagnostic_artists", _draw_diagnostic_overlay(ax=ax, context=context)
+    )
     return coords
 
 
@@ -466,6 +552,7 @@ def _build_interactive_scene_state(
         hover_state=hover_state,
         tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
         edge_artists=edge_artists,
+        diagnostic_artists=list(context.diagnostic_artists),
     )
 
 

@@ -22,6 +22,7 @@ from ..config import PlotConfig
 from ._draw_common import _draw_graph
 from .contractions import _ContractionGroups, _group_contractions, _iter_contractions
 from .draw.constants import _CURVE_NEAR_PAIR_REF, _CURVE_OFFSET_FACTOR
+from .focus import filter_graph_for_focus
 from .graph import _GraphData
 from .graph_cache import _get_or_build_graph
 from .layout import (
@@ -504,17 +505,28 @@ def _plot_graph(
         dimensions=dimensions,
         seed=seed,
     )
+    draw_graph = filter_graph_for_focus(graph, style.focus)
+    draw_positions = {
+        node_id: geometry.positions[node_id]
+        for node_id in draw_graph.nodes
+        if node_id in geometry.positions
+    }
+    draw_directions = {
+        (node_id, axis_index): direction
+        for (node_id, axis_index), direction in geometry.directions.items()
+        if node_id in draw_graph.nodes
+    }
     _draw_graph(
         ax=resolved_ax,
-        graph=graph,
-        positions=geometry.positions,
-        directions=geometry.directions,
+        graph=draw_graph,
+        positions=draw_positions,
+        directions=draw_directions,
         show_tensor_labels=_resolve_flag(show_tensor_labels, style.show_tensor_labels),
         show_index_labels=_resolve_flag(show_index_labels, style.show_index_labels),
         config=style,
         dimensions=dimensions,
         scale=geometry.scale,
-        contraction_groups=geometry.contraction_groups,
+        contraction_groups=_group_contractions(draw_graph),
         bond_curve_pad=geometry.bond_curve_pad,
         build_contraction_controls=build_contraction_controls,
         contraction_controls_build_ui=contraction_controls_build_ui,

@@ -14,7 +14,11 @@ import pytest
 from plotting_helpers import assert_readable_image, assert_rendered_figure
 from tensor_network_viz import (
     PlotConfig,
+    TensorAnalysisConfig,
     TensorComparisonConfig,
+    TensorElementsConfig,
+    TensorNetworkDiagnosticsConfig,
+    TensorNetworkFocus,
     export_tensor_network_snapshot,
     normalize_tensor_network,
     show_tensor_comparison,
@@ -43,6 +47,8 @@ def test_plot_config_has_expected_defaults() -> None:
     assert config.tensor_label_refinement == "auto"
     assert config.approximate_3d_tensor_disk_px is True
     assert config.hover_labels is True
+    assert config.diagnostics is None
+    assert config.focus is None
 
 
 def test_plot_config_public_signature_orders_modes_before_detail() -> None:
@@ -56,6 +62,8 @@ def test_plot_config_public_signature_orders_modes_before_detail() -> None:
         "show_contraction_scheme",
         "contraction_scheme_cost_hover",
         "contraction_tensor_inspector",
+        "diagnostics",
+        "focus",
         "tensor_label_refinement",
         "approximate_3d_tensor_disk_px",
         "figsize",
@@ -99,6 +107,8 @@ def test_effective_layout_iterations_auto_scales_below_default_for_small_graphs(
 def test_plot_config_accepts_overrides() -> None:
     config = PlotConfig(
         show_tensor_labels=False,
+        diagnostics=TensorNetworkDiagnosticsConfig(show_overlay=True),
+        focus=TensorNetworkFocus(kind="neighborhood", center="A", radius=2),
         figsize=(10, 5),
         layout_iterations=100,
         tensor_label_fontsize=13.0,
@@ -111,6 +121,32 @@ def test_plot_config_accepts_overrides() -> None:
     assert config.tensor_label_fontsize == pytest.approx(13.0)
     assert config.edge_label_fontsize == pytest.approx(11.0)
     assert config.tensor_label_refinement == "never"
+    assert config.diagnostics == TensorNetworkDiagnosticsConfig(show_overlay=True)
+    assert config.focus == TensorNetworkFocus(kind="neighborhood", center="A", radius=2)
+
+
+def test_tensor_elements_config_accepts_analysis_overrides() -> None:
+    config = TensorElementsConfig(
+        mode="slice",
+        analysis=TensorAnalysisConfig(
+            slice_axis="row",
+            slice_index=1,
+            reduce_axes=("col",),
+            reduce_method="norm",
+            profile_axis="row",
+            profile_method="mean",
+        ),
+    )
+
+    assert config.mode == "slice"
+    assert config.analysis == TensorAnalysisConfig(
+        slice_axis="row",
+        slice_index=1,
+        reduce_axes=("col",),
+        reduce_method="norm",
+        profile_axis="row",
+        profile_method="mean",
+    )
 
 
 def test_show_tensor_network_public_signature_is_config_centric() -> None:
