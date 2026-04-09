@@ -320,6 +320,13 @@ If you want to start in a specific grouped view, pass `mode="real"`, `mode="imag
 `mode="signed_value"`, `mode="singular_values"`, `mode="eigen_real"`, `mode="eigen_imag"`,
 `mode="slice"`, `mode="reduce"`, or `mode="profiles"` directly in `TensorElementsConfig(...)`.
 
+For the analytical views, keep this mental model:
+
+- `slice` fixes one axis at one index and removes that axis from the result.
+- `reduce` collapses the checked axes with `mean` or `norm`, so you see the axes that were not
+  checked.
+- `profiles` keeps one axis as a 1D curve and reduces the other surviving axes.
+
 ## Most Common Workflows
 
 ### Interactive figure with controls

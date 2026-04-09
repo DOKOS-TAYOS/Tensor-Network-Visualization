@@ -291,6 +291,70 @@ heatmap. Use `mode="reduce"` to collapse selected axes with `mean` or `norm`, an
 tray adds contextual widgets for the active analytical mode and falls back cleanly when you move
 between tensors with different ranks or axis names.
 
+### How to read the `analysis` group
+
+The analytical modes are different from `elements`, `magnitude`, `real`, and the other display
+families. Those modes mostly change how the current tensor is painted. The `analysis` group first
+derives a new tensor view from the active tensor and only then renders the result.
+
+Suppose the active tensor has shape `(2, 3, 4)` and axis names `("row", "mid", "col")`.
+
+- `slice` fixes one axis at one index and removes that axis from the result. For example,
+  `slice_axis="mid", slice_index=1` means "show `tensor[:, 1, :]`".
+- `reduce` optionally reuses the current slice, then collapses the selected remaining axes with
+  `mean` or `norm`. For example, `reduce_axes=("col",), reduce_method="mean"` means "average over
+  `col`".
+- `profiles` optionally reuses the current slice, keeps one remaining axis, and reduces every other
+  remaining axis into a single value per index of that axis. For example,
+  `profile_axis="mid", profile_method="norm"` means "one value for each `mid` index, computed from
+  the norm over the other axes".
+
+If you open `reduce` or `profiles` without choosing a slice first, they operate on the full tensor.
+If you already selected a slice in interactive mode, the same slice stays active when you switch to
+`reduce` or `profiles`. That is why the title can include text such as `after phys=0`.
+
+For complex tensors, `reduce` and `profiles` work on `|x|` rather than on raw complex values. The
+`slice` mode keeps the selected entries, but its default heatmap uses magnitude for complex tensors.
+
+### What each control means
+
+- In `slice`, the radio buttons choose which axis to fix, and the slider chooses the index along
+  that axis.
+- In `reduce`, the checkboxes choose which surviving axes to collapse. The `mean` method computes a
+  NaN-safe average over those axes. The `norm` method computes a NaN-safe Euclidean norm over those
+  axes.
+- In `profiles`, the radio buttons choose the axis that stays on the horizontal axis of the line
+  plot. The `mean` or `norm` selector then reduces every other surviving axis.
+
+Here, "surviving axes" means the axes that remain after any active slice has been applied.
+
+In other words, the controls in `reduce` select the axes to collapse, not the axes to keep. If the
+surviving axes after slicing are `(row, col)` and you check only `col`, the plot keeps `row`
+visible and summarizes `col`. If you check both `row` and `col`, the result becomes scalar.
+
+### What you are seeing on screen
+
+- If the analytical result has exactly 2 axes, the heatmap is direct: one axis maps to rows and the
+  other maps to columns.
+- If the result still has more than 2 axes, the viewer matrixizes it before drawing. Some remaining
+  axes are grouped into rows and the rest into columns.
+- If the result has only 1 axis, heatmap-based analytical views show it as a thin 2D matrix, while
+  `profiles` shows it as a 1D line.
+
+You can control that matrixization with `row_axes` and `col_axes` in `TensorElementsConfig(...)`.
+If you do not specify them, the library chooses a deterministic balanced split automatically.
+
+This means that, for high-rank tensors, one cell of the heatmap may represent a combination of
+several indices rather than a single original axis position. The analytical mode still tells you
+which operation was applied first; `row_axes` and `col_axes` only decide how the remaining result is
+laid out as a 2D view.
+
+### Quick mental model
+
+- `slice`: "show me one section of the tensor"
+- `reduce`: "summarize these axes"
+- `profiles`: "give me one curve along this axis"
+
 ## Common Workflows
 
 ### 1. Explore interactively

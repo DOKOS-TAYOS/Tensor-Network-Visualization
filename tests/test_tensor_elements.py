@@ -1703,6 +1703,52 @@ def test_show_tensor_elements_analysis_modes_build_contextual_controls() -> None
     assert_rendered_figure(fig, ax)
 
 
+def test_show_tensor_elements_slice_slider_keeps_widget_while_updating() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="WidgetSliceDrag",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 3)
+    assert controller._analysis_slider is not None
+    slice_slider = controller._analysis_slider
+
+    _click_radio_label(controller._analysis_axis_radio, 1)
+    assert controller._analysis_slider is not None
+    slice_slider = controller._analysis_slider
+    slice_slider.set_val(2.0)
+
+    assert_rendered_figure(fig, ax)
+    assert controller._analysis_slider is slice_slider
+    assert float(controller._analysis_slider.val) == pytest.approx(2.0)
+    assert np.allclose(np.asarray(ax.images[0].get_array(), dtype=float), tensor.tensor[:, 2, :])
+
+
+def test_show_tensor_elements_slice_slider_uses_wider_layout_and_label_gap() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="WidgetSliceLayout",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 3)
+
+    assert_rendered_figure(fig, ax)
+    assert controller._analysis_slider_ax is not None
+    assert controller._analysis_slider is not None
+    assert controller._analysis_slider_ax.get_position().bounds == pytest.approx(
+        (0.66, 0.135, 0.30, 0.05)
+    )
+    assert controller._analysis_slider.label.get_position() == pytest.approx((-0.05, 0.5))
+
+
 def test_show_tensor_elements_analysis_controls_fall_back_when_slider_changes_rank() -> None:
     tensors = [
         DummyTensorNetworkNode(

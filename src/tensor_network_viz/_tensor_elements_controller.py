@@ -51,12 +51,13 @@ _TENSOR_SLIDER_BOUNDS: Final[tuple[float, float, float, float]] = (0.48, 0.045, 
 _ANALYSIS_AXIS_BOUNDS: Final[tuple[float, float, float, float]] = (0.42, 0.122, 0.16, 0.105)
 _ANALYSIS_CHECK_BOUNDS: Final[tuple[float, float, float, float]] = (0.42, 0.108, 0.18, 0.125)
 _ANALYSIS_METHOD_BOUNDS: Final[tuple[float, float, float, float]] = (0.61, 0.122, 0.13, 0.105)
-_ANALYSIS_SLIDER_BOUNDS: Final[tuple[float, float, float, float]] = (0.76, 0.135, 0.2, 0.05)
+_ANALYSIS_SLIDER_BOUNDS: Final[tuple[float, float, float, float]] = (0.66, 0.135, 0.3, 0.05)
 _TENSOR_ELEMENTS_CONTROLS_BOTTOM: Final[float] = 0.31
 _INTERACTIVE_LABEL_PROPS: Final[dict[str, Sequence[Any]]] = {"fontsize": [9.5]}
 _INTERACTIVE_CHECK_FRAME_PROPS: Final[dict[str, float]] = {"s": 44.0, "linewidth": 0.9}
 _INTERACTIVE_CHECK_MARK_PROPS: Final[dict[str, float]] = {"s": 34.0, "linewidth": 1.0}
 _INTERACTIVE_RADIO_PROPS: Final[dict[str, float]] = {"s": 38.0, "linewidth": 0.9}
+_ANALYSIS_SLIDER_LABEL_X: Final[float] = -0.05
 _SLIDER_ACTIVE_COLOR: Final[str] = "#0369A1"
 _PLACEHOLDER_TEXT_BOX: Final[dict[str, Any]] = {
     "boxstyle": "round,pad=0.45",
@@ -142,10 +143,11 @@ class _TensorElementsFigureController:
             config=self._config,
         )
 
-    def _sync_controls_after_render(self) -> None:
+    def _sync_controls_after_render(self, *, rebuild_analysis_controls: bool = True) -> None:
         self._sync_group_radio_active()
         self._sync_mode_radio_active()
-        self._rebuild_analysis_controls()
+        if rebuild_analysis_controls:
+            self._rebuild_analysis_controls()
         self._sync_slider_label()
 
     def _maybe_redraw(self, *, redraw: bool) -> None:
@@ -356,6 +358,7 @@ class _TensorElementsFigureController:
                 valstep=1,
                 color=_SLIDER_ACTIVE_COLOR,
             )
+            self._analysis_slider.label.set_x(_ANALYSIS_SLIDER_LABEL_X)
             self._analysis_slider.on_changed(self._on_analysis_slider_changed)
             return
 
@@ -413,10 +416,16 @@ class _TensorElementsFigureController:
     def _clear_analysis_caches(self) -> None:
         self._reset_payload_caches()
 
-    def _set_analysis(self, analysis: TensorAnalysisConfig, *, redraw: bool = True) -> None:
+    def _set_analysis(
+        self,
+        analysis: TensorAnalysisConfig,
+        *,
+        redraw: bool = True,
+        rebuild_analysis_controls: bool = True,
+    ) -> None:
         self._analysis = analysis
         self._clear_analysis_caches()
-        self._render_current(redraw=redraw)
+        self._render_current(redraw=redraw, rebuild_analysis_controls=rebuild_analysis_controls)
 
     def _on_analysis_axis_clicked(self, label: str | None) -> None:
         if label is None or self._analysis_axis_callback_guard:
@@ -453,7 +462,10 @@ class _TensorElementsFigureController:
     def _on_analysis_slider_changed(self, value: float) -> None:
         if self._analysis_slider_callback_guard:
             return
-        self._set_analysis(replace(self._analysis, slice_index=int(round(value))))
+        self._set_analysis(
+            replace(self._analysis, slice_index=int(round(value))),
+            rebuild_analysis_controls=False,
+        )
 
     def _on_group_clicked(self, label: str | None) -> None:
         if label is None or self._group_callback_guard:
@@ -470,7 +482,7 @@ class _TensorElementsFigureController:
             return
         self.set_tensor_index(int(round(value)))
 
-    def _render_current(self, *, redraw: bool) -> None:
+    def _render_current(self, *, redraw: bool, rebuild_analysis_controls: bool = True) -> None:
         resolved_mode, payload = self._payload_for_current()
         _render_panel(
             self._panel,
@@ -479,7 +491,7 @@ class _TensorElementsFigureController:
             payload=payload,
         )
         self._mode = resolved_mode
-        self._sync_controls_after_render()
+        self._sync_controls_after_render(rebuild_analysis_controls=rebuild_analysis_controls)
         self._maybe_redraw(redraw=redraw)
 
     def _payload_for_current(self) -> tuple[str, _TensorElementsPayload]:
