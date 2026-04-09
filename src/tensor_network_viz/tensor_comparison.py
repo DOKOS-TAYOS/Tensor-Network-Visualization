@@ -81,6 +81,7 @@ def _build_comparison_controller(
         )
     controller = _TensorElementsFigureController(
         config=config,
+        controls_layout=None,
         figure=figure,
         panel=panel,
         records=[record],

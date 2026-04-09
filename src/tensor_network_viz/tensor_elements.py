@@ -10,6 +10,7 @@ from matplotlib.figure import Figure
 
 from ._logging import package_logger
 from ._tensor_elements_controller import (
+    _TensorElementsControlsLayout,
     _TensorElementsFigureController,
     _TensorPayloadCacheEntry,
 )
@@ -35,6 +36,7 @@ def _show_tensor_records(
     records: list[Any],
     *,
     config: TensorElementsConfig,
+    controls_layout: _TensorElementsControlsLayout | None = None,
     ax: Axes | None,
     show_controls: bool,
     show: bool,
@@ -64,6 +66,7 @@ def _show_tensor_records(
     )
     controller = _TensorElementsFigureController(
         config=config,
+        controls_layout=controls_layout,
         figure=figure,
         panel=panel,
         records=records,

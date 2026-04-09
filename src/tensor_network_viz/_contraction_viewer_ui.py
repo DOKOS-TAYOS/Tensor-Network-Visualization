@@ -8,7 +8,9 @@ from matplotlib.figure import Figure
 from matplotlib.text import Text
 from matplotlib.widgets import Button, Slider
 
-_PLAYBACK_DETAILS_BOUNDS: tuple[float, float, float, float] = (0.25, 0.116, 0.68, 0.12)
+from ._widgets import _SafeSlider
+
+_PLAYBACK_DETAILS_BOUNDS: tuple[float, float, float, float] = (0.23, 0.116, 0.7, 0.12)
 # Top of the cost / step-details axis; interactive chrome (checkboxes, 2d/3d) aligns to this y.
 _PLAYBACK_DETAILS_TOP: float = _PLAYBACK_DETAILS_BOUNDS[1] + _PLAYBACK_DETAILS_BOUNDS[3]
 # Aligned with the top of the cost / scheme chrome (no extra gap above the widgets).
@@ -82,7 +84,7 @@ def create_playback_slider(
     initial_step: int,
 ) -> Slider:
     ax_slider = fig.add_axes(_PLAYBACK_SLIDER_BOUNDS)
-    return Slider(
+    return _SafeSlider(
         ax_slider,
         "Step",
         0,

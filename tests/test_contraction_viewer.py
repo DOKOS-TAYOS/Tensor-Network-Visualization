@@ -56,6 +56,17 @@ def _click_button(button: Button) -> None:
     button._release(release)
 
 
+def _press_slider(slider: Slider, *, fraction: float = 0.5) -> None:
+    fig = slider.ax.figure
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    bbox = slider.ax.get_window_extent(renderer)
+    x = int(round(bbox.x0 + float(fraction) * (bbox.x1 - bbox.x0)))
+    y = int(round((bbox.y0 + bbox.y1) / 2.0))
+    press = MouseEvent("button_press_event", fig.canvas, x, y, button=MouseButton.LEFT)
+    fig.canvas.callbacks.process("button_press_event", press)
+
+
 def _collections_with_gid(
     ax: matplotlib.axes.Axes | matplotlib.axes.Axes,
     gid: str,
@@ -136,6 +147,24 @@ def test_enable_playback_true_creates_slider_and_buttons() -> None:
     main_bounds = ax.get_position().bounds
     assert slider_bounds[2] <= 0.48
     assert main_bounds[1] >= 0.22
+
+
+def test_playback_slider_releases_stale_mouse_grabber_before_drag() -> None:
+    fig, ax = matplotlib.pyplot.subplots()
+    r = Rectangle((0, 0), 1, 1)
+    ax.add_patch(r)
+    stale_ax = fig.add_axes((0.9, 0.9, 0.05, 0.05))
+    stale_ax.set_visible(False)
+    v = ContractionViewer2D([r], fig=fig, ax=ax, enable_playback=True)
+    v.build_ui()
+
+    assert v.slider is not None
+    fig.canvas.grab_mouse(stale_ax)
+    assert fig.canvas.mouse_grabber is stale_ax
+
+    _press_slider(v.slider)
+
+    assert fig.canvas.mouse_grabber is v.slider.ax
 
 
 def test_plot_graph_contraction_scheme_adds_widgets() -> None:

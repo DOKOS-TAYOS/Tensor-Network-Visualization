@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import replace
 from typing import Any, Literal, cast
 
@@ -55,6 +56,27 @@ from .views import _InteractiveViewManager
 
 RenderedAxes = Axes | Axes3D
 _FocusMode = Literal["neighborhood", "path"]
+
+
+def _release_canvas_mouse_grabber(
+    figure: Figure | None,
+    *,
+    target_axes: object | None = None,
+) -> None:
+    if figure is None:
+        return
+    canvas = getattr(figure, "canvas", None)
+    if canvas is None:
+        return
+    mouse_grabber = getattr(canvas, "mouse_grabber", None)
+    if mouse_grabber is None:
+        return
+    if target_axes is not None and mouse_grabber is not target_axes:
+        return
+    release_mouse = getattr(canvas, "release_mouse", None)
+    if callable(release_mouse):
+        with suppress(AttributeError, RuntimeError, TypeError, ValueError):
+            release_mouse(mouse_grabber)
 
 
 def _node_records_by_name(
@@ -453,6 +475,7 @@ class _InteractiveTensorFigureController:
         self._desired_state = requested_state
         self._active_state = requested_state
         if diagnostics_changed:
+            _release_canvas_mouse_grabber(self.figure, target_axes=self.current_scene.ax)
             scene = self._rerender_cached_views()
             self._apply_scene_state(scene)
             set_active_axes(scene.ax.figure, scene.ax)

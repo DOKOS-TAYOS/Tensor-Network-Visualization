@@ -19,7 +19,7 @@ _INTERACTIVE_MENU_COLUMN_BOTTOM: float = 0.236 - _INTERACTIVE_MENU_COLUMN_HEIGHT
 _INTERACTIVE_CHECKBOX_AXES_BOUNDS: tuple[float, float, float, float] = (
     0.02,
     _INTERACTIVE_MENU_COLUMN_BOTTOM,
-    0.19,
+    0.21,
     _INTERACTIVE_MENU_COLUMN_HEIGHT,
 )
 _VIEW_TOGGLE_GAP: float = 0.008
@@ -37,7 +37,7 @@ _BASE_TOGGLE_LABELS: tuple[str, str, str, str] = (
 )
 _SCHEME_TOGGLE_LABELS: tuple[str, str] = ("Scheme", "Costs")
 _TENSOR_INSPECTOR_LABEL: str = "Tensor inspector"
-_DIAGNOSTICS_LABEL: str = "Diagnostics"
+_DIAGNOSTICS_LABEL: str = "Dimensions"
 _INTERACTIVE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _INTERACTIVE_CHECK_MARK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}

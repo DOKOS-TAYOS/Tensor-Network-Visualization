@@ -1986,9 +1986,65 @@ def test_show_tensor_elements_slider_uses_thicker_control_height() -> None:
 
     assert_rendered_figure(fig, ax)
     assert controller._slider_ax is not None
+    assert controller._slider is not None
     slider_bounds = controller._slider_ax.get_position().bounds
 
-    assert slider_bounds == pytest.approx((0.48, 0.045, 0.38, 0.065))
+    assert slider_bounds == pytest.approx((0.48, 0.01, 0.38, 0.055))
+    assert controller._slider.label.get_position() == pytest.approx((-0.075, 0.5))
+
+
+def test_show_tensor_elements_analysis_axis_controls_stretch_left_and_down() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="WidgetAxisStretch",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 3)
+
+    assert_rendered_figure(fig, ax)
+    assert controller._mode_radio_ax is not None
+    assert controller._analysis_axis_ax is not None
+
+    mode_bounds = controller._mode_radio_ax.get_position().bounds
+    axis_bounds = controller._analysis_axis_ax.get_position().bounds
+    mode_right = mode_bounds[0] + mode_bounds[2]
+
+    assert axis_bounds[0] >= mode_right - 0.005
+    assert axis_bounds[0] - mode_right <= 0.01
+    assert axis_bounds[2] >= 0.20
+    assert axis_bounds[3] >= 0.15
+
+
+def test_show_tensor_elements_reduce_axis_controls_stretch_left_and_down() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="WidgetReduceStretch",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 3)
+    _click_radio_label(controller._mode_radio, 1)
+
+    assert_rendered_figure(fig, ax)
+    assert controller._mode_radio_ax is not None
+    assert controller._analysis_check_ax is not None
+    assert controller._slider_ax is None
+
+    mode_bounds = controller._mode_radio_ax.get_position().bounds
+    check_bounds = controller._analysis_check_ax.get_position().bounds
+    mode_right = mode_bounds[0] + mode_bounds[2]
+
+    assert check_bounds[0] >= mode_right - 0.005
+    assert check_bounds[0] - mode_right <= 0.01
+    assert check_bounds[2] >= 0.21
+    assert check_bounds[3] >= 0.16
 
 
 def test_show_tensor_elements_widgets_switch_group_then_mode() -> None:

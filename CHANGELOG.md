@@ -15,7 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Interactive controls:** the network viewer now exposes `Diagnostics` and focus controls in the Matplotlib tray, and tensor-element figures add contextual analysis widgets that adapt to the current mode and active tensor.
+- **Interactive controls:** the network viewer now exposes `Dimensions` and focus controls in the Matplotlib tray, uses a compact `2D/3D` toggle button, and keeps the bottom control trays more tightly aligned when scheme costs are shown.
+- **Tensor inspector controls:** the linked inspector now uses a more compact comparison/header strip (`Current/Reference`, capture, clear), adds button hover tooltips, and opens with a wider layout so comparison and analysis controls do not collide.
+- **Tensor-element analysis layout:** tensor-element figures now place the tensor slider lower, give analysis axis selectors more room, and let inspector-linked figures use a dedicated controls layout instead of the default compact arrangement.
+
+### Fixed
+
+- **Tensor inspector activation:** clicking a tensor no longer opens the tensor inspector unless the `Tensor inspector` toggle is enabled.
+- **Matplotlib slider interactions:** playback, tensor, and analysis sliders now release stale mouse grabs first, avoiding `Another Axes already grabs mouse input` errors after 3D navigation or view refreshes.
+- **Inspector button tooltips:** the `Capture reference` and `Clear reference` hover labels are now anchored to their buttons instead of appearing noticeably offset.
 
 ## [1.5.3] — 2026-04-07
 

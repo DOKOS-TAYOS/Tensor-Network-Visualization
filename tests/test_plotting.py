@@ -54,8 +54,12 @@ from tensor_network_viz._core.graph import (
     _make_node,
 )
 from tensor_network_viz._core.renderer import _plot_graph
+from tensor_network_viz._interaction.tensor_inspector import _INSPECTOR_TENSOR_ELEMENTS_LAYOUT
 from tensor_network_viz._matplotlib_state import get_scene
+from tensor_network_viz._tensor_elements_support import _TensorRecord
 from tensor_network_viz.einsum_module.trace import pair_tensor
+from tensor_network_viz.tensor_elements import _show_tensor_records
+from tensor_network_viz.tensor_elements_config import TensorElementsConfig
 from tensor_network_viz.tensorkrowch import (
     plot_tensorkrowch_network_2d,
     plot_tensorkrowch_network_3d,
@@ -139,6 +143,23 @@ def _click_button(button: Any) -> None:
     press = MouseEvent("button_press_event", fig.canvas, x, y, button=MouseButton.LEFT)
     release = MouseEvent("button_release_event", fig.canvas, x, y, button=MouseButton.LEFT)
     fig.canvas.callbacks.process("button_press_event", press)
+    fig.canvas.callbacks.process("button_release_event", release)
+
+
+def _drag_slider_to_value(slider: Any, value: float) -> None:
+    fig = slider.ax.figure
+    fig.canvas.draw()
+    bbox = slider.ax.get_window_extent(fig.canvas.get_renderer())
+    span = float(slider.valmax) - float(slider.valmin)
+    fraction = 0.0 if span <= 0.0 else (float(value) - float(slider.valmin)) / span
+    fraction = min(max(fraction, 0.0), 1.0)
+    x = int(round(bbox.x0 + fraction * (bbox.x1 - bbox.x0)))
+    y = int(round((bbox.y0 + bbox.y1) / 2.0))
+    press = MouseEvent("button_press_event", fig.canvas, x, y, button=MouseButton.LEFT)
+    motion = MouseEvent("motion_notify_event", fig.canvas, x, y, button=MouseButton.LEFT)
+    release = MouseEvent("button_release_event", fig.canvas, x, y, button=MouseButton.LEFT)
+    fig.canvas.callbacks.process("button_press_event", press)
+    fig.canvas.callbacks.process("motion_notify_event", motion)
     fig.canvas.callbacks.process("button_release_event", release)
 
 
@@ -230,6 +251,23 @@ def _build_einsum_trace_for_comparison_inspector() -> tuple[EinsumTrace, np.ndar
     r1 = einsum("ac,cd->ad", r0, right, trace=trace, backend="numpy")
     trace._test_keepalive = [left, mid, right, r0, r1]  # type: ignore[attr-defined]
     return trace, np.asarray(r0), np.asarray(r1)
+
+
+def _records_for_inspector_slider_layout() -> list[_TensorRecord]:
+    return [
+        _TensorRecord(
+            array=np.arange(6, dtype=float).reshape(2, 3),
+            name="Tensor 1",
+            axis_names=("left", "right"),
+            engine="tensornetwork",
+        ),
+        _TensorRecord(
+            array=(np.arange(6, dtype=float).reshape(2, 3) + 10.0),
+            name="Tensor 2",
+            axis_names=("left", "right"),
+            engine="tensornetwork",
+        ),
+    ]
 
 
 def connect(
@@ -1186,7 +1224,7 @@ def test_show_tensor_network_scheme_and_cost_hover_keep_visual_checkboxes_in_syn
     assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
         "Scheme",
         "Costs",
-        "Diagnostics",
+        "Dimensions",
     ]
     scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
     cost_index = _checkbutton_index(controls._checkbuttons, "Costs")
@@ -1206,7 +1244,7 @@ def test_show_tensor_network_scheme_and_cost_hover_keep_visual_checkboxes_in_syn
     assert controls.cost_hover_on is True
 
 
-def test_show_tensor_network_scheme_with_diagnostics_supports_slider_updates() -> None:
+def test_show_tensor_network_cost_panel_touches_hover_menu_right_edge() -> None:
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
@@ -1214,6 +1252,42 @@ def test_show_tensor_network_scheme_with_diagnostics_supports_slider_updates() -
     fig, _ax = show_tensor_network(
         DummyNetwork(nodes=[left, right]),
         engine="tensorkrowch",
+        config=PlotConfig(
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._check_ax is not None
+    assert controls._checkbuttons is not None
+    cost_index = _checkbutton_index(controls._checkbuttons, "Costs")
+
+    _click_checkbutton(controls._checkbuttons, cost_index)
+
+    scene_controls = controls.current_scene.contraction_controls
+    assert scene_controls is not None
+    assert scene_controls._viewer is not None
+    assert scene_controls._viewer._cost_panel_ax is not None
+
+    hover_menu_bounds = controls._check_ax.get_position().bounds
+    cost_panel_bounds = scene_controls._viewer._cost_panel_ax.get_position().bounds
+    hover_menu_right = hover_menu_bounds[0] + hover_menu_bounds[2]
+
+    assert hover_menu_bounds[2] >= 0.21
+    assert cost_panel_bounds[0] == pytest.approx(hover_menu_right)
+
+
+def test_show_tensor_network_3d_dimensions_rerender_keeps_scheme_slider_interactive() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        view="3d",
         config=PlotConfig(
             diagnostics=TensorNetworkDiagnosticsConfig(show_overlay=True),
             contraction_scheme_by_name=(("A", "B"),),
@@ -1224,10 +1298,14 @@ def test_show_tensor_network_scheme_with_diagnostics_supports_slider_updates() -
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
+    assert getattr(controls.current_scene.ax, "name", None) == "3d"
     scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
-    diagnostics_index = _checkbutton_index(controls._checkbuttons, "Diagnostics")
+    dimensions_index = _checkbutton_index(controls._checkbuttons, "Dimensions")
 
-    _click_checkbutton(controls._checkbuttons, diagnostics_index)
+    fig.canvas.grab_mouse(controls.current_scene.ax)
+
+    _click_checkbutton(controls._checkbuttons, dimensions_index)
+    assert getattr(fig.canvas, "mouse_grabber", None) is None
     _click_checkbutton(controls._checkbuttons, scheme_index)
 
     scene_controls = controls.current_scene.contraction_controls
@@ -1235,8 +1313,8 @@ def test_show_tensor_network_scheme_with_diagnostics_supports_slider_updates() -
     assert scene_controls._viewer is not None
     assert scene_controls._viewer.slider is not None
 
-    scene_controls._viewer.slider.set_val(1.0)
-    scene_controls._viewer.slider.set_val(0.0)
+    _drag_slider_to_value(scene_controls._viewer.slider, 1.0)
+    _drag_slider_to_value(scene_controls._viewer.slider, 0.0)
 
     assert scene_controls._viewer.current_step == 0
 
@@ -1353,7 +1431,7 @@ def test_show_tn_einsum_trace_inspector_checkbox_keeps_scheme_off() -> None:
         "Scheme",
         "Costs",
         "Tensor inspector",
-        "Diagnostics",
+        "Dimensions",
     ]
     scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
     inspector_index = _checkbutton_index(controls._checkbuttons, "Tensor inspector")
@@ -1429,7 +1507,7 @@ def test_non_playback_tensorkrowch_inputs_hide_tensor_inspector_checkbox() -> No
     assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
         "Scheme",
         "Costs",
-        "Diagnostics",
+        "Dimensions",
     ]
     assert "Tensor inspector" not in [label.get_text() for label in controls._checkbuttons.labels]
 
@@ -1459,7 +1537,7 @@ def test_non_playback_tensorkrowch_inputs_show_tensor_inspector_when_tensors_are
         "Scheme",
         "Costs",
         "Tensor inspector",
-        "Diagnostics",
+        "Dimensions",
     ]
 
 
@@ -1567,7 +1645,7 @@ def test_clicking_a_visible_tensor_opens_shared_inspector_when_checkbox_is_on() 
     assert controls.tensor_inspector_on is True
 
 
-def test_tensor_inspector_reuses_compact_tensor_elements_selector_layout() -> None:
+def test_tensor_inspector_uses_wider_left_compare_layout() -> None:
     trace = _build_einsum_trace_for_inspector()
 
     fig, _ax = show_tensor_network(
@@ -1587,25 +1665,26 @@ def test_tensor_inspector_reuses_compact_tensor_elements_selector_layout() -> No
     assert inspector_controls is not None
     assert inspector_controls._group_radio_ax is not None
     assert inspector_controls._mode_radio_ax is not None
-    assert inspector_controls._group_radio_ax.get_position().bounds == pytest.approx(
-        (0.02, 0.04, 0.15, 0.145)
-    )
-    assert inspector_controls._mode_radio_ax.get_position().bounds == pytest.approx(
-        (0.175, 0.028, 0.21, 0.16)
-    )
+    assert inspector._compare_radio is not None
+    assert inspector._figure.get_size_inches()[0] > 7.2
     assert inspector._compare_toggle_button is not None
     assert inspector._capture_reference_button is not None
     assert inspector._clear_reference_button is not None
 
+    compare_selector_bounds = inspector._compare_radio.ax.get_position().bounds
     compare_bounds = inspector._compare_toggle_button.ax.get_position().bounds
     capture_bounds = inspector._capture_reference_button.ax.get_position().bounds
     clear_bounds = inspector._clear_reference_button.ax.get_position().bounds
     group_bounds = inspector_controls._group_radio_ax.get_position().bounds
-    group_top = group_bounds[1] + group_bounds[3]
+    mode_bounds = inspector_controls._mode_radio_ax.get_position().bounds
+    compare_top = compare_selector_bounds[1] + compare_selector_bounds[3]
+    compare_right = compare_selector_bounds[0] + compare_selector_bounds[2]
 
-    assert compare_bounds[0] == pytest.approx(group_bounds[0], abs=0.005)
-    assert compare_bounds[1] >= group_top
-    assert compare_bounds[1] - group_top <= 0.01
+    assert compare_right <= group_bounds[0] + 0.01
+    assert mode_bounds[0] > group_bounds[0]
+    assert compare_bounds[0] == pytest.approx(compare_selector_bounds[0], abs=0.005)
+    assert compare_bounds[1] >= compare_top
+    assert compare_bounds[1] - compare_top <= 0.02
     assert compare_bounds[2] <= 0.12
     assert compare_bounds[3] <= 0.06
     assert capture_bounds[1] == pytest.approx(compare_bounds[1], abs=0.005)
@@ -1614,6 +1693,64 @@ def test_tensor_inspector_reuses_compact_tensor_elements_selector_layout() -> No
     assert clear_bounds[0] > capture_bounds[0] + capture_bounds[2] - 0.01
     assert inspector._capture_reference_button.label.get_text() == "⌖"
     assert inspector._clear_reference_button.label.get_text() == "x"
+
+
+def test_tensor_inspector_layout_moves_tensor_slider_lower_with_more_label_gap() -> None:
+    fig, _ax, controller = _show_tensor_records(
+        _records_for_inspector_slider_layout(),
+        config=TensorElementsConfig(figsize=(8.8, 6.4)),
+        controls_layout=_INSPECTOR_TENSOR_ELEMENTS_LAYOUT,
+        ax=None,
+        show_controls=True,
+        show=False,
+    )
+
+    assert controller._mode_radio_ax is not None
+    assert controller._slider_ax is not None
+    assert controller._slider is not None
+
+    mode_bounds = controller._mode_radio_ax.get_position().bounds
+    slider_bounds = controller._slider_ax.get_position().bounds
+
+    assert slider_bounds[1] <= mode_bounds[1] - 0.015
+    assert controller._slider.label.get_position()[0] <= -0.075
+
+    plt.close(fig)
+
+
+def test_tensor_inspector_analysis_axis_layout_expands_left_and_down_without_hitting_slider() -> (
+    None
+):
+    fig, _ax, controller = _show_tensor_records(
+        _records_for_inspector_slider_layout(),
+        config=TensorElementsConfig(figsize=(8.8, 6.4)),
+        controls_layout=_INSPECTOR_TENSOR_ELEMENTS_LAYOUT,
+        ax=None,
+        show_controls=True,
+        show=False,
+    )
+
+    controller.set_group("analysis")
+    controller.set_mode("slice")
+
+    assert controller._mode_radio_ax is not None
+    assert controller._analysis_axis_ax is not None
+    assert controller._slider_ax is not None
+
+    mode_bounds = controller._mode_radio_ax.get_position().bounds
+    analysis_bounds = controller._analysis_axis_ax.get_position().bounds
+    slider_bounds = controller._slider_ax.get_position().bounds
+    mode_right = mode_bounds[0] + mode_bounds[2]
+    slider_top = slider_bounds[1] + slider_bounds[3]
+
+    assert analysis_bounds[0] >= mode_right - 0.005
+    assert analysis_bounds[0] - mode_right <= 0.01
+    assert analysis_bounds[1] >= slider_top
+    assert analysis_bounds[1] - slider_top <= 0.02
+    assert analysis_bounds[2] >= 0.20
+    assert analysis_bounds[3] >= 0.159
+
+    plt.close(fig)
 
 
 def test_tensor_inspector_reference_action_buttons_show_hover_tooltips() -> None:

@@ -29,6 +29,7 @@ from ._tensor_elements_support import (
     _valid_group_modes_for_record,
 )
 from ._ui_utils import _reserve_figure_bottom, _style_control_tray_axes
+from ._widgets import _SafeSlider
 from .tensor_elements_config import TensorAnalysisConfig, TensorElementsConfig, TensorElementsMode
 
 TensorElementsGroup = Literal["basic", "complex", "diagnostic", "analysis"]
@@ -47,9 +48,9 @@ _GROUP_OPTIONS: Final[tuple[TensorElementsGroup, ...]] = (
 )
 _GROUP_SELECTOR_BOUNDS: Final[tuple[float, float, float, float]] = (0.02, 0.04, 0.15, 0.145)
 _MODE_SELECTOR_BOUNDS: Final[tuple[float, float, float, float]] = (0.175, 0.028, 0.21, 0.16)
-_TENSOR_SLIDER_BOUNDS: Final[tuple[float, float, float, float]] = (0.48, 0.045, 0.38, 0.065)
-_ANALYSIS_AXIS_BOUNDS: Final[tuple[float, float, float, float]] = (0.42, 0.122, 0.16, 0.105)
-_ANALYSIS_CHECK_BOUNDS: Final[tuple[float, float, float, float]] = (0.42, 0.108, 0.18, 0.125)
+_TENSOR_SLIDER_BOUNDS: Final[tuple[float, float, float, float]] = (0.48, 0.01, 0.38, 0.055)
+_ANALYSIS_AXIS_BOUNDS: Final[tuple[float, float, float, float]] = (0.392, 0.078, 0.205, 0.155)
+_ANALYSIS_CHECK_BOUNDS: Final[tuple[float, float, float, float]] = (0.392, 0.075, 0.215, 0.165)
 _ANALYSIS_METHOD_BOUNDS: Final[tuple[float, float, float, float]] = (0.61, 0.122, 0.13, 0.105)
 _ANALYSIS_SLIDER_BOUNDS: Final[tuple[float, float, float, float]] = (0.66, 0.135, 0.3, 0.05)
 _TENSOR_ELEMENTS_CONTROLS_BOTTOM: Final[float] = 0.31
@@ -66,6 +67,34 @@ _PLACEHOLDER_TEXT_BOX: Final[dict[str, Any]] = {
 }
 
 
+@dataclass(frozen=True)
+class _TensorElementsControlsLayout:
+    controls_bottom: float
+    group_selector_bounds: tuple[float, float, float, float]
+    mode_selector_bounds: tuple[float, float, float, float]
+    tensor_slider_bounds: tuple[float, float, float, float]
+    tensor_slider_label_x: float
+    analysis_axis_bounds: tuple[float, float, float, float]
+    analysis_check_bounds: tuple[float, float, float, float]
+    analysis_method_bounds: tuple[float, float, float, float]
+    analysis_slider_bounds: tuple[float, float, float, float]
+
+
+_DEFAULT_TENSOR_ELEMENTS_CONTROLS_LAYOUT: Final[_TensorElementsControlsLayout] = (
+    _TensorElementsControlsLayout(
+        controls_bottom=_TENSOR_ELEMENTS_CONTROLS_BOTTOM,
+        group_selector_bounds=_GROUP_SELECTOR_BOUNDS,
+        mode_selector_bounds=_MODE_SELECTOR_BOUNDS,
+        tensor_slider_bounds=_TENSOR_SLIDER_BOUNDS,
+        tensor_slider_label_x=-0.075,
+        analysis_axis_bounds=_ANALYSIS_AXIS_BOUNDS,
+        analysis_check_bounds=_ANALYSIS_CHECK_BOUNDS,
+        analysis_method_bounds=_ANALYSIS_METHOD_BOUNDS,
+        analysis_slider_bounds=_ANALYSIS_SLIDER_BOUNDS,
+    )
+)
+
+
 @dataclass
 class _TensorPayloadCacheEntry:
     payloads: dict[str, _TensorElementsPayload] = field(default_factory=dict)
@@ -76,6 +105,7 @@ class _TensorElementsFigureController:
         self,
         *,
         config: TensorElementsConfig,
+        controls_layout: _TensorElementsControlsLayout | None,
         figure: Figure,
         panel: _RenderedTensorPanel,
         records: list[_TensorRecord],
@@ -84,6 +114,9 @@ class _TensorElementsFigureController:
         initial_payload_cache: dict[int, _TensorPayloadCacheEntry] | None = None,
     ) -> None:
         self._config = config
+        self._controls_layout = (
+            _DEFAULT_TENSOR_ELEMENTS_CONTROLS_LAYOUT if controls_layout is None else controls_layout
+        )
         self._figure = figure
         self._panel = panel
         self._records = records
@@ -213,8 +246,10 @@ class _TensorElementsFigureController:
 
     def initialize(self, *, show_controls: bool) -> None:
         if show_controls:
-            _reserve_figure_bottom(self._figure, _TENSOR_ELEMENTS_CONTROLS_BOTTOM)
-            self._group_radio_ax = self._figure.add_axes(_GROUP_SELECTOR_BOUNDS)
+            _reserve_figure_bottom(self._figure, self._controls_layout.controls_bottom)
+            self._group_radio_ax = self._figure.add_axes(
+                self._controls_layout.group_selector_bounds
+            )
             _style_control_tray_axes(self._group_radio_ax)
             self._group_radio = RadioButtons(
                 self._group_radio_ax,
@@ -227,9 +262,9 @@ class _TensorElementsFigureController:
             self._rebuild_mode_radio()
 
             if len(self._records) > 1:
-                self._slider_ax = self._figure.add_axes(_TENSOR_SLIDER_BOUNDS)
+                self._slider_ax = self._figure.add_axes(self._controls_layout.tensor_slider_bounds)
                 _style_control_tray_axes(self._slider_ax)
-                self._slider = Slider(
+                self._slider = _SafeSlider(
                     self._slider_ax,
                     "Tensor",
                     0.0,
@@ -238,6 +273,7 @@ class _TensorElementsFigureController:
                     valstep=1,
                     color=_SLIDER_ACTIVE_COLOR,
                 )
+                self._slider.label.set_x(self._controls_layout.tensor_slider_label_x)
                 self._slider.on_changed(self._on_slider_changed)
 
         self._panel.base_position = self._panel.main_ax.get_position().bounds
@@ -257,7 +293,7 @@ class _TensorElementsFigureController:
     def _rebuild_mode_radio(self) -> None:
         if self._mode_radio_ax is not None:
             self._mode_radio_ax.remove()
-        self._mode_radio_ax = self._figure.add_axes(_MODE_SELECTOR_BOUNDS)
+        self._mode_radio_ax = self._figure.add_axes(self._controls_layout.mode_selector_bounds)
         _style_control_tray_axes(self._mode_radio_ax)
         mode_options = self._current_group_modes()
         active_index = mode_options.index(self._mode)
@@ -336,7 +372,9 @@ class _TensorElementsFigureController:
         )
         if self._mode == "slice":
             if analysis.original_axis_names:
-                self._analysis_axis_ax = self._figure.add_axes(_ANALYSIS_AXIS_BOUNDS)
+                self._analysis_axis_ax = self._figure.add_axes(
+                    self._controls_layout.analysis_axis_bounds
+                )
                 _style_control_tray_axes(self._analysis_axis_ax)
                 active_index = int(analysis.slice_axis or 0)
                 self._analysis_axis_radio = RadioButtons(
@@ -347,9 +385,11 @@ class _TensorElementsFigureController:
                     radio_props=_INTERACTIVE_RADIO_PROPS,
                 )
                 self._analysis_axis_radio.on_clicked(self._on_analysis_axis_clicked)
-            self._analysis_slider_ax = self._figure.add_axes(_ANALYSIS_SLIDER_BOUNDS)
+            self._analysis_slider_ax = self._figure.add_axes(
+                self._controls_layout.analysis_slider_bounds
+            )
             _style_control_tray_axes(self._analysis_slider_ax)
-            self._analysis_slider = Slider(
+            self._analysis_slider = _SafeSlider(
                 self._analysis_slider_ax,
                 "Slice",
                 0.0,
@@ -364,7 +404,9 @@ class _TensorElementsFigureController:
 
         if self._mode == "reduce":
             if analysis.post_slice_axis_names:
-                self._analysis_check_ax = self._figure.add_axes(_ANALYSIS_CHECK_BOUNDS)
+                self._analysis_check_ax = self._figure.add_axes(
+                    self._controls_layout.analysis_check_bounds
+                )
                 _style_control_tray_axes(self._analysis_check_ax)
                 self._analysis_checkbuttons = CheckButtons(
                     self._analysis_check_ax,
@@ -378,7 +420,9 @@ class _TensorElementsFigureController:
                     check_props=_INTERACTIVE_CHECK_MARK_PROPS,
                 )
                 self._analysis_checkbuttons.on_clicked(self._on_analysis_check_clicked)
-            self._analysis_method_ax = self._figure.add_axes(_ANALYSIS_METHOD_BOUNDS)
+            self._analysis_method_ax = self._figure.add_axes(
+                self._controls_layout.analysis_method_bounds
+            )
             _style_control_tray_axes(self._analysis_method_ax)
             self._analysis_method_radio = RadioButtons(
                 self._analysis_method_ax,
@@ -391,7 +435,9 @@ class _TensorElementsFigureController:
             return
 
         if analysis.post_slice_axis_names:
-            self._analysis_axis_ax = self._figure.add_axes(_ANALYSIS_AXIS_BOUNDS)
+            self._analysis_axis_ax = self._figure.add_axes(
+                self._controls_layout.analysis_axis_bounds
+            )
             _style_control_tray_axes(self._analysis_axis_ax)
             active_index = int(analysis.profile_axis or 0)
             self._analysis_axis_radio = RadioButtons(
@@ -402,7 +448,9 @@ class _TensorElementsFigureController:
                 radio_props=_INTERACTIVE_RADIO_PROPS,
             )
             self._analysis_axis_radio.on_clicked(self._on_analysis_axis_clicked)
-        self._analysis_method_ax = self._figure.add_axes(_ANALYSIS_METHOD_BOUNDS)
+        self._analysis_method_ax = self._figure.add_axes(
+            self._controls_layout.analysis_method_bounds
+        )
         _style_control_tray_axes(self._analysis_method_ax)
         self._analysis_method_radio = RadioButtons(
             self._analysis_method_ax,
@@ -622,6 +670,7 @@ class _TensorElementsFigureController:
 
 __all__ = [
     "_RenderedTensorPanel",
+    "_TensorElementsControlsLayout",
     "_TensorElementsFigureController",
     "_TensorPayloadCacheEntry",
 ]

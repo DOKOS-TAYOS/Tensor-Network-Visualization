@@ -17,7 +17,10 @@ from .._tensor_comparison_support import (
     _comparison_placeholder_text,
     _comparison_text_payload,
 )
-from .._tensor_elements_controller import _TensorElementsFigureController
+from .._tensor_elements_controller import (
+    _TensorElementsControlsLayout,
+    _TensorElementsFigureController,
+)
 from .._tensor_elements_data import _PlaybackStepRecord
 from .._tensor_elements_support import _TensorRecord
 from .._ui_utils import _style_control_tray_axes
@@ -46,13 +49,14 @@ _InspectorCompareMode = Literal[
     "topk_changes",
 ]
 _COMPARE_TOGGLE_BOUNDS: tuple[float, float, float, float] = (0.02, 0.19, 0.11, 0.045)
-_COMPARE_SELECTOR_BOUNDS: tuple[float, float, float, float] = (0.48, 0.028, 0.2, 0.19)
+_COMPARE_SELECTOR_BOUNDS: tuple[float, float, float, float] = (0.02, 0.028, 0.18, 0.16)
 _CAPTURE_REFERENCE_BOUNDS: tuple[float, float, float, float] = (0.135, 0.19, 0.035, 0.045)
 _CLEAR_REFERENCE_BOUNDS: tuple[float, float, float, float] = (0.175, 0.19, 0.035, 0.045)
 _COMPARE_LABEL_PROPS: dict[str, list[float]] = {"fontsize": [9.0]}
 _COMPARE_RADIO_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 0.9}
 _COMPACT_BUTTON_FONT_SIZE: float = 8.0
 _SYMBOL_BUTTON_FONT_FAMILY: str = "STIXGeneral"
+_INSPECTOR_FIGSIZE: tuple[float, float] = (8.8, 6.4)
 _BUTTON_TOOLTIP_GAP_FIG: float = 0.006
 _BUTTON_TOOLTIP_TEXT_KWARGS: dict[str, object] = {
     "ha": "left",
@@ -92,6 +96,17 @@ _DERIVED_COMPARE_MODE_OPTIONS: tuple[
     "sign_change",
     "phase_change",
     "topk_changes",
+)
+_INSPECTOR_TENSOR_ELEMENTS_LAYOUT: _TensorElementsControlsLayout = _TensorElementsControlsLayout(
+    controls_bottom=0.31,
+    group_selector_bounds=(0.225, 0.04, 0.13, 0.145),
+    mode_selector_bounds=(0.36, 0.028, 0.17, 0.16),
+    tensor_slider_bounds=(0.59, 0.008, 0.35, 0.05),
+    tensor_slider_label_x=-0.08,
+    analysis_axis_bounds=(0.535, 0.072, 0.205, 0.16),
+    analysis_check_bounds=(0.535, 0.07, 0.215, 0.17),
+    analysis_method_bounds=(0.77, 0.11, 0.1, 0.12),
+    analysis_slider_bounds=(0.825, 0.098, 0.135, 0.045),
 )
 
 
@@ -163,7 +178,7 @@ class _LinkedTensorInspectorController:
         )
         self._placeholder_engine: EngineName = placeholder_engine
         self._on_closed = on_closed
-        self._config = TensorElementsConfig()
+        self._config = TensorElementsConfig(figsize=_INSPECTOR_FIGSIZE)
         self._enabled: bool = False
         self._viewer: _StepPlaybackViewer | None = None
         self._figure: Figure | None = None
@@ -324,6 +339,7 @@ class _LinkedTensorInspectorController:
         figure, _ax, controller = _show_tensor_records(
             [record],
             config=self._config,
+            controls_layout=_INSPECTOR_TENSOR_ELEMENTS_LAYOUT,
             ax=None,
             show_controls=True,
             show=False,
