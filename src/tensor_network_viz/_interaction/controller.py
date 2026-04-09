@@ -7,7 +7,7 @@ import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.collections import PatchCollection, PathCollection
 from matplotlib.figure import Figure
-from matplotlib.widgets import CheckButtons, RadioButtons
+from matplotlib.widgets import Button, CheckButtons
 from mpl_toolkits.mplot3d import proj3d
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
@@ -206,12 +206,12 @@ class _InteractiveTensorFigureController:
         return self._view_manager.view_caches
 
     @property
-    def _radio_ax(self) -> Axes | None:
-        return None if self._controls_panel is None else self._controls_panel.radio_ax
+    def _view_toggle_ax(self) -> Axes | None:
+        return None if self._controls_panel is None else self._controls_panel.view_toggle_ax
 
     @property
-    def _radio(self) -> RadioButtons | None:
-        return None if self._controls_panel is None else self._controls_panel.radio
+    def _view_toggle_button(self) -> Button | None:
+        return None if self._controls_panel is None else self._controls_panel.view_toggle_button
 
     @property
     def _check_ax(self) -> Axes | None:
@@ -516,9 +516,6 @@ class _InteractiveTensorFigureController:
         if self._tensor_inspector is None or node.name not in self._node_records_by_name:
             return
         if not self._desired_state.tensor_inspector:
-            self._tensor_inspector.select_node(node.name, reveal=False)
-            self._desired_state = replace(self._desired_state, tensor_inspector=True)
-            self._apply_scene_state(self.current_scene)
             return
         if self._tensor_inspector.select_node(node.name, reveal=True):
             self._active_state = replace(self._active_state, tensor_inspector=True)

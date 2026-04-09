@@ -59,6 +59,19 @@ def _dispatch_button_event_at_data(
     return event
 
 
+def _click_button(button: object) -> None:
+    button_widget = button
+    fig = button_widget.ax.figure  # type: ignore[attr-defined]
+    fig.canvas.draw()
+    bbox = button_widget.ax.get_window_extent(fig.canvas.get_renderer())  # type: ignore[attr-defined]
+    x = int(round((bbox.x0 + bbox.x1) / 2.0))
+    y = int(round((bbox.y0 + bbox.y1) / 2.0))
+    press = MouseEvent("button_press_event", fig.canvas, x, y, button=MouseButton.LEFT)
+    release = MouseEvent("button_release_event", fig.canvas, x, y, button=MouseButton.LEFT)
+    fig.canvas.callbacks.process("button_press_event", press)
+    fig.canvas.callbacks.process("button_release_event", release)
+
+
 def test_interactive_controls_panel_sync_updates_widgets_without_emitting_callbacks() -> None:
     fig = plt.figure()
     state_events: list[InteractiveFeatureState] = []
@@ -104,8 +117,8 @@ def test_interactive_controls_panel_sync_updates_widgets_without_emitting_callba
 
         assert state_events == []
         assert view_events == []
-        assert panel.radio is not None
-        assert panel.radio.value_selected == "3d"
+        assert panel.view_toggle_button is not None
+        assert panel.view_toggle_button.label.get_text() == "2D"
         assert tuple(bool(value) for value in panel.checkbuttons.get_status()) == (
             False,
             False,
@@ -163,9 +176,10 @@ def test_interactive_controls_panel_emits_raw_requested_state_from_widget_change
             diagnostics=False,
         )
 
-        assert panel.radio is not None
-        panel.radio.set_active(1)
+        assert panel.view_toggle_button is not None
+        _click_button(panel.view_toggle_button)
         assert view_events == ["3d"]
+        assert panel.view_toggle_button.label.get_text() == "2D"
     finally:
         plt.close(fig)
 

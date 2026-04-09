@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -12,11 +12,8 @@ from .._ui_utils import _style_control_tray_axes
 from ..config import ViewName
 from .state import InteractiveFeatureState
 
-# Menu column: fixed bottom = tallest stack (inspector + scheme). Without playback, checkboxes/radio
-# stay as low as when the bottom row exists. Top aligned with cost-details top.
-_VIEW_SELECTOR_LEFT: float = 0.213
-_VIEW_SELECTOR_WIDTH: float = 0.053
-_VIEW_SELECTOR_HEIGHT: float = 0.063
+# Menu column: fixed bottom = tallest stack (inspector + scheme). Without playback, checkboxes
+# stay as low as when the bottom row exists.
 _INTERACTIVE_MENU_COLUMN_HEIGHT: float = 0.172
 _INTERACTIVE_MENU_COLUMN_BOTTOM: float = 0.236 - _INTERACTIVE_MENU_COLUMN_HEIGHT
 _INTERACTIVE_CHECKBOX_AXES_BOUNDS: tuple[float, float, float, float] = (
@@ -24,6 +21,13 @@ _INTERACTIVE_CHECKBOX_AXES_BOUNDS: tuple[float, float, float, float] = (
     _INTERACTIVE_MENU_COLUMN_BOTTOM,
     0.19,
     _INTERACTIVE_MENU_COLUMN_HEIGHT,
+)
+_VIEW_TOGGLE_GAP: float = 0.008
+_VIEW_TOGGLE_BOUNDS: tuple[float, float, float, float] = (
+    _INTERACTIVE_CHECKBOX_AXES_BOUNDS[0],
+    _INTERACTIVE_CHECKBOX_AXES_BOUNDS[1] + _INTERACTIVE_CHECKBOX_AXES_BOUNDS[3] + _VIEW_TOGGLE_GAP,
+    0.05,
+    0.04,
 )
 _BASE_TOGGLE_LABELS: tuple[str, str, str, str] = (
     "Hover",
@@ -38,6 +42,7 @@ _INTERACTIVE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _INTERACTIVE_CHECK_MARK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
 _INTERACTIVE_RADIO_PROPS: dict[str, float] = {"s": 38.0, "linewidth": 0.9}
+_COMPACT_BUTTON_FONT_SIZE: float = 8.5
 _FOCUS_MODE_BOUNDS: tuple[float, float, float, float] = (0.28, 0.072, 0.12, 0.11)
 _FOCUS_RADIUS_BOUNDS: tuple[float, float, float, float] = (0.41, 0.11, 0.08, 0.072)
 _FOCUS_CLEAR_BOUNDS: tuple[float, float, float, float] = (0.41, 0.04, 0.08, 0.05)
@@ -61,6 +66,18 @@ def _interactive_checkbox_bounds(
 ) -> tuple[float, float, float, float]:
     _ = include_scheme_toggles, include_tensor_inspector
     return _INTERACTIVE_CHECKBOX_AXES_BOUNDS
+
+
+def _alternate_view(view: ViewName) -> ViewName:
+    return "3d" if view == "2d" else "2d"
+
+
+def _view_toggle_label(view: ViewName) -> str:
+    return _alternate_view(view).upper()
+
+
+def _style_compact_button(button: Button) -> None:
+    button.label.set_fontsize(_COMPACT_BUTTON_FONT_SIZE)
 
 
 class _InteractiveControlsPanel:
@@ -93,8 +110,8 @@ class _InteractiveControlsPanel:
         self._callback_guard: bool = False
         self.check_ax: Axes
         self.checkbuttons: CheckButtons
-        self.radio_ax: Axes | None = None
-        self.radio: RadioButtons | None = None
+        self.view_toggle_ax: Axes | None = None
+        self.view_toggle_button: Button | None = None
         self.focus_mode_ax: Axes | None = None
         self.focus_mode_radio: RadioButtons | None = None
         self.focus_radius_ax: Axes | None = None
@@ -147,23 +164,16 @@ class _InteractiveControlsPanel:
         )
         self.checkbuttons.on_clicked(self._on_toggle_clicked)
         if self._layout.include_view_selector:
-            radio_bounds: tuple[float, float, float, float] = (
-                _VIEW_SELECTOR_LEFT,
-                cb_bottom,
-                _VIEW_SELECTOR_WIDTH,
-                _VIEW_SELECTOR_HEIGHT,
+            _ = cb_bottom
+            view_toggle_ax = self._figure.add_axes(_VIEW_TOGGLE_BOUNDS)
+            _style_control_tray_axes(view_toggle_ax)
+            self.view_toggle_ax = view_toggle_ax
+            self.view_toggle_button = Button(
+                view_toggle_ax,
+                _view_toggle_label(self._last_view),
             )
-            radio_ax = self._figure.add_axes(radio_bounds)
-            _style_control_tray_axes(radio_ax)
-            self.radio_ax = radio_ax
-            self.radio = RadioButtons(
-                radio_ax,
-                ("2d", "3d"),
-                active=0 if self._last_view == "2d" else 1,
-                label_props=_INTERACTIVE_LABEL_PROPS,
-                radio_props=_INTERACTIVE_RADIO_PROPS,
-            )
-            self.radio.on_clicked(self._on_view_clicked)
+            _style_compact_button(self.view_toggle_button)
+            self.view_toggle_button.on_clicked(self._on_view_toggle_clicked)
         if not self._layout.include_focus_controls:
             return
         self.focus_mode_ax = self._figure.add_axes(_FOCUS_MODE_BOUNDS)
@@ -209,8 +219,7 @@ class _InteractiveControlsPanel:
             self._last_focus_radius = int(focus_radius)
         self._callback_guard = True
         try:
-            if self.radio is not None and self.radio.value_selected != view:
-                self.radio.set_active(0 if view == "2d" else 1)
+            self._sync_view_toggle_label()
             if (
                 self.focus_mode_radio is not None
                 and self.focus_mode_radio.value_selected != self._last_focus_mode
@@ -230,6 +239,13 @@ class _InteractiveControlsPanel:
         finally:
             self._callback_guard = False
 
+    def _sync_view_toggle_label(self) -> None:
+        if self.view_toggle_button is None:
+            return
+        label = _view_toggle_label(self._last_view)
+        if self.view_toggle_button.label.get_text() != label:
+            self.view_toggle_button.label.set_text(label)
+
     def _state_from_status(self, status: list[bool]) -> InteractiveFeatureState:
         scheme = self._last_state.scheme
         playback = self._last_state.playback
@@ -247,8 +263,13 @@ class _InteractiveControlsPanel:
             if self._layout.include_diagnostics:
                 diagnostics = status[next_index]
             playback = bool(scheme or cost_hover)
-        elif self._layout.include_diagnostics:
-            diagnostics = status[len(_BASE_TOGGLE_LABELS)]
+        else:
+            next_index = len(_BASE_TOGGLE_LABELS)
+            if self._layout.include_tensor_inspector:
+                tensor_inspector = status[next_index]
+                next_index += 1
+            if self._layout.include_diagnostics:
+                diagnostics = status[next_index]
         return InteractiveFeatureState(
             hover=status[0],
             nodes=status[1],
@@ -261,10 +282,11 @@ class _InteractiveControlsPanel:
             diagnostics=diagnostics,
         )
 
-    def _on_view_clicked(self, label: str | None) -> None:
-        if self._callback_guard or label is None:
+    def _on_view_toggle_clicked(self, _event: object) -> None:
+        if self._callback_guard:
             return
-        self._last_view = cast(ViewName, label)
+        self._last_view = _alternate_view(self._last_view)
+        self._sync_view_toggle_label()
         self._on_view_selected(self._last_view)
 
     def _on_toggle_clicked(self, _label: str | None) -> None:

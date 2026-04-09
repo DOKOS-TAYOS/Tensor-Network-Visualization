@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backend_bases import NonGuiException
 from matplotlib.figure import Figure
+from matplotlib.text import Text
 from matplotlib.widgets import Button, RadioButtons
 
 from .._logging import package_logger
@@ -25,6 +26,15 @@ from ..tensor_comparison_config import TensorComparisonConfig, TensorComparisonM
 from ..tensor_elements import _show_tensor_records
 from ..tensor_elements_config import TensorElementsConfig
 
+_BaseInspectorCompareMode = Literal["current", "reference"]
+_DerivedInspectorCompareMode = Literal[
+    "abs_diff",
+    "relative_diff",
+    "ratio",
+    "sign_change",
+    "phase_change",
+    "topk_changes",
+]
 _InspectorCompareMode = Literal[
     "current",
     "reference",
@@ -35,11 +45,25 @@ _InspectorCompareMode = Literal[
     "phase_change",
     "topk_changes",
 ]
+_COMPARE_TOGGLE_BOUNDS: tuple[float, float, float, float] = (0.02, 0.19, 0.11, 0.045)
 _COMPARE_SELECTOR_BOUNDS: tuple[float, float, float, float] = (0.48, 0.028, 0.2, 0.19)
-_CAPTURE_REFERENCE_BOUNDS: tuple[float, float, float, float] = (0.71, 0.12, 0.13, 0.055)
-_CLEAR_REFERENCE_BOUNDS: tuple[float, float, float, float] = (0.71, 0.042, 0.13, 0.055)
+_CAPTURE_REFERENCE_BOUNDS: tuple[float, float, float, float] = (0.135, 0.19, 0.035, 0.045)
+_CLEAR_REFERENCE_BOUNDS: tuple[float, float, float, float] = (0.175, 0.19, 0.035, 0.045)
 _COMPARE_LABEL_PROPS: dict[str, list[float]] = {"fontsize": [9.0]}
 _COMPARE_RADIO_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 0.9}
+_COMPACT_BUTTON_FONT_SIZE: float = 8.0
+_SYMBOL_BUTTON_FONT_FAMILY: str = "STIXGeneral"
+_BUTTON_TOOLTIP_GAP_FIG: float = 0.006
+_BUTTON_TOOLTIP_TEXT_KWARGS: dict[str, object] = {
+    "ha": "left",
+    "va": "bottom",
+    "fontsize": 8.5,
+    "bbox": {
+        "boxstyle": "round,pad=0.25",
+        "facecolor": "#F8FAFC",
+        "edgecolor": "#CBD5E1",
+    },
+}
 _COMPARE_MODE_OPTIONS: tuple[_InspectorCompareMode, ...] = (
     "current",
     "reference",
@@ -50,6 +74,44 @@ _COMPARE_MODE_OPTIONS: tuple[_InspectorCompareMode, ...] = (
     "phase_change",
     "topk_changes",
 )
+_BASE_COMPARE_MODE_OPTIONS: tuple[_BaseInspectorCompareMode, _BaseInspectorCompareMode] = (
+    "current",
+    "reference",
+)
+_DERIVED_COMPARE_MODE_OPTIONS: tuple[
+    _DerivedInspectorCompareMode,
+    _DerivedInspectorCompareMode,
+    _DerivedInspectorCompareMode,
+    _DerivedInspectorCompareMode,
+    _DerivedInspectorCompareMode,
+    _DerivedInspectorCompareMode,
+] = (
+    "abs_diff",
+    "relative_diff",
+    "ratio",
+    "sign_change",
+    "phase_change",
+    "topk_changes",
+)
+
+
+def _alternate_base_compare_mode(mode: _BaseInspectorCompareMode) -> _BaseInspectorCompareMode:
+    return "reference" if mode == "current" else "current"
+
+
+def _compare_toggle_label(mode: _BaseInspectorCompareMode) -> str:
+    return "Reference" if mode == "current" else "Current"
+
+
+def _style_compact_button(
+    button: Button,
+    *,
+    fontsize: float = _COMPACT_BUTTON_FONT_SIZE,
+    fontfamily: str | None = None,
+) -> None:
+    button.label.set_fontsize(fontsize)
+    if fontfamily is not None:
+        button.label.set_fontfamily(fontfamily)
 
 
 class _StepPlaybackViewer(Protocol):
@@ -111,10 +173,16 @@ class _LinkedTensorInspectorController:
         self._active_record: _TensorRecord | None = None
         self._active_source_kind: str = "placeholder"
         self._compare_mode: _InspectorCompareMode = "current"
+        self._base_compare_mode: _BaseInspectorCompareMode = "current"
+        self._derived_compare_mode: _DerivedInspectorCompareMode = "abs_diff"
         self._captured_reference_record: _TensorRecord | None = None
+        self._compare_toggle_button: Button | None = None
         self._compare_radio: RadioButtons | None = None
         self._capture_reference_button: Button | None = None
         self._clear_reference_button: Button | None = None
+        self._button_hover_text: Text | None = None
+        self._button_hover_cid: int | None = None
+        self._compare_callback_guard: bool = False
         self._closing_programmatically: bool = False
         self._close_cid: int | None = None
 
@@ -176,6 +244,11 @@ class _LinkedTensorInspectorController:
         if resolved_mode not in _COMPARE_MODE_OPTIONS:
             raise ValueError(f"Unsupported inspector comparison mode: {mode!r}.")
         self._compare_mode = resolved_mode
+        if resolved_mode in _BASE_COMPARE_MODE_OPTIONS:
+            self._base_compare_mode = cast(_BaseInspectorCompareMode, resolved_mode)
+        else:
+            self._derived_compare_mode = cast(_DerivedInspectorCompareMode, resolved_mode)
+        self._sync_compare_controls()
         if self._enabled:
             self._sync_active_source()
 
@@ -267,37 +340,123 @@ class _LinkedTensorInspectorController:
     def _build_comparison_controls(self) -> None:
         if self._figure is None:
             return
+        toggle_ax = self._figure.add_axes(_COMPARE_TOGGLE_BOUNDS)
+        _style_control_tray_axes(toggle_ax)
+        self._compare_toggle_button = Button(
+            toggle_ax,
+            _compare_toggle_label(self._base_compare_mode),
+        )
+        _style_compact_button(self._compare_toggle_button)
+        self._compare_toggle_button.on_clicked(self._on_compare_toggle_clicked)
+
         compare_ax = self._figure.add_axes(_COMPARE_SELECTOR_BOUNDS)
         _style_control_tray_axes(compare_ax)
         self._compare_radio = RadioButtons(
             compare_ax,
-            tuple(mode.replace("_", " ") for mode in _COMPARE_MODE_OPTIONS),
-            active=_COMPARE_MODE_OPTIONS.index(self._compare_mode),
+            tuple(mode.replace("_", " ") for mode in _DERIVED_COMPARE_MODE_OPTIONS),
+            active=_DERIVED_COMPARE_MODE_OPTIONS.index(self._derived_compare_mode),
             label_props=_COMPARE_LABEL_PROPS,
             radio_props=_COMPARE_RADIO_PROPS,
         )
         self._compare_radio.on_clicked(self._on_compare_mode_clicked)
+        self._sync_compare_controls()
 
         capture_ax = self._figure.add_axes(_CAPTURE_REFERENCE_BOUNDS)
         _style_control_tray_axes(capture_ax)
-        self._capture_reference_button = Button(capture_ax, "Capture ref")
+        self._capture_reference_button = Button(capture_ax, "⌖")
+        _style_compact_button(
+            self._capture_reference_button,
+            fontsize=9.0,
+            fontfamily=_SYMBOL_BUTTON_FONT_FAMILY,
+        )
         self._capture_reference_button.on_clicked(self._on_capture_reference_clicked)
 
         clear_ax = self._figure.add_axes(_CLEAR_REFERENCE_BOUNDS)
         _style_control_tray_axes(clear_ax)
-        self._clear_reference_button = Button(clear_ax, "Clear ref")
+        self._clear_reference_button = Button(clear_ax, "x")
+        _style_compact_button(self._clear_reference_button, fontsize=9.0)
         self._clear_reference_button.on_clicked(self._on_clear_reference_clicked)
+        self._install_button_hover_tooltips()
 
     def _on_compare_mode_clicked(self, label: str | None) -> None:
-        if label is None:
+        if self._compare_callback_guard or label is None:
             return
         self.set_compare_mode(str(label).replace(" ", "_"))
+
+    def _on_compare_toggle_clicked(self, _event: object) -> None:
+        self.set_compare_mode(_alternate_base_compare_mode(self._base_compare_mode))
 
     def _on_capture_reference_clicked(self, _event: object) -> None:
         self.capture_reference()
 
     def _on_clear_reference_clicked(self, _event: object) -> None:
         self.clear_captured_reference()
+
+    def _install_button_hover_tooltips(self) -> None:
+        if self._figure is None or self._button_hover_text is not None:
+            return
+        self._button_hover_text = self._figure.text(
+            0.0,
+            0.0,
+            "",
+            visible=False,
+            transform=self._figure.transFigure,
+            **_BUTTON_TOOLTIP_TEXT_KWARGS,
+        )
+        self._button_hover_cid = self._figure.canvas.mpl_connect(
+            "motion_notify_event",
+            self._on_button_hover_motion,
+        )
+
+    def _button_tooltip_target_for_event(self, event: object) -> tuple[Button, str] | None:
+        x = getattr(event, "x", None)
+        y = getattr(event, "y", None)
+        if x is None or y is None:
+            return None
+        for button, label in (
+            (self._capture_reference_button, "Capture reference"),
+            (self._clear_reference_button, "Clear reference"),
+        ):
+            if button is not None and button.ax.bbox.contains(float(x), float(y)):
+                return button, label
+        return None
+
+    def _on_button_hover_motion(self, event: object) -> None:
+        if self._figure is None or self._button_hover_text is None:
+            return
+        tooltip_target = self._button_tooltip_target_for_event(event)
+        if tooltip_target is None:
+            if self._button_hover_text.get_visible():
+                self._button_hover_text.set_visible(False)
+                self._figure.canvas.draw_idle()
+            return
+        button, label = tooltip_target
+        bounds = button.ax.get_position().bounds
+        x_fig = min(max(float(bounds[0]), 0.01), 0.99)
+        y_fig = min(max(float(bounds[1] + bounds[3] + _BUTTON_TOOLTIP_GAP_FIG), 0.01), 0.99)
+        self._button_hover_text.set_position((x_fig, y_fig))
+        self._button_hover_text.set_text(label)
+        if not self._button_hover_text.get_visible():
+            self._button_hover_text.set_visible(True)
+        self._figure.canvas.draw_idle()
+
+    def _sync_compare_controls(self) -> None:
+        if self._compare_toggle_button is not None:
+            label = _compare_toggle_label(self._base_compare_mode)
+            if self._compare_toggle_button.label.get_text() != label:
+                self._compare_toggle_button.label.set_text(label)
+        if self._compare_radio is None:
+            return
+        active_label = self._derived_compare_mode.replace("_", " ")
+        if getattr(self._compare_radio, "value_selected", None) == active_label:
+            return
+        try:
+            self._compare_callback_guard = True
+            self._compare_radio.set_active(
+                _DERIVED_COMPARE_MODE_OPTIONS.index(self._derived_compare_mode)
+            )
+        finally:
+            self._compare_callback_guard = False
 
     def _current_step(self) -> int:
         return int(self._viewer.current_step) if self._viewer is not None else 0
@@ -443,13 +602,22 @@ class _LinkedTensorInspectorController:
         if figure is None:
             self._elements_controller = None
             self._close_cid = None
+            self._button_hover_cid = None
+            self._button_hover_text = None
             return
         if self._close_cid is not None:
             figure.canvas.mpl_disconnect(self._close_cid)
+        if self._button_hover_cid is not None:
+            figure.canvas.mpl_disconnect(self._button_hover_cid)
+        if self._button_hover_text is not None:
+            self._button_hover_text.remove()
         self._closing_programmatically = True
         self._figure = None
         self._elements_controller = None
         self._close_cid = None
+        self._button_hover_cid = None
+        self._button_hover_text = None
+        self._compare_toggle_button = None
         self._compare_radio = None
         self._capture_reference_button = None
         self._clear_reference_button = None
@@ -460,9 +628,17 @@ class _LinkedTensorInspectorController:
     def _on_figure_closed(self, _event: object) -> None:
         if self._elements_controller is not None:
             self._saved_mode = str(self._elements_controller.selected_mode)
+        figure = self._figure
+        if figure is not None and self._button_hover_cid is not None:
+            figure.canvas.mpl_disconnect(self._button_hover_cid)
+        if self._button_hover_text is not None:
+            self._button_hover_text.remove()
         self._figure = None
         self._elements_controller = None
         self._close_cid = None
+        self._button_hover_cid = None
+        self._button_hover_text = None
+        self._compare_toggle_button = None
         self._compare_radio = None
         self._capture_reference_button = None
         self._clear_reference_button = None

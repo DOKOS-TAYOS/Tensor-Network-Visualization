@@ -130,6 +130,18 @@ def _click_checkbutton(checkbuttons: Any, index: int) -> None:
     checkbuttons._clicked(event)
 
 
+def _click_button(button: Any) -> None:
+    fig = button.ax.figure
+    fig.canvas.draw()
+    bbox = button.ax.get_window_extent(fig.canvas.get_renderer())
+    x = int(round((bbox.x0 + bbox.x1) / 2.0))
+    y = int(round((bbox.y0 + bbox.y1) / 2.0))
+    press = MouseEvent("button_press_event", fig.canvas, x, y, button=MouseButton.LEFT)
+    release = MouseEvent("button_release_event", fig.canvas, x, y, button=MouseButton.LEFT)
+    fig.canvas.callbacks.process("button_press_event", press)
+    fig.canvas.callbacks.process("button_release_event", release)
+
+
 def _checkbutton_index(checkbuttons: Any, label_text: str) -> int:
     labels = [label.get_text() for label in checkbuttons.labels]
     return labels.index(label_text)
@@ -154,6 +166,17 @@ def _dispatch_motion_event_at_data(
         int(round(y_display)),
     )
     ax.figure.canvas.callbacks.process("motion_notify_event", event)
+    return event
+
+
+def _dispatch_motion_event_at_widget(widget: Any) -> MouseEvent:
+    fig = widget.ax.figure
+    fig.canvas.draw()
+    bbox = widget.ax.get_window_extent(fig.canvas.get_renderer())
+    x = int(round((bbox.x0 + bbox.x1) / 2.0))
+    y = int(round((bbox.y0 + bbox.y1) / 2.0))
+    event = MouseEvent("motion_notify_event", fig.canvas, x, y)
+    fig.canvas.callbacks.process("motion_notify_event", event)
     return event
 
 
@@ -567,7 +590,9 @@ def test_show_tensor_network_default_interactive_controls_start_in_2d() -> None:
     assert controls.hover_on is True
     assert controls.tensor_labels_on is False
     assert controls.edge_labels_on is False
-    assert controls._radio_ax is not None and controls._radio_ax in fig.axes
+    assert controls._view_toggle_ax is not None and controls._view_toggle_ax in fig.axes
+    assert controls._view_toggle_button is not None
+    assert controls._view_toggle_button.label.get_text() == "3D"
     assert controls._check_ax is not None and controls._check_ax in fig.axes
     assert len(fig.axes) >= 3
 
@@ -632,6 +657,32 @@ def test_show_tensor_network_builds_3d_view_lazily_once(
     assert calls["3d"] == 1
 
 
+def test_show_tensor_network_view_toggle_button_switches_between_2d_and_3d() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._view_toggle_button is not None
+    assert controls.current_view == "2d"
+    assert controls._view_toggle_button.label.get_text() == "3D"
+
+    _click_button(controls._view_toggle_button)
+    assert controls.current_view == "3d"
+    assert controls._view_toggle_button.label.get_text() == "2D"
+
+    _click_button(controls._view_toggle_button)
+    assert controls.current_view == "2d"
+    assert controls._view_toggle_button.label.get_text() == "3D"
+
+
 def test_show_tensor_network_reuses_cached_axes_without_creating_empty_overlays() -> None:
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
@@ -645,7 +696,7 @@ def test_show_tensor_network_reuses_cached_axes_without_creating_empty_overlays(
 
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
-    assert controls._radio_ax is not None
+    assert controls._view_toggle_ax is not None
     assert controls._check_ax is not None
 
     initial_axes_count = len(fig.axes)
@@ -924,7 +975,7 @@ def test_show_tensor_network_discards_stale_hover_annotations_when_switching_vie
     assert "stale-3d" not in texts_3d
 
 
-def test_show_tensor_network_places_view_selector_between_options_and_playback_slider() -> None:
+def test_show_tensor_network_places_view_toggle_above_options_and_before_playback_slider() -> None:
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
@@ -941,7 +992,7 @@ def test_show_tensor_network_places_view_selector_between_options_and_playback_s
 
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
-    assert controls._radio_ax is not None
+    assert controls._view_toggle_ax is not None
     assert controls._check_ax is not None
     scene_controls = controls.current_scene.contraction_controls
     assert scene_controls is not None
@@ -949,20 +1000,21 @@ def test_show_tensor_network_places_view_selector_between_options_and_playback_s
     assert scene_controls._viewer.slider is not None
     assert scene_controls._viewer._btn_play is not None
 
-    radio_bounds = controls._radio_ax.get_position().bounds
+    view_toggle_bounds = controls._view_toggle_ax.get_position().bounds
     check_bounds = controls._check_ax.get_position().bounds
     slider_bounds = scene_controls._viewer.slider.ax.get_position().bounds
     play_bounds = scene_controls._viewer._btn_play.ax.get_position().bounds
 
-    radio_right = radio_bounds[0] + radio_bounds[2]
-    check_right = check_bounds[0] + check_bounds[2]
+    view_toggle_right = view_toggle_bounds[0] + view_toggle_bounds[2]
+    check_top = check_bounds[1] + check_bounds[3]
     slider_right = slider_bounds[0] + slider_bounds[2]
 
     assert check_bounds[2] <= 0.21
-    assert radio_bounds[0] >= check_right - 0.02
-    assert radio_bounds[2] <= 0.09
-    assert slider_bounds[0] >= radio_right - 0.02
-    assert abs(radio_bounds[1] - check_bounds[1]) < 0.02
+    assert view_toggle_bounds[0] == pytest.approx(check_bounds[0], abs=0.005)
+    assert view_toggle_bounds[1] > check_top
+    assert view_toggle_bounds[2] <= 0.06
+    assert view_toggle_bounds[3] <= 0.05
+    assert slider_bounds[0] >= view_toggle_right - 0.02
     assert play_bounds[0] > slider_right
 
 
@@ -1437,7 +1489,7 @@ def test_show_tensor_network_surfaces_unexpected_tensor_record_errors(
         )
 
 
-def test_clicking_a_visible_tensor_opens_shared_inspector_for_non_playback_network() -> None:
+def test_clicking_a_visible_tensor_does_not_open_inspector_when_checkbox_is_off() -> None:
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
     left.tensor = np.array([1.0, 2.0], dtype=float)  # type: ignore[attr-defined]
@@ -1454,12 +1506,49 @@ def test_clicking_a_visible_tensor_opens_shared_inspector_for_non_playback_netwo
     assert controls is not None
     inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
     assert inspector is not None
+    assert controls._checkbuttons is not None
     assert controls.scheme_on is False
+    assert controls.tensor_inspector_on is False
     node_id = next(
         node_id for node_id, node in controls.current_scene.graph.nodes.items() if node.name == "A"
     )
     node_position = np.asarray(controls.current_scene.positions[node_id], dtype=float)
 
+    _dispatch_button_event_at_data(
+        ax,
+        x=float(node_position[0]),
+        y=float(node_position[1]),
+    )
+
+    assert inspector._figure is None
+    assert controls.tensor_inspector_on is False
+
+
+def test_clicking_a_visible_tensor_opens_shared_inspector_when_checkbox_is_on() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    left.tensor = np.array([1.0, 2.0], dtype=float)  # type: ignore[attr-defined]
+    right.tensor = np.array([3.0, 4.0], dtype=float)  # type: ignore[attr-defined]
+    connect(left, 0, right, 0, name="bond")
+
+    fig, ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    inspector_index = _checkbutton_index(controls._checkbuttons, "Tensor inspector")
+    _click_checkbutton(controls._checkbuttons, inspector_index)
+
+    node_id = next(
+        node_id for node_id, node in controls.current_scene.graph.nodes.items() if node.name == "A"
+    )
+    node_position = np.asarray(controls.current_scene.positions[node_id], dtype=float)
     _dispatch_button_event_at_data(
         ax,
         x=float(node_position[0]),
@@ -1504,6 +1593,71 @@ def test_tensor_inspector_reuses_compact_tensor_elements_selector_layout() -> No
     assert inspector_controls._mode_radio_ax.get_position().bounds == pytest.approx(
         (0.175, 0.028, 0.21, 0.16)
     )
+    assert inspector._compare_toggle_button is not None
+    assert inspector._capture_reference_button is not None
+    assert inspector._clear_reference_button is not None
+
+    compare_bounds = inspector._compare_toggle_button.ax.get_position().bounds
+    capture_bounds = inspector._capture_reference_button.ax.get_position().bounds
+    clear_bounds = inspector._clear_reference_button.ax.get_position().bounds
+    group_bounds = inspector_controls._group_radio_ax.get_position().bounds
+    group_top = group_bounds[1] + group_bounds[3]
+
+    assert compare_bounds[0] == pytest.approx(group_bounds[0], abs=0.005)
+    assert compare_bounds[1] >= group_top
+    assert compare_bounds[1] - group_top <= 0.01
+    assert compare_bounds[2] <= 0.12
+    assert compare_bounds[3] <= 0.06
+    assert capture_bounds[1] == pytest.approx(compare_bounds[1], abs=0.005)
+    assert clear_bounds[1] == pytest.approx(compare_bounds[1], abs=0.005)
+    assert capture_bounds[0] > compare_bounds[0] + compare_bounds[2] - 0.01
+    assert clear_bounds[0] > capture_bounds[0] + capture_bounds[2] - 0.01
+    assert inspector._capture_reference_button.label.get_text() == "⌖"
+    assert inspector._clear_reference_button.label.get_text() == "x"
+
+
+def test_tensor_inspector_reference_action_buttons_show_hover_tooltips() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    assert inspector._capture_reference_button is not None
+    assert inspector._clear_reference_button is not None
+    assert inspector._button_hover_text is not None
+
+    hover_text = inspector._button_hover_text
+    assert hover_text.get_visible() is False
+
+    _dispatch_motion_event_at_widget(inspector._capture_reference_button)
+    assert hover_text.get_visible() is True
+    assert hover_text.get_text() == "Capture reference"
+    capture_bounds = inspector._capture_reference_button.ax.get_position().bounds
+    capture_top = capture_bounds[1] + capture_bounds[3]
+    capture_x, capture_y = hover_text.get_position()
+    assert capture_x == pytest.approx(capture_bounds[0], abs=0.01)
+    assert capture_y >= capture_top
+    assert capture_y - capture_top <= 0.02
+
+    _dispatch_motion_event_at_widget(inspector._clear_reference_button)
+    assert hover_text.get_visible() is True
+    assert hover_text.get_text() == "Clear reference"
+    clear_bounds = inspector._clear_reference_button.ax.get_position().bounds
+    clear_top = clear_bounds[1] + clear_bounds[3]
+    clear_x, clear_y = hover_text.get_position()
+    assert clear_x == pytest.approx(clear_bounds[0], abs=0.01)
+    assert clear_y >= clear_top
+    assert clear_y - clear_top <= 0.02
+
+    event = MouseEvent("motion_notify_event", inspector._figure.canvas, 1, 1)
+    inspector._figure.canvas.callbacks.process("motion_notify_event", event)
+    assert hover_text.get_visible() is False
 
 
 def test_tensor_inspector_manual_node_selection_takes_precedence_until_cleared() -> None:
@@ -1608,8 +1762,11 @@ def test_tensor_inspector_can_compare_against_captured_reference() -> None:
 
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
+    assert controls._checkbuttons is not None
     inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
     assert inspector is not None
+    inspector_index = _checkbutton_index(controls._checkbuttons, "Tensor inspector")
+    _click_checkbutton(controls._checkbuttons, inspector_index)
 
     node_id_a = next(
         node_id for node_id, node in controls.current_scene.graph.nodes.items() if node.name == "A"
@@ -1643,6 +1800,34 @@ def test_tensor_inspector_can_compare_against_captured_reference() -> None:
         inspector_controls._panel.main_ax.images[0].get_array(),
         dtype=float,
     ).tolist() == [[2.0, 2.0], [2.0, 2.0]]
+
+
+def test_tensor_inspector_current_reference_toggle_button_switches_base_modes() -> None:
+    trace, _r0, _r1 = _build_einsum_trace_for_comparison_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    assert inspector._compare_toggle_button is not None
+    assert inspector._compare_toggle_button.label.get_text() == "Reference"
+
+    _click_button(inspector._compare_toggle_button)
+    assert inspector._compare_mode == "reference"
+    assert inspector._compare_toggle_button.label.get_text() == "Current"
+
+    inspector.set_compare_mode("abs_diff")
+    assert inspector._compare_mode == "abs_diff"
+    assert inspector._compare_toggle_button.label.get_text() == "Current"
+
+    _click_button(inspector._compare_toggle_button)
+    assert inspector._compare_mode == "current"
+    assert inspector._compare_toggle_button.label.get_text() == "Reference"
 
 
 def test_show_tensor_network_show_controls_false_does_not_create_tensor_inspector_window() -> None:
@@ -1800,7 +1985,7 @@ def test_show_tensor_network_with_external_ax_hides_view_selector() -> None:
     assert controls is not None
     assert fig_out is fig
     assert ax_out is ax
-    assert controls._radio is None
+    assert controls._view_toggle_button is None
 
 
 def test_show_tensor_network_rejects_mismatched_external_ax_and_view() -> None:
