@@ -10,6 +10,7 @@ matplotlib.use("Agg")
 
 import numpy as np
 import pytest
+from matplotlib.artist import Artist
 from matplotlib.backend_bases import MouseButton, MouseEvent
 from matplotlib.patches import FancyBboxPatch, Rectangle
 from matplotlib.widgets import Button, CheckButtons, Slider
@@ -674,6 +675,48 @@ def test_scheme_reenable_restores_recorded_playback_without_recompute(
     _click_checkbutton(controls._checkbuttons, 0)
     assert calls["steps"] == 1
     assert controls._viewer.slider.ax.get_visible()
+
+
+def test_scheme_step_ignores_unremovable_artists_in_scene() -> None:
+    graph = _GraphData(
+        nodes={
+            0: _make_node("A", ("left",)),
+            1: _make_node("B", ("right",)),
+        },
+        edges=(
+            _make_contraction_edge(
+                _EdgeEndpoint(0, 0, "left"),
+                _EdgeEndpoint(1, 0, "right"),
+                name="bond",
+            ),
+        ),
+    )
+
+    fig, _ax = _plot_graph(
+        graph,
+        dimensions=2,
+        config=PlotConfig(
+            figsize=(4, 3),
+            show_contraction_scheme=True,
+            contraction_scheme_by_name=(("A", "B"),),
+            hover_labels=False,
+        ),
+        show_tensor_labels=False,
+        show_index_labels=False,
+        renderer_name="test_scheme_unremovable_artist",
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_contraction_controls", None)
+    assert controls is not None
+    assert controls._viewer is not None
+    assert controls._scene is not None
+
+    stuck_artist = Artist()
+    controls._scene.scheme_artists.append(stuck_artist)
+
+    controls._viewer.set_step(0)
+
+    assert stuck_artist.get_visible() is False
 
 
 def test_plot_graph_without_scheme_source_does_not_create_lazy_controls() -> None:

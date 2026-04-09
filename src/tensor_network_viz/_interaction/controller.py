@@ -15,6 +15,7 @@ from .._core.draw.scene_state import _InteractiveSceneState
 from .._core.draw.tensors import _tensor_disk_radius_px
 from .._interactive_scene import (
     _apply_scene_hover_state,
+    _bring_scene_label_artists_to_front,
     _ensure_edge_label_artists,
     _ensure_tensor_label_artists,
     _node_mode_from_show_nodes,
@@ -355,7 +356,7 @@ class _InteractiveTensorFigureController:
             include_scheme_toggles=availability.scheme,
             include_tensor_inspector=availability.tensor_inspector,
             include_diagnostics=True,
-            include_focus_controls=True,
+            include_focus_controls=False,
         )
 
     def _render_view(
@@ -488,9 +489,19 @@ class _InteractiveTensorFigureController:
             self._tensor_inspector.close_from_owner()
 
     def _on_button_press(self, event: Any) -> None:
-        if event.button is None:
+        if event.button is None or event.x is None or event.y is None:
             return
-        if event.inaxes is not self.current_scene.ax:
+        current_ax = self.current_scene.ax
+        in_current_axes = bool(
+            event.inaxes is current_ax or current_ax.bbox.contains(float(event.x), float(event.y))
+        )
+        if not in_current_axes:
+            if (
+                event.inaxes is None
+                and self._tensor_inspector is not None
+                and self._tensor_inspector.is_enabled
+            ):
+                self._tensor_inspector.clear_selected_node()
             return
         node_id = _hit_visible_node_id(self.current_scene, event)
         if node_id is None:
@@ -536,6 +547,8 @@ class _InteractiveTensorFigureController:
                 scheme_on=resolved.scheme,
                 cost_hover_on=resolved.cost_hover,
             )
+            if resolved.tensor_inspector:
+                controls.ensure_viewer()
             resolved = replace(
                 resolved,
                 scheme=bool(controls.scheme_on),
@@ -554,6 +567,7 @@ class _InteractiveTensorFigureController:
                 resolved.tensor_inspector,
                 reveal=reveal_inspector,
             )
+        _bring_scene_label_artists_to_front(scene)
         _apply_scene_hover_state(scene, hover_on=resolved.hover)
         self._active_state = resolved
         self._sync_checkbuttons()

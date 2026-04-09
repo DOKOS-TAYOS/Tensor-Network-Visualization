@@ -188,6 +188,22 @@ def test_feature_state_from_config_normalizes_playback_dependencies() -> None:
     assert resolved.tensor_inspector is True
 
 
+def test_feature_state_from_config_keeps_tensor_inspector_independent_from_scheme() -> None:
+    resolved = feature_state_from_config(
+        PlotConfig(
+            show_contraction_scheme=False,
+            contraction_scheme_cost_hover=False,
+            contraction_tensor_inspector=True,
+        ),
+        tensor_inspector_available=True,
+    )
+
+    assert resolved.scheme is False
+    assert resolved.playback is False
+    assert resolved.cost_hover is False
+    assert resolved.tensor_inspector is True
+
+
 def test_feature_availability_disables_playback_features_when_bundle_failed() -> None:
     scene = cast(
         _InteractiveSceneState,

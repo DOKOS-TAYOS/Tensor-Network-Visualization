@@ -352,11 +352,7 @@ def finalize_demo_plot_config(
     if labels_override is not None:
         labels_nodes = bool(labels_override)
         labels_edges = bool(labels_override)
-    scheme_enabled = bool(
-        getattr(args, "scheme", False)
-        or getattr(args, "hover_cost", False)
-        or getattr(args, "tensor_inspector", False)
-    )
+    scheme_enabled = bool(getattr(args, "scheme", False) or getattr(args, "hover_cost", False))
     return PlotConfig(
         show_tensor_labels=labels_nodes,
         show_index_labels=labels_edges,

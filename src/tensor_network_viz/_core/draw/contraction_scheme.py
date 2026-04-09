@@ -12,6 +12,7 @@ from matplotlib.colors import to_rgba
 from matplotlib.patches import Circle, Rectangle
 from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 
+from ..._interactive_scene import _bring_scene_label_artists_to_front
 from ...config import PlotConfig
 from ..graph import (
     _ContractionStepMetrics,
@@ -311,7 +312,14 @@ def _remove_artists(artists: list[Artist]) -> None:
     for artist in artists:
         remover = getattr(artist, "remove", None)
         if callable(remover):
-            remover()
+            try:
+                remover()
+                continue
+            except NotImplementedError:
+                pass
+        setter = getattr(artist, "set_visible", None)
+        if callable(setter):
+            setter(False)
     artists.clear()
 
 
@@ -697,6 +705,7 @@ class _ContractionSceneApplier:
             _remove_artists(self._scene.scheme_artists)
             _set_scene_base_graph_visible(self._scene, True)
             self._scene.node_patch_coll = _scene_base_node_hover_target(self._scene)
+            _bring_scene_label_artists_to_front(self._scene)
             _refresh_scene_hover(self._scene)
             self._scene.ax.figure.canvas.draw_idle()
             return
@@ -717,6 +726,7 @@ class _ContractionSceneApplier:
                 if hover_target is not None
                 else _scene_base_node_hover_target(self._scene)
             )
+        _bring_scene_label_artists_to_front(self._scene)
         _refresh_scene_hover(self._scene)
         self._scene.ax.figure.canvas.draw_idle()
 

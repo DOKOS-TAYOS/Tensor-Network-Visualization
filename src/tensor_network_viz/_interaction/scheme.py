@@ -166,6 +166,15 @@ class _ContractionControls:
         self._apply_visual_state()
         self._refresh_hover()
 
+    def ensure_viewer(self) -> None:
+        """Build the playback viewer lazily without forcing the scheme visible."""
+        if self._viewer is None:
+            bundle = self._ensure_bundle(strict=True, swallow_errors=True)
+            if bundle is None:
+                return
+            self._viewer = bundle.viewer
+        self._apply_visual_state()
+
     def _ensure_bundle(
         self,
         *,

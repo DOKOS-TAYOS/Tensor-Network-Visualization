@@ -107,15 +107,15 @@ def normalize_feature_state(
 ) -> InteractiveFeatureState:
     """Clamp a requested feature state to what the current scene can actually support.
 
-    The contraction scheme is promoted automatically when playback, cost hover, or the
-    tensor inspector require it.
+    The contraction scheme is promoted automatically when playback or the cost panel
+    require it.
     """
     scheme = bool(requested.scheme and availability.scheme)
     playback = bool(requested.playback and availability.playback)
     cost_hover = bool(requested.cost_hover and availability.cost_hover)
     tensor_inspector = bool(requested.tensor_inspector and availability.tensor_inspector)
 
-    if cost_hover or tensor_inspector:
+    if cost_hover:
         if availability.playback:
             playback = True
         if availability.scheme:

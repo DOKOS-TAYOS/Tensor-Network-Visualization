@@ -1703,6 +1703,27 @@ def test_show_tensor_elements_analysis_modes_build_contextual_controls() -> None
     assert_rendered_figure(fig, ax)
 
 
+def test_show_tensor_elements_group_and_mode_selectors_use_tighter_spacing() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(6, dtype=float).reshape(2, 3),
+        name="WidgetSelectorLayout",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert_rendered_figure(fig, ax)
+    assert controller._group_radio_ax is not None
+    assert controller._mode_radio_ax is not None
+    assert controller._group_radio_ax.get_position().bounds == pytest.approx(
+        (0.02, 0.04, 0.15, 0.145)
+    )
+    assert controller._mode_radio_ax.get_position().bounds == pytest.approx(
+        (0.175, 0.028, 0.21, 0.16)
+    )
+
+
 def test_show_tensor_elements_slice_slider_keeps_widget_while_updating() -> None:
     tensor = DummyTensorNetworkNode(
         np.arange(24, dtype=float).reshape(2, 3, 4),

@@ -131,13 +131,13 @@ def test_finalize_contraction_cost_hover_auto_enables_scheme() -> None:
     assert cfg.contraction_scheme_cost_hover is True
 
 
-def test_finalize_contraction_tensor_inspector_auto_enables_scheme() -> None:
+def test_finalize_contraction_tensor_inspector_keeps_scheme_optional() -> None:
     cfg = finalize_demo_plot_config(
         _demo_args(tensor_inspector=True),
         engine="einsum",
         scheme_tensor_names=None,
     )
-    assert cfg.show_contraction_scheme is True
+    assert cfg.show_contraction_scheme is False
     assert cfg.contraction_tensor_inspector is True
 
 

@@ -5,6 +5,7 @@ from typing import Any, cast
 import numpy as np
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
+from matplotlib.text import Text
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from ._core._label_format import format_tensor_node_label
@@ -99,8 +100,6 @@ def _node_hover_text(scene: _InteractiveSceneState, node_id: int, base_text: str
     extra_lines: list[str] = []
     if node.shape is not None:
         extra_lines.append(f"shape: {node.shape}")
-    if node.dtype is not None:
-        extra_lines.append(f"dtype: {node.dtype}")
     if node.element_count is not None:
         extra_lines.append(f"elements: {node.element_count}")
     memory_text = _format_memory_estimate(node.estimated_nbytes)
@@ -122,6 +121,64 @@ def _set_artist_visible(artist: Artist, visible: bool) -> None:
     setter = getattr(artist, "set_visible", None)
     if callable(setter):
         setter(bool(visible))
+
+
+def _scene_label_artists(scene: _InteractiveSceneState) -> tuple[Artist, ...]:
+    return tuple(
+        artist
+        for artist in (
+            *scene.tensor_label_artists,
+            *scene.edge_label_artists,
+            *scene.diagnostic_artists,
+        )
+        if isinstance(artist, Artist) and getattr(artist, "axes", None) is scene.ax
+    )
+
+
+def _scene_non_label_max_zorder(
+    scene: _InteractiveSceneState,
+    label_artists: tuple[Artist, ...],
+) -> float:
+    label_ids = {id(artist) for artist in label_artists}
+    max_zorder = 0.0
+    for artist in scene.ax.get_children():
+        if id(artist) in label_ids:
+            continue
+        getter = getattr(artist, "get_zorder", None)
+        if not callable(getter):
+            continue
+        max_zorder = max(max_zorder, float(getter()))
+    return max_zorder
+
+
+def _readd_scene_artist(scene: _InteractiveSceneState, artist: Artist) -> None:
+    remover = getattr(artist, "remove", None)
+    if not callable(remover):
+        return
+    try:
+        remover()
+    except (NotImplementedError, ValueError):
+        return
+    if isinstance(artist, Text):
+        add_text = getattr(scene.ax, "_add_text", None)
+        if callable(add_text):
+            add_text(artist)
+            return
+    add_artist = getattr(scene.ax, "add_artist", None)
+    if callable(add_artist):
+        add_artist(artist)
+
+
+def _bring_scene_label_artists_to_front(scene: _InteractiveSceneState) -> None:
+    label_artists = _scene_label_artists(scene)
+    if not label_artists:
+        return
+    top_zorder = _scene_non_label_max_zorder(scene, label_artists) + 1.0
+    for index, artist in enumerate(label_artists):
+        setter = getattr(artist, "set_zorder", None)
+        if callable(setter):
+            setter(float(top_zorder + index * 0.01))
+        _readd_scene_artist(scene, artist)
 
 
 def _node_mode_from_show_nodes(show_nodes: bool) -> NodeRenderMode:
@@ -668,6 +725,7 @@ def _apply_scene_hover_state(
 
 __all__ = [
     "_apply_scene_hover_state",
+    "_bring_scene_label_artists_to_front",
     "_build_edge_label_descriptors",
     "_build_scene_node_artists",
     "_build_tensor_label_descriptors",

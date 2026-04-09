@@ -38,7 +38,13 @@ from plotting_helpers import (
     point_collection_sizes,
     poly3d_node_collection_count,
 )
-from tensor_network_viz import EinsumTrace, PlotConfig, einsum, show_tensor_network
+from tensor_network_viz import (
+    EinsumTrace,
+    PlotConfig,
+    TensorNetworkDiagnosticsConfig,
+    einsum,
+    show_tensor_network,
+)
 from tensor_network_viz._core import _draw_common
 from tensor_network_viz._core.graph import (
     _EdgeEndpoint,
@@ -48,6 +54,7 @@ from tensor_network_viz._core.graph import (
     _make_node,
 )
 from tensor_network_viz._core.renderer import _plot_graph
+from tensor_network_viz._matplotlib_state import get_scene
 from tensor_network_viz.einsum_module.trace import pair_tensor
 from tensor_network_viz.tensorkrowch import (
     plot_tensorkrowch_network_2d,
@@ -92,6 +99,21 @@ class DummyNetwork:
             self.nodes = nodes
         if leaf_nodes is not None:
             self.leaf_nodes = leaf_nodes
+
+
+def _einsum_trace_with_three_tensors() -> EinsumTrace:
+    trace = EinsumTrace()
+    left = np.arange(6, dtype=np.float64).reshape(2, 3)
+    mid = np.arange(12, dtype=np.float64).reshape(3, 4)
+    right = np.arange(20, dtype=np.float64).reshape(4, 5)
+
+    trace.bind("A", left)
+    trace.bind("B", mid)
+    trace.bind("C", right)
+    result_ab = einsum("ab,bc->ac", left, mid, trace=trace, backend="numpy")
+    result_abc = einsum("ac,cd->ad", result_ab, right, trace=trace, backend="numpy")
+    trace._test_keepalive = [left, mid, right, result_ab, result_abc]  # type: ignore[attr-defined]
+    return trace
 
 
 def _widget_center_event(fig: matplotlib.figure.Figure, artist: object) -> MouseEvent:
@@ -1076,6 +1098,9 @@ def test_show_tensor_network_scheme_checkbox_visual_state_matches_scheme_toggle(
     assert controls.scheme_on is True
     assert controls.current_scene.contraction_controls is not None
     assert controls.current_scene.contraction_controls.scheme_on is True
+    assert controls.current_scene.contraction_controls._viewer is not None
+    assert controls.current_scene.contraction_controls._viewer.slider is not None
+    assert controls.current_scene.contraction_controls._viewer.slider.ax.get_visible() is True
 
     _click_checkbutton(controls._checkbuttons, scheme_index)
 
@@ -1084,6 +1109,9 @@ def test_show_tensor_network_scheme_checkbox_visual_state_matches_scheme_toggle(
     assert controls.scheme_on is False
     assert controls.current_scene.contraction_controls is not None
     assert controls.current_scene.contraction_controls.scheme_on is False
+    assert controls.current_scene.contraction_controls._viewer is not None
+    assert controls.current_scene.contraction_controls._viewer.slider is not None
+    assert controls.current_scene.contraction_controls._viewer.slider.ax.get_visible() is False
 
 
 def test_show_tensor_network_scheme_and_cost_hover_keep_visual_checkboxes_in_sync() -> None:
@@ -1124,6 +1152,92 @@ def test_show_tensor_network_scheme_and_cost_hover_keep_visual_checkboxes_in_syn
     assert status_after_cost_hover[cost_index] is True
     assert controls.scheme_on is True
     assert controls.cost_hover_on is True
+
+
+def test_show_tensor_network_scheme_with_diagnostics_supports_slider_updates() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            diagnostics=TensorNetworkDiagnosticsConfig(show_overlay=True),
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
+    diagnostics_index = _checkbutton_index(controls._checkbuttons, "Diagnostics")
+
+    _click_checkbutton(controls._checkbuttons, diagnostics_index)
+    _click_checkbutton(controls._checkbuttons, scheme_index)
+
+    scene_controls = controls.current_scene.contraction_controls
+    assert scene_controls is not None
+    assert scene_controls._viewer is not None
+    assert scene_controls._viewer.slider is not None
+
+    scene_controls._viewer.slider.set_val(1.0)
+    scene_controls._viewer.slider.set_val(0.0)
+
+    assert scene_controls._viewer.current_step == 0
+
+
+def test_show_tensor_network_keeps_diagnostics_labels_last_after_scheme_updates() -> None:
+    fig, ax = show_tensor_network(
+        _einsum_trace_with_three_tensors(),
+        engine="einsum",
+        config=PlotConfig(
+            show_tensor_labels=True,
+            show_index_labels=True,
+            diagnostics=TensorNetworkDiagnosticsConfig(show_overlay=True),
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    scene = get_scene(ax)
+    assert scene is not None
+    label_artists = (
+        tuple(scene.tensor_label_artists)
+        + tuple(scene.edge_label_artists)
+        + tuple(scene.diagnostic_artists)
+    )
+    visible_texts = tuple(text for text in scene.ax.texts if text.get_visible())
+    assert label_artists
+    assert scene.diagnostic_artists
+    assert tuple(visible_texts[-len(label_artists) :]) == label_artists
+    assert tuple(visible_texts[-len(scene.diagnostic_artists) :]) == tuple(scene.diagnostic_artists)
+
+    scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
+    _click_checkbutton(controls._checkbuttons, scheme_index)
+
+    scene_controls = scene.contraction_controls
+    assert scene_controls is not None
+    assert scene_controls._viewer is not None
+    assert scene_controls._viewer.slider is not None
+
+    scene_controls._viewer.slider.set_val(1.0)
+
+    scene = get_scene(ax)
+    assert scene is not None
+    label_artists = (
+        tuple(scene.tensor_label_artists)
+        + tuple(scene.edge_label_artists)
+        + tuple(scene.diagnostic_artists)
+    )
+    visible_texts = tuple(text for text in scene.ax.texts if text.get_visible())
+    assert tuple(visible_texts[-len(label_artists) :]) == label_artists
+    assert tuple(visible_texts[-len(scene.diagnostic_artists) :]) == tuple(scene.diagnostic_artists)
 
 
 def test_show_tensor_network_scheme_keeps_node_hover_active_after_step_changes() -> None:
@@ -1169,7 +1283,7 @@ def test_show_tensor_network_scheme_keeps_node_hover_active_after_step_changes()
     assert hover_annotation.get_text() == "A"
 
 
-def test_show_tn_einsum_trace_inspector_checkbox_auto_enables_scheme() -> None:
+def test_show_tn_einsum_trace_inspector_checkbox_keeps_scheme_off() -> None:
     trace = _build_einsum_trace_for_inspector()
 
     fig, _ax = show_tensor_network(
@@ -1195,9 +1309,9 @@ def test_show_tn_einsum_trace_inspector_checkbox_auto_enables_scheme() -> None:
     _click_checkbutton(controls._checkbuttons, inspector_index)
 
     status_after_enable = tuple(bool(v) for v in controls._checkbuttons.get_status())
-    assert status_after_enable[scheme_index] is True
+    assert status_after_enable[scheme_index] is False
     assert status_after_enable[inspector_index] is True
-    assert controls.scheme_on is True
+    assert controls.scheme_on is False
     assert controls.tensor_inspector_on is True
     assert getattr(fig, "_tensor_network_viz_tensor_inspector", None) is not None
 
@@ -1340,6 +1454,7 @@ def test_clicking_a_visible_tensor_opens_shared_inspector_for_non_playback_netwo
     assert controls is not None
     inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
     assert inspector is not None
+    assert controls.scheme_on is False
     node_id = next(
         node_id for node_id, node in controls.current_scene.graph.nodes.items() if node.name == "A"
     )
@@ -1359,7 +1474,36 @@ def test_clicking_a_visible_tensor_opens_shared_inspector_for_non_playback_netwo
     )
     assert inspector_controls is not None
     assert "a" in inspector_controls._panel.main_ax.get_title().lower()
+    assert controls.scheme_on is False
     assert controls.tensor_inspector_on is True
+
+
+def test_tensor_inspector_reuses_compact_tensor_elements_selector_layout() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+    assert inspector_controls._group_radio_ax is not None
+    assert inspector_controls._mode_radio_ax is not None
+    assert inspector_controls._group_radio_ax.get_position().bounds == pytest.approx(
+        (0.02, 0.04, 0.15, 0.145)
+    )
+    assert inspector_controls._mode_radio_ax.get_position().bounds == pytest.approx(
+        (0.175, 0.028, 0.21, 0.16)
+    )
 
 
 def test_tensor_inspector_manual_node_selection_takes_precedence_until_cleared() -> None:

@@ -46,7 +46,7 @@ _GROUP_OPTIONS: Final[tuple[TensorElementsGroup, ...]] = (
     "analysis",
 )
 _GROUP_SELECTOR_BOUNDS: Final[tuple[float, float, float, float]] = (0.02, 0.04, 0.15, 0.145)
-_MODE_SELECTOR_BOUNDS: Final[tuple[float, float, float, float]] = (0.19, 0.028, 0.21, 0.16)
+_MODE_SELECTOR_BOUNDS: Final[tuple[float, float, float, float]] = (0.175, 0.028, 0.21, 0.16)
 _TENSOR_SLIDER_BOUNDS: Final[tuple[float, float, float, float]] = (0.48, 0.045, 0.38, 0.065)
 _ANALYSIS_AXIS_BOUNDS: Final[tuple[float, float, float, float]] = (0.42, 0.122, 0.16, 0.105)
 _ANALYSIS_CHECK_BOUNDS: Final[tuple[float, float, float, float]] = (0.42, 0.108, 0.18, 0.125)

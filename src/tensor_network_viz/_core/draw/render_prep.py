@@ -192,19 +192,24 @@ def _format_memory_estimate(estimated_nbytes: int | None) -> str | None:
 
 def _node_overlay_text(context: _RenderPrepContext, node_id: int) -> str:
     node = context.graph.nodes[node_id]
-    parts: list[str] = []
-    if node.shape is not None:
-        parts.append(f"shape={node.shape}")
-    memory_text = _format_memory_estimate(node.estimated_nbytes)
-    if memory_text is not None:
-        parts.append(memory_text)
-    return "\n".join(parts)
+    if node.shape is None:
+        return ""
+    return str(node.shape)
 
 
 def _edge_overlay_text(entry: _RenderedEdgeGeometry) -> str:
     if entry.edge.bond_dimension is None:
         return ""
-    return f"chi={entry.edge.bond_dimension}"
+    return str(entry.edge.bond_dimension)
+
+
+def _diagnostic_overlay_bbox_kwargs(*, pad: float = 0.14) -> dict[str, Any]:
+    return {
+        "boxstyle": f"round,pad={pad}",
+        "facecolor": (0.99, 0.98, 0.94, 0.88),
+        "edgecolor": (0.72, 0.72, 0.68, 0.42),
+        "linewidth": 0.35,
+    }
 
 
 def _draw_diagnostic_overlay(
@@ -223,17 +228,18 @@ def _draw_diagnostic_overlay(
             continue
         position = np.asarray(context.positions[int(node_id)], dtype=float).copy()
         if context.dimensions == 2:
-            position[1] += node_offset
+            position[1] -= node_offset
         else:
-            position[2] += node_offset
+            position[2] -= node_offset
         context.plotter.plot_text(
             position,
             overlay_text,
-            color="#475569",
+            color="#000000",
             fontsize=max(7.2, float(context.params.font_tensor_label_max) * 0.72),
             ha="center",
-            va="bottom",
+            va="top",
             zorder=float(_ZORDER_LAYER_BASE + _ZORDER_LAYER_TENSOR_NAME),
+            bbox=_diagnostic_overlay_bbox_kwargs(),
         )
     for entry in context.edge_geometry_sink:
         overlay_text = _edge_overlay_text(entry)
@@ -243,11 +249,12 @@ def _draw_diagnostic_overlay(
         context.plotter.plot_text(
             midpoint,
             overlay_text,
-            color="#334155",
+            color="#000000",
             fontsize=8.0,
             ha="center",
             va="center",
             zorder=float(_ZORDER_LAYER_BASE + _ZORDER_LAYER_TENSOR_NAME),
+            bbox=_diagnostic_overlay_bbox_kwargs(),
         )
     return list(ax.texts[before:])
 

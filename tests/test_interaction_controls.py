@@ -7,6 +7,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backend_bases import MouseButton, MouseEvent
+from matplotlib.colors import to_hex
 
 from tensor_network_viz import (
     EinsumTrace,
@@ -169,6 +170,53 @@ def test_interactive_controls_panel_emits_raw_requested_state_from_widget_change
         plt.close(fig)
 
 
+def test_interactive_controls_panel_keeps_playback_off_when_only_tensor_inspector_is_enabled() -> (
+    None
+):
+    fig = plt.figure()
+    state_events: list[InteractiveFeatureState] = []
+    initial_state = InteractiveFeatureState(
+        hover=True,
+        nodes=True,
+        tensor_labels=False,
+        edge_labels=False,
+        scheme=False,
+        playback=False,
+        cost_hover=False,
+        tensor_inspector=False,
+    )
+    try:
+        panel = _InteractiveControlsPanel(
+            fig=fig,
+            layout=_InteractiveControlsLayout(
+                include_view_selector=True,
+                include_scheme_toggles=True,
+                include_tensor_inspector=True,
+                include_diagnostics=False,
+            ),
+            initial_view="2d",
+            initial_state=initial_state,
+            on_view_selected=lambda _view: None,
+            on_state_changed=state_events.append,
+        )
+
+        panel.checkbuttons.set_active(6)
+
+        assert state_events[-1] == InteractiveFeatureState(
+            hover=True,
+            nodes=True,
+            tensor_labels=False,
+            edge_labels=False,
+            scheme=False,
+            playback=False,
+            cost_hover=False,
+            tensor_inspector=True,
+            diagnostics=False,
+        )
+    finally:
+        plt.close(fig)
+
+
 def test_show_tensor_network_diagnostics_overlay_enriches_scene_payloads() -> None:
     fig, ax = show_tensor_network(
         _einsum_trace(),
@@ -184,9 +232,28 @@ def test_show_tensor_network_diagnostics_overlay_enriches_scene_payloads() -> No
     assert controls.diagnostics_on is True
     assert scene is not None
     assert scene.diagnostic_artists
-    assert any("shape=" in artist.get_text().lower() for artist in scene.diagnostic_artists)
+    diagnostic_texts = [artist.get_text() for artist in scene.diagnostic_artists]
+    assert any(text.startswith("(") for text in diagnostic_texts)
+    assert any(text.isdigit() for text in diagnostic_texts)
+    assert all("shape=" not in text.lower() for text in diagnostic_texts)
+    assert all("chi=" not in text.lower() for text in diagnostic_texts)
+    assert all(
+        to_hex(artist.get_color()).lower() == "#000000" for artist in scene.diagnostic_artists
+    )
+    diagnostic_bbox_patches = [artist.get_bbox_patch() for artist in scene.diagnostic_artists]
+    assert all(patch is not None for patch in diagnostic_bbox_patches)
+    assert all(
+        patch.get_facecolor()[0] > 0.9
+        and patch.get_facecolor()[1] > 0.9
+        and patch.get_facecolor()[2] > 0.9
+        and patch.get_facecolor()[3] > 0.7
+        for patch in diagnostic_bbox_patches
+    )
     assert scene.tensor_hover_payload is not None
-    assert any("dtype:" in payload[0].lower() for payload in scene.tensor_hover_payload.values())
+    assert not any(
+        "dtype:" in payload[0].lower() for payload in scene.tensor_hover_payload.values()
+    )
+    assert any("memory:" in payload[0].lower() for payload in scene.tensor_hover_payload.values())
     assert scene.edge_hover_payload is not None
     assert any("bond dimension" in payload[1].lower() for payload in scene.edge_hover_payload)
 
@@ -284,9 +351,9 @@ def test_show_tensor_network_focus_controls_drive_click_selection_and_clear() ->
     scene = controls.current_scene
 
     assert panel is not None
-    assert panel.focus_mode_radio is not None
-    assert panel.focus_radius_radio is not None
-    assert panel.focus_clear_button is not None
+    assert panel.focus_mode_radio is None
+    assert panel.focus_radius_radio is None
+    assert panel.focus_clear_button is None
     assert {scene.graph.nodes[node_id].name for node_id in scene.visible_node_ids} == {
         "A",
         "B",
@@ -305,8 +372,8 @@ def test_show_tensor_network_focus_controls_drive_click_selection_and_clear() ->
         "C",
     }
 
-    panel.focus_radius_radio.set_active(1)
-    panel.focus_mode_radio.set_active(0)
+    controls.set_focus_radius(2)
+    controls.set_focus_mode("neighborhood")
     _dispatch_button_event_at_data(ax, x=float(position_a[0]), y=float(position_a[1]))
     assert {
         controls.current_scene.graph.nodes[node_id].name
@@ -317,7 +384,7 @@ def test_show_tensor_network_focus_controls_drive_click_selection_and_clear() ->
         "C",
     }
 
-    panel.focus_radius_radio.set_active(0)
+    controls.set_focus_radius(1)
     assert {
         controls.current_scene.graph.nodes[node_id].name
         for node_id in controls.current_scene.visible_node_ids
@@ -326,7 +393,7 @@ def test_show_tensor_network_focus_controls_drive_click_selection_and_clear() ->
         "B",
     }
 
-    panel.focus_mode_radio.set_active(1)
+    controls.set_focus_mode("path")
     assert {
         controls.current_scene.graph.nodes[node_id].name
         for node_id in controls.current_scene.visible_node_ids

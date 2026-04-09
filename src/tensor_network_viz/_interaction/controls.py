@@ -246,7 +246,7 @@ class _InteractiveControlsPanel:
                 next_index += 1
             if self._layout.include_diagnostics:
                 diagnostics = status[next_index]
-            playback = bool(scheme or cost_hover or tensor_inspector)
+            playback = bool(scheme or cost_hover)
         elif self._layout.include_diagnostics:
             diagnostics = status[len(_BASE_TOGGLE_LABELS)]
         return InteractiveFeatureState(
