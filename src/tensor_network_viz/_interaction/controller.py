@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 from matplotlib.axes import Axes
@@ -33,7 +33,14 @@ from .._tensor_elements_data import (
     _PlaybackStepRecord,
 )
 from .._tensor_elements_support import _extract_tensor_records, _TensorRecord
-from ..config import EngineName, PlotConfig, ViewName
+from ..config import (
+    EngineName,
+    PlotConfig,
+    TensorNetworkDiagnosticsConfig,
+    TensorNetworkFocus,
+    ViewName,
+)
+from ..exceptions import TensorDataError, TensorDataTypeError
 from .controls import _InteractiveControlsLayout, _InteractiveControlsPanel
 from .state import (
     InteractiveFeatureState,
@@ -46,6 +53,7 @@ from .tensor_inspector import _LinkedTensorInspectorController
 from .views import _InteractiveViewManager
 
 RenderedAxes = Axes | Axes3D
+_FocusMode = Literal["neighborhood", "path"]
 
 
 def _node_records_by_name(
@@ -55,7 +63,8 @@ def _node_records_by_name(
 ) -> dict[str, _TensorRecord]:
     try:
         _, records = _extract_tensor_records(network, engine=engine)
-    except Exception:
+    except (TensorDataError, TensorDataTypeError) as exc:
+        package_logger.debug("Tensor inspector node records unavailable: %s", exc)
         return {}
     mapping: dict[str, _TensorRecord] = {}
     duplicate_names: set[str] = set()
@@ -161,6 +170,14 @@ class _InteractiveTensorFigureController:
             tensor_inspector_available=self.tensor_inspector_available,
         )
         self._active_state = self._desired_state
+        self._focus: TensorNetworkFocus | None = config.focus
+        self._focus_mode: _FocusMode = "neighborhood"
+        self._focus_radius: int = 1
+        self._focus_pending_start: str | None = None
+        self._focus_interaction_enabled: bool = config.focus is not None
+        if config.focus is not None:
+            self._focus_mode = cast(_FocusMode, config.focus.kind)
+            self._focus_radius = int(config.focus.radius)
         self._view_manager = _InteractiveViewManager(
             render_view=lambda view, ax: self._render_view(view, ax=ax),
             initial_ax=initial_ax,
@@ -260,10 +277,30 @@ class _InteractiveTensorFigureController:
         self._set_requested_state(tensor_inspector=bool(enabled))
 
     @property
+    def diagnostics_on(self) -> bool:
+        return bool(self._active_state.diagnostics)
+
+    @diagnostics_on.setter
+    def diagnostics_on(self, enabled: bool) -> None:
+        self._set_requested_state(diagnostics=bool(enabled))
+
+    @property
     def current_scene(self) -> _InteractiveSceneState:
         scene = self._view_manager.current_scene(self.current_view)
         assert scene is not None
         return scene
+
+    @property
+    def focus(self) -> TensorNetworkFocus | None:
+        return self._focus
+
+    @property
+    def focus_mode(self) -> _FocusMode:
+        return self._focus_mode
+
+    @property
+    def focus_radius(self) -> int:
+        return int(self._focus_radius)
 
     def initialize(self) -> tuple[Figure, RenderedAxes]:
         figure, ax, scene = self._view_manager.build_initial_view(
@@ -291,6 +328,7 @@ class _InteractiveTensorFigureController:
         self._active_state = replace(self._active_state, **changes)
 
     def _base_config(self) -> PlotConfig:
+        diagnostics = self.config.diagnostics or TensorNetworkDiagnosticsConfig()
         return replace(
             self.config,
             show_nodes=self._desired_state.nodes,
@@ -300,6 +338,8 @@ class _InteractiveTensorFigureController:
             show_contraction_scheme=False,
             contraction_scheme_cost_hover=False,
             contraction_tensor_inspector=False,
+            diagnostics=replace(diagnostics, show_overlay=self._desired_state.diagnostics),
+            focus=self._focus,
         )
 
     def _scene_availability(self, scene: _InteractiveSceneState) -> Any:
@@ -314,6 +354,8 @@ class _InteractiveTensorFigureController:
             include_view_selector=not self._external_ax,
             include_scheme_toggles=availability.scheme,
             include_tensor_inspector=availability.tensor_inspector,
+            include_diagnostics=True,
+            include_focus_controls=True,
         )
 
     def _render_view(
@@ -375,16 +417,45 @@ class _InteractiveTensorFigureController:
             initial_state=self._active_state,
             on_view_selected=self.set_view,
             on_state_changed=self._on_controls_state_changed,
+            initial_focus_mode=self._focus_mode,
+            initial_focus_radius=self._focus_radius,
+            on_focus_mode_selected=self.set_focus_mode,
+            on_focus_radius_selected=self.set_focus_radius,
+            on_focus_cleared=self.clear_focus,
         )
 
     def _sync_checkbuttons(self) -> None:
         if self._controls_panel is None:
             return
-        self._controls_panel.sync(state=self._active_state, view=self.current_view)
+        self._controls_panel.sync(
+            state=self._active_state,
+            view=self.current_view,
+            focus_mode=self._focus_mode,
+            focus_radius=self._focus_radius,
+        )
+
+    def _rerender_cached_views(self) -> _InteractiveSceneState:
+        rerendered_current: _InteractiveSceneState | None = None
+        for view_name, cache in self._view_caches.items():
+            if cache.ax is None or cache.scene is None:
+                continue
+            scene = self._rerender_cached_view(view_name)
+            if view_name == self.current_view:
+                rerendered_current = scene
+        if rerendered_current is None:
+            rerendered_current = self.current_scene
+        self._deactivate_non_current_views()
+        return rerendered_current
 
     def _on_controls_state_changed(self, requested_state: InteractiveFeatureState) -> None:
+        diagnostics_changed = requested_state.diagnostics != self._active_state.diagnostics
         self._desired_state = requested_state
         self._active_state = requested_state
+        if diagnostics_changed:
+            scene = self._rerender_cached_views()
+            self._apply_scene_state(scene)
+            set_active_axes(scene.ax.figure, scene.ax)
+            return
         self._apply_scene_state(self.current_scene)
 
     def _on_view_clicked(self, label: str | None) -> None:
@@ -417,17 +488,21 @@ class _InteractiveTensorFigureController:
             self._tensor_inspector.close_from_owner()
 
     def _on_button_press(self, event: Any) -> None:
-        if event.button is None or self._tensor_inspector is None:
+        if event.button is None:
             return
         if event.inaxes is not self.current_scene.ax:
             return
         node_id = _hit_visible_node_id(self.current_scene, event)
         if node_id is None:
-            if self._tensor_inspector.is_enabled:
+            if self._tensor_inspector is not None and self._tensor_inspector.is_enabled:
                 self._tensor_inspector.clear_selected_node()
             return
         node = self.current_scene.graph.nodes.get(node_id)
-        if node is None or node.is_virtual or node.name not in self._node_records_by_name:
+        if node is None or node.is_virtual or not node.name:
+            return
+        if self._focus_interaction_enabled:
+            self.select_focus_node(node.name)
+        if self._tensor_inspector is None or node.name not in self._node_records_by_name:
             return
         if not self._desired_state.tensor_inspector:
             self._tensor_inspector.select_node(node.name, reveal=False)
@@ -524,6 +599,107 @@ class _InteractiveTensorFigureController:
         self.edge_labels_on = enabled
         package_logger.debug("Interactive edge labels enabled=%s.", self.edge_labels_on)
         self._apply_scene_state(self.current_scene)
+
+    def set_focus_mode(self, mode: str) -> None:
+        resolved_mode = cast(_FocusMode, str(mode))
+        if resolved_mode not in {"neighborhood", "path"}:
+            raise ValueError(f"Unsupported focus mode {mode!r}.")
+        self._focus_interaction_enabled = True
+        rerender_required = False
+        if self._focus_mode != resolved_mode:
+            self._focus_mode = resolved_mode
+            self._focus_pending_start = None
+            if self._focus is not None and self._focus.kind != resolved_mode:
+                self._focus = None
+                rerender_required = True
+        self._sync_checkbuttons()
+        if rerender_required:
+            scene = self._rerender_cached_views()
+            self._apply_scene_state(scene)
+            set_active_axes(scene.ax.figure, scene.ax)
+
+    def set_focus_radius(self, radius: int) -> None:
+        resolved_radius = int(radius)
+        if resolved_radius not in {1, 2}:
+            raise ValueError("Focus radius must be 1 or 2.")
+        self._focus_interaction_enabled = True
+        if self._focus_radius == resolved_radius:
+            self._sync_checkbuttons()
+            return
+        self._focus_radius = resolved_radius
+        if (
+            self._focus is not None
+            and self._focus.kind == "neighborhood"
+            and self._focus.center is not None
+        ):
+            self._focus = TensorNetworkFocus(
+                kind="neighborhood",
+                center=self._focus.center,
+                radius=resolved_radius,
+            )
+            scene = self._rerender_cached_views()
+            self._apply_scene_state(scene)
+            set_active_axes(scene.ax.figure, scene.ax)
+            return
+        self._sync_checkbuttons()
+
+    def clear_focus(self) -> None:
+        had_focus = self._focus is not None or self._focus_pending_start is not None
+        self._focus = None
+        self._focus_pending_start = None
+        self._focus_interaction_enabled = True
+        self._sync_checkbuttons()
+        if not had_focus:
+            return
+        scene = self._rerender_cached_views()
+        self._apply_scene_state(scene)
+        set_active_axes(scene.ax.figure, scene.ax)
+
+    def select_focus_node(self, node_name: str) -> bool:
+        if not node_name:
+            return False
+        self._focus_interaction_enabled = True
+        if self._focus_mode == "neighborhood":
+            self._focus_pending_start = None
+            next_focus = TensorNetworkFocus(
+                kind="neighborhood",
+                center=node_name,
+                radius=self._focus_radius,
+            )
+            if self._focus == next_focus:
+                self._sync_checkbuttons()
+                return True
+            self._focus = next_focus
+            scene = self._rerender_cached_views()
+            self._apply_scene_state(scene)
+            set_active_axes(scene.ax.figure, scene.ax)
+            return True
+
+        if self._focus_pending_start is None:
+            rerender_required = self._focus is not None
+            self._focus_pending_start = node_name
+            self._focus = None
+            self._sync_checkbuttons()
+            if rerender_required:
+                scene = self._rerender_cached_views()
+                self._apply_scene_state(scene)
+                set_active_axes(scene.ax.figure, scene.ax)
+            return False
+
+        next_focus = TensorNetworkFocus(
+            kind="path",
+            endpoints=(self._focus_pending_start, node_name),
+            radius=self._focus_radius,
+        )
+        self._focus_pending_start = None
+        if self._focus == next_focus:
+            self._sync_checkbuttons()
+            return True
+        self._focus = next_focus
+        scene = self._rerender_cached_views()
+        self._apply_scene_state(scene)
+        set_active_axes(scene.ax.figure, scene.ax)
+        return True
 
 
 def show_tensor_network_interactive(

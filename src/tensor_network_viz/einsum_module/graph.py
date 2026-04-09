@@ -8,6 +8,9 @@ from typing import Any
 from .._core.graph import (
     _ContractionStepMetrics,
     _EdgeEndpoint,
+    _element_count_for_shape,
+    _estimated_nbytes_for_node,
+    _finalize_graph_diagnostics,
     _GraphData,
     _make_contraction_edge,
     _make_dangling_edge,
@@ -77,12 +80,40 @@ def _operand_shape_for_step(
     return (1,) * len(spec)
 
 
+def _operand_dtype_for_step(
+    tensor_name: str,
+    step: pair_tensor | einsum_trace_step,
+    *,
+    live_tensor_dtypes: dict[str, str | None],
+    operand_index: int,
+) -> str | None:
+    if tensor_name in live_tensor_dtypes:
+        return live_tensor_dtypes[tensor_name]
+    md = step.metadata or {}
+    raw_list = md.get("operand_dtypes")
+    if raw_list is not None:
+        raw = raw_list[operand_index]
+        return None if raw is None else str(raw)
+    if isinstance(step, pair_tensor):
+        key = "left_dtype" if operand_index == 0 else "right_dtype"
+        raw = md.get(key)
+        return None if raw is None else str(raw)
+    return None
+
+
+def _result_dtype_for_step(step: pair_tensor | einsum_trace_step) -> str | None:
+    md = step.metadata or {}
+    raw = md.get("result_dtype")
+    return None if raw is None else str(raw)
+
+
 def _build_graph(trace_input: Any) -> _GraphData:
     trace = _normalize_trace(trace_input)
     nodes: dict[int, Any] = {}
     node_ids_by_name: dict[str, int] = {}
     live_tensors: dict[str, tuple[_AxisOrigin, ...]] = {}
     live_tensor_shapes: dict[str, tuple[int, ...]] = {}
+    live_tensor_dtypes: dict[str, str | None] = {}
     edges: list[Any] = []
     produced_names: set[str] = set()
     all_result_names = {_step_result_name(s) for s in trace}
@@ -107,6 +138,15 @@ def _build_graph(trace_input: Any) -> _GraphData:
             )
             for i in range(len(operand_names))
         )
+        dtypes = tuple(
+            _operand_dtype_for_step(
+                operand_names[i],
+                step,
+                live_tensor_dtypes=live_tensor_dtypes,
+                operand_index=i,
+            )
+            for i in range(len(operand_names))
+        )
         eq_str = _equation_string(step)
         parsed = parse_einsum_equation(eq_str, shapes)
 
@@ -126,9 +166,12 @@ def _build_graph(trace_input: Any) -> _GraphData:
                     node_ids_by_name=node_ids_by_name,
                     live_tensors=live_tensors,
                     live_tensor_shapes=live_tensor_shapes,
+                    live_tensor_dtypes=live_tensor_dtypes,
                     produced_names=produced_names,
                     all_result_names=all_result_names,
                     physical_contributors=physical_contributors,
+                    shape=shapes[i],
+                    dtype_text=dtypes[i],
                 )
             )
 
@@ -221,6 +264,7 @@ def _build_graph(trace_input: Any) -> _GraphData:
             for label in parsed.output_axes
         )
         live_tensor_shapes[res_name] = _result_shape_from_metric(metric)
+        live_tensor_dtypes[res_name] = _result_dtype_for_step(step)
         merged_lineage: set[int] = set()
         for name in operand_names:
             merged_lineage.update(physical_contributors[name])
@@ -238,11 +282,13 @@ def _build_graph(trace_input: Any) -> _GraphData:
                 )
             )
 
-    return _GraphData(
-        nodes=nodes,
-        edges=tuple(edges),
-        contraction_steps=tuple(contraction_scheme),
-        contraction_step_metrics=tuple(step_metrics_list),
+    return _finalize_graph_diagnostics(
+        _GraphData(
+            nodes=nodes,
+            edges=tuple(edges),
+            contraction_steps=tuple(contraction_scheme),
+            contraction_step_metrics=tuple(step_metrics_list),
+        )
     )
 
 
@@ -279,13 +325,17 @@ def _consume_or_create_tensor(
     node_ids_by_name: dict[str, int],
     live_tensors: dict[str, tuple[_AxisOrigin, ...]],
     live_tensor_shapes: dict[str, tuple[int, ...]],
+    live_tensor_dtypes: dict[str, str | None],
     produced_names: set[str],
     all_result_names: set[str],
     physical_contributors: dict[str, frozenset[int]],
+    shape: tuple[int, ...],
+    dtype_text: str | None,
 ) -> tuple[_AxisOrigin, ...]:
     if tensor_name in live_tensors:
         origins = live_tensors.pop(tensor_name)
         live_tensor_shapes.pop(tensor_name, None)
+        live_tensor_dtypes.pop(tensor_name, None)
         if len(origins) != len(axis_labels):
             raise ValueError(
                 f"Tensor {tensor_name!r} exposes {len(origins)} live axes, but "
@@ -303,9 +353,18 @@ def _consume_or_create_tensor(
 
     node_id = len(nodes)
     node_ids_by_name[tensor_name] = node_id
+    element_count = _element_count_for_shape(shape)
     nodes[node_id] = _make_node(
         name=tensor_name,
         axes_names=axis_labels,
+        shape=shape,
+        dtype=dtype_text,
+        element_count=element_count,
+        estimated_nbytes=_estimated_nbytes_for_node(
+            shape,
+            dtype_text,
+            element_count=element_count,
+        ),
     )
     physical_contributors[tensor_name] = frozenset({node_id})
     return tuple(

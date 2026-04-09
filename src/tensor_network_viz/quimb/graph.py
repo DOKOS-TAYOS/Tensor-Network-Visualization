@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from .._core.graph import (
+    _coerce_shape,
     _EdgeEndpoint,
+    _element_count_for_shape,
+    _estimated_nbytes_for_node,
+    _finalize_graph_diagnostics,
     _GraphData,
     _make_contraction_edge,
     _make_dangling_edge,
@@ -95,9 +99,21 @@ def _build_graph(network: Any) -> _GraphData:
         inds, name_opt = meta[tensor_index]
         display_name = name_opt if name_opt is not None else f"T{tensor_index}"
         node_id = id(tensor)
+        shape = _coerce_shape(getattr(tensor, "shape", None))
+        dtype_attr = getattr(getattr(tensor, "data", None), "dtype", None)
+        dtype_text = None if dtype_attr is None else str(dtype_attr)
+        element_count = _element_count_for_shape(shape)
         nodes[node_id] = _make_node(
             name=display_name,
             axes_names=inds,
+            shape=shape,
+            dtype=dtype_text,
+            element_count=element_count,
+            estimated_nbytes=_estimated_nbytes_for_node(
+                shape,
+                dtype_text,
+                element_count=element_count,
+            ),
         )
 
         for axis_index, ind in enumerate(inds):
@@ -146,4 +162,4 @@ def _build_graph(network: Any) -> _GraphData:
             )
         )
 
-    return _GraphData(nodes=nodes, edges=tuple(edges))
+    return _finalize_graph_diagnostics(_GraphData(nodes=nodes, edges=tuple(edges)))

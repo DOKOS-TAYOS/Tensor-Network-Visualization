@@ -138,3 +138,26 @@ def test_show_tensor_comparison_topk_changes_renders_text_summary() -> None:
     text = ax.texts[0].get_text().lower()
     assert "top 2" in text
     assert "reference" in text
+
+
+def test_show_tensor_comparison_controls_switch_from_topk_summary_back_to_heatmap() -> None:
+    current = np.array([[1.0, 5.0], [3.0, 7.0]], dtype=float)
+    reference = np.array([[0.0, 1.0], [2.0, 3.0]], dtype=float)
+
+    fig, ax = show_tensor_comparison(
+        current,
+        reference,
+        comparison_config=TensorComparisonConfig(mode="topk_changes", topk_count=2),
+        show_controls=True,
+        show=False,
+    )
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert ax.texts
+    assert not ax.images
+
+    controller._compare_radio.set_active(1)  # type: ignore[attr-defined]
+
+    assert_rendered_figure(fig, ax)
+    assert ax.images
+    assert "abs diff" in ax.get_title().lower()

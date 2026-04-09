@@ -187,6 +187,32 @@ config = PlotConfig(
 - `"always"`: best label fitting, slowest on large figures.
 - `"never"`: skip the expensive post-draw label-fit passes.
 
+### Diagnostics and focus
+
+```python
+from tensor_network_viz import (
+    PlotConfig,
+    TensorNetworkDiagnosticsConfig,
+    TensorNetworkFocus,
+)
+
+config = PlotConfig(
+    hover_labels=True,
+    diagnostics=TensorNetworkDiagnosticsConfig(
+        show_overlay=True,
+        include_hover=True,
+    ),
+    focus=TensorNetworkFocus(
+        kind="path",
+        endpoints=("Left", "Right"),
+    ),
+)
+```
+
+Use `diagnostics` when you want uniform backend-normalized `shape`, `dtype`, estimated memory, and
+bond-dimension information in the same figure. Use `focus` when you want a reproducible
+subnetwork export or a filtered interactive view without recomputing the global geometry.
+
 ### Custom positions
 
 ```python
@@ -223,6 +249,7 @@ views and then the concrete mode inside that family:
 - `complex`: `real`, `imag`, `phase`
 - `diagnostic`: `sign`, `signed_value`, `sparsity`, `nan_inf`, `singular_values`, `eigen_real`,
   `eigen_imag`
+- `analysis`: `slice`, `reduce`, `profiles`
 
 `data` mode combines the global tensor stats with a compact per-axis summary and the top-k entries
 by magnitude. The `singular_values` mode renders the singular-value spectrum derived from the same
@@ -243,6 +270,90 @@ config = TensorElementsConfig(
 ```
 
 If you omit `row_axes` / `col_axes`, the library chooses a deterministic balanced partition.
+
+### Analytical views for high-rank tensors
+
+```python
+from tensor_network_viz import TensorAnalysisConfig, TensorElementsConfig
+
+config = TensorElementsConfig(
+    mode="reduce",
+    analysis=TensorAnalysisConfig(
+        reduce_axes=("bond",),
+        reduce_method="mean",
+    ),
+)
+```
+
+Use `mode="slice"` to lock one axis at one index and keep the resulting plane visible as a
+heatmap. Use `mode="reduce"` to collapse selected axes with `mean` or `norm`, and
+`mode="profiles"` to turn one surviving axis into a 1D series. In interactive figures the control
+tray adds contextual widgets for the active analytical mode and falls back cleanly when you move
+between tensors with different ranks or axis names.
+
+### How to read the `analysis` group
+
+The analytical modes are different from `elements`, `magnitude`, `real`, and the other display
+families. Those modes mostly change how the current tensor is painted. The `analysis` group first
+derives a new tensor view from the active tensor and only then renders the result.
+
+Suppose the active tensor has shape `(2, 3, 4)` and axis names `("row", "mid", "col")`.
+
+- `slice` fixes one axis at one index and removes that axis from the result. For example,
+  `slice_axis="mid", slice_index=1` means "show `tensor[:, 1, :]`".
+- `reduce` optionally reuses the current slice, then collapses the selected remaining axes with
+  `mean` or `norm`. For example, `reduce_axes=("col",), reduce_method="mean"` means "average over
+  `col`".
+- `profiles` optionally reuses the current slice, keeps one remaining axis, and reduces every other
+  remaining axis into a single value per index of that axis. For example,
+  `profile_axis="mid", profile_method="norm"` means "one value for each `mid` index, computed from
+  the norm over the other axes".
+
+If you open `reduce` or `profiles` without choosing a slice first, they operate on the full tensor.
+If you already selected a slice in interactive mode, the same slice stays active when you switch to
+`reduce` or `profiles`. That is why the title can include text such as `after phys=0`.
+
+For complex tensors, `reduce` and `profiles` work on `|x|` rather than on raw complex values. The
+`slice` mode keeps the selected entries, but its default heatmap uses magnitude for complex tensors.
+
+### What each control means
+
+- In `slice`, the radio buttons choose which axis to fix, and the slider chooses the index along
+  that axis.
+- In `reduce`, the checkboxes choose which surviving axes to collapse. The `mean` method computes a
+  NaN-safe average over those axes. The `norm` method computes a NaN-safe Euclidean norm over those
+  axes.
+- In `profiles`, the radio buttons choose the axis that stays on the horizontal axis of the line
+  plot. The `mean` or `norm` selector then reduces every other surviving axis.
+
+Here, "surviving axes" means the axes that remain after any active slice has been applied.
+
+In other words, the controls in `reduce` select the axes to collapse, not the axes to keep. If the
+surviving axes after slicing are `(row, col)` and you check only `col`, the plot keeps `row`
+visible and summarizes `col`. If you check both `row` and `col`, the result becomes scalar.
+
+### What you are seeing on screen
+
+- If the analytical result has exactly 2 axes, the heatmap is direct: one axis maps to rows and the
+  other maps to columns.
+- If the result still has more than 2 axes, the viewer matrixizes it before drawing. Some remaining
+  axes are grouped into rows and the rest into columns.
+- If the result has only 1 axis, heatmap-based analytical views show it as a thin 2D matrix, while
+  `profiles` shows it as a 1D line.
+
+You can control that matrixization with `row_axes` and `col_axes` in `TensorElementsConfig(...)`.
+If you do not specify them, the library chooses a deterministic balanced split automatically.
+
+This means that, for high-rank tensors, one cell of the heatmap may represent a combination of
+several indices rather than a single original axis position. The analytical mode still tells you
+which operation was applied first; `row_axes` and `col_axes` only decide how the remaining result is
+laid out as a 2D view.
+
+### Quick mental model
+
+- `slice`: "show me one section of the tensor"
+- `reduce`: "summarize these axes"
+- `profiles`: "give me one curve along this axis"
 
 ## Common Workflows
 
@@ -306,14 +417,19 @@ tensor.
 ```python
 fig, ax = show_tensor_elements(
     trace,
-    config=TensorElementsConfig(mode="auto"),
+    config=TensorElementsConfig(
+        mode="slice",
+        analysis=TensorAnalysisConfig(slice_axis="phys", slice_index=0),
+    ),
     show=False,
 )
 fig.savefig("tensor-elements.png", bbox_inches="tight")
 ```
 
 Use this when you want one tensor at a time, quick switches between grouped views, and a `data`
-summary without leaving the same figure.
+summary without leaving the same figure. For dense tensors, the `analysis` group is usually the
+fastest way to inspect one plane, one reduced summary, or one 1D profile without manually
+re-matrixizing the tensor outside the library.
 
 ### 5. Compare a tensor against a reference
 
@@ -334,11 +450,20 @@ Use `TensorComparisonConfig(mode=...)` to switch between `reference`, `abs_diff`
 
 ```python
 graph = normalize_tensor_network(network)
-snapshot = export_tensor_network_snapshot(network, view="3d")
+snapshot = export_tensor_network_snapshot(
+    network,
+    view="3d",
+    config=PlotConfig(
+        focus=TensorNetworkFocus(kind="neighborhood", center="A", radius=2),
+    ),
+)
 ```
 
 Use these helpers when you want validators, snapshot tests, or custom tooling to consume the same
-backend-normalized structure that the plotting layer already uses internally.
+backend-normalized structure that the plotting layer already uses internally. The normalized graph
+now carries node diagnostics (`shape`, `dtype`, `element_count`, `estimated_nbytes`) and edge
+`bond_dimension`, while focused snapshots keep the same coordinates as the corresponding full-view
+render.
 
 ## Supported Inputs
 

@@ -3,23 +3,31 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal, TypeAlias
 
 import numpy as np
 
 from ._tensor_elements_data import (
     NumericArray,
+    _analysis_config_from_resolved,
     _build_data_summary_text,
     _downsample_matrix,
-    _matrixize_tensor,
+    _matrixize_record,
     _MatrixMetadata,
+    _reduce_tensor_record,
+    _resolve_tensor_analysis,
+    _resolved_axis_names,
+    _safe_nan_norm_axis,
+    _safe_nanmean_axis,
+    _slice_tensor_record,
     _spectral_analysis_for_record,
+    _summary_metric_array,
     _TensorRecord,
 )
 from .tensor_elements_config import TensorElementsConfig, TensorElementsMode
 
-TensorElementsGroup: TypeAlias = Literal["basic", "complex", "diagnostic"]
+TensorElementsGroup: TypeAlias = Literal["basic", "complex", "diagnostic", "analysis"]
 _ArrayTransform: TypeAlias = Callable[[NumericArray], NumericArray]
 _PayloadBuilder: TypeAlias = Callable[
     [_TensorRecord, TensorElementsConfig],
@@ -39,6 +47,7 @@ _GROUP_MODES: dict[TensorElementsGroup, tuple[str, ...]] = {
         "eigen_real",
         "eigen_imag",
     ),
+    "analysis": ("slice", "reduce", "profiles"),
 }
 _MODE_TO_GROUP: dict[str, TensorElementsGroup] = {
     mode: group for group, modes in _GROUP_MODES.items() for mode in modes
@@ -159,6 +168,9 @@ def _mode_supported_for_record(
         "signed_value",
         "sparsity",
         "nan_inf",
+        "slice",
+        "reduce",
+        "profiles",
     ):
         return True
     if mode in ("singular_values", "eigen_real", "eigen_imag"):
@@ -276,13 +288,13 @@ def _prepare_heatmap_matrix(
     record: _TensorRecord,
     *,
     config: TensorElementsConfig,
+    selector_source: _TensorRecord | None = None,
 ) -> tuple[NumericArray, _MatrixMetadata]:
     """Matrixize one tensor using the active row/column axis configuration."""
-    return _matrixize_tensor(
-        np.asarray(record.array),
-        axis_names=record.axis_names,
-        row_axes=config.row_axes,
-        col_axes=config.col_axes,
+    return _matrixize_record(
+        record,
+        config=config,
+        selector_source=selector_source,
     )
 
 
@@ -442,9 +454,14 @@ def _build_heatmap_payload(
     config: TensorElementsConfig,
     *,
     mode: str,
+    selector_source: _TensorRecord | None = None,
 ) -> _HeatmapPayload:
     """Build the renderer payload for one heatmap-like tensor-elements mode."""
-    matrix, metadata = _prepare_heatmap_matrix(record, config=config)
+    matrix, metadata = _prepare_heatmap_matrix(
+        record,
+        config=config,
+        selector_source=selector_source,
+    )
     computation = _HEATMAP_DEFINITIONS[mode](matrix, config)
     reduced = _downsample_matrix(computation.matrix, max_shape=config.max_matrix_shape)
     if computation.post_downsample is not None:
@@ -580,6 +597,100 @@ def _build_text_summary_payload(
     )
 
 
+def _slice_context_text(record: _TensorRecord, *, mode: str, config: TensorElementsConfig) -> str:
+    analysis = _resolve_tensor_analysis(record, analysis=config.analysis, mode=mode)
+    if not analysis.slice_active or analysis.slice_axis_name is None:
+        return "scalar"
+    return f"{analysis.slice_axis_name}={analysis.slice_index}"
+
+
+def _build_slice_mode_payload(
+    record: _TensorRecord,
+    config: TensorElementsConfig,
+) -> _HeatmapPayload:
+    analysis = _resolve_tensor_analysis(record, analysis=config.analysis, mode="slice")
+    sliced_record = _slice_tensor_record(record, analysis=analysis)
+    base_mode = "magnitude" if np.iscomplexobj(sliced_record.array) else "elements"
+    payload = _build_heatmap_payload(
+        sliced_record,
+        replace(config, analysis=_analysis_config_from_resolved(analysis)),
+        mode=base_mode,
+        selector_source=record,
+    )
+    return replace(
+        payload, mode_label=f"slice ({_slice_context_text(record, mode='slice', config=config)})"
+    )
+
+
+def _build_reduce_mode_payload(
+    record: _TensorRecord,
+    config: TensorElementsConfig,
+) -> _HeatmapPayload:
+    analysis = _resolve_tensor_analysis(record, analysis=config.analysis, mode="reduce")
+    reduced_record = _reduce_tensor_record(record, analysis=analysis)
+    base_mode = "magnitude" if np.iscomplexobj(reduced_record.array) else "elements"
+    payload = _build_heatmap_payload(
+        reduced_record,
+        replace(config, analysis=_analysis_config_from_resolved(analysis)),
+        mode=base_mode,
+        selector_source=record,
+    )
+    reduced_axes_text = ", ".join(analysis.reduce_axis_names) if analysis.reduce_axis_names else "-"
+    mode_label = f"reduce ({analysis.reduce_method} over {reduced_axes_text})"
+    if analysis.slice_active:
+        mode_label += f" after {analysis.slice_axis_name}={analysis.slice_index}"
+    return replace(payload, mode_label=mode_label)
+
+
+def _build_profiles_mode_payload(
+    record: _TensorRecord,
+    config: TensorElementsConfig,
+) -> _SeriesPayload:
+    analysis = _resolve_tensor_analysis(record, analysis=config.analysis, mode="profiles")
+    sliced_record = _slice_tensor_record(record, analysis=analysis)
+    metric_array = np.asarray(_summary_metric_array(np.asarray(sliced_record.array)), dtype=float)
+    if analysis.profile_axis is None:
+        y_values = np.asarray(
+            [float(metric_array.reshape(-1)[0]) if metric_array.size else np.nan],
+            dtype=float,
+        )
+        x_values = np.asarray([0.0], dtype=float)
+        axis_label = "scalar"
+    else:
+        other_axes = tuple(
+            axis_index
+            for axis_index in range(metric_array.ndim)
+            if axis_index != analysis.profile_axis
+        )
+        if other_axes:
+            reducer = (
+                _safe_nanmean_axis if analysis.profile_method == "mean" else _safe_nan_norm_axis
+            )
+            reduce_axis: int | tuple[int, ...]
+            reduce_axis = other_axes[0] if len(other_axes) == 1 else other_axes
+            profile_values = reducer(metric_array, axis=reduce_axis)
+        else:
+            profile_values = metric_array
+        y_values = np.ravel(np.asarray(profile_values, dtype=float))
+        x_values = np.arange(int(y_values.size), dtype=float)
+        axis_label = analysis.profile_axis_name or _resolved_axis_names(sliced_record)[0]
+    is_complex = bool(np.iscomplexobj(record.array))
+    if analysis.profile_method == "mean":
+        ylabel = "mean(|x|)" if is_complex else "mean"
+    else:
+        ylabel = "norm(|x|)" if is_complex else "norm"
+    mode_label = f"profiles ({analysis.profile_method} along {axis_label})"
+    if analysis.slice_active:
+        mode_label += f" after {analysis.slice_axis_name}={analysis.slice_index}"
+    return _SeriesPayload(
+        mode_label=mode_label,
+        x_values=x_values,
+        xlabel=axis_label,
+        y_values=y_values,
+        ylabel=ylabel,
+    )
+
+
 def _build_elements_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
@@ -682,7 +793,10 @@ _MODE_PAYLOAD_BUILDERS: dict[str, _PayloadBuilder] = {
     "magnitude": _build_magnitude_payload,
     "nan_inf": _build_nan_inf_payload,
     "phase": _build_phase_payload,
+    "profiles": _build_profiles_mode_payload,
     "real": _build_real_payload,
+    "reduce": _build_reduce_mode_payload,
+    "slice": _build_slice_mode_payload,
     "sign": _build_sign_payload,
     "sparsity": _build_sparsity_payload,
     "singular_values": _build_singular_values_mode_payload,

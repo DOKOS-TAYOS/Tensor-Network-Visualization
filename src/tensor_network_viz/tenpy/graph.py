@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from .._core.graph import (
+    _coerce_shape,
     _EdgeEndpoint,
+    _element_count_for_shape,
+    _estimated_nbytes_for_node,
+    _finalize_graph_diagnostics,
     _GraphData,
     _make_contraction_edge,
     _make_dangling_edge,
@@ -86,7 +90,22 @@ def _build_explicit_tn_graph(tn: TenPyTensorNetwork) -> _GraphData:
         id_to_int[tid] = index
         labels = _leg_labels(array)
         labels_by_node[index] = labels
-        nodes[index] = _make_node(name=tid, axes_names=labels)
+        shape = _coerce_shape(getattr(array, "shape", None))
+        dtype_attr = getattr(array, "dtype", None)
+        dtype_text = None if dtype_attr is None else str(dtype_attr)
+        element_count = _element_count_for_shape(shape)
+        nodes[index] = _make_node(
+            name=tid,
+            axes_names=labels,
+            shape=shape,
+            dtype=dtype_text,
+            element_count=element_count,
+            estimated_nbytes=_estimated_nbytes_for_node(
+                shape,
+                dtype_text,
+                element_count=element_count,
+            ),
+        )
 
     used_axes: set[tuple[int, int]] = set()
     edges: list[Any] = []
@@ -135,7 +154,7 @@ def _build_explicit_tn_graph(tn: TenPyTensorNetwork) -> _GraphData:
             )
             edges.append(_make_dangling_edge(endpoint, name=label or None, label=label or None))
 
-    return _GraphData(nodes=nodes, edges=tuple(edges))
+    return _finalize_graph_diagnostics(_GraphData(nodes=nodes, edges=tuple(edges)))
 
 
 def _build_mps_graph(network: Any) -> _GraphData:

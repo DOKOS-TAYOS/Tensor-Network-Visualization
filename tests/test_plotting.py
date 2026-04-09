@@ -18,6 +18,7 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgba
 
 import tensor_network_viz._core.renderer as core_renderer_module
+import tensor_network_viz._interaction.controller as interaction_controller_module
 import tensor_network_viz._interaction.tensor_inspector as tensor_inspector_module
 import tensor_network_viz.tensorkrowch.graph as tk_graph_module
 import tensor_network_viz.tensorkrowch.renderer as tk_renderer_module
@@ -1102,9 +1103,10 @@ def test_show_tensor_network_scheme_and_cost_hover_keep_visual_checkboxes_in_syn
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
-    assert [label.get_text() for label in controls._checkbuttons.labels][-2:] == [
+    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
         "Scheme",
         "Costs",
+        "Diagnostics",
     ]
     scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
     cost_index = _checkbutton_index(controls._checkbuttons, "Costs")
@@ -1181,10 +1183,11 @@ def test_show_tn_einsum_trace_inspector_checkbox_auto_enables_scheme() -> None:
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
-    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
+    assert [label.get_text() for label in controls._checkbuttons.labels][-4:] == [
         "Scheme",
         "Costs",
         "Tensor inspector",
+        "Diagnostics",
     ]
     scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
     inspector_index = _checkbutton_index(controls._checkbuttons, "Tensor inspector")
@@ -1257,9 +1260,10 @@ def test_non_playback_tensorkrowch_inputs_hide_tensor_inspector_checkbox() -> No
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
-    assert [label.get_text() for label in controls._checkbuttons.labels][-2:] == [
+    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
         "Scheme",
         "Costs",
+        "Diagnostics",
     ]
     assert "Tensor inspector" not in [label.get_text() for label in controls._checkbuttons.labels]
 
@@ -1285,11 +1289,38 @@ def test_non_playback_tensorkrowch_inputs_show_tensor_inspector_when_tensors_are
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
     assert controls._checkbuttons is not None
-    assert [label.get_text() for label in controls._checkbuttons.labels][-3:] == [
+    assert [label.get_text() for label in controls._checkbuttons.labels][-4:] == [
         "Scheme",
         "Costs",
         "Tensor inspector",
+        "Diagnostics",
     ]
+
+
+def test_show_tensor_network_surfaces_unexpected_tensor_record_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    left.tensor = np.array([1.0, 2.0], dtype=float)  # type: ignore[attr-defined]
+    right.tensor = np.array([3.0, 4.0], dtype=float)  # type: ignore[attr-defined]
+    connect(left, 0, right, 0, name="bond")
+
+    def _raise_unexpected_error(_network: Any, *, engine: Any) -> Any:
+        raise RuntimeError(f"unexpected extraction failure for {engine}")
+
+    monkeypatch.setattr(
+        interaction_controller_module,
+        "_extract_tensor_records",
+        _raise_unexpected_error,
+    )
+
+    with pytest.raises(RuntimeError, match="unexpected extraction failure"):
+        show_tensor_network(
+            DummyNetwork(nodes=[left, right]),
+            engine="tensorkrowch",
+            show=False,
+        )
 
 
 def test_clicking_a_visible_tensor_opens_shared_inspector_for_non_playback_network() -> None:

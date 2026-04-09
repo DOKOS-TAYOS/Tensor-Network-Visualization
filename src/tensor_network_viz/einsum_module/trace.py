@@ -29,6 +29,37 @@ def _is_unsupported_out_keyword_error(exc: TypeError) -> bool:
     )
 
 
+def _validate_traced_out_argument(
+    *,
+    trace: EinsumTrace,
+    operands: tuple[Any, ...],
+    out_tensor: Any,
+    expression: str,
+    operand_shapes: tuple[tuple[int, ...], ...],
+) -> None:
+    if trace._state.tensor_is_tracked(out_tensor):
+        raise ValueError(
+            "Traced einsum does not support out= pointing to a tensor already on this trace "
+            "(in-place into a traced tensor is unsupported)."
+        )
+    if any(out_tensor is operand for operand in operands):
+        raise ValueError("Traced einsum does not support out= reusing one of the current operands.")
+
+    out_shape = _shape_tuple(out_tensor)
+    if out_shape is None:
+        raise TypeError("out= tensor must expose a shape.")
+    zs = tuple(np.zeros(shape, dtype=np.float64) for shape in operand_shapes)
+    eq_np = expression.replace(" ", "")
+    try:
+        expected_shape = np.einsum(eq_np, *zs, optimize=True).shape
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid einsum equation {eq_np!r} for operand shapes.") from exc
+    if tuple(out_shape) != expected_shape:
+        raise ValueError(
+            f"out= shape {out_shape} does not match einsum result shape {expected_shape}."
+        )
+
+
 class EinsumTrace:
     """Stateful trace for automatically recorded einsum contractions (any arity)."""
 
@@ -116,29 +147,17 @@ def einsum(
     operand_shapes = tuple(operand_shapes_list)
 
     out_kw = kwargs.get("out")
-    if out_kw is not None and trace._state.tensor_is_tracked(out_kw):
-        raise ValueError(
-            "Traced einsum does not support out= pointing to a tensor already on this trace "
-            "(in-place into a traced tensor is unsupported)."
-        )
-
     parsed = parse_einsum_equation(expression, operand_shapes)
     canonical_eq = nary_equation_canonical_string(parsed)
 
     if out_kw is not None:
-        out_shape = _shape_tuple(out_kw)
-        if out_shape is None:
-            raise TypeError("out= tensor must expose a shape.")
-        zs = tuple(np.zeros(s, dtype=np.float64) for s in operand_shapes)
-        eq_np = expression.replace(" ", "")
-        try:
-            expected_shape = np.einsum(eq_np, *zs, optimize=True).shape
-        except Exception as exc:
-            raise ValueError(f"Invalid einsum equation {eq_np!r} for operand shapes.") from exc
-        if tuple(out_shape) != expected_shape:
-            raise ValueError(
-                f"out= shape {out_shape} does not match einsum result shape {expected_shape}."
-            )
+        _validate_traced_out_argument(
+            trace=trace,
+            operands=operands,
+            out_tensor=out_kw,
+            expression=expression,
+            operand_shapes=operand_shapes,
+        )
 
     prepared = trace._prepare_call(canonical_eq, operands, backend=backend_name)
     if backend_name == "torch" and "out" in kwargs:

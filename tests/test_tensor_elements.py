@@ -16,9 +16,11 @@ import pytest
 from matplotlib.axes import Axes
 from matplotlib.backend_bases import MouseButton, MouseEvent
 
+import tensor_network_viz._tensor_elements_data as tensor_elements_data_module
 from plotting_helpers import assert_rendered_figure
 from tensor_network_viz import (
     EinsumTrace,
+    TensorAnalysisConfig,
     TensorElementsConfig,
     einsum,
     pair_tensor,
@@ -34,6 +36,7 @@ from tensor_network_viz._tensor_elements_support import (
     _matrixize_tensor,
     _prepare_mode_payload,
     _resolve_matrix_axes,
+    _SeriesPayload,
     _TensorRecord,
     _TextSummaryPayload,
 )
@@ -126,6 +129,7 @@ def test_tensor_elements_config_has_expected_defaults() -> None:
     assert config.mode == "auto"
     assert config.row_axes is None
     assert config.col_axes is None
+    assert config.analysis is None
     assert config.figsize == (7.2, 6.4)
     assert config.max_matrix_shape == (256, 256)
     assert config.shared_color_scale is False
@@ -146,6 +150,7 @@ def test_tensor_elements_config_public_signature_orders_mode_before_detail() -> 
         "mode",
         "row_axes",
         "col_axes",
+        "analysis",
         "figsize",
         "max_matrix_shape",
         "shared_color_scale",
@@ -161,9 +166,9 @@ def test_tensor_elements_config_public_signature_orders_mode_before_detail() -> 
 
 
 def test_tensor_elements_config_supports_grouped_modes() -> None:
-    config = TensorElementsConfig(mode="log_magnitude")
+    config = TensorElementsConfig(mode="slice")
 
-    assert config.mode == "log_magnitude"
+    assert config.mode == "slice"
 
 
 @pytest.mark.parametrize(
@@ -240,6 +245,77 @@ def test_show_tensor_elements_supports_direct_numpy_array_input() -> None:
     assert "tensor" in ax.get_title().lower()
 
 
+def test_show_tensor_elements_slice_mode_renders_requested_plane() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="SliceTensor",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(
+            mode="slice",
+            analysis=TensorAnalysisConfig(slice_axis="mid", slice_index=1),
+        ),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert "slice" in ax.get_title().lower()
+    assert np.allclose(np.asarray(ax.images[0].get_array(), dtype=float), tensor.tensor[:, 1, :])
+
+
+def test_show_tensor_elements_reduce_mode_renders_axis_mean_heatmap() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="ReduceTensor",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(
+            mode="reduce",
+            analysis=TensorAnalysisConfig(reduce_axes=("col",), reduce_method="mean"),
+        ),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert "reduce" in ax.get_title().lower()
+    assert np.allclose(
+        np.asarray(ax.images[0].get_array(), dtype=float),
+        np.mean(tensor.tensor, axis=2),
+    )
+
+
+def test_show_tensor_elements_profiles_mode_renders_axis_norm_profile() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="ProfileTensor",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(
+            mode="profiles",
+            analysis=TensorAnalysisConfig(profile_axis="mid", profile_method="norm"),
+        ),
+        show=False,
+        show_controls=False,
+    )
+
+    expected = np.sqrt(np.sum(np.square(tensor.tensor), axis=(0, 2)))
+
+    assert_rendered_figure(fig, ax)
+    assert "profiles" in ax.get_title().lower()
+    assert np.allclose(_line_ydata_as_float(ax), expected)
+
+
 def test_extract_einsum_playback_step_records_follow_trace_order_and_output_axes() -> None:
     trace = EinsumTrace()
     left = np.arange(6, dtype=float).reshape(2, 3)
@@ -286,6 +362,34 @@ def test_extract_einsum_playback_step_records_marks_missing_intermediate_tensors
     assert step_records[0].record is None
     assert step_records[1].record is not None
     assert step_records[1].record.name == "r1"
+
+
+def test_extract_einsum_playback_step_records_surfaces_unexpected_parse_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = EinsumTrace()
+    left = np.arange(6, dtype=float).reshape(2, 3)
+    right = np.arange(12, dtype=float).reshape(3, 4)
+
+    trace.bind("Left", left)
+    trace.bind("Right", right)
+    result = einsum("ab,bc->ac", left, right, trace=trace, backend="numpy")
+    trace._test_keepalive = [left, right, result]  # type: ignore[attr-defined]
+
+    def _raise_unexpected_error(
+        _equation: str,
+        _operand_shapes: tuple[tuple[int, ...], ...],
+    ) -> Any:
+        raise RuntimeError("unexpected equation parser failure")
+
+    monkeypatch.setattr(
+        tensor_elements_data_module,
+        "parse_einsum_equation",
+        _raise_unexpected_error,
+    )
+
+    with pytest.raises(RuntimeError, match="unexpected equation parser failure"):
+        _extract_einsum_playback_step_records(trace)
 
 
 def test_prepare_mode_payload_returns_typed_heatmap_payload() -> None:
@@ -336,6 +440,53 @@ def test_prepare_mode_payload_returns_typed_non_heatmap_payloads() -> None:
     assert data_mode == "data"
     assert isinstance(data_payload, _TextSummaryPayload)
     assert "shape:" in data_payload.text.lower()
+
+
+def test_prepare_mode_payload_supports_slice_reduce_and_profiles() -> None:
+    record = _TensorRecord(
+        array=np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="AnalysisPayloads",
+        axis_names=("row", "mid", "col"),
+        engine="tensornetwork",
+    )
+    analysis = TensorAnalysisConfig(
+        slice_axis="mid",
+        slice_index=1,
+        reduce_axes=("col",),
+        reduce_method="mean",
+        profile_axis="col",
+        profile_method="norm",
+    )
+
+    slice_mode, slice_payload = _prepare_mode_payload(
+        record,
+        config=TensorElementsConfig(mode="slice", analysis=analysis),
+        mode="slice",
+    )
+    reduce_mode, reduce_payload = _prepare_mode_payload(
+        record,
+        config=TensorElementsConfig(mode="reduce", analysis=analysis),
+        mode="reduce",
+    )
+    profiles_mode, profiles_payload = _prepare_mode_payload(
+        record,
+        config=TensorElementsConfig(mode="profiles", analysis=analysis),
+        mode="profiles",
+    )
+
+    assert slice_mode == "slice"
+    assert isinstance(slice_payload, _HeatmapPayload)
+    assert tuple(slice_payload.matrix.shape) == (2, 4)
+    assert "slice" in slice_payload.mode_label
+
+    assert reduce_mode == "reduce"
+    assert isinstance(reduce_payload, _HeatmapPayload)
+    assert tuple(reduce_payload.matrix.shape) == (2, 1)
+    assert "reduce" in reduce_payload.mode_label
+
+    assert profiles_mode == "profiles"
+    assert isinstance(profiles_payload, _SeriesPayload)
+    assert "profiles" in profiles_payload.mode_label
 
 
 def test_show_tensor_elements_multiple_tensors_use_slider_and_single_axes() -> None:
@@ -1493,6 +1644,12 @@ def test_show_tensor_elements_widgets_offer_new_basic_and_diagnostic_modes() -> 
     diagnostic_modes = tuple(text.get_text() for text in controller._mode_radio.labels)
 
     assert_rendered_figure(fig, ax)
+    assert tuple(text.get_text() for text in controller._group_radio.labels) == (
+        "basic",
+        "complex",
+        "diagnostic",
+        "analysis",
+    )
     assert basic_modes == ("elements", "magnitude", "log_magnitude", "distribution", "data")
     assert diagnostic_modes == (
         "sign",
@@ -1503,6 +1660,125 @@ def test_show_tensor_elements_widgets_offer_new_basic_and_diagnostic_modes() -> 
         "eigen_real",
         "eigen_imag",
     )
+
+
+def test_show_tensor_elements_widgets_offer_analysis_modes() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="WidgetAnalysis",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 3)
+    analysis_modes = tuple(text.get_text() for text in controller._mode_radio.labels)
+
+    assert_rendered_figure(fig, ax)
+    assert analysis_modes == ("slice", "reduce", "profiles")
+
+
+def test_show_tensor_elements_analysis_modes_build_contextual_controls() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="WidgetAnalysisControls",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 3)
+    assert controller._analysis_axis_radio is not None
+    assert controller._analysis_slider is not None
+
+    _click_radio_label(controller._mode_radio, 1)
+    assert controller._analysis_checkbuttons is not None
+    assert controller._analysis_method_radio is not None
+
+    _click_radio_label(controller._mode_radio, 2)
+    assert controller._analysis_axis_radio is not None
+    assert controller._analysis_method_radio is not None
+    assert_rendered_figure(fig, ax)
+
+
+def test_show_tensor_elements_slice_slider_keeps_widget_while_updating() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="WidgetSliceDrag",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 3)
+    assert controller._analysis_slider is not None
+    slice_slider = controller._analysis_slider
+
+    _click_radio_label(controller._analysis_axis_radio, 1)
+    assert controller._analysis_slider is not None
+    slice_slider = controller._analysis_slider
+    slice_slider.set_val(2.0)
+
+    assert_rendered_figure(fig, ax)
+    assert controller._analysis_slider is slice_slider
+    assert float(controller._analysis_slider.val) == pytest.approx(2.0)
+    assert np.allclose(np.asarray(ax.images[0].get_array(), dtype=float), tensor.tensor[:, 2, :])
+
+
+def test_show_tensor_elements_slice_slider_uses_wider_layout_and_label_gap() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="WidgetSliceLayout",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 3)
+
+    assert_rendered_figure(fig, ax)
+    assert controller._analysis_slider_ax is not None
+    assert controller._analysis_slider is not None
+    assert controller._analysis_slider_ax.get_position().bounds == pytest.approx(
+        (0.66, 0.135, 0.30, 0.05)
+    )
+    assert controller._analysis_slider.label.get_position() == pytest.approx((-0.05, 0.5))
+
+
+def test_show_tensor_elements_analysis_controls_fall_back_when_slider_changes_rank() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.arange(24, dtype=float).reshape(2, 3, 4),
+            name="Rank3",
+            axis_names=("row", "mid", "col"),
+        ),
+        DummyTensorNetworkNode(
+            np.arange(6, dtype=float).reshape(2, 3),
+            name="Rank2",
+            axis_names=("left", "right"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _click_radio_label(controller._group_radio, 3)
+    assert controller._analysis_axis_radio is not None
+    _click_radio_label(controller._analysis_axis_radio, 2)
+    assert controller._analysis_slider is not None
+    controller._analysis_slider.set_val(2.0)
+    controller._slider.set_val(1.0)
+
+    assert_rendered_figure(fig, ax)
+    assert controller._analysis_axis_radio is not None
+    assert controller._analysis_axis_radio.value_selected == "left"
+    assert controller._analysis_slider is not None
+    assert float(controller._analysis_slider.valmax) == pytest.approx(1.0)
+    assert float(controller._analysis_slider.val) == pytest.approx(0.0)
 
 
 def test_show_tensor_elements_widgets_hide_eigen_modes_for_non_square_tensor() -> None:

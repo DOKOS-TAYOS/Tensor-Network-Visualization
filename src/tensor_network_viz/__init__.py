@@ -9,7 +9,13 @@ from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from . import _logging as _package_logging
 from ._core.graph_cache import clear_tensor_network_graph_cache
-from .config import EngineName, PlotConfig, ViewName
+from .config import (
+    EngineName,
+    PlotConfig,
+    TensorNetworkDiagnosticsConfig,
+    TensorNetworkFocus,
+    ViewName,
+)
 from .exceptions import (
     AxisConfigurationError,
     MissingOptionalDependencyError,
@@ -39,7 +45,7 @@ if TYPE_CHECKING:
     from .tensor_comparison import show_tensor_comparison
     from .tensor_comparison_config import TensorComparisonConfig
     from .tensor_elements import show_tensor_elements
-    from .tensor_elements_config import TensorElementsConfig
+    from .tensor_elements_config import TensorAnalysisConfig, TensorElementsConfig
     from .viewer import show_tensor_network
 else:
 
@@ -150,6 +156,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "NormalizedTensorNode": (".snapshot", "NormalizedTensorNode"),
     "TenPyTensorNetwork": (".tenpy.explicit", "TenPyTensorNetwork"),
     "TensorComparisonConfig": (".tensor_comparison_config", "TensorComparisonConfig"),
+    "TensorAnalysisConfig": (".tensor_elements_config", "TensorAnalysisConfig"),
     "TensorElementsConfig": (".tensor_elements_config", "TensorElementsConfig"),
     "TensorNetworkLayoutSnapshot": (".snapshot", "TensorNetworkLayoutSnapshot"),
     "TensorNetworkSnapshot": (".snapshot", "TensorNetworkSnapshot"),
@@ -191,9 +198,12 @@ __all__ = [
     "NormalizedTensorNode",
     "PlotConfig",
     "TensorComparisonConfig",
+    "TensorAnalysisConfig",
     "TensorDataError",
     "TensorDataTypeError",
     "TensorElementsConfig",
+    "TensorNetworkDiagnosticsConfig",
+    "TensorNetworkFocus",
     "TensorNetworkLayoutSnapshot",
     "TensorNetworkSnapshot",
     "TensorNetworkVizError",

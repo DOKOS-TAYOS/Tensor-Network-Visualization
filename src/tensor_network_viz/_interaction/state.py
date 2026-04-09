@@ -38,6 +38,7 @@ class InteractiveFeatureState:
     playback: bool
     cost_hover: bool
     tensor_inspector: bool
+    diagnostics: bool = False
 
 
 RenderedAxes = Axes | Axes3D
@@ -87,6 +88,7 @@ def feature_state_from_config(
         playback=bool(config.show_contraction_scheme),
         cost_hover=bool(config.contraction_scheme_cost_hover),
         tensor_inspector=bool(config.contraction_tensor_inspector),
+        diagnostics=bool(False if config.diagnostics is None else config.diagnostics.show_overlay),
     )
     return normalize_feature_state(
         requested,
@@ -139,6 +141,7 @@ def normalize_feature_state(
         playback=playback,
         cost_hover=cost_hover,
         tensor_inspector=tensor_inspector,
+        diagnostics=bool(requested.diagnostics),
     )
 
 

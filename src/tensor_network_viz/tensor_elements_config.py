@@ -22,8 +22,36 @@ TensorElementsMode: TypeAlias = Literal[
     "singular_values",
     "eigen_real",
     "eigen_imag",
+    "slice",
+    "reduce",
+    "profiles",
 ]
 TensorAxisSelector: TypeAlias = int | str
+
+
+@dataclass(frozen=True)
+class TensorAnalysisConfig:
+    """Configuration for the analytical tensor views."""
+
+    slice_axis: TensorAxisSelector | None = None
+    slice_index: int = 0
+    reduce_axes: tuple[TensorAxisSelector, ...] | None = None
+    reduce_method: Literal["mean", "norm"] = "mean"
+    profile_axis: TensorAxisSelector | None = None
+    profile_method: Literal["mean", "norm"] = "mean"
+
+    def __post_init__(self) -> None:
+        """Validate the analytical selector inputs."""
+        slice_index = int(self.slice_index)
+        if slice_index < 0:
+            raise ValueError("analysis.slice_index must be non-negative.")
+        object.__setattr__(self, "slice_index", slice_index)
+        if self.reduce_method not in {"mean", "norm"}:
+            raise ValueError("analysis.reduce_method must be 'mean' or 'norm'.")
+        if self.profile_method not in {"mean", "norm"}:
+            raise ValueError("analysis.profile_method must be 'mean' or 'norm'.")
+        if self.reduce_axes is not None:
+            object.__setattr__(self, "reduce_axes", tuple(self.reduce_axes))
 
 
 @dataclass(frozen=True)
@@ -38,6 +66,7 @@ class TensorElementsConfig:
             tensor dtype.
         row_axes: Optional axes to group into the matrix rows when rank is greater than 2.
         col_axes: Optional axes to group into the matrix columns when rank is greater than 2.
+        analysis: Optional selectors used by the analytical modes.
         figsize: Figure size in inches. ``None`` leaves Matplotlib's default.
         max_matrix_shape: Maximum matrix size used by heatmaps and spectral views after
             downsampling.
@@ -58,6 +87,7 @@ class TensorElementsConfig:
     mode: TensorElementsMode = "auto"
     row_axes: tuple[TensorAxisSelector, ...] | None = None
     col_axes: tuple[TensorAxisSelector, ...] | None = None
+    analysis: TensorAnalysisConfig | None = None
     figsize: tuple[float, float] | None = (7.2, 6.4)
     max_matrix_shape: tuple[int, int] = (256, 256)
     shared_color_scale: bool = False
@@ -110,4 +140,9 @@ class TensorElementsConfig:
         object.__setattr__(self, "robust_percentiles", (low, high))
 
 
-__all__ = ["TensorAxisSelector", "TensorElementsConfig", "TensorElementsMode"]
+__all__ = [
+    "TensorAnalysisConfig",
+    "TensorAxisSelector",
+    "TensorElementsConfig",
+    "TensorElementsMode",
+]

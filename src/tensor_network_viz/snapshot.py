@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+from ._core.focus import filter_graph_for_focus
 from ._core.graph import _ContractionStepMetrics, _GraphData
 from ._core.graph_cache import _get_or_build_graph
 from ._core.renderer import _resolve_geometry
@@ -47,6 +48,10 @@ class NormalizedTensorNode:
     degree: int
     label: str | None
     is_virtual: bool
+    shape: tuple[int, ...] | None = None
+    dtype: str | None = None
+    element_count: int | None = None
+    estimated_nbytes: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-friendly dictionary representation."""
@@ -57,6 +62,10 @@ class NormalizedTensorNode:
             "degree": int(self.degree),
             "label": self.label,
             "is_virtual": bool(self.is_virtual),
+            "shape": None if self.shape is None else list(self.shape),
+            "dtype": self.dtype,
+            "element_count": self.element_count,
+            "estimated_nbytes": self.estimated_nbytes,
         }
 
 
@@ -69,6 +78,7 @@ class NormalizedTensorEdge:
     node_ids: tuple[int, ...]
     endpoints: tuple[NormalizedTensorEndpoint, ...]
     label: str | None
+    bond_dimension: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-friendly dictionary representation."""
@@ -78,6 +88,7 @@ class NormalizedTensorEdge:
             "node_ids": [int(node_id) for node_id in self.node_ids],
             "endpoints": [endpoint.to_dict() for endpoint in self.endpoints],
             "label": self.label,
+            "bond_dimension": self.bond_dimension,
         }
 
 
@@ -214,6 +225,12 @@ def _normalized_graph_from_internal(
             degree=int(node.degree),
             label=node.label,
             is_virtual=bool(node.is_virtual),
+            shape=None if node.shape is None else tuple(int(size) for size in node.shape),
+            dtype=node.dtype,
+            element_count=None if node.element_count is None else int(node.element_count),
+            estimated_nbytes=(
+                None if node.estimated_nbytes is None else int(node.estimated_nbytes)
+            ),
         )
         for node_id, node in sorted(graph.nodes.items(), key=lambda item: int(item[0]))
     )
@@ -231,6 +248,7 @@ def _normalized_graph_from_internal(
                 for endpoint in edge.endpoints
             ),
             label=edge.label,
+            bond_dimension=None if edge.bond_dimension is None else int(edge.bond_dimension),
         )
         for edge in graph.edges
     )
@@ -291,20 +309,25 @@ def export_tensor_network_snapshot(
         dimensions=dimensions,
         seed=seed,
     )
+    focused_graph = filter_graph_for_focus(graph, style.focus)
+    focused_node_ids = set(focused_graph.nodes)
     layout = TensorNetworkLayoutSnapshot(
         view=view,
         positions={
-            int(node_id): _vector_to_tuple(coords) for node_id, coords in geometry.positions.items()
+            int(node_id): _vector_to_tuple(coords)
+            for node_id, coords in geometry.positions.items()
+            if int(node_id) in focused_node_ids
         },
         axis_directions={
             (int(node_id), int(axis_index)): _vector_to_tuple(direction)
             for (node_id, axis_index), direction in geometry.directions.items()
+            if int(node_id) in focused_node_ids
         },
         draw_scale=float(geometry.scale),
         bond_curve_pad=float(geometry.bond_curve_pad),
     )
     return TensorNetworkSnapshot(
-        graph=_normalized_graph_from_internal(graph, engine=resolved_engine),
+        graph=_normalized_graph_from_internal(focused_graph, engine=resolved_engine),
         layout=layout,
     )
 

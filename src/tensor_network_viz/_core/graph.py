@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, TypeAlias, cast
 
+import numpy as np
+
 EdgeKind = Literal["contraction", "dangling", "self"]
 ContractionNodeIds: TypeAlias = tuple[int, int]
 _DEFAULT_LABEL = object()
@@ -24,6 +26,10 @@ class _NodeData:
     degree: int
     label: str | None = None
     is_virtual: bool = False
+    shape: tuple[int, ...] | None = None
+    dtype: str | None = None
+    element_count: int | None = None
+    estimated_nbytes: int | None = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +39,7 @@ class _EdgeData:
     node_ids: tuple[int, ...]
     endpoints: tuple[_EdgeEndpoint, ...]
     label: str | None
+    bond_dimension: int | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +76,10 @@ def _make_node(
     *,
     label: str | None = None,
     is_virtual: bool = False,
+    shape: tuple[int, ...] | None = None,
+    dtype: str | None = None,
+    element_count: int | None = None,
+    estimated_nbytes: int | None = None,
 ) -> _NodeData:
     return _NodeData(
         name=name,
@@ -76,6 +87,10 @@ def _make_node(
         degree=len(axes_names),
         label=label,
         is_virtual=is_virtual,
+        shape=shape,
+        dtype=dtype,
+        element_count=element_count,
+        estimated_nbytes=estimated_nbytes,
     )
 
 
@@ -170,6 +185,113 @@ def _build_edge_label(
     if kind == "dangling":
         return axis_names[0] if axis_names else edge_name
     return None
+
+
+def _coerce_shape(shape: object) -> tuple[int, ...] | None:
+    """Normalize an arbitrary shape-like object into a tuple of ints."""
+    if shape is None:
+        return None
+    try:
+        return tuple(int(dimension) for dimension in shape)  # type: ignore[arg-type]
+    except TypeError:
+        return None
+
+
+def _element_count_for_shape(shape: tuple[int, ...] | None) -> int | None:
+    """Return the scalar element count for one tensor shape."""
+    if shape is None:
+        return None
+    if not shape:
+        return 1
+    return int(np.prod(shape, dtype=int))
+
+
+def _estimated_nbytes_for_node(
+    shape: tuple[int, ...] | None,
+    dtype_text: str | None,
+    *,
+    element_count: int | None,
+) -> int | None:
+    """Estimate tensor storage size from shape and dtype when possible."""
+    if shape is None or dtype_text is None or element_count is None:
+        return None
+    try:
+        dtype = np.dtype(dtype_text)
+    except TypeError:
+        return None
+    return int(element_count * int(dtype.itemsize))
+
+
+def _bond_dimension_for_edge(edge: _EdgeData, nodes: dict[int, _NodeData]) -> int | None:
+    """Infer the bond dimension carried by one normalized edge."""
+    dimensions: set[int] = set()
+    for endpoint in edge.endpoints:
+        node = nodes.get(endpoint.node_id)
+        if node is None or node.shape is None:
+            continue
+        if endpoint.axis_index < 0 or endpoint.axis_index >= len(node.shape):
+            continue
+        dimensions.add(int(node.shape[endpoint.axis_index]))
+    if not dimensions:
+        return None
+    if len(dimensions) != 1:
+        return None
+    return next(iter(dimensions))
+
+
+def _finalize_graph_diagnostics(graph: _GraphData) -> _GraphData:
+    """Fill derived tensor diagnostics shared by snapshots and viewers."""
+    finalized_nodes = {
+        node_id: _NodeData(
+            name=node.name,
+            axes_names=node.axes_names,
+            degree=node.degree,
+            label=node.label,
+            is_virtual=node.is_virtual,
+            shape=_coerce_shape(node.shape),
+            dtype=node.dtype,
+            element_count=(
+                node.element_count
+                if node.element_count is not None
+                else _element_count_for_shape(_coerce_shape(node.shape))
+            ),
+            estimated_nbytes=(
+                node.estimated_nbytes
+                if node.estimated_nbytes is not None
+                else _estimated_nbytes_for_node(
+                    _coerce_shape(node.shape),
+                    node.dtype,
+                    element_count=(
+                        node.element_count
+                        if node.element_count is not None
+                        else _element_count_for_shape(_coerce_shape(node.shape))
+                    ),
+                )
+            ),
+        )
+        for node_id, node in graph.nodes.items()
+    }
+    finalized_edges = tuple(
+        _EdgeData(
+            name=edge.name,
+            kind=edge.kind,
+            node_ids=edge.node_ids,
+            endpoints=edge.endpoints,
+            label=edge.label,
+            bond_dimension=(
+                edge.bond_dimension
+                if edge.bond_dimension is not None
+                else _bond_dimension_for_edge(edge, finalized_nodes)
+            ),
+        )
+        for edge in graph.edges
+    )
+    return _GraphData(
+        nodes=finalized_nodes,
+        edges=finalized_edges,
+        contraction_steps=graph.contraction_steps,
+        contraction_step_metrics=graph.contraction_step_metrics,
+    )
 
 
 def _resolve_contraction_scheme_by_name(

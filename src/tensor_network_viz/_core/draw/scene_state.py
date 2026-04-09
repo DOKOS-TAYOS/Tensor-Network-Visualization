@@ -45,6 +45,7 @@ class _InteractiveSceneState:
     active_node_mode: NodeRenderMode = "normal"
     tensor_label_artists: list[Artist] = field(default_factory=list)
     edge_label_artists: list[Artist] = field(default_factory=list)
+    diagnostic_artists: list[Artist] = field(default_factory=list)
     tensor_label_descriptors: tuple[_AnyLabelDescriptor, ...] | None = None
     edge_label_descriptors: tuple[_AnyLabelDescriptor, ...] | None = None
     tensor_hover_payload: dict[int, tuple[str, float]] | None = None
