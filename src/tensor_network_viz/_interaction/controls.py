@@ -6,9 +6,9 @@ from typing import Any
 
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from matplotlib.widgets import Button, CheckButtons, RadioButtons
+from matplotlib.widgets import Button, CheckButtons
 
-from .._ui_utils import _style_control_tray_axes
+from .._ui_utils import _set_axes_visible, _style_control_tray_axes
 from ..config import ViewName
 from .state import InteractiveFeatureState
 
@@ -22,12 +22,18 @@ _INTERACTIVE_CHECKBOX_AXES_BOUNDS: tuple[float, float, float, float] = (
     0.21,
     _INTERACTIVE_MENU_COLUMN_HEIGHT,
 )
-_VIEW_TOGGLE_GAP: float = 0.008
+_COMPACT_ROW_GAP: float = 0.008
+_COMPACT_BUTTON_GAP: float = 0.006
+_COMPACT_ROW_HEIGHT: float = 0.04
+_VIEW_TOGGLE_WIDTH: float = 0.05
+_FOCUS_MODE_BUTTON_WIDTH: float = 0.08
+_FOCUS_RADIUS_BUTTON_WIDTH: float = 0.032
+_FOCUS_CLEAR_BUTTON_WIDTH: float = 0.032
 _VIEW_TOGGLE_BOUNDS: tuple[float, float, float, float] = (
     _INTERACTIVE_CHECKBOX_AXES_BOUNDS[0],
-    _INTERACTIVE_CHECKBOX_AXES_BOUNDS[1] + _INTERACTIVE_CHECKBOX_AXES_BOUNDS[3] + _VIEW_TOGGLE_GAP,
-    0.05,
-    0.04,
+    _INTERACTIVE_CHECKBOX_AXES_BOUNDS[1] + _INTERACTIVE_CHECKBOX_AXES_BOUNDS[3] + _COMPACT_ROW_GAP,
+    _VIEW_TOGGLE_WIDTH,
+    _COMPACT_ROW_HEIGHT,
 )
 _BASE_TOGGLE_LABELS: tuple[str, str, str, str] = (
     "Hover",
@@ -41,11 +47,7 @@ _DIAGNOSTICS_LABEL: str = "Dimensions"
 _INTERACTIVE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _INTERACTIVE_CHECK_MARK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
-_INTERACTIVE_RADIO_PROPS: dict[str, float] = {"s": 38.0, "linewidth": 0.9}
 _COMPACT_BUTTON_FONT_SIZE: float = 8.5
-_FOCUS_MODE_BOUNDS: tuple[float, float, float, float] = (0.28, 0.072, 0.12, 0.11)
-_FOCUS_RADIUS_BOUNDS: tuple[float, float, float, float] = (0.41, 0.11, 0.08, 0.072)
-_FOCUS_CLEAR_BOUNDS: tuple[float, float, float, float] = (0.41, 0.04, 0.08, 0.05)
 _FOCUS_MODE_OPTIONS: tuple[str, str] = ("neighborhood", "path")
 _FOCUS_RADIUS_OPTIONS: tuple[str, str] = ("1", "2")
 
@@ -78,6 +80,36 @@ def _view_toggle_label(view: ViewName) -> str:
 
 def _style_compact_button(button: Button) -> None:
     button.label.set_fontsize(_COMPACT_BUTTON_FONT_SIZE)
+
+
+def _compact_button_bounds(*, left: float, width: float) -> tuple[float, float, float, float]:
+    return (left, _VIEW_TOGGLE_BOUNDS[1], width, _VIEW_TOGGLE_BOUNDS[3])
+
+
+def _alternate_focus_mode(mode: str) -> str:
+    if mode == "off":
+        return "neighborhood"
+    if mode == "neighborhood":
+        return "path"
+    return "off"
+
+
+def _focus_mode_button_label(mode: str) -> str:
+    if mode == "off":
+        return "Off"
+    if mode == "neighborhood":
+        return "Neighbor"
+    return "Path"
+
+
+def _alternate_focus_radius(radius: int) -> int:
+    if int(radius) == 1:
+        return 2
+    return 1
+
+
+def _focus_radius_button_label(radius: int) -> str:
+    return str(int(radius))
 
 
 class _InteractiveControlsPanel:
@@ -113,9 +145,9 @@ class _InteractiveControlsPanel:
         self.view_toggle_ax: Axes | None = None
         self.view_toggle_button: Button | None = None
         self.focus_mode_ax: Axes | None = None
-        self.focus_mode_radio: RadioButtons | None = None
+        self.focus_mode_button: Button | None = None
         self.focus_radius_ax: Axes | None = None
-        self.focus_radius_radio: RadioButtons | None = None
+        self.focus_radius_button: Button | None = None
         self.focus_clear_ax: Axes | None = None
         self.focus_clear_button: Button | None = None
         self._build()
@@ -150,7 +182,6 @@ class _InteractiveControlsPanel:
             include_scheme_toggles=self._layout.include_scheme_toggles,
             include_tensor_inspector=self._layout.include_tensor_inspector,
         )
-        cb_bottom = float(cb_bounds[1])
         check_ax = self._figure.add_axes(cb_bounds)
         _style_control_tray_axes(check_ax)
         self.check_ax = check_ax
@@ -163,8 +194,8 @@ class _InteractiveControlsPanel:
             check_props=_INTERACTIVE_CHECK_MARK_PROPS,
         )
         self.checkbuttons.on_clicked(self._on_toggle_clicked)
+        compact_row_left = float(_VIEW_TOGGLE_BOUNDS[0])
         if self._layout.include_view_selector:
-            _ = cb_bottom
             view_toggle_ax = self._figure.add_axes(_VIEW_TOGGLE_BOUNDS)
             _style_control_tray_axes(view_toggle_ax)
             self.view_toggle_ax = view_toggle_ax
@@ -174,34 +205,43 @@ class _InteractiveControlsPanel:
             )
             _style_compact_button(self.view_toggle_button)
             self.view_toggle_button.on_clicked(self._on_view_toggle_clicked)
+            compact_row_left = float(
+                _VIEW_TOGGLE_BOUNDS[0] + _VIEW_TOGGLE_BOUNDS[2] + _COMPACT_BUTTON_GAP
+            )
         if not self._layout.include_focus_controls:
             return
-        self.focus_mode_ax = self._figure.add_axes(_FOCUS_MODE_BOUNDS)
+        self.focus_mode_ax = self._figure.add_axes(
+            _compact_button_bounds(left=compact_row_left, width=_FOCUS_MODE_BUTTON_WIDTH)
+        )
         _style_control_tray_axes(self.focus_mode_ax)
-        self.focus_mode_radio = RadioButtons(
+        self.focus_mode_button = Button(
             self.focus_mode_ax,
-            _FOCUS_MODE_OPTIONS,
-            active=_FOCUS_MODE_OPTIONS.index(self._last_focus_mode),
-            label_props=_INTERACTIVE_LABEL_PROPS,
-            radio_props=_INTERACTIVE_RADIO_PROPS,
+            _focus_mode_button_label(self._last_focus_mode),
         )
-        self.focus_mode_radio.on_clicked(self._on_focus_mode_clicked)
+        _style_compact_button(self.focus_mode_button)
+        self.focus_mode_button.on_clicked(self._on_focus_mode_clicked)
 
-        self.focus_radius_ax = self._figure.add_axes(_FOCUS_RADIUS_BOUNDS)
+        compact_row_left += _FOCUS_MODE_BUTTON_WIDTH + _COMPACT_BUTTON_GAP
+        self.focus_radius_ax = self._figure.add_axes(
+            _compact_button_bounds(left=compact_row_left, width=_FOCUS_RADIUS_BUTTON_WIDTH)
+        )
         _style_control_tray_axes(self.focus_radius_ax)
-        self.focus_radius_radio = RadioButtons(
+        self.focus_radius_button = Button(
             self.focus_radius_ax,
-            _FOCUS_RADIUS_OPTIONS,
-            active=_FOCUS_RADIUS_OPTIONS.index(str(self._last_focus_radius)),
-            label_props=_INTERACTIVE_LABEL_PROPS,
-            radio_props=_INTERACTIVE_RADIO_PROPS,
+            _focus_radius_button_label(self._last_focus_radius),
         )
-        self.focus_radius_radio.on_clicked(self._on_focus_radius_clicked)
+        _style_compact_button(self.focus_radius_button)
+        self.focus_radius_button.on_clicked(self._on_focus_radius_clicked)
 
-        self.focus_clear_ax = self._figure.add_axes(_FOCUS_CLEAR_BOUNDS)
+        compact_row_left += _FOCUS_RADIUS_BUTTON_WIDTH + _COMPACT_BUTTON_GAP
+        self.focus_clear_ax = self._figure.add_axes(
+            _compact_button_bounds(left=compact_row_left, width=_FOCUS_CLEAR_BUTTON_WIDTH)
+        )
         _style_control_tray_axes(self.focus_clear_ax)
-        self.focus_clear_button = Button(self.focus_clear_ax, "Clear")
+        self.focus_clear_button = Button(self.focus_clear_ax, "x")
+        _style_compact_button(self.focus_clear_button)
         self.focus_clear_button.on_clicked(self._on_focus_clear_clicked)
+        self._sync_focus_button_labels()
 
     def sync(
         self,
@@ -220,18 +260,7 @@ class _InteractiveControlsPanel:
         self._callback_guard = True
         try:
             self._sync_view_toggle_label()
-            if (
-                self.focus_mode_radio is not None
-                and self.focus_mode_radio.value_selected != self._last_focus_mode
-            ):
-                self.focus_mode_radio.set_active(_FOCUS_MODE_OPTIONS.index(self._last_focus_mode))
-            if (
-                self.focus_radius_radio is not None
-                and self.focus_radius_radio.value_selected != str(self._last_focus_radius)
-            ):
-                self.focus_radius_radio.set_active(
-                    _FOCUS_RADIUS_OPTIONS.index(str(self._last_focus_radius))
-                )
+            self._sync_focus_button_labels()
             current = [bool(value) for value in self.checkbuttons.get_status()]
             for index, value in enumerate(self._statuses(state)):
                 if index < len(current) and current[index] != value:
@@ -245,6 +274,24 @@ class _InteractiveControlsPanel:
         label = _view_toggle_label(self._last_view)
         if self.view_toggle_button.label.get_text() != label:
             self.view_toggle_button.label.set_text(label)
+
+    def _sync_focus_button_labels(self) -> None:
+        if self.focus_mode_button is not None:
+            mode_label = _focus_mode_button_label(self._last_focus_mode)
+            if self.focus_mode_button.label.get_text() != mode_label:
+                self.focus_mode_button.label.set_text(mode_label)
+        if self.focus_radius_button is not None:
+            radius_label = _focus_radius_button_label(self._last_focus_radius)
+            if self.focus_radius_button.label.get_text() != radius_label:
+                self.focus_radius_button.label.set_text(radius_label)
+        if self.focus_clear_button is not None and self.focus_clear_button.label.get_text() != "x":
+            self.focus_clear_button.label.set_text("x")
+        radius_visible = self._last_focus_mode == "neighborhood"
+        clear_visible = self._last_focus_mode != "off"
+        if self.focus_radius_ax is not None:
+            _set_axes_visible(self.focus_radius_ax, radius_visible)
+        if self.focus_clear_ax is not None:
+            _set_axes_visible(self.focus_clear_ax, clear_visible)
 
     def _state_from_status(self, status: list[bool]) -> InteractiveFeatureState:
         scheme = self._last_state.scheme
@@ -297,16 +344,18 @@ class _InteractiveControlsPanel:
         self._last_state = requested_state
         self._on_state_changed(requested_state)
 
-    def _on_focus_mode_clicked(self, label: str | None) -> None:
-        if self._callback_guard or label is None or self._on_focus_mode_selected is None:
+    def _on_focus_mode_clicked(self, _event: object) -> None:
+        if self._callback_guard or self._on_focus_mode_selected is None:
             return
-        self._last_focus_mode = str(label)
+        self._last_focus_mode = _alternate_focus_mode(self._last_focus_mode)
+        self._sync_focus_button_labels()
         self._on_focus_mode_selected(self._last_focus_mode)
 
-    def _on_focus_radius_clicked(self, label: str | None) -> None:
-        if self._callback_guard or label is None or self._on_focus_radius_selected is None:
+    def _on_focus_radius_clicked(self, _event: object) -> None:
+        if self._callback_guard or self._on_focus_radius_selected is None:
             return
-        self._last_focus_radius = int(label)
+        self._last_focus_radius = _alternate_focus_radius(self._last_focus_radius)
+        self._sync_focus_button_labels()
         self._on_focus_radius_selected(self._last_focus_radius)
 
     def _on_focus_clear_clicked(self, _event: object) -> None:

@@ -55,7 +55,7 @@ from .tensor_inspector import _LinkedTensorInspectorController
 from .views import _InteractiveViewManager
 
 RenderedAxes = Axes | Axes3D
-_FocusMode = Literal["neighborhood", "path"]
+_FocusMode = Literal["off", "neighborhood", "path"]
 
 
 def _release_canvas_mouse_grabber(
@@ -194,13 +194,14 @@ class _InteractiveTensorFigureController:
         )
         self._active_state = self._desired_state
         self._focus: TensorNetworkFocus | None = config.focus
-        self._focus_mode: _FocusMode = "neighborhood"
+        self._focus_mode: _FocusMode = "off"
         self._focus_radius: int = 1
         self._focus_pending_start: str | None = None
-        self._focus_interaction_enabled: bool = config.focus is not None
+        self._focus_interaction_enabled: bool = False
         if config.focus is not None:
             self._focus_mode = cast(_FocusMode, config.focus.kind)
             self._focus_radius = int(config.focus.radius)
+            self._focus_interaction_enabled = True
         self._view_manager = _InteractiveViewManager(
             render_view=lambda view, ax: self._render_view(view, ax=ax),
             initial_ax=initial_ax,
@@ -378,7 +379,7 @@ class _InteractiveTensorFigureController:
             include_scheme_toggles=availability.scheme,
             include_tensor_inspector=availability.tensor_inspector,
             include_diagnostics=True,
-            include_focus_controls=False,
+            include_focus_controls=True,
         )
 
     def _render_view(
@@ -636,16 +637,20 @@ class _InteractiveTensorFigureController:
 
     def set_focus_mode(self, mode: str) -> None:
         resolved_mode = cast(_FocusMode, str(mode))
-        if resolved_mode not in {"neighborhood", "path"}:
+        if resolved_mode not in {"off", "neighborhood", "path"}:
             raise ValueError(f"Unsupported focus mode {mode!r}.")
-        self._focus_interaction_enabled = True
         rerender_required = False
         if self._focus_mode != resolved_mode:
             self._focus_mode = resolved_mode
             self._focus_pending_start = None
-            if self._focus is not None and self._focus.kind != resolved_mode:
+            if resolved_mode == "off":
+                if self._focus is not None:
+                    self._focus = None
+                    rerender_required = True
+            elif self._focus is not None and self._focus.kind != resolved_mode:
                 self._focus = None
                 rerender_required = True
+        self._focus_interaction_enabled = resolved_mode != "off"
         self._sync_checkbuttons()
         if rerender_required:
             scene = self._rerender_cached_views()
@@ -656,7 +661,7 @@ class _InteractiveTensorFigureController:
         resolved_radius = int(radius)
         if resolved_radius not in {1, 2}:
             raise ValueError("Focus radius must be 1 or 2.")
-        self._focus_interaction_enabled = True
+        self._focus_interaction_enabled = self._focus_mode != "off"
         if self._focus_radius == resolved_radius:
             self._sync_checkbuttons()
             return
@@ -681,7 +686,7 @@ class _InteractiveTensorFigureController:
         had_focus = self._focus is not None or self._focus_pending_start is not None
         self._focus = None
         self._focus_pending_start = None
-        self._focus_interaction_enabled = True
+        self._focus_interaction_enabled = self._focus_mode != "off"
         self._sync_checkbuttons()
         if not had_focus:
             return
@@ -690,9 +695,8 @@ class _InteractiveTensorFigureController:
         set_active_axes(scene.ax.figure, scene.ax)
 
     def select_focus_node(self, node_name: str) -> bool:
-        if not node_name:
+        if not node_name or not self._focus_interaction_enabled or self._focus_mode == "off":
             return False
-        self._focus_interaction_enabled = True
         if self._focus_mode == "neighborhood":
             self._focus_pending_start = None
             next_focus = TensorNetworkFocus(

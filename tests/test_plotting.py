@@ -42,10 +42,12 @@ from tensor_network_viz import (
     EinsumTrace,
     PlotConfig,
     TensorNetworkDiagnosticsConfig,
+    TensorNetworkFocus,
     einsum,
     show_tensor_network,
 )
 from tensor_network_viz._core import _draw_common
+from tensor_network_viz._core.focus import filter_graph_for_focus
 from tensor_network_viz._core.graph import (
     _EdgeEndpoint,
     _GraphData,
@@ -631,6 +633,13 @@ def test_show_tensor_network_default_interactive_controls_start_in_2d() -> None:
     assert controls._view_toggle_ax is not None and controls._view_toggle_ax in fig.axes
     assert controls._view_toggle_button is not None
     assert controls._view_toggle_button.label.get_text() == "3D"
+    assert controls._controls_panel is not None
+    assert controls._controls_panel.focus_mode_button is not None
+    assert controls._controls_panel.focus_mode_button.label.get_text() == "Off"
+    assert controls._controls_panel.focus_radius_button is not None
+    assert controls._controls_panel.focus_radius_button.ax.get_visible() is False
+    assert controls._controls_panel.focus_clear_button is not None
+    assert controls._controls_panel.focus_clear_button.ax.get_visible() is False
     assert controls._check_ax is not None and controls._check_ax in fig.axes
     assert len(fig.axes) >= 3
 
@@ -657,6 +666,59 @@ def test_show_tensor_network_interactive_controls_include_nodes_toggle() -> None
     ]
     assert controls.nodes_on is True
     assert controls._checkbuttons.ax in fig.axes
+
+
+def test_filter_graph_for_path_focus_keeps_cut_bonds_as_dangling_stubs() -> None:
+    left = DummyTensorKrowchNode("A", ["left", "ab"])
+    middle = DummyTensorKrowchNode("B", ["ab", "bc", "bd"])
+    right = DummyTensorKrowchNode("C", ["bc", "right"])
+    branch = DummyTensorKrowchNode("D", ["bd", "dangling"])
+    connect(left, 1, middle, 0, name="AB")
+    connect(middle, 1, right, 0, name="BC")
+    connect(middle, 2, branch, 0, name="BD")
+
+    graph = _build_tensorkrowch_graph(DummyNetwork(nodes=[left, middle, right, branch]))
+    focused = filter_graph_for_focus(
+        graph,
+        TensorNetworkFocus(kind="path", endpoints=("A", "C")),
+    )
+
+    focused_names = {node.name for node in focused.nodes.values() if not node.is_virtual}
+    middle_id = next(node_id for node_id, node in focused.nodes.items() if node.name == "B")
+
+    assert focused_names == {"A", "B", "C"}
+    assert any(
+        edge.kind == "dangling" and edge.node_ids == (middle_id,) and edge.label == "bd"
+        for edge in focused.edges
+    )
+
+
+def test_show_tensor_network_path_focus_keeps_cut_bond_labels_as_stubs() -> None:
+    left = DummyTensorKrowchNode("A", ["left", "ab"])
+    middle = DummyTensorKrowchNode("B", ["ab", "bc", "bd"])
+    right = DummyTensorKrowchNode("C", ["bc", "right"])
+    branch = DummyTensorKrowchNode("D", ["bd", "dangling"])
+    connect(left, 1, middle, 0, name="AB")
+    connect(middle, 1, right, 0, name="BC")
+    connect(middle, 2, branch, 0, name="BD")
+
+    fig, ax = show_tensor_network(
+        DummyNetwork(nodes=[left, middle, right, branch]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            show_tensor_labels=True,
+            show_index_labels=True,
+            focus=TensorNetworkFocus(kind="path", endpoints=("A", "C")),
+        ),
+        show=False,
+    )
+
+    labels = [text.get_text() for text in ax.texts if text.get_visible()]
+    assert_rendered_figure(fig, ax)
+    assert "D" not in labels
+    assert labels.count("bd") == 1
+    assert labels.count("ab") == 2
+    assert labels.count("bc") == 2
 
 
 def test_show_tensor_network_builds_3d_view_lazily_once(
@@ -1013,7 +1075,9 @@ def test_show_tensor_network_discards_stale_hover_annotations_when_switching_vie
     assert "stale-3d" not in texts_3d
 
 
-def test_show_tensor_network_places_view_toggle_above_options_and_before_playback_slider() -> None:
+def test_show_tensor_network_places_compact_top_row_above_options_and_before_playback_slider() -> (
+    None
+):
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
@@ -1032,6 +1096,10 @@ def test_show_tensor_network_places_view_toggle_above_options_and_before_playbac
     assert controls is not None
     assert controls._view_toggle_ax is not None
     assert controls._check_ax is not None
+    assert controls._controls_panel is not None
+    assert controls._controls_panel.focus_mode_button is not None
+    assert controls._controls_panel.focus_radius_button is not None
+    assert controls._controls_panel.focus_clear_button is not None
     scene_controls = controls.current_scene.contraction_controls
     assert scene_controls is not None
     assert scene_controls._viewer is not None
@@ -1039,11 +1107,17 @@ def test_show_tensor_network_places_view_toggle_above_options_and_before_playbac
     assert scene_controls._viewer._btn_play is not None
 
     view_toggle_bounds = controls._view_toggle_ax.get_position().bounds
+    focus_mode_bounds = controls._controls_panel.focus_mode_button.ax.get_position().bounds
+    focus_radius_bounds = controls._controls_panel.focus_radius_button.ax.get_position().bounds
+    focus_clear_bounds = controls._controls_panel.focus_clear_button.ax.get_position().bounds
     check_bounds = controls._check_ax.get_position().bounds
     slider_bounds = scene_controls._viewer.slider.ax.get_position().bounds
     play_bounds = scene_controls._viewer._btn_play.ax.get_position().bounds
 
     view_toggle_right = view_toggle_bounds[0] + view_toggle_bounds[2]
+    focus_mode_right = focus_mode_bounds[0] + focus_mode_bounds[2]
+    focus_radius_right = focus_radius_bounds[0] + focus_radius_bounds[2]
+    focus_clear_right = focus_clear_bounds[0] + focus_clear_bounds[2]
     check_top = check_bounds[1] + check_bounds[3]
     slider_right = slider_bounds[0] + slider_bounds[2]
 
@@ -1052,7 +1126,13 @@ def test_show_tensor_network_places_view_toggle_above_options_and_before_playbac
     assert view_toggle_bounds[1] > check_top
     assert view_toggle_bounds[2] <= 0.06
     assert view_toggle_bounds[3] <= 0.05
-    assert slider_bounds[0] >= view_toggle_right - 0.02
+    assert focus_mode_bounds[0] > view_toggle_right
+    assert focus_mode_bounds[1] == pytest.approx(view_toggle_bounds[1], abs=0.005)
+    assert focus_radius_bounds[0] > focus_mode_right
+    assert focus_radius_bounds[1] == pytest.approx(view_toggle_bounds[1], abs=0.005)
+    assert focus_clear_bounds[0] > focus_radius_right
+    assert focus_clear_bounds[1] == pytest.approx(view_toggle_bounds[1], abs=0.005)
+    assert slider_bounds[0] >= focus_clear_right - 0.005
     assert play_bounds[0] > slider_right
 
 

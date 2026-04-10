@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import replace
 
 from ..config import TensorNetworkFocus
-from .graph import _ContractionStepMetrics, _GraphData
+from .graph import (
+    _ContractionStepMetrics,
+    _EdgeData,
+    _EdgeEndpoint,
+    _GraphData,
+    _make_dangling_edge,
+)
 
 
 def _physical_name_index(
@@ -164,6 +171,14 @@ def _focused_virtual_hubs(graph: _GraphData, selected_tensor_ids: set[int]) -> s
     return {hub_id for hub_id, neighbors in hub_neighbors.items() if len(neighbors) >= 2}
 
 
+def _cut_edge_stub(edge: _EdgeData, endpoint: _EdgeEndpoint) -> _EdgeData:
+    """Re-express a cut bond as a dangling stub on the kept tensor endpoint."""
+    stub = _make_dangling_edge(endpoint, name=edge.name)
+    if edge.bond_dimension is None:
+        return stub
+    return replace(stub, bond_dimension=edge.bond_dimension)
+
+
 def filter_graph_for_focus(
     graph: _GraphData,
     focus: TensorNetworkFocus | None,
@@ -173,9 +188,18 @@ def filter_graph_for_focus(
     if not selected_tensor_ids:
         return graph
 
+    preserve_cut_bonds = focus is not None and focus.kind == "path"
     active_hub_ids = _focused_virtual_hubs(graph, selected_tensor_ids)
     kept_edges = []
     for edge in graph.edges:
+        selected_physical_endpoints = [
+            endpoint
+            for endpoint in edge.endpoints
+            if (
+                not graph.nodes[endpoint.node_id].is_virtual
+                and int(endpoint.node_id) in selected_tensor_ids
+            )
+        ]
         physical_endpoints = {
             int(endpoint.node_id)
             for endpoint in edge.endpoints
@@ -193,6 +217,8 @@ def filter_graph_for_focus(
         if len(physical_endpoints) == 2:
             if physical_endpoints.issubset(selected_tensor_ids):
                 kept_edges.append(edge)
+            elif preserve_cut_bonds and len(selected_physical_endpoints) == 1:
+                kept_edges.append(_cut_edge_stub(edge, selected_physical_endpoints[0]))
             continue
         if (
             len(physical_endpoints) == 1
@@ -201,6 +227,9 @@ def filter_graph_for_focus(
             and next(iter(virtual_endpoints)) in active_hub_ids
         ):
             kept_edges.append(edge)
+            continue
+        if preserve_cut_bonds and len(selected_physical_endpoints) == 1:
+            kept_edges.append(_cut_edge_stub(edge, selected_physical_endpoints[0]))
 
     kept_node_ids = set(selected_tensor_ids) | active_hub_ids
     kept_nodes = {

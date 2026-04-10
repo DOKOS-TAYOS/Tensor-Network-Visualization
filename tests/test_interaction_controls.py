@@ -342,18 +342,97 @@ def test_interactive_controls_panel_sync_updates_focus_widgets_without_callbacks
         panel.sync(
             state=initial_state,
             view="2d",
-            focus_mode="neighborhood",
+            focus_mode="off",
             focus_radius=1,
         )
 
         assert focus_mode_events == []
         assert focus_radius_events == []
         assert focus_clear_events == []
-        assert panel.focus_mode_radio is not None
-        assert panel.focus_mode_radio.value_selected == "neighborhood"
-        assert panel.focus_radius_radio is not None
-        assert panel.focus_radius_radio.value_selected == "1"
+        assert panel.focus_mode_button is not None
+        assert panel.focus_mode_button.label.get_text() == "Off"
+        assert panel.focus_radius_button is not None
+        assert panel.focus_radius_button.label.get_text() == "1"
+        assert panel.focus_radius_button.ax.get_visible() is False
         assert panel.focus_clear_button is not None
+        assert panel.focus_clear_button.label.get_text() == "x"
+        assert panel.focus_clear_button.ax.get_visible() is False
+    finally:
+        plt.close(fig)
+
+
+def test_interactive_controls_panel_focus_buttons_emit_callbacks_and_flip_labels() -> None:
+    fig = plt.figure()
+    focus_mode_events: list[str] = []
+    focus_radius_events: list[int] = []
+    focus_clear_events: list[str] = []
+    initial_state = InteractiveFeatureState(
+        hover=True,
+        nodes=True,
+        tensor_labels=False,
+        edge_labels=False,
+        scheme=False,
+        playback=False,
+        cost_hover=False,
+        tensor_inspector=False,
+    )
+    try:
+        panel = _InteractiveControlsPanel(
+            fig=fig,
+            layout=_InteractiveControlsLayout(
+                include_view_selector=True,
+                include_scheme_toggles=False,
+                include_tensor_inspector=False,
+                include_diagnostics=False,
+                include_focus_controls=True,
+            ),
+            initial_view="2d",
+            initial_state=initial_state,
+            on_view_selected=lambda _view: None,
+            on_state_changed=lambda _state: None,
+            initial_focus_mode="off",
+            initial_focus_radius=1,
+            on_focus_mode_selected=focus_mode_events.append,
+            on_focus_radius_selected=focus_radius_events.append,
+            on_focus_cleared=lambda: focus_clear_events.append("clear"),
+        )
+
+        assert panel.focus_mode_button is not None
+        assert panel.focus_radius_button is not None
+        assert panel.focus_clear_button is not None
+
+        assert panel.focus_mode_button.label.get_text() == "Off"
+        assert panel.focus_radius_button.label.get_text() == "1"
+        assert panel.focus_radius_button.ax.get_visible() is False
+        assert panel.focus_clear_button.label.get_text() == "x"
+        assert panel.focus_clear_button.ax.get_visible() is False
+
+        _click_button(panel.focus_mode_button)
+        assert focus_mode_events == ["neighborhood"]
+        assert panel.focus_mode_button.label.get_text() == "Neighbor"
+        assert panel.focus_radius_button.ax.get_visible() is True
+        assert panel.focus_radius_button.label.get_text() == "1"
+        assert panel.focus_clear_button.ax.get_visible() is True
+
+        _click_button(panel.focus_radius_button)
+        assert focus_radius_events == [2]
+        assert panel.focus_radius_button.label.get_text() == "2"
+
+        _click_button(panel.focus_mode_button)
+        assert focus_mode_events == ["neighborhood", "path"]
+        assert panel.focus_mode_button.label.get_text() == "Path"
+        assert panel.focus_radius_button.ax.get_visible() is False
+        assert panel.focus_clear_button.ax.get_visible() is True
+
+        _click_button(panel.focus_clear_button)
+        assert focus_clear_events == ["clear"]
+        assert panel.focus_clear_button.label.get_text() == "x"
+
+        _click_button(panel.focus_mode_button)
+        assert focus_mode_events == ["neighborhood", "path", "off"]
+        assert panel.focus_mode_button.label.get_text() == "Off"
+        assert panel.focus_radius_button.ax.get_visible() is False
+        assert panel.focus_clear_button.ax.get_visible() is False
     finally:
         plt.close(fig)
 
@@ -365,9 +444,14 @@ def test_show_tensor_network_focus_controls_drive_click_selection_and_clear() ->
     scene = controls.current_scene
 
     assert panel is not None
-    assert panel.focus_mode_radio is None
-    assert panel.focus_radius_radio is None
-    assert panel.focus_clear_button is None
+    assert panel.focus_mode_button is not None
+    assert panel.focus_mode_button.label.get_text() == "Off"
+    assert panel.focus_radius_button is not None
+    assert panel.focus_radius_button.label.get_text() == "1"
+    assert panel.focus_radius_button.ax.get_visible() is False
+    assert panel.focus_clear_button is not None
+    assert panel.focus_clear_button.label.get_text() == "x"
+    assert panel.focus_clear_button.ax.get_visible() is False
     assert {scene.graph.nodes[node_id].name for node_id in scene.visible_node_ids} == {
         "A",
         "B",
@@ -386,9 +470,28 @@ def test_show_tensor_network_focus_controls_drive_click_selection_and_clear() ->
         "C",
     }
 
-    controls.set_focus_radius(2)
-    controls.set_focus_mode("neighborhood")
+    _click_button(panel.focus_mode_button)
+    assert controls.focus_mode == "neighborhood"
+    assert panel.focus_mode_button.label.get_text() == "Neighbor"
+    assert panel.focus_radius_button.ax.get_visible() is True
+    assert panel.focus_clear_button.ax.get_visible() is True
+
     _dispatch_button_event_at_data(ax, x=float(position_a[0]), y=float(position_a[1]))
+    assert {
+        controls.current_scene.graph.nodes[node_id].name
+        for node_id in controls.current_scene.visible_node_ids
+    } == {
+        "A",
+        "B",
+    }
+
+    _click_button(panel.focus_radius_button)
+    assert controls.focus_radius == 2
+    assert panel.focus_radius_button.label.get_text() == "2"
+    assert panel.focus_radius_button.ax.get_visible() is True
+
+    _click_button(panel.focus_clear_button)
+    assert controls.focus_mode == "neighborhood"
     assert {
         controls.current_scene.graph.nodes[node_id].name
         for node_id in controls.current_scene.visible_node_ids
@@ -398,16 +501,11 @@ def test_show_tensor_network_focus_controls_drive_click_selection_and_clear() ->
         "C",
     }
 
-    controls.set_focus_radius(1)
-    assert {
-        controls.current_scene.graph.nodes[node_id].name
-        for node_id in controls.current_scene.visible_node_ids
-    } == {
-        "A",
-        "B",
-    }
-
-    controls.set_focus_mode("path")
+    _click_button(panel.focus_mode_button)
+    assert controls.focus_mode == "path"
+    assert panel.focus_mode_button.label.get_text() == "Path"
+    assert panel.focus_radius_button.ax.get_visible() is False
+    assert panel.focus_clear_button.ax.get_visible() is True
     assert {
         controls.current_scene.graph.nodes[node_id].name
         for node_id in controls.current_scene.visible_node_ids
@@ -439,7 +537,11 @@ def test_show_tensor_network_focus_controls_drive_click_selection_and_clear() ->
         "B",
     }
 
-    controls.clear_focus()
+    _click_button(panel.focus_mode_button)
+    assert controls.focus_mode == "off"
+    assert panel.focus_mode_button.label.get_text() == "Off"
+    assert panel.focus_radius_button.ax.get_visible() is False
+    assert panel.focus_clear_button.ax.get_visible() is False
     assert {
         controls.current_scene.graph.nodes[node_id].name
         for node_id in controls.current_scene.visible_node_ids
