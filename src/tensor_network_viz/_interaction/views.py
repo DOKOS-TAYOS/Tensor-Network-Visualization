@@ -112,6 +112,13 @@ class _InteractiveViewManager:
     def rerender_cached_view(self, view: ViewName) -> _InteractiveSceneState:
         cache = self.view_caches[view]
         assert cache.ax is not None
+        old_scene = cache.scene
+        if old_scene is not None and old_scene.contraction_controls is not None:
+            viewer = old_scene.contraction_controls._viewer
+            if viewer is not None:
+                viewer.pause()
+                viewer.set_playback_widgets_visible(False)
+                viewer.hide_scheme_artists()
         fig, rendered_ax = self._render_view(view, cache.ax)
         scene = _scene_from_axes(rendered_ax)
         assert scene is not None

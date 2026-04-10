@@ -178,6 +178,9 @@ class _ContractionViewerBase:
     def num_steps(self) -> int:
         return len(self._artists)
 
+    def _coerce_step(self, k: int | float) -> int:
+        return int(np.clip(round(float(k)), 0, self.num_steps))
+
     def _restore_base_style(self, i: int, artist: Artist) -> None:
         snap = self._snapshots[i]
         if snap:
@@ -258,10 +261,9 @@ class _ContractionViewerBase:
             else:
                 self._restore_base_style(i, art)
 
-    def set_step(self, k: int) -> None:
+    def set_step(self, k: int | float) -> None:
         """Clamp *k* to ``[0, num_steps]``, update artists and optional slider."""
-        n = self.num_steps
-        k_clamped = int(np.clip(k, 0, n))
+        k_clamped = self._coerce_step(k)
         self.current_step = k_clamped
         self._apply_step_visuals(k_clamped)
 
@@ -350,7 +352,7 @@ class _ContractionViewerBase:
         def _on_slider_change(_: float) -> None:
             if self._slider_callback_guard or self.slider is None:
                 return
-            self.set_step(int(self.slider.val))
+            self.set_step(float(self.slider.val))
 
         slider.on_changed(_on_slider_change)
         btn_play.on_clicked(lambda _e: self.play())

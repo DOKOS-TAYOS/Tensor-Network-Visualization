@@ -167,6 +167,41 @@ def test_playback_slider_releases_stale_mouse_grabber_before_drag() -> None:
     assert fig.canvas.mouse_grabber is v.slider.ax
 
 
+def test_playback_buttons_release_stale_mouse_grabber_before_click() -> None:
+    fig, ax = matplotlib.pyplot.subplots()
+    r = Rectangle((0, 0), 1, 1)
+    ax.add_patch(r)
+    stale_ax = fig.add_axes((0.9, 0.9, 0.05, 0.05))
+    stale_ax.set_visible(False)
+    v = ContractionViewer2D([r], fig=fig, ax=ax, enable_playback=True)
+    v.build_ui()
+    v.set_step(1)
+
+    assert v._btn_reset is not None
+    fig.canvas.grab_mouse(stale_ax)
+    assert fig.canvas.mouse_grabber is stale_ax
+
+    _click_button(v._btn_reset)
+
+    assert v.current_step == 0
+    assert fig.canvas.mouse_grabber is None
+
+
+def test_playback_slider_snaps_fractional_values_to_discrete_steps() -> None:
+    fig, ax = matplotlib.pyplot.subplots()
+    rects = [Rectangle((index, 0), 1, 1) for index in range(3)]
+    for rect in rects:
+        ax.add_patch(rect)
+    v = ContractionViewer2D(rects, fig=fig, ax=ax, enable_playback=True)
+    v.build_ui()
+
+    assert v.slider is not None
+    v.slider.set_val(2.6)
+
+    assert v.current_step == 3
+    assert float(v.slider.val) == pytest.approx(3.0)
+
+
 def test_plot_graph_contraction_scheme_adds_widgets() -> None:
     trace = [
         pair_tensor("A0", "x0", "r0", "pa,p->a"),

@@ -437,6 +437,52 @@ def test_interactive_controls_panel_focus_buttons_emit_callbacks_and_flip_labels
         plt.close(fig)
 
 
+def test_interactive_focus_button_releases_stale_mouse_grabber_before_click() -> None:
+    fig = plt.figure()
+    focus_mode_events: list[str] = []
+    initial_state = InteractiveFeatureState(
+        hover=True,
+        nodes=True,
+        tensor_labels=False,
+        edge_labels=False,
+        scheme=False,
+        playback=False,
+        cost_hover=False,
+        tensor_inspector=False,
+    )
+    try:
+        panel = _InteractiveControlsPanel(
+            fig=fig,
+            layout=_InteractiveControlsLayout(
+                include_view_selector=True,
+                include_scheme_toggles=False,
+                include_tensor_inspector=False,
+                include_diagnostics=False,
+                include_focus_controls=True,
+            ),
+            initial_view="2d",
+            initial_state=initial_state,
+            on_view_selected=lambda _view: None,
+            on_state_changed=lambda _state: None,
+            initial_focus_mode="off",
+            initial_focus_radius=1,
+            on_focus_mode_selected=focus_mode_events.append,
+        )
+        stale_ax = fig.add_axes((0.9, 0.9, 0.05, 0.05))
+        stale_ax.set_visible(False)
+
+        assert panel.focus_mode_button is not None
+        fig.canvas.grab_mouse(stale_ax)
+        assert fig.canvas.mouse_grabber is stale_ax
+
+        _click_button(panel.focus_mode_button)
+
+        assert focus_mode_events == ["neighborhood"]
+        assert fig.canvas.mouse_grabber is None
+    finally:
+        plt.close(fig)
+
+
 def test_show_tensor_network_focus_controls_drive_click_selection_and_clear() -> None:
     fig, ax = show_tensor_network(_einsum_trace(), engine="einsum", show=False)
     controls = fig._tensor_network_viz_interactive_controls  # type: ignore[attr-defined]

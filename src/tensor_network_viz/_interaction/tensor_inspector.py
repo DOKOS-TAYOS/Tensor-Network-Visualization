@@ -24,6 +24,7 @@ from .._tensor_elements_controller import (
 from .._tensor_elements_data import _PlaybackStepRecord
 from .._tensor_elements_support import _TensorRecord
 from .._ui_utils import _style_control_tray_axes
+from .._widgets import _SafeButton
 from ..config import EngineName
 from ..tensor_comparison_config import TensorComparisonConfig, TensorComparisonMode
 from ..tensor_elements import _show_tensor_records
@@ -358,7 +359,7 @@ class _LinkedTensorInspectorController:
             return
         toggle_ax = self._figure.add_axes(_COMPARE_TOGGLE_BOUNDS)
         _style_control_tray_axes(toggle_ax)
-        self._compare_toggle_button = Button(
+        self._compare_toggle_button = _SafeButton(
             toggle_ax,
             _compare_toggle_label(self._base_compare_mode),
         )
@@ -379,7 +380,7 @@ class _LinkedTensorInspectorController:
 
         capture_ax = self._figure.add_axes(_CAPTURE_REFERENCE_BOUNDS)
         _style_control_tray_axes(capture_ax)
-        self._capture_reference_button = Button(capture_ax, "⌖")
+        self._capture_reference_button = _SafeButton(capture_ax, "⌖")
         _style_compact_button(
             self._capture_reference_button,
             fontsize=9.0,
@@ -389,7 +390,7 @@ class _LinkedTensorInspectorController:
 
         clear_ax = self._figure.add_axes(_CLEAR_REFERENCE_BOUNDS)
         _style_control_tray_axes(clear_ax)
-        self._clear_reference_button = Button(clear_ax, "x")
+        self._clear_reference_button = _SafeButton(clear_ax, "x")
         _style_compact_button(self._clear_reference_button, fontsize=9.0)
         self._clear_reference_button.on_clicked(self._on_clear_reference_clicked)
         self._install_button_hover_tooltips()

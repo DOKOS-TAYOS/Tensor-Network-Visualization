@@ -46,6 +46,7 @@ from tensor_network_viz import (
     einsum,
     show_tensor_network,
 )
+from tensor_network_viz._contraction_viewer_ui import _PLAYBACK_SLIDER_BOUNDS
 from tensor_network_viz._core import _draw_common
 from tensor_network_viz._core.focus import filter_graph_for_focus
 from tensor_network_viz._core.graph import (
@@ -168,6 +169,23 @@ def _drag_slider_to_value(slider: Any, value: float) -> None:
 def _checkbutton_index(checkbuttons: Any, label_text: str) -> int:
     labels = [label.get_text() for label in checkbuttons.labels]
     return labels.index(label_text)
+
+
+def _visible_axes_at_bounds(
+    fig: matplotlib.figure.Figure,
+    bounds: tuple[float, float, float, float],
+    *,
+    abs_tol: float = 0.005,
+) -> list[matplotlib.axes.Axes]:
+    return [
+        ax
+        for ax in fig.axes
+        if ax.get_visible()
+        and all(
+            abs(float(actual) - float(expected)) <= abs_tol
+            for actual, expected in zip(ax.get_position().bounds, bounds, strict=True)
+        )
+    ]
 
 
 def _fire_close_event(fig: matplotlib.figure.Figure) -> None:
@@ -689,6 +707,40 @@ def test_filter_graph_for_path_focus_keeps_cut_bonds_as_dangling_stubs() -> None
     assert focused_names == {"A", "B", "C"}
     assert any(
         edge.kind == "dangling" and edge.node_ids == (middle_id,) and edge.label == "bd"
+        for edge in focused.edges
+    )
+
+
+def test_filter_graph_for_neighborhood_focus_keeps_cut_bonds_as_dangling_stubs() -> None:
+    nodes = [
+        DummyTensorKrowchNode("A", ["right"]),
+        DummyTensorKrowchNode("B", ["left", "right"]),
+        DummyTensorKrowchNode("C", ["left", "right"]),
+        DummyTensorKrowchNode("D", ["left", "right"]),
+        DummyTensorKrowchNode("E", ["left"]),
+    ]
+    connect(nodes[0], 0, nodes[1], 0, name="AB")
+    connect(nodes[1], 1, nodes[2], 0, name="BC")
+    connect(nodes[2], 1, nodes[3], 0, name="CD")
+    connect(nodes[3], 1, nodes[4], 0, name="DE")
+
+    graph = _build_tensorkrowch_graph(DummyNetwork(nodes=nodes))
+    focused = filter_graph_for_focus(
+        graph,
+        TensorNetworkFocus(kind="neighborhood", center="C", radius=1),
+    )
+
+    focused_names = {node.name for node in focused.nodes.values() if not node.is_virtual}
+    left_cut_id = next(node_id for node_id, node in focused.nodes.items() if node.name == "B")
+    right_cut_id = next(node_id for node_id, node in focused.nodes.items() if node.name == "D")
+
+    assert focused_names == {"B", "C", "D"}
+    assert any(
+        edge.kind == "dangling" and edge.node_ids == (left_cut_id,) and edge.label == "left"
+        for edge in focused.edges
+    )
+    assert any(
+        edge.kind == "dangling" and edge.node_ids == (right_cut_id,) and edge.label == "right"
         for edge in focused.edges
     )
 
@@ -1282,6 +1334,62 @@ def test_show_tensor_network_scheme_checkbox_visual_state_matches_scheme_toggle(
     assert controls.current_scene.contraction_controls._viewer is not None
     assert controls.current_scene.contraction_controls._viewer.slider is not None
     assert controls.current_scene.contraction_controls._viewer.slider.ax.get_visible() is False
+
+
+def test_neighbor_focus_after_scheme_hides_stale_playback_slider_axes() -> None:
+    nodes = [
+        DummyTensorKrowchNode("A", ["phys", "right"]),
+        DummyTensorKrowchNode("B", ["left", "phys", "right"]),
+        DummyTensorKrowchNode("C", ["left", "phys", "right"]),
+        DummyTensorKrowchNode("D", ["left", "phys"]),
+    ]
+    for index in range(len(nodes) - 1):
+        connect(nodes[index], len(nodes[index].edges) - 1, nodes[index + 1], 0, name="bond")
+
+    fig, ax = show_tensor_network(
+        DummyNetwork(nodes=nodes),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            contraction_scheme_by_name=(
+                ("A", "B"),
+                ("A", "B", "C"),
+                ("A", "B", "C", "D"),
+            ),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._controls_panel is not None
+    assert controls._controls_panel.focus_mode_button is not None
+    assert controls._checkbuttons is not None
+
+    _click_button(controls._controls_panel.focus_mode_button)
+    scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
+    _click_checkbutton(controls._checkbuttons, scheme_index)
+    assert _visible_axes_at_bounds(fig, _PLAYBACK_SLIDER_BOUNDS)
+
+    node_a_id = next(
+        node_id for node_id, node in controls.current_scene.graph.nodes.items() if node.name == "A"
+    )
+    node_a_position = np.asarray(controls.current_scene.positions[node_a_id], dtype=float)
+    _dispatch_button_event_at_data(
+        ax,
+        x=float(node_a_position[0]),
+        y=float(node_a_position[1]),
+    )
+
+    scene_controls = controls.current_scene.contraction_controls
+    viewer = None if scene_controls is None else scene_controls._viewer
+    expected_slider_ax = (
+        viewer.slider.ax
+        if viewer is not None and viewer.slider is not None and viewer.slider.ax.get_visible()
+        else None
+    )
+    expected_visible_axes = [] if expected_slider_ax is None else [expected_slider_ax]
+
+    assert _visible_axes_at_bounds(fig, _PLAYBACK_SLIDER_BOUNDS) == expected_visible_axes
 
 
 def test_show_tensor_network_scheme_and_cost_hover_keep_visual_checkboxes_in_sync() -> None:
@@ -2045,6 +2153,31 @@ def test_tensor_inspector_current_reference_toggle_button_switches_base_modes() 
     _click_button(inspector._compare_toggle_button)
     assert inspector._compare_mode == "current"
     assert inspector._compare_toggle_button.label.get_text() == "Reference"
+
+
+def test_tensor_inspector_buttons_release_stale_mouse_grabber_before_click() -> None:
+    trace, _r0, _r1 = _build_einsum_trace_for_comparison_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    assert inspector._compare_toggle_button is not None
+    stale_ax = inspector._figure.add_axes((0.9, 0.9, 0.05, 0.05))
+    stale_ax.set_visible(False)
+
+    inspector._figure.canvas.grab_mouse(stale_ax)
+    assert inspector._figure.canvas.mouse_grabber is stale_ax
+
+    _click_button(inspector._compare_toggle_button)
+
+    assert inspector._compare_mode == "reference"
+    assert inspector._figure.canvas.mouse_grabber is None
 
 
 def test_show_tensor_network_show_controls_false_does_not_create_tensor_inspector_window() -> None:

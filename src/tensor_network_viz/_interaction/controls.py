@@ -9,6 +9,7 @@ from matplotlib.figure import Figure
 from matplotlib.widgets import Button, CheckButtons
 
 from .._ui_utils import _set_axes_visible, _style_control_tray_axes
+from .._widgets import _SafeButton
 from ..config import ViewName
 from .state import InteractiveFeatureState
 
@@ -199,7 +200,7 @@ class _InteractiveControlsPanel:
             view_toggle_ax = self._figure.add_axes(_VIEW_TOGGLE_BOUNDS)
             _style_control_tray_axes(view_toggle_ax)
             self.view_toggle_ax = view_toggle_ax
-            self.view_toggle_button = Button(
+            self.view_toggle_button = _SafeButton(
                 view_toggle_ax,
                 _view_toggle_label(self._last_view),
             )
@@ -214,7 +215,7 @@ class _InteractiveControlsPanel:
             _compact_button_bounds(left=compact_row_left, width=_FOCUS_MODE_BUTTON_WIDTH)
         )
         _style_control_tray_axes(self.focus_mode_ax)
-        self.focus_mode_button = Button(
+        self.focus_mode_button = _SafeButton(
             self.focus_mode_ax,
             _focus_mode_button_label(self._last_focus_mode),
         )
@@ -226,7 +227,7 @@ class _InteractiveControlsPanel:
             _compact_button_bounds(left=compact_row_left, width=_FOCUS_RADIUS_BUTTON_WIDTH)
         )
         _style_control_tray_axes(self.focus_radius_ax)
-        self.focus_radius_button = Button(
+        self.focus_radius_button = _SafeButton(
             self.focus_radius_ax,
             _focus_radius_button_label(self._last_focus_radius),
         )
@@ -238,7 +239,7 @@ class _InteractiveControlsPanel:
             _compact_button_bounds(left=compact_row_left, width=_FOCUS_CLEAR_BUTTON_WIDTH)
         )
         _style_control_tray_axes(self.focus_clear_ax)
-        self.focus_clear_button = Button(self.focus_clear_ax, "x")
+        self.focus_clear_button = _SafeButton(self.focus_clear_ax, "x")
         _style_compact_button(self.focus_clear_button)
         self.focus_clear_button.on_clicked(self._on_focus_clear_clicked)
         self._sync_focus_button_labels()

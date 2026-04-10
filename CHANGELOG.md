@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Structured grid layouts:** You can pass nested index layouts—lists of lists for a regular 2D grid, or lists of lists of lists for a regular 3D grid—so the visualization follows an explicit rectangular structure instead of inferring it only from flat index lists.
+- **Named index directions:** Index axes can be assigned directional labels (for example `up`, `down`, and similar names) so you can force how indices are oriented in the layout.
+
+### Changed
+
+- **Performance:** General rendering and interaction paths are faster and more responsive after targeted optimizations.
+- **Documentation:** README, guides, API reference, installation and troubleshooting docs, backend notes, and examples have been substantially expanded and refreshed.
+
+### Fixed
+
+- **Stability:** Numerous bugs across visualization, controls, and layout handling have been resolved.
+
 ## [1.5.4] — 2026-04-10
 
 ### Added

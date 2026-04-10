@@ -8,7 +8,7 @@ from matplotlib.figure import Figure
 from matplotlib.text import Text
 from matplotlib.widgets import Button, Slider
 
-from ._widgets import _SafeSlider
+from ._widgets import _SafeButton, _SafeSlider
 
 _PLAYBACK_DETAILS_BOUNDS: tuple[float, float, float, float] = (0.23, 0.116, 0.7, 0.12)
 # Top of the cost / step-details axis; interactive chrome (checkboxes, 2d/3d) aligns to this y.
@@ -105,9 +105,9 @@ def create_playback_buttons(fig: Figure) -> tuple[Button, Button, Button]:
     ax_pause = fig.add_axes((bx + bw + gap, by, bw, bh))
     ax_reset = fig.add_axes((bx + 2.0 * (bw + gap), by, _PLAYBACK_RESET_WIDTH, bh))
     return (
-        Button(ax_play, "Play"),
-        Button(ax_pause, "Pause"),
-        Button(ax_reset, "Reset"),
+        _SafeButton(ax_play, "Play"),
+        _SafeButton(ax_pause, "Pause"),
+        _SafeButton(ax_reset, "Reset"),
     )
 
 

@@ -188,7 +188,7 @@ def filter_graph_for_focus(
     if not selected_tensor_ids:
         return graph
 
-    preserve_cut_bonds = focus is not None and focus.kind == "path"
+    preserve_cut_bonds = focus is not None
     active_hub_ids = _focused_virtual_hubs(graph, selected_tensor_ids)
     kept_edges = []
     for edge in graph.edges:

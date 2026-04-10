@@ -1,12 +1,21 @@
 # Backend Examples
 
-This page collects copy-paste examples for each supported backend.
-Assume the corresponding optional dependency is installed and, when you are running from this
-repository, that the local `.venv` is already active.
+This page collects copy-paste examples for each supported backend. Install the corresponding extra
+first; see [installation.md](installation.md) for setup commands.
 
-## Tensor Inspection
+## Contents
 
-### Base-dependency example with `EinsumTrace`
+- [Base Dependency Example](#base-dependency-example)
+- [TensorKrowch](#tensorkrowch)
+- [TensorNetwork](#tensornetwork)
+- [Quimb](#quimb)
+- [TeNPy](#tenpy)
+- [`einsum`](#einsum)
+- [Where to Go Next](#where-to-go-next)
+
+## Base Dependency Example
+
+`EinsumTrace` can be used with NumPy and the base package install.
 
 ```python
 import numpy as np
@@ -15,9 +24,10 @@ from tensor_network_viz import EinsumTrace, TensorElementsConfig, einsum, show_t
 trace = EinsumTrace()
 a = np.arange(6, dtype=float).reshape(2, 3)
 x = np.array([1.0, -0.5, 0.25], dtype=float)
+
 trace.bind("A", a)
 trace.bind("x", x)
-r0 = einsum("ab,b->a", a, x, trace=trace, backend="numpy")
+einsum("ab,b->a", a, x, trace=trace, backend="numpy")
 
 fig, ax = show_tensor_elements(
     trace,
@@ -28,6 +38,14 @@ fig.savefig("tensor-elements.png", bbox_inches="tight")
 ```
 
 ## TensorKrowch
+
+Install:
+
+```bash
+python -m pip install "tensor-network-visualization[tensorkrowch]"
+```
+
+Minimal network:
 
 ```python
 import tensorkrowch as tk
@@ -41,22 +59,49 @@ left["b"] ^ right["b"]
 fig, ax = show_tensor_network(
     network,
     engine="tensorkrowch",
-    config=PlotConfig(
-        show_tensor_labels=True,
-        show_index_labels=False,
-    ),
+    config=PlotConfig(show_tensor_labels=True, show_index_labels=False),
 )
 ```
 
-If you pass a TensorKrowch network **after** real contractions have been performed and the network
-still keeps usable `leaf_nodes` plus `resultant_nodes` history, `PlotConfig(show_contraction_scheme=True)`
-can reconstruct the contraction steps automatically. This recovery is conservative: unusual
-mutations or broken history simply disable the automatic scheme instead of guessing. When the
-recovered steps still expose result tensors and metric data, the same playback extras used by
-`einsum` also work here: `contraction_scheme_cost_hover=True` and
-`contraction_tensor_inspector=True`.
+Recovered contraction history:
+
+```python
+config = PlotConfig(
+    show_contraction_scheme=True,
+    contraction_scheme_cost_hover=True,
+    contraction_tensor_inspector=True,
+)
+
+fig, ax = show_tensor_network(contracted_network, engine="tensorkrowch", config=config)
+```
+
+This works only when the contracted TensorKrowch network still preserves usable `leaf_nodes` and
+`resultant_nodes` history. If the history is unavailable, the library avoids guessing.
+
+TensorKrowch nodes can also be passed as a nested 2D/3D grid to fix their visual positions:
+
+```python
+grid = [
+    [left, right],
+    [None, bottom],
+]
+
+fig, ax = show_tensor_network(grid, engine="tensorkrowch", view="2d")
+```
+
+That grid is only a layout hint; bonds still come from the nodes' own edges. If you need automatic
+recovered contraction playback, pass the original TensorKrowch network object instead and use
+`PlotConfig(positions={id(node): (...)})` for manual placement.
 
 ## TensorNetwork
+
+Install:
+
+```bash
+python -m pip install "tensor-network-visualization[tensornetwork]"
+```
+
+Example:
 
 ```python
 import numpy as np
@@ -70,14 +115,39 @@ left["b"] ^ right["b"]
 fig, ax = show_tensor_network(
     [left, right],
     engine="tensornetwork",
-    config=PlotConfig(
-        show_tensor_labels=True,
-        hover_labels=True,
-    ),
+    config=PlotConfig(show_tensor_labels=True, hover_labels=True),
 )
 ```
 
+Grid layout:
+
+```python
+import numpy as np
+import tensornetwork as tn
+
+left = tn.Node(np.ones((2, 2)), name="L", axis_names=("a", "b"))
+right = tn.Node(np.ones((2, 2)), name="R", axis_names=("b", "c"))
+bottom = tn.Node(np.ones((2, 2)), name="B", axis_names=("c", "d"))
+left["b"] ^ right["b"]
+right["c"] ^ bottom["c"]
+
+grid = [
+    [left, right],
+    [None, bottom],
+]
+
+fig, ax = show_tensor_network(grid, engine="tensornetwork", view="2d")
+```
+
 ## Quimb
+
+Install:
+
+```bash
+python -m pip install "tensor-network-visualization[quimb]"
+```
+
+Example:
 
 ```python
 import numpy as np
@@ -94,15 +164,27 @@ fig, ax = show_tensor_network(
     network,
     engine="quimb",
     config=PlotConfig(show_tensor_labels=True),
-    show_controls=False,
-    show=False,
 )
-fig.savefig("quimb_network.png", bbox_inches="tight")
+```
+
+Snapshot export:
+
+```python
+from tensor_network_viz import export_tensor_network_snapshot
+
+snapshot = export_tensor_network_snapshot(network, engine="quimb", view="2d")
+payload = snapshot.to_dict()
 ```
 
 ## TeNPy
 
-### Native finite MPS
+Install:
+
+```bash
+python -m pip install "tensor-network-visualization[tenpy]"
+```
+
+Native finite MPS:
 
 ```python
 from tenpy.networks.mps import MPS
@@ -119,7 +201,7 @@ fig, ax = show_tensor_network(
 )
 ```
 
-### Static export
+Static export:
 
 ```python
 fig, ax = show_tensor_network(
@@ -132,60 +214,57 @@ fig, ax = show_tensor_network(
 fig.savefig("tenpy_mps.png", bbox_inches="tight")
 ```
 
+Use `make_tenpy_tensor_network(...)` when you already have named TeNPy `npc.Array` tensors and want
+to provide the bond metadata explicitly.
+
 ## `einsum`
 
-### Manual trace
+NumPy-backed traces work with the base package. Install the `einsum` extra when you need PyTorch:
+
+```bash
+python -m pip install "tensor-network-visualization[einsum]"
+```
+
+Manual NumPy trace:
 
 ```python
-from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network
+import numpy as np
+from tensor_network_viz import EinsumTrace, PlotConfig, einsum, show_tensor_network
 
-trace = [
-    pair_tensor("A0", "x0", "r0", "pa,p->a"),
-    pair_tensor("r0", "A1", "r1", "a,apb->pb"),
-]
+trace = EinsumTrace()
+a = np.ones((2, 3), dtype=float)
+b = np.ones((3, 4), dtype=float)
+
+trace.bind("A", a)
+trace.bind("B", b)
+einsum("ab,bc->ac", a, b, trace=trace, backend="numpy")
 
 fig, ax = show_tensor_network(
     trace,
     engine="einsum",
     config=PlotConfig(
-        show_contraction_scheme=True,
         show_tensor_labels=True,
+        show_contraction_scheme=True,
+        contraction_scheme_cost_hover=True,
     ),
 )
 ```
 
-### Traced execution
+Tensor inspection from the same trace:
 
 ```python
-from tensor_network_viz import EinsumTrace, PlotConfig, einsum, show_tensor_network
-import torch
+from tensor_network_viz import TensorElementsConfig, show_tensor_elements
 
-trace = EinsumTrace()
-a = torch.ones((2, 3))
-x = torch.ones((3,))
-trace.bind("A", a)
-trace.bind("x", x)
-einsum("ab,b->a", a, x, trace=trace, backend="torch")
-
-fig, ax = show_tensor_network(
+fig, ax = show_tensor_elements(
     trace,
     engine="einsum",
-    config=PlotConfig(show_contraction_scheme=True),
+    config=TensorElementsConfig(mode="magnitude"),
 )
 ```
 
-## Notes
+## Where to Go Next
 
-- The examples keep `engine=...` when it makes the backend explicit, but you can often omit it
-  because `show_tensor_network(...)` auto-detects the backend.
-- `show_tensor_elements(...)` auto-detects the same backends, but it needs real tensor values.
-- Use `show_controls=False` when you want a clean saved figure with no embedded buttons/sliders.
-- Use `PlotConfig(...)` for labels, hover behavior, contraction schemes, and performance-related
-  rendering choices.
-- Use `TensorElementsConfig(...)` for tensor-view mode, matrix grouping, downsampling, top-k data
-  summaries, and optional robust/shared scaling controls.
-- When multiple tensors are present, `show_tensor_elements(...)` shows one tensor at a time and
-  adds a slider to move between them. Interactive views are grouped into `basic`, `complex`, and
-  `diagnostic`, including `log_magnitude`, `sparsity`, and `nan_inf`.
-- TensorKrowch shape-only nodes and manual `pair_tensor(...)` lists are intentionally unsupported
-  for `show_tensor_elements(...)` because they do not expose inspectable tensor values.
+- [api.md](api.md): exact public API names and configuration fields.
+- [guide.md](guide.md): workflows, layouts, exports, tensor inspection, and performance tips.
+- [troubleshooting.md](troubleshooting.md): fixes for common install, backend, and notebook issues.
+- [../examples/README.md](../examples/README.md): repository demo launcher commands.
