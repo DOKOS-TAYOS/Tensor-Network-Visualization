@@ -23,14 +23,49 @@ _MAX_BUILTIN_CONTAINER_CACHE_ENTRIES: int = 128
 _CACHE_ATTR: str = "_tensor_network_viz_graph_cache_by_builder"
 
 
-def _builtin_container_signature(network: Any) -> tuple[Any, ...] | None:
+def _cache_source(network: Any) -> Any:
+    source = network
+    while hasattr(source, "_graph_cache_source"):
+        next_source = source._graph_cache_source
+        if next_source is source:
+            break
+        source = next_source
+    return source
+
+
+def _builtin_container_signature_inner(network: Any) -> tuple[Any, ...] | None:
     if isinstance(network, list):
-        return ("list", tuple(id(item) for item in network))
+        items: list[tuple[Any, ...]] = []
+        for item in network:
+            nested = _builtin_container_signature_inner(item)
+            items.append(nested if nested is not None else ("leaf", id(item)))
+        return (
+            "list",
+            tuple(items),
+        )
     if isinstance(network, tuple):
-        return ("tuple", tuple(id(item) for item in network))
+        items = []
+        for item in network:
+            nested = _builtin_container_signature_inner(item)
+            items.append(nested if nested is not None else ("leaf", id(item)))
+        return (
+            "tuple",
+            tuple(items),
+        )
     if isinstance(network, dict):
-        return ("dict", tuple(id(item) for item in network.values()))
+        items = []
+        for item in network.values():
+            nested = _builtin_container_signature_inner(item)
+            items.append(nested if nested is not None else ("leaf", id(item)))
+        return (
+            "dict",
+            tuple(items),
+        )
     return None
+
+
+def _builtin_container_signature(network: Any) -> tuple[Any, ...] | None:
+    return _builtin_container_signature_inner(_cache_source(network))
 
 
 def _builtin_container_cache_get(
@@ -41,7 +76,7 @@ def _builtin_container_cache_get(
     signature = _builtin_container_signature(network)
     if signature is None:
         return None
-    hit = _builtin_container_cache.get((id(network), builder_id))
+    hit = _builtin_container_cache.get((id(_cache_source(network)), builder_id))
     if hit is None:
         return None
     cached_signature, graph = hit
@@ -59,7 +94,7 @@ def _builtin_container_cache_put(
     signature = _builtin_container_signature(network)
     if signature is None:
         return False
-    cache_key = (id(network), builder_id)
+    cache_key = (id(_cache_source(network)), builder_id)
     _builtin_container_cache[cache_key] = (signature, graph)
     while len(_builtin_container_cache) > _MAX_BUILTIN_CONTAINER_CACHE_ENTRIES:
         oldest_key = next(iter(_builtin_container_cache))
@@ -145,7 +180,7 @@ def clear_tensor_network_graph_cache(
     except (TypeError, KeyError):
         pass
 
-    builtin_key_prefix = id(network)
+    builtin_key_prefix = id(_cache_source(network))
     if b_id is None:
         for key in tuple(_builtin_container_cache):
             if key[0] == builtin_key_prefix:

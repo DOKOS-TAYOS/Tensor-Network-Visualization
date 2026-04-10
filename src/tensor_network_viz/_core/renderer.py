@@ -19,9 +19,9 @@ from .._logging import package_logger
 from .._matplotlib_state import get_reserved_bottom
 from .._typing import PositionMapping, root_figure
 from ..config import PlotConfig
-from ._draw_common import _draw_graph
 from .contractions import _ContractionGroups, _group_contractions, _iter_contractions
 from .draw.constants import _CURVE_NEAR_PAIR_REF, _CURVE_OFFSET_FACTOR
+from .draw.graph_pipeline import _draw_graph
 from .focus import filter_graph_for_focus
 from .graph import _GraphData
 from .graph_cache import _get_or_build_graph

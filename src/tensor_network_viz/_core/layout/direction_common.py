@@ -101,6 +101,19 @@ def _direction_from_axis_name(
     return None
 
 
+def _forced_dangling_direction_from_axis_name(
+    graph: _GraphData,
+    *,
+    node_id: int,
+    axis_index: int,
+    axis_name: str | None,
+    dimensions: int,
+) -> np.ndarray | None:
+    if not _is_dangling_leg_axis(graph, node_id, axis_index):
+        return None
+    return _direction_from_axis_name(axis_name, dimensions=dimensions)
+
+
 def _used_axis_directions(
     directions: AxisDirections,
     *,
@@ -519,6 +532,7 @@ __all__ = [
     "_dedupe_candidate_directions",
     "_direction_from_axis_name",
     "_direction_has_space",
+    "_forced_dangling_direction_from_axis_name",
     "_is_dangling_leg_axis",
     "_normalize_direction",
     "_orthogonal_unit",

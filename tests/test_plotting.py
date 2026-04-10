@@ -2471,6 +2471,34 @@ def test_plot_tensorkrowch_network_2d_accepts_full_custom_positions() -> None:
     assert line_collection_segment_count(ax) == 1
 
 
+def test_show_tensor_network_static_nested_grid_2d_renders_with_holes() -> None:
+    left = DummyTensorNetworkNode("L", ["a", "b"])
+    right = DummyTensorNetworkNode("R", ["b", "c"])
+    connect(left, 1, right, 0, name="bond")
+
+    fig, ax = show_tensor_network(
+        [[left, None], [None, right]],
+        config=PlotConfig(show_tensor_labels=True),
+        show=False,
+        show_controls=False,
+    )
+
+    labels = {text.get_text() for text in ax.texts}
+    assert_rendered_figure(fig, ax)
+    assert labels >= {"L", "R"}
+
+
+def test_show_tensor_network_nested_grid_3d_defaults_to_3d_view() -> None:
+    left = DummyTensorNetworkNode("L", ["a", "b"])
+    right = DummyTensorNetworkNode("R", ["b", "c"])
+    connect(left, 1, right, 0, name="bond")
+
+    fig, ax = show_tensor_network([[[left], [right]]], show=False, show_controls=False)
+
+    assert_rendered_figure(fig, ax)
+    assert ax.name == "3d"
+
+
 def test_plot_tensorkrowch_network_2d_uses_layout_iterations_for_missing_custom_positions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

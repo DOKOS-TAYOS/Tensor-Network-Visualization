@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from itertools import combinations
 from math import inf, log
-from typing import Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import numpy as np
 
@@ -17,13 +17,11 @@ from ._input_inspection import (
     _is_unordered_collection,
 )
 from ._logging import package_logger
-from .einsum_module._equation import parse_einsum_equation
-from .einsum_module.trace import EinsumTrace, einsum_trace_step, pair_tensor
 from .exceptions import TensorDataError, TensorDataTypeError, UnsupportedEngineError
-from .quimb.graph import _quimb_tensor_parsed, _tensors_sorted_with_meta
-from .tenpy.explicit import TenPyTensorNetwork
 from .tensor_elements_config import TensorAnalysisConfig, TensorAxisSelector, TensorElementsConfig
-from .tensorkrowch._history import _recover_contraction_history
+
+if TYPE_CHECKING:
+    from .einsum_module._trace_types import einsum_trace_step, pair_tensor
 
 NumericArray: TypeAlias = np.ndarray[Any, Any]
 TensorElementsSourceName: TypeAlias = EngineName | Literal["numpy"]
@@ -141,7 +139,8 @@ class _PlaybackStepRecord:
     record: _TensorRecord | None
 
 
-_EinsumPlaybackStepRecord = _PlaybackStepRecord
+class _DirectArrayDetectionError(Exception):
+    """Internal marker for unexpected array-like failures during lightweight probing."""
 
 
 def _detect_tensor_elements_engine(data: Any) -> tuple[EngineName, Any]:
@@ -149,9 +148,47 @@ def _detect_tensor_elements_engine(data: Any) -> tuple[EngineName, Any]:
     return _detect_tensor_engine_with_input(data)
 
 
+def parse_einsum_equation(
+    equation: str,
+    operand_shapes: tuple[tuple[int, ...], ...],
+) -> Any:
+    from .einsum_module._equation import parse_einsum_equation as _parse_einsum_equation
+
+    return _parse_einsum_equation(equation, operand_shapes)
+
+
+def _has_exact_runtime_type(value: Any, *, module: str, qualname: str) -> bool:
+    value_type = type(value)
+    return value_type.__module__ == module and value_type.__qualname__ == qualname
+
+
+def _is_einsum_trace_object(value: Any) -> bool:
+    return _has_exact_runtime_type(
+        value,
+        module="tensor_network_viz.einsum_module.trace",
+        qualname="EinsumTrace",
+    )
+
+
+def _is_einsum_pair_step(value: Any) -> bool:
+    return _has_exact_runtime_type(
+        value,
+        module="tensor_network_viz.einsum_module._trace_types",
+        qualname="pair_tensor",
+    )
+
+
+def _is_explicit_tenpy_network(value: Any) -> bool:
+    return _has_exact_runtime_type(
+        value,
+        module="tensor_network_viz.tenpy.explicit",
+        qualname="TenPyTensorNetwork",
+    )
+
+
 def _looks_like_backend_tensor_input(value: Any) -> bool:
     return (
-        isinstance(value, EinsumTrace)
+        _is_einsum_trace_object(value)
         or _is_tenpy_tensor(value)
         or hasattr(value, "tensors")
         or hasattr(value, "leaf_nodes")
@@ -162,6 +199,16 @@ def _looks_like_backend_tensor_input(value: Any) -> bool:
     )
 
 
+def _asarray_for_direct_tensor_detection(value: Any) -> NumericArray:
+    """Probe array-like inputs while preserving broken ``__array__`` failures as type errors."""
+    try:
+        return np.asarray(value)
+    except (TypeError, ValueError):
+        raise
+    except Exception as exc:
+        raise _DirectArrayDetectionError(str(exc)) from exc
+
+
 def _is_direct_array_like_tensor(value: Any) -> bool:
     if isinstance(value, (str, bytes, bytearray, dict)):
         return False
@@ -170,11 +217,11 @@ def _is_direct_array_like_tensor(value: Any) -> bool:
     if not hasattr(value, "shape") and not hasattr(value, "__array__"):
         return False
     try:
-        array = np.asarray(value)
+        array = _asarray_for_direct_tensor_detection(value)
+    except _DirectArrayDetectionError as exc:
+        raise TypeError(str(exc)) from exc.__cause__
     except (TypeError, ValueError):
         return False
-    except Exception as exc:
-        raise TypeError(str(exc)) from exc
     return array.dtype != np.dtype("O")
 
 
@@ -653,6 +700,8 @@ def _tensorkrowch_attr_sources(data: Any) -> tuple[str, ...]:
 
 
 def _extract_quimb_records(data: Any) -> list[_TensorRecord]:
+    from .quimb.graph import _quimb_tensor_parsed, _tensors_sorted_with_meta
+
     if hasattr(data, "inds") and hasattr(data, "data"):
         parsed = _quimb_tensor_parsed(data)
         tensors = [data]
@@ -674,7 +723,7 @@ def _extract_quimb_records(data: Any) -> list[_TensorRecord]:
 
 
 def _tenpy_tensor_name_pairs(data: Any) -> list[tuple[str, Any]]:
-    if isinstance(data, TenPyTensorNetwork):
+    if _is_explicit_tenpy_network(data):
         return [(str(name), tensor) for name, tensor in data.nodes]
     if _is_tenpy_tensor(data):
         return [("T0", data)]
@@ -710,7 +759,7 @@ def _extract_tenpy_records(data: Any) -> list[_TensorRecord]:
 
 
 def _extract_einsum_records(data: Any) -> list[_TensorRecord]:
-    if not isinstance(data, EinsumTrace):
+    if not _is_einsum_trace_object(data):
         raise TypeError(
             "show_tensor_elements only supports EinsumTrace objects with live tensor values. "
             "Manual pair_tensor/einsum_trace_step iterables describe contractions but do not carry "
@@ -748,7 +797,7 @@ def _operand_shapes_for_einsum_step(
     operand_shapes = metadata.get("operand_shapes")
     if operand_shapes is not None:
         return tuple(tuple(int(dim) for dim in shape) for shape in operand_shapes)
-    if isinstance(step, pair_tensor):
+    if _is_einsum_pair_step(step):
         left_shape = metadata.get("left_shape")
         right_shape = metadata.get("right_shape")
         if left_shape is not None and right_shape is not None:
@@ -771,7 +820,7 @@ def _axis_names_for_einsum_step(step: pair_tensor | einsum_trace_step) -> tuple[
 
 
 def _extract_einsum_playback_step_records(data: Any) -> tuple[_PlaybackStepRecord, ...]:
-    if not isinstance(data, EinsumTrace):
+    if not _is_einsum_trace_object(data):
         raise TypeError("Playback tensor inspection only supports real EinsumTrace objects.")
 
     state = data._state
@@ -815,6 +864,8 @@ def _extract_tensorkrowch_playback_step_records(
     if not hasattr(data, "resultant_nodes") or not hasattr(data, "leaf_nodes"):
         return None
 
+    from .tensorkrowch._history import _recover_contraction_history
+
     recovered = _recover_contraction_history(data)
     if recovered is None or not recovered.step_result_nodes:
         return None
@@ -842,7 +893,7 @@ def _extract_tensorkrowch_playback_step_records(
 
 def _extract_playback_step_records(data: Any) -> tuple[_PlaybackStepRecord, ...] | None:
     """Recover playback result tensors when the input carries contraction history."""
-    if isinstance(data, EinsumTrace):
+    if _is_einsum_trace_object(data):
         return _extract_einsum_playback_step_records(data)
 
     try:
@@ -1494,7 +1545,6 @@ def _build_stats(record: _TensorRecord) -> _TensorStats:
 
 __all__ = [
     "NumericArray",
-    "_EinsumPlaybackStepRecord",
     "_MatrixMetadata",
     "_PlaybackStepRecord",
     "_ResolvedTensorAnalysis",

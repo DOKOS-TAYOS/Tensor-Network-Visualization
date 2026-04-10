@@ -11,6 +11,7 @@ matplotlib.use("Agg")
 
 import pytest
 
+import tensor_network_viz._tensor_elements_data as tensor_elements_data_module
 from tensor_network_viz import show_tensor_elements, show_tensor_network
 from tensor_network_viz.einsum_module._backend import _load_backend_einsum
 
@@ -115,6 +116,21 @@ def test_show_tensor_elements_array_like_conversion_error_raises_tensor_data_typ
 
     assert exc_info.type.__name__ == "TensorDataTypeError"
     assert isinstance(exc_info.value, TypeError)
+
+
+def test_show_tensor_elements_iterable_array_like_errors_become_tensor_data_type_error() -> None:
+    with pytest.raises(Exception, match="array boom") as exc_info:
+        show_tensor_elements([_ExplodingArrayLike()], show=False, show_controls=False)
+
+    assert exc_info.type.__name__ == "TensorDataTypeError"
+    assert isinstance(exc_info.value, TypeError)
+
+
+def test_direct_array_like_detection_wraps_unexpected_array_errors_as_type_error() -> None:
+    with pytest.raises(TypeError, match="array boom") as exc_info:
+        tensor_elements_data_module._is_direct_array_like_tensor(_ExplodingArrayLike())
+
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
 
 
 def test_load_backend_einsum_wraps_missing_optional_dependency(

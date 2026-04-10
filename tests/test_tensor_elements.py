@@ -4,6 +4,7 @@ import gc
 import inspect
 import warnings
 from collections.abc import Iterable, Iterator
+from types import SimpleNamespace
 from typing import Any
 
 import matplotlib
@@ -1532,6 +1533,47 @@ def test_extract_playback_step_records_returns_none_for_tensorless_tensorkrowch_
     records = _extract_playback_step_records(network)
 
     assert records is None
+
+
+def test_extract_playback_step_records_normalizes_parent_and_child_sequences() -> None:
+    left = DummyTensorKrowchNode(
+        name="A",
+        axes_names=("a", "b"),
+        tensor=np.ones((2, 3)),
+        shape=(2, 3),
+    )
+    right = DummyTensorKrowchNode(
+        name="B",
+        axes_names=("b", "c"),
+        tensor=np.ones((3, 5)),
+        shape=(3, 5),
+    )
+    result = DummyTensorKrowchNode(
+        name="contract_edges",
+        axes_names=("a", "c"),
+        tensor=np.ones((2, 5)),
+        shape=(2, 5),
+    )
+    left.successors = {  # type: ignore[attr-defined]
+        "contract_edges": {
+            "mixed": SimpleNamespace(node_ref=[left, None, right], child=(None, result))
+        }
+    }
+    right.successors = {}  # type: ignore[attr-defined]
+    network = DummyTensorKrowchContractedNetwork(
+        nodes=[left, right, result],
+        leaf_nodes=[left, right],
+        resultant_nodes=[result],
+    )
+
+    records = _extract_playback_step_records(network)
+
+    assert records is not None
+    assert len(records) == 1
+    assert records[0].record is not None
+    assert records[0].result_name == "contract_edges"
+    assert records[0].record.axis_names == ("a", "c")
+    assert tuple(records[0].record.array.shape) == (2, 5)
 
 
 def test_extract_playback_step_records_supports_contracted_tensorkrowch_network() -> None:

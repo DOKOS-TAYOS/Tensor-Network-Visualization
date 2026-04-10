@@ -134,6 +134,25 @@ def test_show_tensor_network_autodetects_single_pass_iterable() -> None:
     assert ax.name != "3d"
 
 
+def test_detect_engine_for_nested_tensornetwork_grid() -> None:
+    left = DummyTensorNetworkNode("L", ["a", "b"])
+    right = DummyTensorNetworkNode("R", ["b", "c"])
+    connect(left, 1, right, 0, name="bond")
+
+    assert _detect_engine([[left, None], [None, right]]) == "tensornetwork"
+
+
+def test_show_tensor_network_autodetects_nested_tensornetwork_grid_3d() -> None:
+    left = DummyTensorNetworkNode("L", ["a", "b"])
+    right = DummyTensorNetworkNode("R", ["b", "c"])
+    connect(left, 1, right, 0, name="bond")
+
+    fig, ax = show_tensor_network([[[left, right]]], show=False, show_controls=False)
+
+    assert fig is ax.figure
+    assert ax.name == "3d"
+
+
 def test_show_tensor_network_keeps_first_node_for_single_pass_nodes_attribute() -> None:
     left = DummyTensorKrowchNode("L", ["a", "b"])
     right = DummyTensorKrowchNode("R", ["b", "c"])
@@ -172,3 +191,19 @@ def test_show_tensor_network_keeps_first_tensor_for_single_pass_tensors_attribut
 def test_show_tensor_network_rejects_unknown_input_when_engine_is_omitted() -> None:
     with pytest.raises(ValueError, match="Could not infer tensor network engine"):
         show_tensor_network(object(), show=False)
+
+
+def test_show_tensor_network_rejects_mixed_depth_grid_input() -> None:
+    left = DummyTensorNetworkNode("L", ["a"])
+
+    with pytest.raises(
+        ValueError, match="Mixed nested tensor-network grid depths are not supported"
+    ):
+        show_tensor_network([[left], [[left]]], show=False, show_controls=False)
+
+
+def test_show_tensor_network_rejects_duplicate_object_in_grid_input() -> None:
+    left = DummyTensorNetworkNode("L", ["a"])
+
+    with pytest.raises(ValueError, match="same tensor or node object appears more than once"):
+        show_tensor_network([[left, left]], show=False, show_controls=False)

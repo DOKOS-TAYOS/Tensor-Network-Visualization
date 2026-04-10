@@ -176,20 +176,6 @@ def _resolved_diagnostics_config(config: PlotConfig) -> TensorNetworkDiagnostics
     return config.diagnostics or TensorNetworkDiagnosticsConfig()
 
 
-def _format_memory_estimate(estimated_nbytes: int | None) -> str | None:
-    if estimated_nbytes is None:
-        return None
-    units = ("B", "KB", "MB", "GB", "TB")
-    value = float(estimated_nbytes)
-    unit_index = 0
-    while value >= 1024.0 and unit_index < len(units) - 1:
-        value /= 1024.0
-        unit_index += 1
-    if unit_index == 0:
-        return f"{int(value)} {units[unit_index]}"
-    return f"{value:.1f} {units[unit_index]}"
-
-
 def _node_overlay_text(context: _RenderPrepContext, node_id: int) -> str:
     node = context.graph.nodes[node_id]
     if node.shape is None:

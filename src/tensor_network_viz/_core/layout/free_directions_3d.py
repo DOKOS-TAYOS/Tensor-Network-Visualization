@@ -13,6 +13,7 @@ from ..layout_structure import _component_orthogonal_basis, _LayoutComponent
 from .direction_common import (
     _direction_from_axis_name,
     _direction_has_space,
+    _forced_dangling_direction_from_axis_name,
     _is_dangling_leg_axis,
     _normalize_direction,
     _orthogonal_unit,
@@ -191,6 +192,38 @@ def _compute_free_directions_3d(
     for node_id, node in graph.nodes.items():
         component = component_by_node[node_id]
         axis_count = max(node.degree, 1)
+        unassigned_axis_indices = [
+            axis_index
+            for axis_index in range(axis_count)
+            if (node_id, axis_index) not in directions
+        ]
+        forced_directions = {
+            axis_index: _normalize_direction(forced_direction, dimensions=3)
+            for axis_index in unassigned_axis_indices
+            for forced_direction in [
+                _forced_dangling_direction_from_axis_name(
+                    graph,
+                    node_id=node_id,
+                    axis_index=axis_index,
+                    axis_name=(
+                        node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
+                    ),
+                    dimensions=3,
+                )
+            ]
+            if forced_direction is not None
+        }
+        origin = conflict_data.positions_by_node[node_id]
+        if forced_directions and len(forced_directions) == len(unassigned_axis_indices):
+            for axis_index in unassigned_axis_indices:
+                forced_direction = forced_directions[axis_index]
+                directions[(node_id, axis_index)] = forced_direction
+                assigned_state.append(
+                    origin=origin,
+                    direction=forced_direction,
+                    tip=origin + forced_direction * 0.45,
+                )
+            continue
         axis, lateral, normal = _component_orthogonal_basis(component, positions)
         candidate_directions = tuple(
             _normalize_direction(direction, dimensions=3)
@@ -210,13 +243,22 @@ def _compute_free_directions_3d(
             if axis_key in directions:
                 continue
 
+            forced_direction = forced_directions.get(axis_index)
+            if forced_direction is not None:
+                directions[axis_key] = forced_direction
+                assigned_state.append(
+                    origin=origin,
+                    direction=forced_direction,
+                    tip=origin + forced_direction * 0.45,
+                )
+                continue
+
             axis_name = node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
+            strict_phys = _is_dangling_leg_axis(graph, node_id, axis_index)
+            used_dirs = _used_axis_directions(directions, node_id=node_id, axis_count=axis_count)
             named_direction = _direction_from_axis_name(axis_name, dimensions=3)
             if named_direction is not None:
                 named_direction = _normalize_direction(named_direction, dimensions=3)
-            strict_phys = _is_dangling_leg_axis(graph, node_id, axis_index)
-            used_dirs = _used_axis_directions(directions, node_id=node_id, axis_count=axis_count)
-            origin = conflict_data.positions_by_node[node_id]
             if (
                 named_direction is not None
                 and _direction_has_space(named_direction, used_dirs)
