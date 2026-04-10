@@ -37,6 +37,7 @@ from .._tensor_elements_data import (
 from .._tensor_elements_support import _extract_tensor_records, _TensorRecord
 from ..config import (
     EngineName,
+    FocusRadius,
     PlotConfig,
     TensorNetworkDiagnosticsConfig,
     TensorNetworkFocus,
@@ -56,6 +57,15 @@ from .views import _InteractiveViewManager
 
 RenderedAxes = Axes | Axes3D
 _FocusMode = Literal["off", "neighborhood", "path"]
+
+
+def _coerce_focus_radius(radius: int) -> FocusRadius:
+    resolved_radius = int(radius)
+    if resolved_radius == 1:
+        return 1
+    if resolved_radius == 2:
+        return 2
+    raise ValueError("Focus radius must be 1 or 2.")
 
 
 def _release_canvas_mouse_grabber(
@@ -195,12 +205,12 @@ class _InteractiveTensorFigureController:
         self._active_state = self._desired_state
         self._focus: TensorNetworkFocus | None = config.focus
         self._focus_mode: _FocusMode = "off"
-        self._focus_radius: int = 1
+        self._focus_radius: FocusRadius = 1
         self._focus_pending_start: str | None = None
         self._focus_interaction_enabled: bool = False
         if config.focus is not None:
             self._focus_mode = cast(_FocusMode, config.focus.kind)
-            self._focus_radius = int(config.focus.radius)
+            self._focus_radius = _coerce_focus_radius(config.focus.radius)
             self._focus_interaction_enabled = True
         self._view_manager = _InteractiveViewManager(
             render_view=lambda view, ax: self._render_view(view, ax=ax),
@@ -658,9 +668,7 @@ class _InteractiveTensorFigureController:
             set_active_axes(scene.ax.figure, scene.ax)
 
     def set_focus_radius(self, radius: int) -> None:
-        resolved_radius = int(radius)
-        if resolved_radius not in {1, 2}:
-            raise ValueError("Focus radius must be 1 or 2.")
+        resolved_radius = _coerce_focus_radius(radius)
         self._focus_interaction_enabled = self._focus_mode != "off"
         if self._focus_radius == resolved_radius:
             self._sync_checkbuttons()

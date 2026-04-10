@@ -9,6 +9,7 @@ from ._engine_specs import EngineName
 from ._typing import PositionMapping
 
 ViewName: TypeAlias = Literal["2d", "3d"]
+FocusRadius: TypeAlias = Literal[1, 2]
 TensorLabelRefinement: TypeAlias = Literal["auto", "always", "never"]
 
 
@@ -26,7 +27,7 @@ class TensorNetworkFocus:
 
     kind: Literal["neighborhood", "path"]
     center: str | None = None
-    radius: Literal[1, 2] = 1
+    radius: FocusRadius = 1
     endpoints: tuple[str, str] | None = None
 
     def __post_init__(self) -> None:
@@ -34,7 +35,8 @@ class TensorNetworkFocus:
         radius = int(self.radius)
         if radius not in (1, 2):
             raise ValueError("focus.radius must be 1 or 2.")
-        object.__setattr__(self, "radius", radius)
+        normalized_radius: FocusRadius = 1 if radius == 1 else 2
+        object.__setattr__(self, "radius", normalized_radius)
 
         if self.endpoints is None:
             return
@@ -150,6 +152,7 @@ class PlotConfig:
 
 __all__ = [
     "EngineName",
+    "FocusRadius",
     "PlotConfig",
     "TensorLabelRefinement",
     "TensorNetworkDiagnosticsConfig",

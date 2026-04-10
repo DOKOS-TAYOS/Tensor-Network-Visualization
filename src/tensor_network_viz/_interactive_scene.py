@@ -144,10 +144,7 @@ def _scene_non_label_max_zorder(
     for artist in scene.ax.get_children():
         if id(artist) in label_ids:
             continue
-        getter = getattr(artist, "get_zorder", None)
-        if not callable(getter):
-            continue
-        max_zorder = max(max_zorder, float(getter()))
+        max_zorder = max(max_zorder, float(artist.get_zorder()))
     return max_zorder
 
 

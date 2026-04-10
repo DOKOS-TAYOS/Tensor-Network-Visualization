@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import suppress
-from typing import Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -52,13 +52,13 @@ _COMPARE_TOGGLE_BOUNDS: tuple[float, float, float, float] = (0.02, 0.19, 0.11, 0
 _COMPARE_SELECTOR_BOUNDS: tuple[float, float, float, float] = (0.02, 0.028, 0.18, 0.16)
 _CAPTURE_REFERENCE_BOUNDS: tuple[float, float, float, float] = (0.135, 0.19, 0.035, 0.045)
 _CLEAR_REFERENCE_BOUNDS: tuple[float, float, float, float] = (0.175, 0.19, 0.035, 0.045)
-_COMPARE_LABEL_PROPS: dict[str, list[float]] = {"fontsize": [9.0]}
+_COMPARE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.0]}
 _COMPARE_RADIO_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 0.9}
 _COMPACT_BUTTON_FONT_SIZE: float = 8.0
 _SYMBOL_BUTTON_FONT_FAMILY: str = "STIXGeneral"
 _INSPECTOR_FIGSIZE: tuple[float, float] = (8.8, 6.4)
 _BUTTON_TOOLTIP_GAP_FIG: float = 0.006
-_BUTTON_TOOLTIP_TEXT_KWARGS: dict[str, object] = {
+_BUTTON_TOOLTIP_TEXT_KWARGS: dict[str, Any] = {
     "ha": "left",
     "va": "bottom",
     "fontsize": 8.5,

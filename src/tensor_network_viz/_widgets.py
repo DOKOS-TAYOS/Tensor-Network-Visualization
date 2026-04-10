@@ -16,8 +16,10 @@ class _SafeSlider(Slider):
             canvas = getattr(event, "canvas", None)
             mouse_grabber = None if canvas is None else getattr(canvas, "mouse_grabber", None)
             if mouse_grabber is not None and mouse_grabber is not self.ax:
+                release_mouse = None if canvas is None else getattr(canvas, "release_mouse", None)
                 with suppress(AttributeError, RuntimeError, TypeError, ValueError):
-                    canvas.release_mouse(mouse_grabber)
+                    if callable(release_mouse):
+                        release_mouse(mouse_grabber)
         super()._update(event)
 
 
