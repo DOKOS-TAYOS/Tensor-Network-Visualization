@@ -143,6 +143,38 @@ show_tensor_network(
 - `show_controls`: if `False`, render a static figure without the embedded control panel.
 - `show`: if `False`, nothing is displayed automatically.
 
+`network` can also be a regular 2D or 3D grid built from nested `list` / `tuple` containers:
+
+```python
+fig, ax = show_tensor_network(
+    [
+        [tensor_a, None, tensor_b],
+        [None, tensor_c, None],
+    ],
+    show=False,
+    show_controls=False,
+)
+
+fig3d, ax3d = show_tensor_network(
+    [
+        [[front_left], [front_right]],
+        [[back_left], [None]],
+    ],
+    show=False,
+    show_controls=False,
+)
+```
+
+- In 2D grids, `network[row][col]` fixes a regular grid placement.
+- In 3D grids, `network[layer][row][col]` fixes a regular 3D placement and `view=None`
+  starts in `"3d"`.
+- `None` leaves an empty cell with no tensor node.
+- `config.positions` still works and overrides only the node ids you set explicitly.
+
+For dangling indices, names such as `left`, `right`, `up`, `down`, `front`, `back`,
+`xp/xm/yp/ym/zp/zm`, `north/south/east/west`, and `in/out` are treated as hard
+directional hints.
+
 ### `show_tensor_elements`
 
 Use `show_tensor_elements` to inspect tensor values:

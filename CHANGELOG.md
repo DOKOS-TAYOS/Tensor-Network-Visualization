@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.4] — 2026-04-10
+
 ### Added
 
 - **Network diagnostics overlays:** `PlotConfig` now accepts `TensorNetworkDiagnosticsConfig(...)` so network figures and normalized snapshots can expose backend-normalized `shape`, `dtype`, `element_count`, estimated memory, and per-edge `bond_dimension` consistently across engines.
@@ -147,6 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[1.5.4]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.3...v1.5.4
 [1.5.3]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.0...v1.5.1

@@ -5,6 +5,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 import numpy as np
+import pytest
 
 from tensor_network_viz import (
     EinsumTrace,
@@ -16,6 +17,47 @@ from tensor_network_viz import (
     normalize_tensor_network,
     pair_tensor,
 )
+from tensor_network_viz._core.layout import _normalize_positions
+
+
+class _DummyEdge:
+    def __init__(self, name: str | None = None) -> None:
+        self.name = name
+        self.node1: object | None = None
+        self.node2: object | None = None
+
+
+class _DummyTensorNetworkNode:
+    def __init__(self, name: str, axis_names: tuple[str, ...]) -> None:
+        self.name = name
+        self.axis_names = list(axis_names)
+        self.tensor = np.ones((2, 2), dtype=float)
+        self.shape = self.tensor.shape
+        self.edges: list[_DummyEdge | None] = [None] * len(axis_names)
+
+
+def _connect(
+    node1: _DummyTensorNetworkNode,
+    axis1: int,
+    node2: _DummyTensorNetworkNode | None = None,
+    axis2: int | None = None,
+    *,
+    name: str | None = None,
+) -> _DummyEdge:
+    edge = _DummyEdge(name=name)
+    edge.node1 = node1
+    edge.node2 = node2
+    node1.edges[axis1] = edge
+    if node2 is not None and axis2 is not None:
+        node2.edges[axis2] = edge
+    return edge
+
+
+def _grid_network_nodes() -> tuple[_DummyTensorNetworkNode, _DummyTensorNetworkNode]:
+    left = _DummyTensorNetworkNode("L", ("a", "b"))
+    right = _DummyTensorNetworkNode("R", ("b", "c"))
+    _connect(left, 1, right, 0, name="bond")
+    return left, right
 
 
 def _einsum_network() -> list[object]:
@@ -121,3 +163,71 @@ def test_export_tensor_network_snapshot_applies_focus_filter_with_stable_positio
             focused_payload["layout"]["positions"][focused_id]
             == full_payload["layout"]["positions"][full_id]
         )
+
+
+def test_normalize_tensor_network_accepts_nested_grid_input() -> None:
+    left, right = _grid_network_nodes()
+
+    graph = normalize_tensor_network([[left, None], [None, right]])
+    payload = graph.to_dict()
+
+    assert payload["engine"] == "tensornetwork"
+    assert {node["name"] for node in payload["nodes"]} == {"L", "R"}
+
+
+def test_export_tensor_network_snapshot_uses_fixed_positions_for_2d_grid_input() -> None:
+    left, right = _grid_network_nodes()
+
+    snapshot = export_tensor_network_snapshot([[left, None], [None, right]], view="2d")
+    payload = snapshot.to_dict()
+    node_ids = {node["name"]: str(node["id"]) for node in payload["graph"]["nodes"]}
+    expected = _normalize_positions(
+        {
+            id(left): np.array([0.0, 0.0], dtype=float),
+            id(right): np.array([1.0, -1.0], dtype=float),
+        },
+        [id(left), id(right)],
+    )
+
+    assert payload["layout"]["positions"][node_ids["L"]] == pytest.approx(expected[id(left)])
+    assert payload["layout"]["positions"][node_ids["R"]] == pytest.approx(expected[id(right)])
+
+
+def test_export_tensor_network_snapshot_projects_3d_grid_input_in_2d() -> None:
+    left, right = _grid_network_nodes()
+
+    snapshot = export_tensor_network_snapshot([[[left]], [[None, right]]], view="2d")
+    payload = snapshot.to_dict()
+    node_ids = {node["name"]: str(node["id"]) for node in payload["graph"]["nodes"]}
+    expected = _normalize_positions(
+        {
+            id(left): np.array([0.0, 0.0], dtype=float),
+            id(right): np.array([1.45, -0.25], dtype=float),
+        },
+        [id(left), id(right)],
+    )
+
+    assert payload["layout"]["positions"][node_ids["L"]] == pytest.approx(expected[id(left)])
+    assert payload["layout"]["positions"][node_ids["R"]] == pytest.approx(expected[id(right)])
+
+
+def test_export_tensor_network_snapshot_grid_positions_are_base_for_explicit_overrides() -> None:
+    left, right = _grid_network_nodes()
+
+    snapshot = export_tensor_network_snapshot(
+        [[left, right]],
+        view="2d",
+        config=PlotConfig(positions={id(right): (0.0, 4.0)}),
+    )
+    payload = snapshot.to_dict()
+    node_ids = {node["name"]: str(node["id"]) for node in payload["graph"]["nodes"]}
+    expected = _normalize_positions(
+        {
+            id(left): np.array([0.0, 0.0], dtype=float),
+            id(right): np.array([0.0, 4.0], dtype=float),
+        },
+        [id(left), id(right)],
+    )
+
+    assert payload["layout"]["positions"][node_ids["L"]] == pytest.approx(expected[id(left)])
+    assert payload["layout"]["positions"][node_ids["R"]] == pytest.approx(expected[id(right)])

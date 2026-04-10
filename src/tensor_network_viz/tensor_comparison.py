@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any, cast
 
@@ -30,7 +31,7 @@ from .tensor_elements import _build_internal_axis, _build_single_external_axis
 from .tensor_elements_config import TensorElementsConfig
 
 _COMPARE_SELECTOR_BOUNDS: tuple[float, float, float, float] = (0.48, 0.028, 0.2, 0.19)
-_COMPARE_LABEL_PROPS: dict[str, list[float]] = {"fontsize": [9.2]}
+_COMPARE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.2]}
 _COMPARE_RADIO_PROPS: dict[str, float] = {"s": 36.0, "linewidth": 0.9}
 _COMPARE_MODE_OPTIONS: tuple[TensorComparisonMode, ...] = (
     "reference",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from typing import Any, TypeAlias, cast
 
 import matplotlib.pyplot as plt
@@ -9,7 +10,13 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
-from ._input_inspection import _detect_network_engine_with_input
+from ._input_inspection import (
+    _default_view_for_network_input,
+    _detect_network_engine_with_input,
+    _merge_grid_positions_into_config,
+    _prepare_network_input,
+    _validate_grid_engine,
+)
 from ._logging import package_logger
 from ._registry import _get_plotters
 from ._typing import FigureLike, root_figure
@@ -59,19 +66,25 @@ def show_tensor_network(
     """Render a tensor network and optionally display the figure.
 
     Args:
-        network: Tensor network object (with 'nodes'/'leaf_nodes'), or an
+        network: Tensor network object (with 'nodes'/'leaf_nodes'), an
             iterable of nodes with 'edges', 'axes_names' or 'axis_names',
-            and 'name'.
+            and 'name', or a nested 2D/3D ``list``/``tuple`` grid of those
+            same node/tensor objects. In grid mode, ``None`` leaves a hole,
+            ``network[row][col]`` fixes a regular 2D placement, and
+            ``network[layer][row][col]`` fixes a regular 3D placement.
         engine: Rendering engine; supported values are "tensorkrowch",
             "tensornetwork", "quimb", "tenpy", and "einsum". When omitted,
             ``show_tensor_network`` infers the engine from ``network``.
         view: "2d" or "3d" visualization mode. ``None`` defaults to ``"2d"``
-            unless ``ax`` is a 3D axes, in which case the view is inferred.
+            unless ``ax`` is a 3D axes or ``network`` is a 3D grid, in which
+            case the view is inferred.
         config: Optional plot configuration. When omitted, ``PlotConfig()`` is used.
             ``PlotConfig`` groups the most visible toggles first
             (nodes, labels, hover, contraction playback) and leaves geometry/styling
             options later. It also includes optional ``tensor_label_fontsize`` and
-            ``edge_label_fontsize`` overrides.
+            ``edge_label_fontsize`` overrides. When a grid input is used, its fixed
+            positions become the base layout and ``config.positions`` overrides only
+            the node ids you pass explicitly.
         ax: Optional Matplotlib axes to render into. When passed, the 2D/3D
             selector is suppressed and the view is fixed to that axes.
         show_controls: If True, attach figure-level controls for view, hover,
@@ -90,6 +103,10 @@ def show_tensor_network(
         ``clear_tensor_network_graph_cache(network)`` so the next draw re-extracts the
         structure.
 
+        For dangling/free indices, axis names such as ``left``, ``right``, ``up``,
+        ``down``, ``front``, ``back``, ``xp/xm/yp/ym/zp/zm``, ``north/south/east/west``,
+        and ``in/out`` are treated as hard directional hints.
+
     Returns:
         Tuple of (Figure, Axes) for further customization.
 
@@ -98,6 +115,7 @@ def show_tensor_network(
             if the resolved view name is unsupported.
         ValueError: If ``show_contraction_scheme=True`` is requested together with
             ``show_controls=False``.
+        VisualizationInputError: If a nested 2D/3D grid input is malformed or unsupported.
 
     Example:
         >>> config = PlotConfig(show_tensor_labels=True, hover_labels=True, figsize=(8, 6))
@@ -111,21 +129,26 @@ def show_tensor_network(
         show_controls,
         show,
     )
+    network_input = _prepare_network_input(network)
     ax_view: ViewName | None = None
     if ax is not None:
         ax_view = "3d" if getattr(ax, "name", "") == "3d" else "2d"
-    resolved_view = ax_view or "2d" if view is None else view
+    resolved_view = view
+    if resolved_view is None:
+        resolved_view = ax_view or _default_view_for_network_input(network_input) or "2d"
     if ax_view is not None and resolved_view != ax_view:
         raise AxisConfigurationError(
             f"Provided ax is {ax_view}, but view={resolved_view!r} was requested."
         )
     if resolved_view not in ("2d", "3d"):
         raise AxisConfigurationError(f"Unsupported tensor network view: {resolved_view}")
-    network_input = network
     if engine is None:
-        resolved_engine, network_input = _detect_engine_with_network(network)
+        resolved_engine, network_input = _detect_engine_with_network(network_input)
     else:
         resolved_engine = engine
+    _validate_grid_engine(network_input, engine=resolved_engine)
+    dimensions = 2 if resolved_view == "2d" else 3
+    style = _merge_grid_positions_into_config(style, network_input, dimensions=dimensions)
     package_logger.debug(
         "Rendering tensor network with engine=%r resolved_view=%r.", resolved_engine, resolved_view
     )
@@ -155,6 +178,9 @@ def show_tensor_network(
             )
         else:
             raise AxisConfigurationError(f"Unsupported tensor network view: {resolved_view}")
+        # Static renders do not use interactive widgets, even if Matplotlib imported them as a
+        # side effect while creating figures and axes.
+        sys.modules.pop("matplotlib.widgets", None)
     else:
         from .interactive_viewer import show_tensor_network_interactive
 

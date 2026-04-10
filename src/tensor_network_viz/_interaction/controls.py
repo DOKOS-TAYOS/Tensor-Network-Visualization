@@ -136,9 +136,9 @@ class _InteractiveControlsPanel:
         self._on_focus_radius_selected = on_focus_radius_selected
         self._on_focus_cleared = on_focus_cleared
         self._last_state = initial_state
-        self._last_view = initial_view
+        self._last_view: ViewName = initial_view
         self._last_focus_mode = initial_focus_mode
-        self._last_focus_radius = int(initial_focus_radius)
+        self._last_focus_radius: int = int(initial_focus_radius)
         self._callback_guard: bool = False
         self.check_ax: Axes
         self.checkbuttons: CheckButtons

@@ -95,6 +95,21 @@ def test_get_or_build_graph_reuses_tuple_instance() -> None:
     assert calls == [1]
 
 
+def test_get_or_build_graph_reuses_nested_list_instance() -> None:
+    calls: list[int] = []
+    network = [[object(), None], [object()]]
+
+    def build(_: object) -> _GraphData:
+        calls.append(1)
+        return _GraphData(nodes={0: _make_node("a", ())}, edges=())
+
+    g1 = _get_or_build_graph(network, build)
+    g2 = _get_or_build_graph(network, build)
+
+    assert g1 is g2
+    assert calls == [1]
+
+
 def test_get_or_build_graph_does_not_reuse_single_pass_iterator() -> None:
     calls: list[int] = []
 

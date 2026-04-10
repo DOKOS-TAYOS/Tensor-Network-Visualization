@@ -260,10 +260,10 @@ def _build_produced_node_map(network: Any) -> dict[int, _ProducedNode] | None:
     produced: dict[int, _ProducedNode] = {}
     for node in _unique_history_nodes(network):
         for op_name, successor in _iter_successors(node):
-            parents = _normalized_parent_nodes(getattr(successor, "node_ref", None))
+            parents = _normalized_node_tuple(getattr(successor, "node_ref", None))
             if not parents:
                 return None
-            children = _normalized_child_nodes(getattr(successor, "child", None))
+            children = _normalized_node_tuple(getattr(successor, "child", None))
             if not children:
                 return None
             parent_ids = tuple(id(parent) for parent in parents)
@@ -305,17 +305,7 @@ def _iter_successors(node: Any) -> tuple[tuple[str, Any], ...]:
     return tuple(out)
 
 
-def _normalized_parent_nodes(value: Any) -> tuple[Any, ...]:
-    if value is None:
-        return ()
-    if isinstance(value, tuple):
-        return tuple(item for item in value if item is not None)
-    if isinstance(value, list):
-        return tuple(item for item in value if item is not None)
-    return (value,)
-
-
-def _normalized_child_nodes(value: Any) -> tuple[Any, ...]:
+def _normalized_node_tuple(value: Any) -> tuple[Any, ...]:
     if value is None:
         return ()
     if isinstance(value, tuple):

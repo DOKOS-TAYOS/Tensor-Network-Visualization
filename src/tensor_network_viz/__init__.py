@@ -1,35 +1,37 @@
 """Public package surface with lazy imports for optional backends and viewers."""
 
+from __future__ import annotations
+
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure
-from mpl_toolkits.mplot3d.axes3d import Axes3D
-
 from . import _logging as _package_logging
-from ._core.graph_cache import clear_tensor_network_graph_cache
-from .config import (
-    EngineName,
-    PlotConfig,
-    TensorNetworkDiagnosticsConfig,
-    TensorNetworkFocus,
-    ViewName,
-)
-from .exceptions import (
-    AxisConfigurationError,
-    MissingOptionalDependencyError,
-    TensorDataError,
-    TensorDataTypeError,
-    TensorNetworkVizError,
-    UnsupportedEngineError,
-    VisualizationInputError,
-    VisualizationTypeError,
-)
 
 if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
+    from mpl_toolkits.mplot3d.axes3d import Axes3D
+
+    from ._core.graph_cache import clear_tensor_network_graph_cache
+    from .config import (
+        EngineName,
+        PlotConfig,
+        TensorNetworkDiagnosticsConfig,
+        TensorNetworkFocus,
+        ViewName,
+    )
     from .contraction_viewer import ContractionViewer2D, ContractionViewer3D
     from .einsum_module.trace import EinsumTrace, einsum, einsum_trace_step, pair_tensor
+    from .exceptions import (
+        AxisConfigurationError,
+        MissingOptionalDependencyError,
+        TensorDataError,
+        TensorDataTypeError,
+        TensorNetworkVizError,
+        UnsupportedEngineError,
+        VisualizationInputError,
+        VisualizationTypeError,
+    )
     from .snapshot import (
         NormalizedContractionStepMetrics,
         NormalizedTensorEdge,
@@ -62,7 +64,8 @@ else:
         """Lazily dispatch to :func:`tensor_network_viz.viewer.show_tensor_network`.
 
         Args:
-            network: Tensor-network input accepted by the public viewer entry point.
+            network: Tensor-network input accepted by the public viewer entry point,
+                including flat iterables and nested 2D/3D grids with ``None`` holes.
             engine: Optional backend override.
             view: Optional initial view name.
             config: Optional plotting configuration.
@@ -89,7 +92,7 @@ else:
         data: Any,
         *,
         engine: EngineName | None = None,
-        config: "TensorElementsConfig | None" = None,
+        config: TensorElementsConfig | None = None,
         ax: Axes | None = None,
         show_controls: bool = True,
         show: bool = True,
@@ -124,8 +127,8 @@ else:
         reference: Any,
         *,
         engine: EngineName | None = None,
-        config: "TensorElementsConfig | None" = None,
-        comparison_config: "TensorComparisonConfig | None" = None,
+        config: TensorElementsConfig | None = None,
+        comparison_config: TensorComparisonConfig | None = None,
         ax: Axes | None = None,
         show_controls: bool = True,
         show: bool = True,
@@ -146,20 +149,34 @@ else:
 
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "AxisConfigurationError": (".exceptions", "AxisConfigurationError"),
     "ContractionViewer2D": (".contraction_viewer", "ContractionViewer2D"),
     "ContractionViewer3D": (".contraction_viewer", "ContractionViewer3D"),
+    "EngineName": (".config", "EngineName"),
     "EinsumTrace": (".einsum_module.trace", "EinsumTrace"),
+    "MissingOptionalDependencyError": (".exceptions", "MissingOptionalDependencyError"),
     "NormalizedContractionStepMetrics": (".snapshot", "NormalizedContractionStepMetrics"),
     "NormalizedTensorEdge": (".snapshot", "NormalizedTensorEdge"),
     "NormalizedTensorEndpoint": (".snapshot", "NormalizedTensorEndpoint"),
     "NormalizedTensorGraph": (".snapshot", "NormalizedTensorGraph"),
     "NormalizedTensorNode": (".snapshot", "NormalizedTensorNode"),
+    "PlotConfig": (".config", "PlotConfig"),
     "TenPyTensorNetwork": (".tenpy.explicit", "TenPyTensorNetwork"),
     "TensorComparisonConfig": (".tensor_comparison_config", "TensorComparisonConfig"),
     "TensorAnalysisConfig": (".tensor_elements_config", "TensorAnalysisConfig"),
+    "TensorDataError": (".exceptions", "TensorDataError"),
+    "TensorDataTypeError": (".exceptions", "TensorDataTypeError"),
     "TensorElementsConfig": (".tensor_elements_config", "TensorElementsConfig"),
+    "TensorNetworkDiagnosticsConfig": (".config", "TensorNetworkDiagnosticsConfig"),
+    "TensorNetworkFocus": (".config", "TensorNetworkFocus"),
     "TensorNetworkLayoutSnapshot": (".snapshot", "TensorNetworkLayoutSnapshot"),
     "TensorNetworkSnapshot": (".snapshot", "TensorNetworkSnapshot"),
+    "TensorNetworkVizError": (".exceptions", "TensorNetworkVizError"),
+    "UnsupportedEngineError": (".exceptions", "UnsupportedEngineError"),
+    "ViewName": (".config", "ViewName"),
+    "VisualizationInputError": (".exceptions", "VisualizationInputError"),
+    "VisualizationTypeError": (".exceptions", "VisualizationTypeError"),
+    "clear_tensor_network_graph_cache": ("._core.graph_cache", "clear_tensor_network_graph_cache"),
     "einsum": (".einsum_module.trace", "einsum"),
     "einsum_trace_step": (".einsum_module.trace", "einsum_trace_step"),
     "export_tensor_network_snapshot": (".snapshot", "export_tensor_network_snapshot"),

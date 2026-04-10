@@ -88,6 +88,20 @@ show_tensor_comparison(
 | `show_controls` | If `True`, add the figure control panel. If `False`, render only the network. |
 | `show` | If `True`, display the figure immediately. If `False`, just return `(fig, ax)`. |
 
+`network` also accepts nested grid inputs:
+
+- 2D grid: `network[row][col]`
+- 3D grid: `network[layer][row][col]`
+- `None` means “leave this cell empty”
+
+Grid inputs bypass automatic geometry placement and use those regular cell positions as the base
+layout. If you also pass `PlotConfig(positions=...)`, those explicit node-id positions override the
+grid only for the ids you specify.
+
+When a dangling/free axis is named with a direction alias such as `left`, `right`, `up`, `down`,
+`front`, `back`, `xp/xm/yp/ym/zp/zm`, `north/south/east/west`, or `in/out`, that name is treated
+as a hard direction for that dangling index.
+
 | Parameter | Meaning |
 | --- | --- |
 | `data` | Direct numeric tensor input, direct iterable of tensors (order preserved, duplicates allowed), backend-native tensor container, or `EinsumTrace` with live tensors. |
@@ -224,6 +238,9 @@ config = PlotConfig(
     validate_positions=True,
 )
 ```
+
+Nested grid inputs are a convenient shortcut when you want a regular matrix or cube layout without
+building `positions` by hand.
 
 ## `TensorElementsConfig` in Practice
 

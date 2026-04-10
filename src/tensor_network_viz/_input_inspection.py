@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from collections.abc import Set as AbstractSet
+from dataclasses import replace
 from itertools import tee
 from typing import Any
 
+from ._core.graph_utils import _is_unordered_collection
 from ._engine_specs import EngineName
 from ._logging import package_logger
-from .einsum_module.trace import EinsumTrace, einsum_trace_step, pair_tensor
+from ._typing import PositionMapping
+from .config import PlotConfig, ViewName
 from .exceptions import TensorDataError, VisualizationInputError
-from .tenpy.explicit import TenPyTensorNetwork
 
 
 class _PreparedInputProxy:
@@ -31,6 +32,29 @@ class _PreparedInputProxy:
 
     def __iter__(self) -> Any:
         return iter(self._source)
+
+
+class _PreparedGridInput:
+    """Replayable flattened view of a nested 2D or 3D grid input."""
+
+    def __init__(
+        self,
+        source: Any,
+        *,
+        flat_items: tuple[Any, ...],
+        grid_dimensions: int,
+        positions_2d: dict[int, tuple[float, float]],
+        positions_3d: dict[int, tuple[float, float, float]],
+    ) -> None:
+        self._source = source
+        self._flat_items = flat_items
+        self.grid_dimensions = int(grid_dimensions)
+        self.positions_2d = dict(positions_2d)
+        self.positions_3d = dict(positions_3d)
+        self._graph_cache_source = source
+
+    def __iter__(self) -> Any:
+        return iter(self._flat_items)
 
 
 def _first_non_none(items: Iterable[Any]) -> Any | None:
@@ -79,8 +103,217 @@ def _peek_matching_attr(
     return _sample_matches(sample_item, predicate), prepared_source
 
 
-def _is_unordered_collection(value: Any) -> bool:
-    return isinstance(value, AbstractSet) and not isinstance(value, (str, bytes, bytearray))
+def _is_grid_container(value: Any) -> bool:
+    return isinstance(value, (list, tuple))
+
+
+def _raise_grid_error(message: str) -> None:
+    raise VisualizationInputError(message)
+
+
+def _append_grid_item(
+    item: Any,
+    *,
+    flat_items: list[Any],
+    seen_item_ids: set[int],
+    positions_2d: dict[int, tuple[float, float]],
+    positions_3d: dict[int, tuple[float, float, float]],
+    position_2d: tuple[float, float],
+    position_3d: tuple[float, float, float],
+) -> None:
+    if item is None:
+        return
+    item_id = id(item)
+    if item_id in seen_item_ids:
+        _raise_grid_error(
+            "The same tensor or node object appears more than once in the grid input."
+        )
+    seen_item_ids.add(item_id)
+    flat_items.append(item)
+    positions_2d[item_id] = position_2d
+    positions_3d[item_id] = position_3d
+
+
+def _prepare_grid_input_2d(rows: tuple[Any, ...], *, source: Any) -> _PreparedGridInput:
+    flat_items: list[Any] = []
+    seen_item_ids: set[int] = set()
+    positions_2d: dict[int, tuple[float, float]] = {}
+    positions_3d: dict[int, tuple[float, float, float]] = {}
+
+    for row_index, row in enumerate(rows):
+        if row is None:
+            _raise_grid_error(
+                "Nested tensor-network grid input must use None only for cells, not for rows."
+            )
+        if not _is_grid_container(row):
+            _raise_grid_error(
+                "Mixed flat and nested tensor-network inputs are not supported. "
+                "Use either a flat iterable, a 2D grid, or a 3D grid."
+            )
+        for col_index, item in enumerate(row):
+            if _is_grid_container(item):
+                _raise_grid_error("Nested tensor-network grids support only 2D or 3D cell layouts.")
+            x_coord = float(col_index)
+            y_coord = float(-row_index)
+            _append_grid_item(
+                item,
+                flat_items=flat_items,
+                seen_item_ids=seen_item_ids,
+                positions_2d=positions_2d,
+                positions_3d=positions_3d,
+                position_2d=(x_coord, y_coord),
+                position_3d=(x_coord, y_coord, 0.0),
+            )
+
+    if not flat_items:
+        _raise_grid_error("Nested tensor-network grid input does not contain any tensors or nodes.")
+    return _PreparedGridInput(
+        source,
+        flat_items=tuple(flat_items),
+        grid_dimensions=2,
+        positions_2d=positions_2d,
+        positions_3d=positions_3d,
+    )
+
+
+def _prepare_grid_input_3d(layers: tuple[Any, ...], *, source: Any) -> _PreparedGridInput:
+    from ._core.layout_structure import _GRID3D_PROJECTION_X, _GRID3D_PROJECTION_Y
+
+    flat_items: list[Any] = []
+    seen_item_ids: set[int] = set()
+    positions_2d: dict[int, tuple[float, float]] = {}
+    positions_3d: dict[int, tuple[float, float, float]] = {}
+
+    for layer_index, layer in enumerate(layers):
+        if layer is None:
+            _raise_grid_error(
+                "Nested tensor-network grid input must use None only for cells, not for layers."
+            )
+        if not _is_grid_container(layer):
+            _raise_grid_error(
+                "Mixed nested tensor-network grid depths are not supported. "
+                "Use either a 2D grid or a 3D grid with consistent nesting."
+            )
+        for row_index, row in enumerate(layer):
+            if row is None:
+                _raise_grid_error(
+                    "Nested tensor-network grid input must use None only for cells, not for rows."
+                )
+            if not _is_grid_container(row):
+                _raise_grid_error(
+                    "Mixed nested tensor-network grid depths are not supported. "
+                    "Use either a 2D grid or a 3D grid with consistent nesting."
+                )
+            for col_index, item in enumerate(row):
+                if _is_grid_container(item):
+                    _raise_grid_error("Nested tensor-network grids support only 2D or 3D inputs.")
+                x_coord = float(col_index)
+                y_coord = float(-row_index)
+                z_coord = float(layer_index)
+                _append_grid_item(
+                    item,
+                    flat_items=flat_items,
+                    seen_item_ids=seen_item_ids,
+                    positions_2d=positions_2d,
+                    positions_3d=positions_3d,
+                    position_2d=(
+                        x_coord + float(_GRID3D_PROJECTION_X) * z_coord,
+                        y_coord + float(_GRID3D_PROJECTION_Y) * z_coord,
+                    ),
+                    position_3d=(x_coord, y_coord, z_coord),
+                )
+
+    if not flat_items:
+        _raise_grid_error("Nested tensor-network grid input does not contain any tensors or nodes.")
+    return _PreparedGridInput(
+        source,
+        flat_items=tuple(flat_items),
+        grid_dimensions=3,
+        positions_2d=positions_2d,
+        positions_3d=positions_3d,
+    )
+
+
+def _prepare_network_input(network: Any) -> Any:
+    if isinstance(network, _PreparedGridInput):
+        return network
+    if not _is_grid_container(network) or not network:
+        return network
+
+    top_level = tuple(network)
+    has_nested_items = any(_is_grid_container(item) for item in top_level)
+    if not has_nested_items:
+        return network
+    if any(item is None for item in top_level):
+        _raise_grid_error(
+            "Nested tensor-network grid input must use None only for cells, not for rows or layers."
+        )
+    if not all(_is_grid_container(item) for item in top_level):
+        _raise_grid_error(
+            "Mixed flat and nested tensor-network inputs are not supported. "
+            "Use either a flat iterable, a 2D grid, or a 3D grid."
+        )
+
+    second_level_has_nested = False
+    second_level_has_cells = False
+    for row_or_layer in top_level:
+        for item in row_or_layer:
+            if _is_grid_container(item):
+                second_level_has_nested = True
+            else:
+                second_level_has_cells = True
+
+    if second_level_has_nested and second_level_has_cells:
+        _raise_grid_error(
+            "Mixed nested tensor-network grid depths are not supported. "
+            "Use either a 2D grid or a 3D grid with consistent nesting."
+        )
+    if second_level_has_nested:
+        return _prepare_grid_input_3d(top_level, source=network)
+    return _prepare_grid_input_2d(top_level, source=network)
+
+
+def _default_view_for_network_input(network: Any) -> ViewName | None:
+    if isinstance(network, _PreparedGridInput) and network.grid_dimensions == 3:
+        return "3d"
+    return None
+
+
+def _grid_positions_for_network_input(
+    network: Any,
+    *,
+    dimensions: int,
+) -> PositionMapping | None:
+    if not isinstance(network, _PreparedGridInput):
+        return None
+    if dimensions == 2:
+        return dict(network.positions_2d)
+    return dict(network.positions_3d)
+
+
+def _merge_grid_positions_into_config(
+    config: PlotConfig,
+    network: Any,
+    *,
+    dimensions: int,
+) -> PlotConfig:
+    grid_positions = _grid_positions_for_network_input(network, dimensions=dimensions)
+    if grid_positions is None:
+        return config
+    merged_positions = dict(grid_positions)
+    if config.positions is not None:
+        merged_positions.update(config.positions)
+    return replace(config, positions=merged_positions)
+
+
+def _validate_grid_engine(network: Any, *, engine: EngineName) -> None:
+    if not isinstance(network, _PreparedGridInput):
+        return
+    if engine in {"tensorkrowch", "tensornetwork", "quimb"}:
+        return
+    raise VisualizationInputError(
+        f"Nested grid tensor-network inputs are not supported for engine {engine!r}."
+    )
 
 
 def _is_tenpy_tensor(value: Any) -> bool:
@@ -89,9 +322,38 @@ def _is_tenpy_tensor(value: Any) -> bool:
     )
 
 
+def _has_exact_runtime_type(value: Any, *, module: str, qualname: str) -> bool:
+    value_type = type(value)
+    return value_type.__module__ == module and value_type.__qualname__ == qualname
+
+
+def _is_einsum_trace(value: Any) -> bool:
+    return _has_exact_runtime_type(
+        value,
+        module="tensor_network_viz.einsum_module.trace",
+        qualname="EinsumTrace",
+    )
+
+
+def _is_einsum_trace_entry(value: Any) -> bool:
+    value_type = type(value)
+    return (
+        value_type.__module__ == "tensor_network_viz.einsum_module._trace_types"
+        and value_type.__qualname__ in {"pair_tensor", "einsum_trace_step"}
+    )
+
+
+def _is_explicit_tenpy_network(value: Any) -> bool:
+    return _has_exact_runtime_type(
+        value,
+        module="tensor_network_viz.tenpy.explicit",
+        qualname="TenPyTensorNetwork",
+    )
+
+
 def _is_tenpy_like(value: Any, *, include_tensor: bool = False) -> bool:
     return (
-        isinstance(value, TenPyTensorNetwork)
+        _is_explicit_tenpy_network(value)
         or callable(getattr(value, "get_W", None))
         or (callable(getattr(value, "get_X", None)) and hasattr(value, "uMPS_GS"))
         or callable(getattr(value, "get_B", None))
@@ -100,7 +362,7 @@ def _is_tenpy_like(value: Any, *, include_tensor: bool = False) -> bool:
 
 
 def _detect_engine_from_network_sample(sample_item: Any | None) -> EngineName | None:
-    if isinstance(sample_item, (pair_tensor, einsum_trace_step)):
+    if _is_einsum_trace_entry(sample_item):
         return "einsum"
     if hasattr(sample_item, "inds"):
         return "quimb"
@@ -112,7 +374,7 @@ def _detect_engine_from_network_sample(sample_item: Any | None) -> EngineName | 
 
 
 def _detect_engine_from_tensor_sample(sample_item: Any | None) -> EngineName | None:
-    if isinstance(sample_item, (pair_tensor, einsum_trace_step)):
+    if _is_einsum_trace_entry(sample_item):
         return "einsum"
     if _is_tenpy_like(sample_item, include_tensor=True):
         return "tenpy"
@@ -126,7 +388,7 @@ def _detect_engine_from_tensor_sample(sample_item: Any | None) -> EngineName | N
 
 
 def _detect_network_engine_with_input(network: Any) -> tuple[EngineName, Any]:
-    if isinstance(network, EinsumTrace):
+    if _is_einsum_trace(network):
         package_logger.debug("Auto-detected tensor network engine='einsum' from EinsumTrace.")
         return "einsum", network
     if _is_tenpy_like(network):
@@ -135,7 +397,7 @@ def _detect_network_engine_with_input(network: Any) -> tuple[EngineName, Any]:
         )
         return "tenpy", network
 
-    prepared_network = network
+    prepared_network = _prepare_network_input(network)
 
     matched, prepared_network = _peek_matching_attr(
         prepared_network,
@@ -183,7 +445,7 @@ def _detect_network_engine_with_input(network: Any) -> tuple[EngineName, Any]:
 
 
 def _detect_tensor_engine_with_input(data: Any) -> tuple[EngineName, Any]:
-    if isinstance(data, EinsumTrace):
+    if _is_einsum_trace(data):
         package_logger.debug("Auto-detected tensor engine='einsum' from EinsumTrace.")
         return "einsum", data
     if _is_tenpy_like(data, include_tensor=True):
@@ -258,9 +520,14 @@ __all__ = [
     "_detect_engine_from_tensor_sample",
     "_detect_network_engine_with_input",
     "_detect_tensor_engine_with_input",
+    "_default_view_for_network_input",
     "_first_non_none",
+    "_grid_positions_for_network_input",
     "_is_tenpy_like",
     "_is_tenpy_tensor",
     "_is_unordered_collection",
+    "_merge_grid_positions_into_config",
     "_peek_input_item",
+    "_prepare_network_input",
+    "_validate_grid_engine",
 ]

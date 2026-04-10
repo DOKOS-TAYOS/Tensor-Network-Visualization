@@ -11,7 +11,12 @@ from ._core.focus import filter_graph_for_focus
 from ._core.graph import _ContractionStepMetrics, _GraphData
 from ._core.graph_cache import _get_or_build_graph
 from ._core.renderer import _resolve_geometry
-from ._input_inspection import _detect_network_engine_with_input
+from ._input_inspection import (
+    _detect_network_engine_with_input,
+    _merge_grid_positions_into_config,
+    _prepare_network_input,
+    _validate_grid_engine,
+)
 from ._registry import _get_graph_builder
 from .config import EngineName, PlotConfig, ViewName
 
@@ -277,10 +282,11 @@ def normalize_tensor_network(
     engine: EngineName | None = None,
 ) -> NormalizedTensorGraph:
     """Export the backend-normalized structural graph for a tensor network."""
-    network_input = network
+    network_input = _prepare_network_input(network)
     resolved_engine = engine
     if resolved_engine is None:
-        resolved_engine, network_input = _detect_network_engine_with_input(network)
+        resolved_engine, network_input = _detect_network_engine_with_input(network_input)
+    _validate_grid_engine(network_input, engine=resolved_engine)
     build_graph = _get_graph_builder(resolved_engine)
     graph = _get_or_build_graph(network_input, build_graph)
     return _normalized_graph_from_internal(graph, engine=resolved_engine)
@@ -295,14 +301,16 @@ def export_tensor_network_snapshot(
     seed: int = 0,
 ) -> TensorNetworkSnapshot:
     """Export a backend-normalized graph together with the resolved layout snapshot."""
-    network_input = network
+    network_input = _prepare_network_input(network)
     resolved_engine = engine
     if resolved_engine is None:
-        resolved_engine, network_input = _detect_network_engine_with_input(network)
+        resolved_engine, network_input = _detect_network_engine_with_input(network_input)
+    _validate_grid_engine(network_input, engine=resolved_engine)
     build_graph = _get_graph_builder(resolved_engine)
     graph = _get_or_build_graph(network_input, build_graph)
     style = config or PlotConfig()
     dimensions = 2 if view == "2d" else 3
+    style = _merge_grid_positions_into_config(style, network_input, dimensions=dimensions)
     geometry = _resolve_geometry(
         graph,
         style,

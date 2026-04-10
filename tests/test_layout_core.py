@@ -206,6 +206,49 @@ def test_compute_axis_directions_chain_2d_allows_opposite_free_axes_on_same_node
     assert np.allclose(picked[1], np.array([0.0, -1.0], dtype=float), atol=1e-6)
 
 
+def test_compute_axis_directions_2d_forces_named_dangling_axes_even_when_repeated() -> None:
+    graph = _GraphData(
+        nodes={
+            0: _make_node("A", ("right", "right")),
+        },
+        edges=(
+            _make_dangling_edge(_EdgeEndpoint(0, 0, "right"), name="right"),
+            _make_dangling_edge(_EdgeEndpoint(0, 1, "right"), name="right"),
+        ),
+    )
+    positions = {0: np.array([0.0, 0.0], dtype=float)}
+
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=1.0)
+
+    assert np.allclose(directions[(0, 0)], np.array([1.0, 0.0], dtype=float), atol=1e-6)
+    assert np.allclose(directions[(0, 1)], np.array([1.0, 0.0], dtype=float), atol=1e-6)
+
+
+def test_compute_axis_directions_2d_only_forces_named_dangling_axes() -> None:
+    graph = _GraphData(
+        nodes={
+            0: _make_node("A", ("right", "phys")),
+            1: _make_node("B", ("left",)),
+        },
+        edges=(
+            _make_contraction_edge(
+                _EdgeEndpoint(0, 0, "right"),
+                _EdgeEndpoint(1, 0, "left"),
+                name="bond",
+            ),
+            _make_dangling_edge(_EdgeEndpoint(0, 1, "phys"), name="phys"),
+        ),
+    )
+    positions = {
+        0: np.array([0.0, 0.0], dtype=float),
+        1: np.array([0.0, 1.0], dtype=float),
+    }
+
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=1.0)
+
+    assert np.allclose(directions[(0, 0)], np.array([0.0, 1.0], dtype=float), atol=1e-6)
+
+
 def test_compute_axis_directions_chain_2d_skips_random_bucket_when_cardinals_work(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1453,6 +1496,24 @@ def test_compute_axis_directions_3d_supports_xp_alias_for_free_axes() -> None:
     directions = _compute_axis_directions(graph, positions, dimensions=3)
 
     assert np.allclose(directions[(0, 1)], np.array([1.0, 0.0, 0.0]), atol=1e-6)
+
+
+def test_compute_axis_directions_3d_forces_named_dangling_axes_even_when_repeated() -> None:
+    graph = _GraphData(
+        nodes={
+            0: _make_node("A", ("front", "front")),
+        },
+        edges=(
+            _make_dangling_edge(_EdgeEndpoint(0, 0, "front"), name="front"),
+            _make_dangling_edge(_EdgeEndpoint(0, 1, "front"), name="front"),
+        ),
+    )
+    positions = {0: np.array([0.0, 0.0, 0.0], dtype=float)}
+
+    directions = _compute_axis_directions(graph, positions, dimensions=3, draw_scale=1.0)
+
+    assert np.allclose(directions[(0, 0)], np.array([0.0, 1.0, 0.0], dtype=float), atol=1e-6)
+    assert np.allclose(directions[(0, 1)], np.array([0.0, 1.0, 0.0], dtype=float), atol=1e-6)
 
 
 def test_compute_axis_directions_competing_free_axes_prefer_unused_orthogonal_directions() -> None:

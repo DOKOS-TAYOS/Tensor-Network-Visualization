@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 
 import tensor_network_viz.einsum_module._equation as equation_module
@@ -61,7 +63,7 @@ def test_metrics_matrix_multiply() -> None:
 )
 def test_einsum_equation_validation_surfaces_unexpected_numpy_errors(
     monkeypatch: pytest.MonkeyPatch,
-    call: object,
+    call: Callable[[], object],
     expected_message: str,
 ) -> None:
     def _raise_unexpected_error(*args: object, **kwargs: object) -> object:

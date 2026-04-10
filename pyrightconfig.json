@@ -2,6 +2,8 @@
   "include": ["src", "tests"],
   "exclude": ["**/__pycache__", ".venv"],
   "pythonVersion": "3.11",
+  "venvPath": ".",
+  "venv": ".venv",
   "useLibraryCodeForTypes": true,
   "executionEnvironments": [
     {
