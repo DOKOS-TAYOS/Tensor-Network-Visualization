@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tensor-network-visualization"
-version = "1.5.4"
+version = "1.6.0"
 description = "Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced PyTorch/NumPy einsum tensor networks."
 authors = [{ name = "Alejandro Mata Ali" }]
 readme = "README.md"

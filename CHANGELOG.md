@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-04-10
+
 ### Added
 
 - **Structured grid layouts:** You can pass nested index layouts—lists of lists for a regular 2D grid, or lists of lists of lists for a regular 3D grid—so the visualization follows an explicit rectangular structure instead of inferring it only from flat index lists.
@@ -163,6 +165,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[1.6.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.4...v1.6.0
 [1.5.4]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.3...v1.5.4
 [1.5.3]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.1...v1.5.2
