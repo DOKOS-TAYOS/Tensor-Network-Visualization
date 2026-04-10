@@ -112,6 +112,7 @@ class _TextSummaryPayload:
 _TensorElementsPayload: TypeAlias = (
     _HeatmapPayload | _HistogramPayload | _SeriesPayload | _TextSummaryPayload
 )
+_HeatmapLikePayload: TypeAlias = _HeatmapPayload | _TextSummaryPayload
 
 
 @dataclass(frozen=True)
@@ -455,7 +456,7 @@ def _build_heatmap_payload(
     *,
     mode: str,
     selector_source: _TensorRecord | None = None,
-) -> _TensorElementsPayload:
+) -> _HeatmapLikePayload:
     """Build the renderer payload for one heatmap-like tensor-elements mode."""
     matrix, metadata = _prepare_heatmap_matrix(
         record,
@@ -618,7 +619,7 @@ def _slice_context_text(record: _TensorRecord, *, mode: str, config: TensorEleme
 def _build_slice_mode_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
-) -> _HeatmapPayload:
+) -> _HeatmapLikePayload:
     analysis = _resolve_tensor_analysis(record, analysis=config.analysis, mode="slice")
     sliced_record = _slice_tensor_record(record, analysis=analysis)
     base_mode = "magnitude" if np.iscomplexobj(sliced_record.array) else "elements"
@@ -636,7 +637,7 @@ def _build_slice_mode_payload(
 def _build_reduce_mode_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
-) -> _HeatmapPayload:
+) -> _HeatmapLikePayload:
     analysis = _resolve_tensor_analysis(record, analysis=config.analysis, mode="reduce")
     reduced_record = _reduce_tensor_record(record, analysis=analysis)
     base_mode = "magnitude" if np.iscomplexobj(reduced_record.array) else "elements"
@@ -705,70 +706,70 @@ def _build_profiles_mode_payload(
 def _build_elements_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
-) -> _HeatmapPayload:
+) -> _HeatmapLikePayload:
     return _build_heatmap_payload(record, config, mode="elements")
 
 
 def _build_magnitude_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
-) -> _HeatmapPayload:
+) -> _HeatmapLikePayload:
     return _build_heatmap_payload(record, config, mode="magnitude")
 
 
 def _build_log_magnitude_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
-) -> _HeatmapPayload:
+) -> _HeatmapLikePayload:
     return _build_heatmap_payload(record, config, mode="log_magnitude")
 
 
 def _build_real_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
-) -> _HeatmapPayload:
+) -> _HeatmapLikePayload:
     return _build_heatmap_payload(record, config, mode="real")
 
 
 def _build_imag_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
-) -> _HeatmapPayload:
+) -> _HeatmapLikePayload:
     return _build_heatmap_payload(record, config, mode="imag")
 
 
 def _build_phase_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
-) -> _HeatmapPayload:
+) -> _HeatmapLikePayload:
     return _build_heatmap_payload(record, config, mode="phase")
 
 
 def _build_sign_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
-) -> _HeatmapPayload:
+) -> _HeatmapLikePayload:
     return _build_heatmap_payload(record, config, mode="sign")
 
 
 def _build_signed_value_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
-) -> _HeatmapPayload:
+) -> _HeatmapLikePayload:
     return _build_heatmap_payload(record, config, mode="signed_value")
 
 
 def _build_sparsity_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
-) -> _HeatmapPayload:
+) -> _HeatmapLikePayload:
     return _build_heatmap_payload(record, config, mode="sparsity")
 
 
 def _build_nan_inf_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
-) -> _HeatmapPayload:
+) -> _HeatmapLikePayload:
     return _build_heatmap_payload(record, config, mode="nan_inf")
 
 

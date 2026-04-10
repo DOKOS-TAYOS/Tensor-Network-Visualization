@@ -414,6 +414,25 @@ def test_prepare_mode_payload_returns_typed_heatmap_payload() -> None:
     assert payload.colorbar_label == "value"
 
 
+def test_prepare_mode_payload_empty_heatmap_returns_text_summary_payload() -> None:
+    record = _TensorRecord(
+        array=np.empty((0, 3), dtype=float),
+        name="EmptyHeatmap",
+        axis_names=("row", "col"),
+        engine="tensornetwork",
+    )
+
+    resolved_mode, payload = _prepare_mode_payload(
+        record,
+        config=TensorElementsConfig(mode="elements"),
+        mode="elements",
+    )
+
+    assert resolved_mode == "elements"
+    assert isinstance(payload, _TextSummaryPayload)
+    assert "empty tensor" in payload.text.lower()
+
+
 def test_prepare_mode_payload_returns_typed_non_heatmap_payloads() -> None:
     record = _TensorRecord(
         array=np.arange(6, dtype=float).reshape(2, 3),
