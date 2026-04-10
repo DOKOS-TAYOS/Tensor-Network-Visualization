@@ -455,7 +455,7 @@ def _build_heatmap_payload(
     *,
     mode: str,
     selector_source: _TensorRecord | None = None,
-) -> _HeatmapPayload:
+) -> _TensorElementsPayload:
     """Build the renderer payload for one heatmap-like tensor-elements mode."""
     matrix, metadata = _prepare_heatmap_matrix(
         record,
@@ -463,6 +463,17 @@ def _build_heatmap_payload(
         selector_source=selector_source,
     )
     computation = _HEATMAP_DEFINITIONS[mode](matrix, config)
+    if np.asarray(computation.matrix).size == 0:
+        return _TextSummaryPayload(
+            text=(
+                "empty tensor\n\n"
+                f"shape: {metadata.original_shape}\n"
+                f"mode: {computation.mode_label}\n"
+                f"rows: {', '.join(metadata.row_names) if metadata.row_names else '-'}\n"
+                f"cols: {', '.join(metadata.col_names) if metadata.col_names else '-'}"
+            ),
+            mode_label=f"{computation.mode_label} (empty tensor)",
+        )
     reduced = _downsample_matrix(computation.matrix, max_shape=config.max_matrix_shape)
     if computation.post_downsample is not None:
         reduced = computation.post_downsample(reduced)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from itertools import combinations
+from itertools import combinations, tee
 from math import inf, log
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
@@ -202,7 +202,7 @@ def _looks_like_backend_tensor_input(value: Any) -> bool:
 def _asarray_for_direct_tensor_detection(value: Any) -> NumericArray:
     """Probe array-like inputs while preserving broken ``__array__`` failures as type errors."""
     try:
-        return np.asarray(value)
+        return _to_numpy_array(value)
     except (TypeError, ValueError):
         raise
     except Exception as exc:
@@ -231,35 +231,47 @@ def _direct_array_record_name(index: int, *, total: int) -> str:
     return f"Tensor {index + 1}"
 
 
-def _extract_direct_array_records(data: Any) -> list[_TensorRecord] | None:
+def _extract_direct_array_records(data: Any) -> tuple[list[_TensorRecord] | None, Any]:
     if _is_direct_array_like_tensor(data):
-        return [
+        return (
+            [
+                _TensorRecord(
+                    array=_to_numpy_array(data),
+                    axis_names=(),
+                    engine="numpy",
+                    name=_direct_array_record_name(0, total=1),
+                )
+            ],
+            data,
+        )
+    if isinstance(data, (str, bytes, bytearray, dict)) or _looks_like_backend_tensor_input(data):
+        return None, data
+    if not isinstance(data, Iterable):
+        return None, data
+    prepared_data = data
+    try:
+        iterator = iter(data)
+        if iterator is data:
+            probe_iter, prepared_data = tee(iterator)
+            items = list(probe_iter)
+        else:
+            items = list(data)
+    except TypeError:
+        return None, data
+    if not items or not all(_is_direct_array_like_tensor(item) for item in items):
+        return None, prepared_data
+    return (
+        [
             _TensorRecord(
-                array=_to_numpy_array(data),
+                array=_to_numpy_array(item),
                 axis_names=(),
                 engine="numpy",
-                name=_direct_array_record_name(0, total=1),
+                name=_direct_array_record_name(index, total=len(items)),
             )
-        ]
-    if isinstance(data, (str, bytes, bytearray, dict)) or _looks_like_backend_tensor_input(data):
-        return None
-    if not isinstance(data, Iterable):
-        return None
-    try:
-        items = list(data)
-    except TypeError:
-        return None
-    if not items or not all(_is_direct_array_like_tensor(item) for item in items):
-        return None
-    return [
-        _TensorRecord(
-            array=_to_numpy_array(item),
-            axis_names=(),
-            engine="numpy",
-            name=_direct_array_record_name(index, total=len(items)),
-        )
-        for index, item in enumerate(items)
-    ]
+            for index, item in enumerate(items)
+        ],
+        prepared_data,
+    )
 
 
 def _normalize_axis_selector(
@@ -379,13 +391,18 @@ def _balanced_axes_for_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
         return ()
     if ndim == 1:
         return (0,)
+    if any(int(dimension) <= 0 for dimension in shape):
+        return (0,)
+
+    def dimension_log(dimension: int) -> float:
+        return log(float(dimension))
 
     if ndim > 16:
         selected: list[int] = [0]
-        row_log = log(float(shape[0]))
-        col_log = sum(log(float(dim)) for dim in shape[1:])
+        row_log = dimension_log(shape[0])
+        col_log = sum(dimension_log(dim) for dim in shape[1:])
         for index in range(1, ndim):
-            dim_log = log(float(shape[index]))
+            dim_log = dimension_log(shape[index])
             if row_log <= col_log:
                 selected.append(index)
                 row_log += dim_log
@@ -394,14 +411,14 @@ def _balanced_axes_for_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
             return tuple(selected[:-1])
         return tuple(selected)
 
-    total_log = sum(log(float(dim)) for dim in shape)
+    total_log = sum(dimension_log(dim) for dim in shape)
     best_axes: tuple[int, ...] | None = None
     best_score = inf
     best_rank_gap = inf
     for size in range(1, ndim):
         for combo in combinations(range(1, ndim), size - 1):
             candidate = (0,) + combo
-            row_log = sum(log(float(shape[index])) for index in candidate)
+            row_log = sum(dimension_log(shape[index]) for index in candidate)
             col_log = total_log - row_log
             score = abs(row_log - col_log)
             rank_gap = abs(len(candidate) - (ndim - len(candidate)))
@@ -419,6 +436,13 @@ def _balanced_axes_for_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
                 best_rank_gap = rank_gap
     assert best_axes is not None
     return best_axes
+
+
+def _axis_size_product(shape: tuple[int, ...], axes: tuple[int, ...]) -> int:
+    """Return the size product for grouped axes, preserving zero-sized dimensions."""
+    if not axes:
+        return 1
+    return int(np.prod([shape[index] for index in axes], dtype=int))
 
 
 def _resolve_matrix_axes(
@@ -499,8 +523,8 @@ def _matrixize_tensor(
     else:
         order = resolved_rows + resolved_cols
         transposed = np.transpose(array, axes=order) if order else array
-        row_size = int(np.prod([shape[index] for index in resolved_rows], dtype=int)) or 1
-        col_size = int(np.prod([shape[index] for index in resolved_cols], dtype=int)) or 1
+        row_size = _axis_size_product(shape, resolved_rows)
+        col_size = _axis_size_product(shape, resolved_cols)
         matrix = np.reshape(transposed, (row_size, col_size))
     metadata = _MatrixMetadata(
         col_axes=resolved_cols,
@@ -929,14 +953,14 @@ def _extract_tensor_records(
     prepared_input = data
     if resolved_engine is None:
         try:
-            direct_array_records = _extract_direct_array_records(data)
+            direct_array_records, prepared_input = _extract_direct_array_records(data)
         except TypeError as exc:
             raise TensorDataTypeError(str(exc)) from exc
         except ValueError as exc:
             raise TensorDataError(str(exc)) from exc
         if direct_array_records is not None:
             return "numpy", direct_array_records
-        resolved_engine, prepared_input = _detect_tensor_elements_engine(data)
+        resolved_engine, prepared_input = _detect_tensor_elements_engine(prepared_input)
 
     package_logger.debug("Extracting tensor records with engine=%r.", resolved_engine)
     try:
@@ -1365,108 +1389,6 @@ def _spectral_analysis_for_record(
         singular_values=singular_values,
         used_reduced_matrix=used_reduced_matrix,
     )
-
-
-def _format_name_list(names: tuple[str, ...]) -> str:
-    if not names:
-        return "-"
-    return ", ".join(names)
-
-
-def _format_percent(value: float) -> str:
-    return f"{_format_float(100.0 * value)}%"
-
-
-def _topk_singular_value_lines(values: NumericArray, *, count: int) -> list[str]:
-    requested_count = min(int(count), int(values.size))
-    lines = [f"top {int(count)} singular values:"]
-    for rank, singular_value in enumerate(values[:requested_count], start=1):
-        lines.append(f"{rank}. sigma{rank}={_format_float(float(singular_value))}")
-    return lines
-
-
-def _topk_eigenvalue_lines(values: NumericArray, *, count: int) -> list[str]:
-    requested_count = min(int(count), int(values.size))
-    lines = [f"top {int(count)} eigenvalues by magnitude:"]
-    ranked = sorted(
-        np.ravel(values).tolist(),
-        key=lambda value: (-float(np.abs(value)), float(np.real(value)), float(np.imag(value))),
-    )
-    for rank, eigenvalue in enumerate(ranked[:requested_count], start=1):
-        lines.append(
-            f"{rank}. |lambda|={_format_float(float(np.abs(eigenvalue)))}, "
-            f"lambda={_format_scalar(eigenvalue)}"
-        )
-    return lines
-
-
-def _build_spectral_summary_lines(
-    record: _TensorRecord,
-    *,
-    config: TensorElementsConfig,
-    topk_count: int,
-) -> list[str]:
-    analysis = _spectral_analysis_for_record(record, config=config)
-    lines = [
-        "spectral analysis:",
-        f"- matrixized shape: {analysis.matrix_shape}",
-        f"- matrix rows: {_format_name_list(analysis.row_names)}",
-        f"- matrix cols: {_format_name_list(analysis.col_names)}",
-    ]
-
-    if analysis.used_reduced_matrix:
-        lines.append(
-            "- analysis matrix: "
-            f"reduced to {analysis.analysis_shape} via max_matrix_shape={config.max_matrix_shape}"
-        )
-    else:
-        lines.append("- analysis matrix: full matrix")
-
-    if analysis.issue is not None:
-        lines.append(f"- spectral analysis unavailable: {analysis.issue}")
-        return lines
-
-    assert analysis.singular_values is not None
-    singular_values = np.asarray(analysis.singular_values, dtype=float)
-    if singular_values.size == 0:
-        lines.append("- spectral analysis unavailable: empty singular spectrum")
-        return lines
-
-    sigma_max = float(np.max(singular_values))
-    sigma_min = float(np.min(singular_values))
-    positive_singular_values = singular_values[singular_values > 0.0]
-    if positive_singular_values.size == 0:
-        condition_number = float("inf") if sigma_max > 0.0 else 1.0
-    else:
-        condition_number = float(sigma_max / np.min(positive_singular_values))
-    frobenius_sq = float(np.sum(np.square(singular_values)))
-    stable_rank = float(frobenius_sq / (sigma_max * sigma_max)) if sigma_max > 0.0 else 0.0
-    energy_numerator = float(
-        np.sum(np.square(singular_values[: min(int(topk_count), singular_values.size)]))
-    )
-    energy_ratio = float(energy_numerator / frobenius_sq) if frobenius_sq > 0.0 else 1.0
-
-    lines.extend(
-        [
-            f"- singular-value range: {_format_float(sigma_min)} .. {_format_float(sigma_max)}",
-            f"- condition number: {_format_float(condition_number)}",
-            f"- stable rank: {_format_float(stable_rank)}",
-            f"- top {int(topk_count)} energy: {_format_percent(energy_ratio)}",
-        ]
-    )
-    lines.extend(
-        f"- {line}" for line in _topk_singular_value_lines(singular_values, count=topk_count)
-    )
-
-    if analysis.eigenvalues is None:
-        lines.append("- eigenvalues: not available for non-square matrices")
-        return lines
-
-    eigenvalues = np.asarray(analysis.eigenvalues)
-    spectral_radius = float(np.max(np.abs(eigenvalues))) if eigenvalues.size else 0.0
-    lines.append(f"- spectral radius: {_format_float(spectral_radius)}")
-    lines.extend(f"- {line}" for line in _topk_eigenvalue_lines(eigenvalues, count=topk_count))
-    return lines
 
 
 def _build_data_summary_text(

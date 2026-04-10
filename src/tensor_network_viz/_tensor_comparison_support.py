@@ -59,9 +59,17 @@ def _comparison_array(
     if mode == "abs_diff":
         return np.abs(current_array - reference_array)
     if mode == "relative_diff":
-        denominator = np.maximum(np.abs(reference_array), zero_threshold)
-        relative = np.abs(current_array - reference_array) / denominator
-        relative = np.where(np.abs(reference_array) <= zero_threshold, 0.0, relative)
+        current_magnitude = np.abs(current_array)
+        reference_magnitude = np.abs(reference_array)
+        relative = np.full(current_array.shape, np.nan, dtype=float)
+        valid_reference_mask = reference_magnitude > zero_threshold
+        np.divide(
+            np.abs(current_array - reference_array),
+            reference_magnitude,
+            out=relative,
+            where=valid_reference_mask,
+        )
+        relative[np.logical_not(valid_reference_mask) & (current_magnitude <= zero_threshold)] = 0.0
         return np.asarray(relative, dtype=float)
     if mode == "ratio":
         ratio = np.full(

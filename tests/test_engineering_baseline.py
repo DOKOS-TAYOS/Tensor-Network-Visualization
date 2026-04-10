@@ -193,6 +193,16 @@ def test_render_prep_does_not_keep_unused_memory_format_helper() -> None:
     assert not hasattr(render_prep, "_format_memory_estimate")
 
 
+def test_tensor_elements_data_does_not_keep_unused_spectral_summary_helpers() -> None:
+    tensor_elements_data = importlib.import_module("tensor_network_viz._tensor_elements_data")
+
+    assert not hasattr(tensor_elements_data, "_build_spectral_summary_lines")
+    assert not hasattr(tensor_elements_data, "_format_name_list")
+    assert not hasattr(tensor_elements_data, "_format_percent")
+    assert not hasattr(tensor_elements_data, "_topk_singular_value_lines")
+    assert not hasattr(tensor_elements_data, "_topk_eigenvalue_lines")
+
+
 def test_tensorkrowch_history_uses_single_node_tuple_normalizer() -> None:
     history = importlib.import_module("tensor_network_viz.tensorkrowch._history")
 

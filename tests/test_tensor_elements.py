@@ -533,6 +533,29 @@ def test_show_tensor_elements_direct_iterables_preserve_duplicate_tensors() -> N
     assert "Repeat" in ax.get_title()
 
 
+def test_show_tensor_elements_auto_detects_one_shot_backend_node_generator() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.arange(6, dtype=float).reshape(2, 3),
+            name="A",
+            axis_names=("row", "col"),
+        ),
+        DummyTensorNetworkNode(
+            np.arange(12, dtype=float).reshape(3, 4),
+            name="B",
+            axis_names=("u", "v"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements((tensor for tensor in tensors), show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert isinstance(ax, Axes)
+    assert controller._slider is not None
+    assert len(controller._records) == 2
+    assert "A" in ax.get_title()
+
+
 def test_show_tensor_elements_keeps_first_node_for_single_pass_nodes_attribute() -> None:
     tensors = [
         DummyTensorKrowchNode(
@@ -1283,6 +1306,51 @@ def test_show_tensor_elements_data_mode_excludes_spectral_analysis_details() -> 
     assert "spectral radius:" not in text_blob.lower()
 
 
+def test_show_tensor_elements_empty_heatmap_renders_text_fallback() -> None:
+    fig, ax = show_tensor_elements(
+        np.empty((0, 3), dtype=float),
+        show=False,
+        show_controls=False,
+    )
+    text_blob = "\n".join(text.get_text() for text in ax.texts).lower()
+
+    assert_rendered_figure(fig, ax)
+    assert ax.texts
+    assert not ax.images
+    assert "empty tensor" in text_blob
+    assert "elements" in ax.get_title().lower()
+
+
+def test_show_tensor_elements_empty_heatmap_with_explicit_axes_renders_text_fallback() -> None:
+    fig, ax = show_tensor_elements(
+        np.empty((0, 3), dtype=float),
+        config=TensorElementsConfig(row_axes=(0,), col_axes=(1,)),
+        show=False,
+        show_controls=False,
+    )
+    text_blob = "\n".join(text.get_text() for text in ax.texts).lower()
+
+    assert_rendered_figure(fig, ax)
+    assert ax.texts
+    assert not ax.images
+    assert "empty tensor" in text_blob
+    assert "elements" in ax.get_title().lower()
+
+
+def test_show_tensor_elements_empty_data_mode_keeps_existing_summary() -> None:
+    fig, ax = show_tensor_elements(
+        np.empty((0, 3), dtype=float),
+        config=TensorElementsConfig(mode="data"),
+        show=False,
+        show_controls=False,
+    )
+    text_blob = "\n".join(text.get_text() for text in ax.texts).lower()
+
+    assert_rendered_figure(fig, ax)
+    assert "stats: empty tensor" in text_blob
+    assert "top 8 by magnitude" in text_blob
+
+
 def test_show_tensor_elements_downsamples_large_heatmaps() -> None:
     tensor = DummyTensorNetworkNode(
         np.arange(512 * 384, dtype=float).reshape(512, 384),
@@ -1603,6 +1671,16 @@ def test_extract_playback_step_records_supports_contracted_tensorkrowch_network(
     assert records[0].record is not None
     assert records[0].record.engine == "tensorkrowch"
     assert records[0].record.axis_names == ("input", "output")
+
+
+def test_show_tensor_elements_accepts_direct_torch_tensor_with_requires_grad() -> None:
+    torch = pytest.importorskip("torch")
+    tensor = torch.arange(6.0, requires_grad=True).reshape(2, 3)
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=False)
+
+    assert_rendered_figure(fig, ax)
+    assert np.asarray(ax.images[0].get_array(), dtype=float).shape == (2, 3)
 
 
 def test_show_tensor_elements_rejects_manual_pair_tensor_iterables() -> None:
