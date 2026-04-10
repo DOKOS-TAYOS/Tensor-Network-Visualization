@@ -2,24 +2,40 @@
 
 from __future__ import annotations
 
-from typing import Any
+import sys
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 from ._logging import package_logger
-from ._tensor_elements_controller import (
-    _TensorElementsControlsLayout,
-    _TensorElementsFigureController,
-    _TensorPayloadCacheEntry,
+from ._matplotlib_state import set_tensor_elements_controls
+from ._tensor_elements_rendering import (
+    _compute_outlier_mask,
+    _derive_color_limits,
+    _render_panel,
+    _RenderedTensorPanel,
+    _supports_dynamic_scaling,
 )
-from ._tensor_elements_rendering import _RenderedTensorPanel
-from ._tensor_elements_support import _extract_tensor_records, _prepare_mode_payload
+from ._tensor_elements_support import (
+    _extract_tensor_records,
+    _HeatmapPayload,
+    _prepare_mode_payload,
+    _TensorRecord,
+)
 from ._typing import root_figure
 from .config import EngineName
 from .exceptions import AxisConfigurationError
 from .tensor_elements_config import TensorElementsConfig
+
+if TYPE_CHECKING:
+    from ._tensor_elements_controller import (
+        _TensorElementsControlsLayout,
+        _TensorElementsFigureController,
+    )
 
 
 def _build_single_external_axis(ax: Axes) -> tuple[Figure, Axes]:
@@ -32,19 +48,12 @@ def _build_internal_axis(*, config: TensorElementsConfig) -> tuple[Figure, Axes]
     return root_figure(figure), ax
 
 
-def _show_tensor_records(
-    records: list[Any],
+def _validate_tensor_elements_axis(
     *,
-    config: TensorElementsConfig,
-    controls_layout: _TensorElementsControlsLayout | None = None,
+    records: list[_TensorRecord],
     ax: Axes | None,
     show_controls: bool,
-    show: bool,
-) -> tuple[Figure, Axes, _TensorElementsFigureController]:
-    initial_payload_cache: dict[int, _TensorPayloadCacheEntry] = {}
-    if config.mode != "auto" and (not show_controls or len(records) == 1):
-        resolved_mode, payload = _prepare_mode_payload(records[0], config=config, mode=config.mode)
-        initial_payload_cache[0] = _TensorPayloadCacheEntry(payloads={resolved_mode: payload})
+) -> None:
     if ax is not None and len(records) != 1:
         raise AxisConfigurationError(
             "An explicit ax is only supported when visualizing a single tensor."
@@ -54,6 +63,141 @@ def _show_tensor_records(
             "show_controls=True with an external ax is only supported when the target figure "
             "contains a single axes."
         )
+
+
+def _initial_mode_for_record(
+    record: _TensorRecord,
+    *,
+    config: TensorElementsConfig,
+) -> str:
+    if config.mode == "auto":
+        return "magnitude" if np.iscomplexobj(record.array) else "elements"
+    return config.mode
+
+
+def _shared_color_limits_for_static_mode(
+    records: list[_TensorRecord],
+    *,
+    config: TensorElementsConfig,
+    mode: str,
+    style_key: str,
+) -> tuple[float, float] | None:
+    matrices: list[np.ndarray[Any, Any]] = []
+    for record in records:
+        try:
+            _, payload = _prepare_mode_payload(record, config=config, mode=mode)
+        except ValueError:
+            continue
+        if not isinstance(payload, _HeatmapPayload):
+            continue
+        if not _supports_dynamic_scaling(payload.style_key):
+            continue
+        matrices.append(np.asarray(payload.matrix, dtype=float))
+    return _derive_color_limits(
+        matrices,
+        style_key=style_key,
+        robust_percentiles=config.robust_percentiles,
+    )
+
+
+def _finalize_static_heatmap_payload(
+    records: list[_TensorRecord],
+    *,
+    config: TensorElementsConfig,
+    mode: str,
+    payload: _HeatmapPayload,
+) -> _HeatmapPayload:
+    color_limits: tuple[float, float] | None = None
+    outlier_mask: np.ndarray[Any, Any] | None = None
+    matrix = np.asarray(payload.matrix, dtype=float)
+    if _supports_dynamic_scaling(payload.style_key):
+        if config.shared_color_scale:
+            color_limits = _shared_color_limits_for_static_mode(
+                records,
+                config=config,
+                mode=mode,
+                style_key=payload.style_key,
+            )
+        elif config.robust_percentiles is not None:
+            color_limits = _derive_color_limits(
+                [matrix],
+                style_key=payload.style_key,
+                robust_percentiles=config.robust_percentiles,
+            )
+        if config.highlight_outliers:
+            outlier_mask = _compute_outlier_mask(
+                matrix,
+                threshold=float(config.outlier_zscore),
+            )
+    return replace(payload, color_limits=color_limits, outlier_mask=outlier_mask)
+
+
+def _show_static_tensor_records(
+    records: list[_TensorRecord],
+    *,
+    config: TensorElementsConfig,
+    ax: Axes | None,
+    show: bool,
+) -> tuple[Figure, Axes]:
+    _validate_tensor_elements_axis(records=records, ax=ax, show_controls=False)
+    if ax is None:
+        figure, main_ax = _build_internal_axis(config=config)
+    else:
+        figure, main_ax = _build_single_external_axis(ax)
+
+    set_tensor_elements_controls(figure, None)
+    panel = _RenderedTensorPanel(
+        base_position=main_ax.get_position().bounds,
+        main_ax=main_ax,
+    )
+    current_record = records[0]
+    resolved_mode, payload = _prepare_mode_payload(
+        current_record,
+        config=config,
+        mode=_initial_mode_for_record(current_record, config=config),
+    )
+    if isinstance(payload, _HeatmapPayload):
+        payload = _finalize_static_heatmap_payload(
+            records,
+            config=config,
+            mode=resolved_mode,
+            payload=payload,
+        )
+    _render_panel(
+        panel,
+        config=config,
+        record=current_record,
+        payload=payload,
+    )
+    # Matplotlib may load widgets as a side effect of figure/axes imports even though the
+    # static tensor-elements path never instantiates any widget.
+    sys.modules.pop("matplotlib.widgets", None)
+    if show:
+        from .viewer import _show_figure
+
+        _show_figure(figure)
+    return figure, main_ax
+
+
+def _show_tensor_records(
+    records: list[_TensorRecord],
+    *,
+    config: TensorElementsConfig,
+    controls_layout: _TensorElementsControlsLayout | None = None,
+    ax: Axes | None,
+    show_controls: bool = True,
+    show: bool,
+) -> tuple[Figure, Axes, _TensorElementsFigureController]:
+    from ._tensor_elements_controller import (
+        _TensorElementsFigureController,
+        _TensorPayloadCacheEntry,
+    )
+
+    _validate_tensor_elements_axis(records=records, ax=ax, show_controls=show_controls)
+    initial_payload_cache: dict[int, _TensorPayloadCacheEntry] = {}
+    if config.mode != "auto" and len(records) == 1:
+        resolved_mode, payload = _prepare_mode_payload(records[0], config=config, mode=config.mode)
+        initial_payload_cache[0] = _TensorPayloadCacheEntry(payloads={resolved_mode: payload})
 
     if ax is None:
         figure, main_ax = _build_internal_axis(config=config)
@@ -136,11 +280,18 @@ def show_tensor_elements(
         show,
     )
     _, records = _extract_tensor_records(data, engine=engine)
-    figure, main_ax, _controller = _show_tensor_records(
-        records,
-        config=style,
-        ax=ax,
-        show_controls=show_controls,
-        show=show,
-    )
+    if show_controls:
+        figure, main_ax, _controller = _show_tensor_records(
+            records,
+            config=style,
+            ax=ax,
+            show=show,
+        )
+    else:
+        figure, main_ax = _show_static_tensor_records(
+            records,
+            config=style,
+            ax=ax,
+            show=show,
+        )
     return figure, main_ax

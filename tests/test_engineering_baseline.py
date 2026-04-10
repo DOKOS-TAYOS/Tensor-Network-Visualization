@@ -3,7 +3,10 @@ from __future__ import annotations
 import ast
 import importlib
 import json
+import os
 import shlex
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -72,6 +75,21 @@ def _load_requirements_lines(path: Path) -> list[str]:
         requirement = stripped.split(" ; ", 1)[0].strip()
         lines.append(requirement)
     return lines
+
+
+def _run_module_snapshot(code: str) -> dict[str, bool]:
+    workspace_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(workspace_root / "src")
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        check=True,
+        capture_output=True,
+        cwd=workspace_root,
+        env=env,
+        text=True,
+    )
+    return json.loads(result.stdout)
 
 
 def _top_level_importorskip_targets(path: Path) -> list[str]:
@@ -146,11 +164,152 @@ def test_dev_requirements_pin_verification_tools_and_use_editable_install() -> N
 def test_pyright_config_escalates_active_type_checks_to_errors() -> None:
     config = json.loads(Path("pyrightconfig.json").read_text(encoding="utf-8"))
 
+    assert config["venvPath"] == "."
+    assert config["venv"] == ".venv"
     assert config["reportMissingImports"] == "error"
     assert config["reportArgumentType"] == "error"
     assert config["reportAssignmentType"] == "error"
     assert config["reportReturnType"] == "error"
     assert config["reportCallIssue"] == "error"
+
+
+def test_input_inspection_reuses_graph_utils_unordered_collection_helper() -> None:
+    graph_utils = importlib.import_module("tensor_network_viz._core.graph_utils")
+    input_inspection = importlib.import_module("tensor_network_viz._input_inspection")
+
+    assert input_inspection._is_unordered_collection is graph_utils._is_unordered_collection
+
+
+def test_tenpy_graph_reuses_explicit_leg_label_helper() -> None:
+    explicit = importlib.import_module("tensor_network_viz.tenpy.explicit")
+    graph = importlib.import_module("tensor_network_viz.tenpy.graph")
+
+    assert graph._leg_labels is explicit._leg_labels
+
+
+def test_render_prep_does_not_keep_unused_memory_format_helper() -> None:
+    render_prep = importlib.import_module("tensor_network_viz._core.draw.render_prep")
+
+    assert not hasattr(render_prep, "_format_memory_estimate")
+
+
+def test_tensorkrowch_history_uses_single_node_tuple_normalizer() -> None:
+    history = importlib.import_module("tensor_network_viz.tensorkrowch._history")
+
+    assert hasattr(history, "_normalized_node_tuple")
+    assert not hasattr(history, "_normalized_parent_nodes")
+    assert not hasattr(history, "_normalized_child_nodes")
+
+
+def test_top_level_import_keeps_cold_path_modules_lazy() -> None:
+    loaded = _run_module_snapshot(
+        """
+import json
+import sys
+import tensor_network_viz
+
+targets = [
+    "matplotlib.axes",
+    "matplotlib.figure",
+    "mpl_toolkits.mplot3d.axes3d",
+    "numpy",
+    "tensor_network_viz.config",
+    "tensor_network_viz._core.graph_cache",
+]
+print(json.dumps({name: name in sys.modules for name in targets}))
+"""
+    )
+
+    assert loaded == {
+        "matplotlib.axes": False,
+        "matplotlib.figure": False,
+        "mpl_toolkits.mplot3d.axes3d": False,
+        "numpy": False,
+        "tensor_network_viz.config": False,
+        "tensor_network_viz._core.graph_cache": False,
+    }
+
+
+def test_static_tensor_elements_cold_path_skips_controller_and_widgets() -> None:
+    loaded = _run_module_snapshot(
+        """
+import json
+import sys
+
+import matplotlib
+matplotlib.use("Agg")
+import numpy as np
+import tensor_network_viz as tnv
+
+tnv.show_tensor_elements(
+    np.arange(6.0).reshape(2, 3),
+    show=False,
+    show_controls=False,
+)
+targets = [
+    "tensor_network_viz._tensor_elements_controller",
+    "matplotlib.widgets",
+]
+print(json.dumps({name: name in sys.modules for name in targets}))
+"""
+    )
+
+    assert loaded == {
+        "tensor_network_viz._tensor_elements_controller": False,
+        "matplotlib.widgets": False,
+    }
+
+
+def test_static_tensor_network_cold_path_skips_interaction_modules() -> None:
+    loaded = _run_module_snapshot(
+        """
+import json
+import sys
+
+import matplotlib
+matplotlib.use("Agg")
+import numpy as np
+import tensor_network_viz as tnv
+
+class Edge:
+    def __init__(self, name):
+        self.name = name
+        self.node1 = None
+        self.node2 = None
+
+class Node:
+    def __init__(self, name, axis_names):
+        self.name = name
+        self.axis_names = list(axis_names)
+        self.tensor = np.ones((2, 2), dtype=float)
+        self.shape = self.tensor.shape
+        self.edges = [None] * len(self.axis_names)
+
+left = Node("L", ("a", "b"))
+right = Node("R", ("b", "c"))
+edge = Edge("bond")
+edge.node1 = left
+edge.node2 = right
+left.edges[1] = edge
+right.edges[0] = edge
+
+tnv.show_tensor_network([left, right], show=False, show_controls=False)
+targets = [
+    "tensor_network_viz.contraction_viewer",
+    "tensor_network_viz._interaction.scheme",
+    "tensor_network_viz._interactive_scene",
+    "matplotlib.widgets",
+]
+print(json.dumps({name: name in sys.modules for name in targets}))
+"""
+    )
+
+    assert loaded == {
+        "tensor_network_viz.contraction_viewer": False,
+        "tensor_network_viz._interaction.scheme": False,
+        "tensor_network_viz._interactive_scene": False,
+        "matplotlib.widgets": False,
+    }
 
 
 def test_layout_module_compatibility_exports_survive_internal_split() -> None:

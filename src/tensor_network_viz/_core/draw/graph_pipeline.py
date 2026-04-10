@@ -1,38 +1,21 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from ..._interaction.scheme import _ContractionControls, _ContractionSchemeBundle
-from ..._interactive_scene import _apply_scene_hover_state
-from ..._matplotlib_state import (
-    clear_contraction_controls,
-    clear_scene,
-    get_scene,
-    set_contraction_controls,
-    set_scene,
-)
 from ...config import PlotConfig
-from ...contraction_viewer import attach_tensor_network_playback_to_figure
-from ...einsum_module.contraction_cost import format_contraction_step_panel_text
 from ..contractions import _ContractionGroups
 from ..graph import _GraphData
 from ..layout import AxisDirections, NodePositions
-from .contraction_scheme import (
-    _build_contraction_playback_states,
-    _contraction_step_metrics_for_draw,
-    _ContractionSceneApplier,
-    _effective_contraction_steps,
-)
 from .disk_metrics import _tensor_disk_radius_px_3d_nominal
 from .render_prep import (
-    _apply_render_hover_state,
-    _build_interactive_scene_state,
     _draw_edges_nodes_and_labels,
     _prepare_render_context,
     _register_render_hover,
     _RenderPrepContext,
 )
-from .scene_state import _InteractiveSceneState
+
+if TYPE_CHECKING:
+    from ..._interaction.scheme import _ContractionSchemeBundle
 
 
 def _refresh_contraction_hover(
@@ -40,6 +23,11 @@ def _refresh_contraction_hover(
     ax: Any,
     hover_state: Any,
 ) -> None:
+    from ..._interactive_scene import _apply_scene_hover_state
+    from ..._matplotlib_state import get_scene
+    from .render_prep import _apply_render_hover_state
+    from .scene_state import _InteractiveSceneState
+
     scene = get_scene(ax)
     if isinstance(scene, _InteractiveSceneState):
         hover_on = bool(scene.hover_state.tensor_hover or scene.hover_state.edge_hover)
@@ -62,6 +50,35 @@ def _has_contraction_scheme_source(
     return steps is not None and len(steps) > 0
 
 
+def _effective_contraction_steps(
+    graph: _GraphData,
+    config: PlotConfig,
+) -> Any:
+    from .contraction_scheme import _effective_contraction_steps as _impl
+
+    return _impl(graph, config)
+
+
+def _build_contraction_playback_states(
+    *,
+    graph: _GraphData,
+    steps: Any,
+    config: PlotConfig,
+) -> Any:
+    from .contraction_scheme import _build_contraction_playback_states as _impl
+
+    return _impl(graph=graph, steps=steps, config=config)
+
+
+def _contraction_step_metrics_for_draw(
+    graph: _GraphData,
+    steps: Any,
+) -> Any:
+    from .contraction_scheme import _contraction_step_metrics_for_draw as _impl
+
+    return _impl(graph, steps)
+
+
 def _build_contraction_scheme_bundle(
     *,
     ax: Any,
@@ -74,6 +91,11 @@ def _build_contraction_scheme_bundle(
     strict: bool,
     include_viewer: bool = True,
 ) -> _ContractionSchemeBundle:
+    from ..._interaction.scheme import _ContractionSchemeBundle
+    from ...contraction_viewer import attach_tensor_network_playback_to_figure
+    from ...einsum_module.contraction_cost import format_contraction_step_panel_text
+    from .contraction_scheme import _ContractionSceneApplier
+
     scheme_steps_eff = _effective_contraction_steps(graph, config)
     if not scheme_steps_eff:
         raise ValueError("contraction scheme requires a non-empty contraction step sequence.")
@@ -173,9 +195,11 @@ def _draw_graph(
         scheme_aabbs_3d=[],
         tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
     )
-    controls: _ContractionControls | None = None
+    controls: Any | None = None
     if _has_contraction_scheme_source(graph, config):
         if build_contraction_controls:
+            from ..._interaction.scheme import _ContractionControls
+
             controls = _ContractionControls(
                 fig=ax.figure,
                 ax=ax,
@@ -210,6 +234,9 @@ def _draw_graph(
                 include_viewer=False,
             )
     if build_scene_state:
+        from ..._matplotlib_state import set_contraction_controls, set_scene
+        from .render_prep import _build_interactive_scene_state
+
         scene = _build_interactive_scene_state(
             ax=ax,
             context=context,
@@ -224,6 +251,8 @@ def _draw_graph(
             set_contraction_controls(ax, controls)
             controls.bind_scene(scene)
     else:
+        from ..._matplotlib_state import clear_contraction_controls, clear_scene
+
         clear_scene(ax)
         clear_contraction_controls(ax)
     if not _has_contraction_scheme_source(graph, config):

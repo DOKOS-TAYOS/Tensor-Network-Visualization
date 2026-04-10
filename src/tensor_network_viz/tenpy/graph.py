@@ -17,7 +17,7 @@ from .._core.graph import (
     _NodeData,
 )
 from .._core.graph_utils import _stringify
-from .explicit import TenPyTensorNetwork
+from .explicit import TenPyTensorNetwork, _leg_labels
 
 _SUPPORTED_NETWORKS_HINT: str = (
     "Expected TenPyTensorNetwork (explicit npc.Array list + bonds), a TeNPy tensor chain: "
@@ -36,12 +36,6 @@ def _boundary_mode_from_geometry(geometry: Any) -> str:
     if boundary_condition == "infinite" and not bool(geometry.finite):
         return "periodic"
     raise ValueError("TeNPy visualization supports finite, segment, and infinite networks.")
-
-
-def _leg_labels(tensor: Any) -> tuple[str, ...]:
-    if not hasattr(tensor, "get_leg_labels"):
-        raise TypeError("TeNPy tensors must expose leg labels via 'get_leg_labels()'.")
-    return tuple(_stringify(label) for label in tensor.get_leg_labels())
 
 
 def _find_leg_index(labels: tuple[str, ...], leg_name: str, *, node_name: str) -> int:
