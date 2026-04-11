@@ -21,7 +21,6 @@ from tensor_network_viz._core.layout import (
     _compute_component_layout_2d,
     _compute_layout,
     _dangling_stub_segment_2d,
-    _dangling_stub_segment_3d,
     _is_dangling_leg_axis,
     _planar_contraction_bond_segments_2d,
     _segment_point_min_distance_sq_2d,
@@ -31,6 +30,10 @@ from tensor_network_viz._core.layout.direction_common import _behavior_direction
 from tensor_network_viz._core.layout.free_directions_2d import (
     _direction_angle_conflicts_2d,
     _pick_candidate_direction_2d,
+)
+from tensor_network_viz._core.layout.free_directions_3d import (
+    _direction_angle_conflicts_3d,
+    _pick_candidate_direction_3d,
 )
 from tensor_network_viz._core.renderer import (
     _SHORTEST_EDGE_RADIUS_FRACTION,
@@ -177,6 +180,35 @@ def test_pick_candidate_direction_2d_returns_last_tried_when_all_fail() -> None:
         np.array([0.0, -1.0], dtype=float),
     )
     picked = _pick_candidate_direction_2d(
+        candidates=candidates,
+        is_valid=lambda _candidate: False,
+    )
+
+    assert np.allclose(picked, candidates[-1], atol=1e-9)
+
+
+def test_direction_angle_conflicts_3d_uses_ten_degree_threshold_without_opposites() -> None:
+    assert _direction_angle_conflicts_3d(
+        np.array([0.0, 0.0, 1.0], dtype=float),
+        np.array([math.sin(math.radians(9.0)), 0.0, math.cos(math.radians(9.0))], dtype=float),
+    )
+    assert not _direction_angle_conflicts_3d(
+        np.array([0.0, 0.0, 1.0], dtype=float),
+        np.array([math.sin(math.radians(10.5)), 0.0, math.cos(math.radians(10.5))], dtype=float),
+    )
+    assert not _direction_angle_conflicts_3d(
+        np.array([0.0, 0.0, 1.0], dtype=float),
+        np.array([0.0, 0.0, -1.0], dtype=float),
+    )
+
+
+def test_pick_candidate_direction_3d_returns_last_tried_when_all_fail() -> None:
+    candidates = (
+        np.array([0.0, 0.0, 1.0], dtype=float),
+        np.array([0.0, 1.0, 0.0], dtype=float),
+        np.array([1.0, 0.0, 0.0], dtype=float),
+    )
+    picked = _pick_candidate_direction_3d(
         candidates=candidates,
         is_valid=lambda _candidate: False,
     )
@@ -1473,6 +1505,73 @@ def test_compute_axis_directions_chain_3d_assigns_orthogonal_open_end() -> None:
     assert np.allclose(directions[(0, 1)], np.array([0.0, 0.0, 1.0]), atol=1e-6)
 
 
+def test_compute_axis_directions_chain_3d_uses_ordered_cube_candidates() -> None:
+    graph = _build_chain_graph(length=3, dangling_axis_counts={1: 5})
+    positions = {
+        0: np.array([0.0, 0.0, 0.0], dtype=float),
+        1: np.array([1.0, 0.0, 0.0], dtype=float),
+        2: np.array([2.0, 0.0, 0.0], dtype=float),
+    }
+
+    directions = _compute_axis_directions(graph, positions, dimensions=3, draw_scale=1.0)
+    free_axis_indices = [
+        axis_index
+        for axis_index, axis_name in enumerate(graph.nodes[1].axes_names)
+        if axis_name.startswith("d1_")
+    ]
+    picked = [
+        np.asarray(directions[(1, axis_index)], dtype=float) for axis_index in free_axis_indices
+    ]
+
+    expected = (
+        np.array([0.0, 0.0, 1.0], dtype=float),
+        np.array([0.0, 0.0, -1.0], dtype=float),
+        np.array([0.0, 1.0, 0.0], dtype=float),
+        np.array([0.0, -1.0, 0.0], dtype=float),
+        np.array([0.0, 1.0, 1.0], dtype=float) / np.sqrt(2.0),
+    )
+    for got, want in zip(picked, expected, strict=True):
+        assert np.allclose(got, want, atol=1e-6)
+
+
+def test_compute_axis_directions_chain_3d_skips_random_bucket_when_ordered_candidates_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.layout.free_directions_3d as free_directions_3d
+
+    graph = _build_chain_graph(length=3, dangling_axis_counts={1: 1})
+    positions = {
+        0: np.array([0.0, 0.0, 0.0], dtype=float),
+        1: np.array([1.0, 0.0, 0.0], dtype=float),
+        2: np.array([2.0, 0.0, 0.0], dtype=float),
+    }
+    calls: list[int] = []
+
+    def counting_random_bucket(
+        *,
+        blocked: tuple[np.ndarray, ...],
+        count: int = 16,
+        rng: np.random.Generator | None = None,
+    ) -> tuple[np.ndarray, ...]:
+        del blocked, count, rng
+        calls.append(1)
+        return (
+            np.array([1.0, 1.0, 1.0], dtype=float) / np.sqrt(3.0),
+            np.array([-1.0, -1.0, -1.0], dtype=float) / np.sqrt(3.0),
+        )
+
+    monkeypatch.setattr(
+        free_directions_3d,
+        "_random_direction_bucket_3d",
+        counting_random_bucket,
+    )
+
+    directions = _compute_axis_directions(graph, positions, dimensions=3, draw_scale=1.0)
+
+    assert np.allclose(directions[(1, 2)], np.array([0.0, 0.0, 1.0]), atol=1e-6)
+    assert calls == []
+
+
 def test_compute_axis_directions_3d_supports_xp_alias_for_free_axes() -> None:
     graph = _GraphData(
         nodes={
@@ -1528,41 +1627,25 @@ def test_compute_axis_directions_competing_free_axes_prefer_unused_orthogonal_di
         assert np.isclose(np.linalg.norm(directions[(0, axis_index)]), 1.0, atol=1e-6)
 
 
-def test_compute_axis_directions_cubic_phys_stubs_3d_clear_nonincident_bonds() -> None:
-    graph = _build_3d_grid_graph_with_dangling_phys(3, 3, 2)
+def test_compute_axis_directions_cubic_phys_stubs_3d_shell_roles_point_outward() -> None:
+    graph = _build_3d_grid_graph_with_dangling_phys(3, 3, 3)
 
     positions = _compute_layout(graph, dimensions=3, seed=0)
-    draw_scale = _resolve_draw_scale(graph, positions)
-    directions = _compute_axis_directions(graph, positions, dimensions=3, draw_scale=draw_scale)
-    bond_segments = [
-        (
-            int(left_id),
-            int(right_id),
-            np.asarray(positions[left_id], dtype=float).reshape(-1)[:3],
-            np.asarray(positions[right_id], dtype=float).reshape(-1)[:3],
-        )
-        for left_id, right_id in (
-            edge.node_ids for edge in graph.edges if edge.kind == "contraction"
-        )
-    ]
+    directions = _compute_axis_directions(graph, positions, dimensions=3)
+    component = _analyze_layout_components_cached(graph)[0]
+    node_id_by_coords = {coords: node_id for node_id, coords in component.grid3d_mapping.items()}
 
-    for edge in graph.edges:
-        if edge.kind != "dangling":
-            continue
-        endpoint = edge.endpoints[0]
-        origin = np.asarray(positions[endpoint.node_id], dtype=float).reshape(-1)[:3]
-        direction = np.asarray(
-            directions[(endpoint.node_id, endpoint.axis_index)],
-            dtype=float,
-        ).reshape(-1)[:3]
-        start, end = _dangling_stub_segment_3d(origin, direction, draw_scale=draw_scale)
-        for left_id, right_id, bond_start, bond_end in bond_segments:
-            if endpoint.node_id in {left_id, right_id}:
-                continue
-            distance = math.sqrt(
-                _segment_segment_min_distance_sq_3d(start, end, bond_start, bond_end)
-            )
-            assert distance >= 0.2 - 1e-9
+    expected_by_coords = {
+        (2, 1, 1): np.array([1.0, 0.0, 0.0], dtype=float),
+        (2, 2, 1): np.array([1.0, 1.0, 0.0], dtype=float) / np.sqrt(2.0),
+        (2, 2, 2): np.array([1.0, 1.0, 1.0], dtype=float) / np.sqrt(3.0),
+    }
+    for coords, expected in expected_by_coords.items():
+        node_id = node_id_by_coords[coords]
+        axis_index = graph.nodes[node_id].axes_names.index("phys")
+        direction = np.asarray(directions[(node_id, axis_index)], dtype=float).reshape(-1)[:3]
+        direction /= np.linalg.norm(direction)
+        assert np.allclose(direction, expected, atol=1e-6), (coords, direction)
 
 
 def test_compute_axis_directions_cubic_phys_stubs_3d_face_centers_point_outward() -> None:

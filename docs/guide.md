@@ -478,4 +478,5 @@ For tensor inspection:
 - [API Reference](api.md): exact public API names and practical signatures.
 - [Backend Examples](backends.md): copy-paste examples by backend.
 - [Troubleshooting](troubleshooting.md): common failures and fixes.
+- [Layout Algorithms](algorithms.md): internal node placement and free-edge direction rules.
 - [Repository Examples](../examples/README.md): command-line demos in this repository.

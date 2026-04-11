@@ -118,6 +118,8 @@ figures with embedded controls. See [Installation](docs/installation.md) and
   logging.
 - [User Guide](docs/guide.md): workflows, notebooks, exports, layouts, tensor inspection,
   comparisons, snapshots, and performance tips.
+- [Layout Algorithms](docs/algorithms.md): node placement and free-edge direction rules in 2D and
+  3D.
 - [Backend Examples](docs/backends.md): copy-paste examples for TensorKrowch, TensorNetwork, Quimb,
   TeNPy, and `einsum`.
 - [Troubleshooting](docs/troubleshooting.md): common install, Jupyter, Matplotlib, backend, and data
