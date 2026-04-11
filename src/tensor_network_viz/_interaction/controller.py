@@ -14,6 +14,7 @@ from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from .._core.draw.scene_state import _InteractiveSceneState
 from .._core.draw.tensors import _tensor_disk_radius_px
+from .._input_inspection import _merge_grid_positions_into_config
 from .._interactive_scene import (
     _apply_scene_hover_state,
     _bring_scene_label_artists_to_front,
@@ -399,10 +400,16 @@ class _InteractiveTensorFigureController:
         ax: RenderedAxes | None,
     ) -> tuple[Figure, RenderedAxes]:
         plotter = self._plot_2d if view == "2d" else self._plot_3d
+        dimensions = 2 if view == "2d" else 3
+        config = _merge_grid_positions_into_config(
+            self._base_config(),
+            self.network,
+            dimensions=dimensions,
+        )
         fig, rendered_ax = plotter(
             self.network,
             ax=ax,
-            config=self._base_config(),
+            config=config,
             _build_contraction_controls=True,
             _contraction_controls_build_ui=False,
             _register_contraction_controls_on_figure=False,

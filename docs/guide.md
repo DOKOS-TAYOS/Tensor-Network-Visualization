@@ -287,7 +287,8 @@ Playback details depend on the backend:
 - `einsum` traces can carry contraction steps and live tensor values.
 - TensorKrowch can recover contraction history for some already-contracted native networks when
   usable `leaf_nodes` and `resultant_nodes` history remains.
-- Manual schemes can draw step groups even when detailed cost data is unavailable.
+- Manual schemes can infer cost details when tensor shapes and index sizes are available, and still
+  draw step groups when detailed cost data is unavailable.
 
 For linked tensor inspection during playback, set:
 

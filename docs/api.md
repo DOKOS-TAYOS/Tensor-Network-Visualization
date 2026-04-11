@@ -273,7 +273,7 @@ Common fields:
 | `contraction_scheme_cost_hover` | Show contraction-cost information during playback. |
 | `contraction_tensor_inspector` | Link playback steps to tensor inspection when tensors are available. |
 | `diagnostics` | Optional `TensorNetworkDiagnosticsConfig`. |
-| `focus` | Optional `TensorNetworkFocus` for neighborhood/path views. |
+| `focus` | Optional `TensorNetworkFocus` for neighborhood/path views. Path focus uses the fewest tensor-to-tensor hops; n-way hubs are collapsed, and cost, memory, bond dimension, and layout distance are not part of the metric. |
 | `theme` | Visual preset: `default`, `paper`, or `colorblind`. Manual color and line-width overrides still win. |
 | `figsize` | Matplotlib figure size. |
 | `positions` | Explicit node-id positions. |

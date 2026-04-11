@@ -17,13 +17,19 @@ def _perpendicular_3d(direction: np.ndarray) -> np.ndarray:
     return perp / np.linalg.norm(perp)
 
 
+def _bond_perpendicular_3d(direction: np.ndarray) -> np.ndarray:
+    if abs(float(direction[2])) < 1e-9 and float(np.linalg.norm(direction[:2])) > 1e-9:
+        return np.array([0.0, 0.0, 1.0], dtype=float)
+    return _perpendicular_3d(direction)
+
+
 def _bond_perpendicular_unoriented(
     delta: np.ndarray,
     dimensions: Literal[2, 3],
 ) -> np.ndarray:
     dist = max(float(np.linalg.norm(delta)), 1e-6)
     direction = delta / dist
-    return _perpendicular_3d(direction) if dimensions == 3 else _perpendicular_2d(direction)
+    return _bond_perpendicular_3d(direction) if dimensions == 3 else _perpendicular_2d(direction)
 
 
 __all__ = [

@@ -10,6 +10,7 @@ from tensor_network_viz._core._draw_common import (
     _nominal_figure_px_per_data_unit_3d,
     _stroke_index_normal_screen_unit_2d,
 )
+from tensor_network_viz._core.draw.contraction_edges import _curved_edge_points
 
 
 def test_blend_bond_tangent_with_chord_3d_aligned_with_chord() -> None:
@@ -56,3 +57,17 @@ def test_nominal_figure_px_per_data_unit_3d_smoke() -> None:
     dpi = float(fig.dpi)
     min_px = min(4.0, 3.0) * dpi
     assert k == pytest.approx(min_px / 2.0, rel=1e-5)
+
+
+def test_curved_3d_duplicate_bonds_bulge_out_of_xy_plane() -> None:
+    curve = _curved_edge_points(
+        start=np.array([0.0, 0.0, 0.0], dtype=float),
+        end=np.array([1.0, 0.0, 0.0], dtype=float),
+        offset_index=1,
+        edge_count=2,
+        dimensions=3,
+        scale=1.0,
+    )
+
+    assert float(np.max(np.abs(curve[:, 2]))) > 0.0
+    np.testing.assert_allclose(curve[:, 1], 0.0, atol=1e-12)

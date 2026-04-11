@@ -11,6 +11,10 @@ from tensor_network_viz import pair_tensor
 from tensor_network_viz._core.draw.contraction_scheme import _contraction_step_metrics_for_draw
 from tensor_network_viz._core.draw.hover import _register_2d_hover_labels
 from tensor_network_viz._core.graph import (
+    _EdgeEndpoint,
+    _GraphData,
+    _make_contraction_edge,
+    _make_node,
     _resolve_contraction_scheme_by_name,
 )
 from tensor_network_viz.config import PlotConfig
@@ -227,6 +231,87 @@ def test_metrics_for_draw_none_when_scheme_overridden_by_name() -> None:
     override = _resolve_contraction_scheme_by_name(graph, (("A0",),))
     assert graph.contraction_steps != override
     assert _contraction_step_metrics_for_draw(graph, override) is None
+
+
+def test_manual_scheme_metrics_from_graph_shapes_simple_contraction() -> None:
+    graph = _GraphData(
+        nodes={
+            0: _make_node("A", ("a", "b"), shape=(2, 3)),
+            1: _make_node("B", ("b", "c"), shape=(3, 4)),
+        },
+        edges=(
+            _make_contraction_edge(
+                _EdgeEndpoint(0, 1, "b"),
+                _EdgeEndpoint(1, 0, "b"),
+                name="b",
+            ),
+        ),
+    )
+    steps = _resolve_contraction_scheme_by_name(graph, (("A", "B"),))
+
+    metrics = _contraction_step_metrics_for_draw(graph, steps)
+
+    assert metrics is not None
+    assert len(metrics) == 1
+    metric = metrics[0]
+    assert metric is not None
+    assert metric.multiplicative_cost == 2 * 3 * 4
+    assert metric.output_labels == ("a", "c")
+    assert metric.contracted_labels == ("b",)
+
+
+def test_manual_scheme_metrics_use_cumulative_playback_groups() -> None:
+    graph = _GraphData(
+        nodes={
+            0: _make_node("A", ("a", "b"), shape=(2, 3)),
+            1: _make_node("B", ("b", "c"), shape=(3, 5)),
+            2: _make_node("C", ("c", "d"), shape=(5, 7)),
+        },
+        edges=(
+            _make_contraction_edge(
+                _EdgeEndpoint(0, 1, "b"),
+                _EdgeEndpoint(1, 0, "b"),
+                name="b",
+            ),
+            _make_contraction_edge(
+                _EdgeEndpoint(1, 1, "c"),
+                _EdgeEndpoint(2, 0, "c"),
+                name="c",
+            ),
+        ),
+    )
+    steps = _resolve_contraction_scheme_by_name(graph, (("A", "B"), ("B", "C")))
+
+    metrics = _contraction_step_metrics_for_draw(graph, steps)
+
+    assert metrics is not None
+    first_metric, second_metric = metrics
+    assert first_metric is not None
+    assert first_metric.multiplicative_cost == 2 * 3 * 5
+    assert first_metric.output_labels == ("a", "c")
+    assert second_metric is not None
+    assert second_metric.multiplicative_cost == 2 * 5 * 7
+    assert second_metric.output_labels == ("a", "d")
+    assert second_metric.contracted_labels == ("c",)
+
+
+def test_manual_scheme_metrics_unavailable_without_shape_data() -> None:
+    graph = _GraphData(
+        nodes={
+            0: _make_node("A", ("a", "b")),
+            1: _make_node("B", ("b", "c"), shape=(3, 4)),
+        },
+        edges=(
+            _make_contraction_edge(
+                _EdgeEndpoint(0, 1, "b"),
+                _EdgeEndpoint(1, 0, "b"),
+                name="b",
+            ),
+        ),
+    )
+    steps = _resolve_contraction_scheme_by_name(graph, (("A", "B"),))
+
+    assert _contraction_step_metrics_for_draw(graph, steps) is None
 
 
 def test_register_2d_hover_accepts_scheme_patches_only() -> None:

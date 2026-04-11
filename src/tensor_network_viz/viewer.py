@@ -147,8 +147,6 @@ def show_tensor_network(
     else:
         resolved_engine = engine
     _validate_grid_engine(network_input, engine=resolved_engine)
-    dimensions = 2 if resolved_view == "2d" else 3
-    style = _merge_grid_positions_into_config(style, network_input, dimensions=dimensions)
     package_logger.debug(
         "Rendering tensor network with engine=%r resolved_view=%r.", resolved_engine, resolved_view
     )
@@ -159,6 +157,8 @@ def show_tensor_network(
             "scheme is dynamic-only; it cannot be rendered with show_controls=False."
         )
     if not show_controls:
+        dimensions = 2 if resolved_view == "2d" else 3
+        style = _merge_grid_positions_into_config(style, network_input, dimensions=dimensions)
         static_style = style
         if resolved_view == "2d":
             fig, ax_out = plot_2d(

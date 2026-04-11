@@ -903,6 +903,45 @@ def test_show_tensor_network_view_toggle_button_switches_between_2d_and_3d() -> 
     assert controls._view_toggle_button.label.get_text() == "3D"
 
 
+def test_show_tensor_network_grid3d_switch_from_3d_to_2d_uses_projected_offsets() -> None:
+    front = DummyTensorNetworkNode("front", ["a"])
+    back = DummyTensorNetworkNode("back", ["b"])
+
+    fig, _ax = show_tensor_network([[[front]], [[back]]], show=False)
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls.current_view == "3d"
+
+    controls.set_view("2d")
+    scene = controls.current_scene
+    front_pos = scene.positions[id(front)]
+    back_pos = scene.positions[id(back)]
+
+    assert scene.dimensions == 2
+    assert float(back_pos[0]) < float(front_pos[0])
+    assert float(back_pos[1]) < float(front_pos[1])
+
+
+def test_show_tensor_network_grid3d_switch_from_2d_to_3d_uses_layer_depth() -> None:
+    front = DummyTensorNetworkNode("front", ["a"])
+    back = DummyTensorNetworkNode("back", ["b"])
+
+    fig, _ax = show_tensor_network([[[front]], [[back]]], view="2d", show=False)
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls.current_view == "2d"
+
+    controls.set_view("3d")
+    scene = controls.current_scene
+    front_pos = scene.positions[id(front)]
+    back_pos = scene.positions[id(back)]
+
+    assert scene.dimensions == 3
+    assert abs(float(back_pos[2]) - float(front_pos[2])) > 1e-9
+
+
 def test_show_tensor_network_reuses_cached_axes_without_creating_empty_overlays() -> None:
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])

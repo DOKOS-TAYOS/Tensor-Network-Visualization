@@ -82,6 +82,16 @@ class _ContractionPlaybackState:
     edge_colors: dict[int, tuple[float, float, float, float]]
 
 
+@dataclass(frozen=True)
+class _ManualCostOperand:
+    """Live operand state for best-effort graph-derived scheme costs."""
+
+    members: frozenset[int]
+    axes: tuple[str, ...]
+    shape: tuple[int, ...] | None
+    name: str
+
+
 def _effective_contraction_steps(
     graph: _GraphData,
     config: PlotConfig,
@@ -96,16 +106,147 @@ def _contraction_step_metrics_for_draw(
     graph: _GraphData,
     scheme_steps: tuple[frozenset[int], ...],
 ) -> tuple[_ContractionStepMetrics | None, ...] | None:
-    """Keep metric rows only when they still align exactly with the visible scheme."""
+    """Return exact trace metrics, or best-effort graph metrics for explicit schemes."""
     metrics = graph.contraction_step_metrics
     base = graph.contraction_steps
-    if metrics is None or base is None:
+    if metrics is not None and base is not None:
+        if (
+            len(metrics) == len(scheme_steps)
+            and len(base) == len(scheme_steps)
+            and base == scheme_steps
+        ):
+            return metrics
+        return _manual_contraction_step_metrics_for_draw(graph, scheme_steps)
+    if base is not None and base == scheme_steps:
         return None
-    if len(metrics) != len(scheme_steps) or len(base) != len(scheme_steps):
+    return _manual_contraction_step_metrics_for_draw(graph, scheme_steps)
+
+
+def _manual_contraction_step_metrics_for_draw(
+    graph: _GraphData,
+    scheme_steps: tuple[frozenset[int], ...],
+) -> tuple[_ContractionStepMetrics | None, ...] | None:
+    """Infer cost rows for explicit schemes from visible tensor labels and shapes."""
+    from ...einsum_module.contraction_cost import metrics_for_labeled_operands
+
+    active_operands: dict[int, _ManualCostOperand] = {}
+    node_to_operand: dict[int, int] = {}
+    for node_id, node in graph.nodes.items():
+        if node.is_virtual:
+            continue
+        shape = tuple(int(dim) for dim in node.shape) if node.shape is not None else None
+        if shape is not None and len(shape) != len(node.axes_names):
+            shape = None
+        active_operands[int(node_id)] = _ManualCostOperand(
+            members=frozenset({int(node_id)}),
+            axes=tuple(str(axis) for axis in node.axes_names),
+            shape=shape,
+            name=node.name or f"Tensor {node_id}",
+        )
+        node_to_operand[int(node_id)] = int(node_id)
+
+    metrics: list[_ContractionStepMetrics | None] = []
+    any_metric = False
+    for step_index, step in enumerate(scheme_steps):
+        selected_operand_ids = _selected_manual_cost_operand_ids(
+            step,
+            node_to_operand=node_to_operand,
+        )
+        selected_operands = tuple(
+            active_operands[operand_id] for operand_id in selected_operand_ids
+        )
+        unselected_operands = tuple(
+            operand
+            for operand_id, operand in active_operands.items()
+            if operand_id not in set(selected_operand_ids)
+        )
+        output_axes = _manual_cost_output_axes(
+            selected_operands,
+            unselected_operands=unselected_operands,
+        )
+
+        metric: _ContractionStepMetrics | None = None
+        if len(selected_operands) >= 2 and all(
+            operand.shape is not None for operand in selected_operands
+        ):
+            try:
+                metric = metrics_for_labeled_operands(
+                    operand_axes=tuple(operand.axes for operand in selected_operands),
+                    operand_shapes=tuple(
+                        operand.shape for operand in selected_operands if operand.shape is not None
+                    ),
+                    output_axes=output_axes,
+                    operand_names=tuple(operand.name for operand in selected_operands),
+                )
+            except ValueError:
+                metric = None
+        if metric is not None:
+            any_metric = True
+        metrics.append(metric)
+
+        result_shape = _manual_cost_result_shape(metric)
+        merged_members = frozenset(
+            member for operand in selected_operands for member in operand.members
+        )
+        result_operand_id = -(step_index + 1)
+        for operand_id in selected_operand_ids:
+            active_operands.pop(operand_id, None)
+        active_operands[result_operand_id] = _ManualCostOperand(
+            members=merged_members,
+            axes=output_axes,
+            shape=result_shape,
+            name="+".join(operand.name for operand in selected_operands),
+        )
+        for node_id in merged_members:
+            node_to_operand[node_id] = result_operand_id
+
+    return tuple(metrics) if any_metric else None
+
+
+def _selected_manual_cost_operand_ids(
+    step: frozenset[int],
+    *,
+    node_to_operand: dict[int, int],
+) -> tuple[int, ...]:
+    selected: list[int] = []
+    for node_id in sorted(int(node_id) for node_id in step):
+        operand_id = node_to_operand.get(node_id)
+        if operand_id is None or operand_id in selected:
+            continue
+        selected.append(operand_id)
+    return tuple(selected)
+
+
+def _manual_cost_output_axes(
+    selected_operands: tuple[_ManualCostOperand, ...],
+    *,
+    unselected_operands: tuple[_ManualCostOperand, ...],
+) -> tuple[str, ...]:
+    selected_counts: dict[str, int] = {}
+    for operand in selected_operands:
+        for label in operand.axes:
+            selected_counts[label] = selected_counts.get(label, 0) + 1
+    outside_labels = {label for operand in unselected_operands for label in operand.axes}
+
+    output_axes: list[str] = []
+    seen: set[str] = set()
+    for operand in selected_operands:
+        for label in operand.axes:
+            if label in seen:
+                continue
+            if selected_counts[label] == 1 or label in outside_labels:
+                output_axes.append(label)
+                seen.add(label)
+    return tuple(output_axes)
+
+
+def _manual_cost_result_shape(
+    metric: _ContractionStepMetrics | None,
+) -> tuple[int, ...] | None:
+    if metric is None:
         return None
-    if base != scheme_steps:
-        return None
-    return metrics
+    label_dims = dict(metric.label_dims)
+    return tuple(int(label_dims[label]) for label in metric.output_labels)
 
 
 def _scheme_color_rgba(
