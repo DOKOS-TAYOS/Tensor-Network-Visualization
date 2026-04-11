@@ -20,6 +20,28 @@ can:
 - planar graphs use NetworkX planar placement,
 - everything else falls back to a force-directed layout.
 
+Before the final fallback, `generic` components and decorated `planar`
+components can use a graph-reduction pass. The pass works on contraction
+neighbors only: several parallel edges to the same tensor count as one neighbor,
+and dangling/free axes do not block reduction.
+
+The reduction has three stages. First, degree-one branches are peeled
+recursively and stored as small trees attached to the remaining core. The core is
+then reclassified, so a graph that becomes a chain, grid, tree, circular, tube,
+or planar structure can reuse the specialized layout. If it is still generic,
+maximal degree-two paths between branch nodes are compressed into skeleton
+edges, while pure cycles are preserved. The smaller skeleton is reclassified
+again; only if it still has no known structure does the code run force-directed
+placement, now on the skeleton rather than the full component.
+
+After the core is placed, compressed paths are expanded back as deterministic
+outward arcs, and peeled degree-one trees are expanded from their parent toward
+the outside of the component. Long one-child branches therefore behave like
+linear tails, while several children from the same parent get small lateral
+offsets to avoid total overlap. Pure planar components with no degree-one
+contraction neighbors skip the full reduction pass, so the planar fast path stays
+cheap.
+
 After this base placement, virtual hubs are snapped to the barycenter of their
 neighbors, colocated hubs are spread apart, special one-neighbor hubs are nudged
 away from the tensor disk, and trimmed leaf tensors are reattached near their
@@ -30,7 +52,9 @@ other and normalized to a stable drawing scale.
 
 The 3D layout starts from the same component analysis as 2D. Regular 3D grids use
 their true `(i, j, k)` coordinates. Other components are first placed in 2D and
-then lifted into the `z = 0` plane.
+then lifted into the `z = 0` plane. This includes the reduced `generic` and
+decorated `planar` layouts: the same 2D core, paths, and peeled tails are used as
+the stable base before adding depth.
 
 When the lifted graph would hide important geometry, the code promotes selected
 nodes onto extra z-layers. It does this for virtual hubs that overlap visible

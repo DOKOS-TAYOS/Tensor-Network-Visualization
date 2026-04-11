@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import heapq
+import math
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import cast
 
 import networkx as nx
@@ -32,6 +35,13 @@ _COARSENED_INITIAL_STRUCTURE_KINDS: frozenset[str] = frozenset(("generic", "plan
 
 
 @dataclass(frozen=True)
+class _CoarseningGraph:
+    node_ids: tuple[int, ...]
+    neighbors_by_node: dict[int, tuple[int, ...]]
+    edge_weights: dict[tuple[int, int], float]
+
+
+@dataclass(frozen=True)
 class _PeeledDegreeOneTrees:
     core_node_ids: tuple[int, ...]
     parent_by_removed_node: dict[int, int]
@@ -55,53 +65,110 @@ def _distinct_neighbor_counts(
     nx_graph: nx.Graph,
     node_ids: tuple[int, ...],
 ) -> dict[int, int]:
-    node_id_set = set(node_ids)
+    coarsening_graph = _coarsening_graph_from_nx(nx_graph, node_ids)
     return {
-        int(node_id): sum(
-            1 for neighbor_id in nx_graph.neighbors(node_id) if neighbor_id in node_id_set
-        )
-        for node_id in node_ids
+        node_id: len(coarsening_graph.neighbors_by_node[node_id])
+        for node_id in coarsening_graph.node_ids
     }
+
+
+def _coarsening_graph_from_nx(
+    nx_graph: nx.Graph,
+    node_ids: tuple[int, ...],
+) -> _CoarseningGraph:
+    sorted_node_ids = tuple(sorted(int(node_id) for node_id in node_ids))
+    node_id_set = set(sorted_node_ids)
+    neighbors_by_node: dict[int, tuple[int, ...]] = {}
+    edge_weights: dict[tuple[int, int], float] = {}
+    for node_id in sorted_node_ids:
+        neighbors: list[int] = []
+        for neighbor_id_raw, data in nx_graph[node_id].items():
+            neighbor_id = int(neighbor_id_raw)
+            if neighbor_id not in node_id_set:
+                continue
+            neighbors.append(neighbor_id)
+            if node_id < neighbor_id:
+                edge_weights[(node_id, neighbor_id)] = float(data.get("weight", 1.0))
+        neighbors.sort()
+        neighbors_by_node[node_id] = tuple(neighbors)
+    return _CoarseningGraph(
+        node_ids=sorted_node_ids,
+        neighbors_by_node=neighbors_by_node,
+        edge_weights=edge_weights,
+    )
+
+
+def _has_degree_one_neighbor(
+    coarsening_graph: _CoarseningGraph,
+) -> bool:
+    return any(
+        len(coarsening_graph.neighbors_by_node[node_id]) <= 1
+        for node_id in coarsening_graph.node_ids
+    )
+
+
+def _nx_graph_from_coarsening(
+    coarsening_graph: _CoarseningGraph,
+    node_ids: tuple[int, ...],
+) -> nx.Graph:
+    node_id_set = set(node_ids)
+    nx_graph = nx.Graph()
+    nx_graph.add_nodes_from(node_ids)
+    for (left_id, right_id), weight in coarsening_graph.edge_weights.items():
+        if left_id in node_id_set and right_id in node_id_set:
+            nx_graph.add_edge(left_id, right_id, weight=weight)
+    return nx_graph
 
 
 def _peel_degree_one_trees(
     nx_graph: nx.Graph,
     node_ids: tuple[int, ...],
 ) -> _PeeledDegreeOneTrees:
+    coarsening_graph = _coarsening_graph_from_nx(nx_graph, node_ids)
+    return _peel_degree_one_trees_from_coarsening(coarsening_graph)
+
+
+def _peel_degree_one_trees_from_coarsening(
+    coarsening_graph: _CoarseningGraph,
+) -> _PeeledDegreeOneTrees:
     """Remove degree-one trees recursively, using distinct contraction neighbors."""
-    remaining = {int(node_id) for node_id in node_ids}
+    remaining = set(coarsening_graph.node_ids)
+    degrees = {
+        node_id: len(coarsening_graph.neighbors_by_node[node_id])
+        for node_id in coarsening_graph.node_ids
+    }
     parent_by_removed_node: dict[int, int] = {}
-    queue = sorted(
-        node_id
-        for node_id, degree in _distinct_neighbor_counts(nx_graph, node_ids).items()
-        if degree <= 1
-    )
+    queue = [node_id for node_id, degree in degrees.items() if degree <= 1]
+    heapq.heapify(queue)
 
     while queue and len(remaining) > 1:
-        node_id = queue.pop(0)
+        node_id = heapq.heappop(queue)
         if node_id not in remaining:
             continue
-        neighbors = sorted(
-            int(neighbor_id)
-            for neighbor_id in nx_graph.neighbors(node_id)
-            if neighbor_id in remaining
-        )
-        if len(neighbors) > 1:
+        if degrees[node_id] > 1:
             continue
-        if neighbors:
-            parent_id = neighbors[0]
+        parent_ids = [
+            neighbor_id
+            for neighbor_id in coarsening_graph.neighbors_by_node[node_id]
+            if neighbor_id in remaining
+        ]
+        if len(parent_ids) > 1:
+            degrees[node_id] = len(parent_ids)
+            continue
+        if parent_ids:
+            parent_id = parent_ids[0]
             parent_by_removed_node[node_id] = parent_id
         else:
             parent_id = None
 
         remaining.remove(node_id)
-        if parent_id is not None and parent_id in remaining:
-            degree = sum(
-                1 for neighbor_id in nx_graph.neighbors(parent_id) if int(neighbor_id) in remaining
-            )
-            if degree <= 1:
-                queue.append(parent_id)
-                queue.sort()
+        degrees[node_id] = 0
+        for neighbor_id in coarsening_graph.neighbors_by_node[node_id]:
+            if neighbor_id not in remaining:
+                continue
+            degrees[neighbor_id] -= 1
+            if degrees[neighbor_id] <= 1:
+                heapq.heappush(queue, neighbor_id)
 
     return _PeeledDegreeOneTrees(
         core_node_ids=tuple(sorted(remaining)),
@@ -117,14 +184,23 @@ def _compress_degree_two_paths(
     nx_graph: nx.Graph,
     node_ids: tuple[int, ...],
 ) -> _DegreeTwoCompression:
-    subgraph = nx_graph.subgraph(node_ids).copy()
-    degrees = _distinct_neighbor_counts(subgraph, tuple(sorted(subgraph.nodes)))
+    coarsening_graph = _coarsening_graph_from_nx(nx_graph, node_ids)
+    return _compress_degree_two_paths_from_coarsening(coarsening_graph)
+
+
+def _compress_degree_two_paths_from_coarsening(
+    coarsening_graph: _CoarseningGraph,
+) -> _DegreeTwoCompression:
+    degrees = {
+        node_id: len(coarsening_graph.neighbors_by_node[node_id])
+        for node_id in coarsening_graph.node_ids
+    }
     branch_node_ids = {node_id for node_id, degree in degrees.items() if degree != 2}
     if not branch_node_ids:
         return _DegreeTwoCompression(
-            skeleton_node_ids=tuple(sorted(subgraph.nodes)),
+            skeleton_node_ids=coarsening_graph.node_ids,
             paths=(),
-            skeleton_graph=subgraph,
+            skeleton_graph=_nx_graph_from_coarsening(coarsening_graph, coarsening_graph.node_ids),
         )
 
     visited_edges: set[tuple[int, int]] = set()
@@ -132,7 +208,7 @@ def _compress_degree_two_paths(
     compressed_internal_nodes: set[int] = set()
 
     for start_id in sorted(branch_node_ids):
-        for neighbor_id in sorted(int(node_id) for node_id in subgraph.neighbors(start_id)):
+        for neighbor_id in coarsening_graph.neighbors_by_node[start_id]:
             first_edge = _edge_key(start_id, neighbor_id)
             if first_edge in visited_edges:
                 continue
@@ -151,11 +227,11 @@ def _compress_degree_two_paths(
                 seen_path_nodes.add(current_id)
                 if current_id in branch_node_ids:
                     break
-                candidates = sorted(
-                    int(node_id)
-                    for node_id in subgraph.neighbors(current_id)
-                    if int(node_id) != previous_id
-                )
+                candidates = [
+                    node_id
+                    for node_id in coarsening_graph.neighbors_by_node[current_id]
+                    if node_id != previous_id
+                ]
                 if len(candidates) != 1:
                     break
                 next_id = candidates[0]
@@ -177,7 +253,7 @@ def _compress_degree_two_paths(
     skeleton_node_ids = tuple(
         sorted(
             int(node_id)
-            for node_id in subgraph.nodes
+            for node_id in coarsening_graph.node_ids
             if int(node_id) not in compressed_internal_nodes
         )
     )
@@ -185,16 +261,14 @@ def _compress_degree_two_paths(
     skeleton_graph = nx.Graph()
     skeleton_graph.add_nodes_from(skeleton_node_ids)
 
-    for left_id, right_id, data in subgraph.edges(data=True):
-        left_int = int(left_id)
-        right_int = int(right_id)
-        if left_int not in skeleton_node_set or right_int not in skeleton_node_set:
+    for (left_id, right_id), weight in coarsening_graph.edge_weights.items():
+        if left_id not in skeleton_node_set or right_id not in skeleton_node_set:
             continue
         _add_weighted_skeleton_edge(
             skeleton_graph,
-            left_int,
-            right_int,
-            weight=float(data.get("weight", 1.0)),
+            left_id,
+            right_id,
+            weight=weight,
         )
 
     for path in paths:
@@ -271,6 +345,12 @@ def _pair_weights_from_graph(nx_graph: nx.Graph) -> dict[tuple[int, int], float]
     }
 
 
+def _pair_weights_from_coarsening(
+    coarsening_graph: _CoarseningGraph,
+) -> dict[tuple[int, int], float]:
+    return dict(coarsening_graph.edge_weights)
+
+
 def _normalize_direction(vector: np.ndarray, fallback: np.ndarray) -> np.ndarray:
     norm = float(np.linalg.norm(vector))
     if norm > 1e-9:
@@ -278,6 +358,22 @@ def _normalize_direction(vector: np.ndarray, fallback: np.ndarray) -> np.ndarray
     fallback_norm = float(np.linalg.norm(fallback))
     if fallback_norm > 1e-9:
         return fallback / fallback_norm
+    return np.array([1.0, 0.0], dtype=float)
+
+
+def _normalize_direction_2d(vector: np.ndarray, fallback: np.ndarray) -> np.ndarray:
+    flat = np.asarray(vector, dtype=float).reshape(-1)
+    x = float(flat[0])
+    y = float(flat[1])
+    norm = math.hypot(x, y)
+    if norm > 1e-9:
+        return np.array([x / norm, y / norm], dtype=float)
+    fallback_flat = np.asarray(fallback, dtype=float).reshape(-1)
+    fallback_x = float(fallback_flat[0])
+    fallback_y = float(fallback_flat[1])
+    fallback_norm = math.hypot(fallback_x, fallback_y)
+    if fallback_norm > 1e-9:
+        return np.array([fallback_x / fallback_norm, fallback_y / fallback_norm], dtype=float)
     return np.array([1.0, 0.0], dtype=float)
 
 
@@ -323,6 +419,11 @@ def _stable_fallback_direction(node_id: int) -> np.ndarray:
     return np.array([float(np.cos(angle)), float(np.sin(angle))], dtype=float)
 
 
+@lru_cache(maxsize=128)
+def _child_offsets(child_count: int) -> tuple[float, ...]:
+    return tuple(float(index) - 0.5 * float(child_count - 1) for index in range(child_count))
+
+
 def _expand_peeled_trees_2d(
     peeled: _PeeledDegreeOneTrees,
     positions: NodePositions,
@@ -340,36 +441,35 @@ def _expand_peeled_trees_2d(
     for children in children_by_parent.values():
         children.sort()
 
-    def place_children(parent_id: int, direction: np.ndarray) -> None:
-        if parent_id not in positions:
-            return
-        parent_position = np.asarray(positions[parent_id], dtype=float).reshape(-1)[:2]
-        children = children_by_parent.get(parent_id, [])
-        if not children:
-            return
-        base_direction = _normalize_direction(direction, _stable_fallback_direction(parent_id))
-        perpendicular = np.array([-base_direction[1], base_direction[0]], dtype=float)
-        offsets = np.linspace(
-            -0.5 * float(len(children) - 1),
-            0.5 * float(len(children) - 1),
-            len(children),
-        )
-        for child_id, offset in zip(children, offsets, strict=True):
-            child_direction = _normalize_direction(
-                base_direction + perpendicular * 0.55 * float(offset),
-                base_direction,
-            )
-            positions[child_id] = parent_position + child_direction * _GENERIC_TREE_SPACING
-            place_children(child_id, child_direction)
-
-    for root_parent_id in sorted(children_by_parent):
-        if root_parent_id not in positions:
+    stack: list[tuple[int, np.ndarray]] = []
+    for root_parent_id in sorted(children_by_parent, reverse=True):
+        if root_parent_id not in peeled.core_node_ids or root_parent_id not in positions:
             continue
-        root_direction = _normalize_direction(
+        root_direction = _normalize_direction_2d(
             np.asarray(positions[root_parent_id], dtype=float).reshape(-1)[:2] - centroid[:2],
             _stable_fallback_direction(root_parent_id),
         )
-        place_children(root_parent_id, root_direction)
+        stack.append((root_parent_id, root_direction))
+
+    while stack:
+        parent_id, direction = stack.pop()
+        parent_position = np.asarray(positions[parent_id], dtype=float).reshape(-1)[:2]
+        children = children_by_parent.get(parent_id, [])
+        if not children:
+            continue
+        base_direction = _normalize_direction_2d(direction, _stable_fallback_direction(parent_id))
+        perpendicular = np.array([-base_direction[1], base_direction[0]], dtype=float)
+        offsets = _child_offsets(len(children))
+        for child_id, offset in zip(children, offsets, strict=True):
+            if len(children) == 1:
+                child_direction = base_direction
+            else:
+                child_direction = _normalize_direction_2d(
+                    base_direction + perpendicular * 0.55 * float(offset),
+                    base_direction,
+                )
+            positions[child_id] = parent_position + child_direction * _GENERIC_TREE_SPACING
+            stack.append((child_id, child_direction))
 
 
 def _compute_coarsened_layout_2d(
@@ -385,17 +485,23 @@ def _compute_coarsened_layout_2d(
     if len(node_ids) <= 1:
         return {node_ids[0]: np.zeros(2, dtype=float)} if node_ids else {}
 
-    component_graph = component.contraction_graph.subgraph(node_ids).copy()
-    peeled = _peel_degree_one_trees(component_graph, node_ids)
+    component_coarsening_graph = _coarsening_graph_from_nx(component.contraction_graph, node_ids)
+    if component.structure_kind == "planar" and not _has_degree_one_neighbor(
+        component_coarsening_graph
+    ):
+        return None
+
+    peeled = _peel_degree_one_trees_from_coarsening(component_coarsening_graph)
     if not peeled.core_node_ids:
         return None
     if component.structure_kind != "generic" and len(peeled.core_node_ids) == len(node_ids):
         return None
 
-    core_graph = component_graph.subgraph(peeled.core_node_ids).copy()
+    core_graph = _nx_graph_from_coarsening(component_coarsening_graph, peeled.core_node_ids)
     positions = _classified_positions_2d(core_graph, graph)
     if positions is None:
-        compression = _compress_degree_two_paths(core_graph, peeled.core_node_ids)
+        core_coarsening_graph = _coarsening_graph_from_nx(core_graph, peeled.core_node_ids)
+        compression = _compress_degree_two_paths_from_coarsening(core_coarsening_graph)
         skeleton_graph = compression.skeleton_graph
         positions = _classified_positions_2d(skeleton_graph, graph)
         if positions is None:
@@ -425,7 +531,7 @@ def _compute_coarsened_layout_2d(
         if missing:
             fallback_positions = _compute_weighted_force_layout(
                 node_ids=list(node_ids),
-                pair_weights=_pair_weights_from_graph(component_graph),
+                pair_weights=_pair_weights_from_coarsening(component_coarsening_graph),
                 dimensions=2,
                 seed=seed,
                 iterations=_generic_force_iterations(iterations, len(node_ids)),

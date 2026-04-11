@@ -728,27 +728,60 @@ def _promote_3d_layers(
         if _node_overlaps_component(node_id, component, positions):
             layer_indices[node_id] = _next_layer(used_layers=layer_indices.values())
 
-    edges = [
-        tuple(sorted(record.node_ids))
-        for record in _iter_contractions(graph)
-        if all(node_id in component.contraction_graph for node_id in record.node_ids)
-    ]
+    edge_records: list[
+        tuple[int, int, np.ndarray, np.ndarray, tuple[float, float, float, float]]
+    ] = []
+    for record in _iter_contractions(graph):
+        edge = tuple(sorted(record.node_ids))
+        if not all(node_id in component.contraction_graph for node_id in edge):
+            continue
+        start = positions[edge[0]][:2]
+        end = positions[edge[1]][:2]
+        edge_records.append(
+            (
+                edge[0],
+                edge[1],
+                start,
+                end,
+                (
+                    min(float(start[0]), float(end[0])),
+                    max(float(start[0]), float(end[0])),
+                    min(float(start[1]), float(end[1])),
+                    max(float(start[1]), float(end[1])),
+                ),
+            )
+        )
 
-    for index, left_edge in enumerate(edges):
-        for right_edge in edges[index + 1 :]:
-            if set(left_edge) & set(right_edge):
+    for index, left_edge in enumerate(edge_records):
+        left_start = left_edge[2]
+        left_end = left_edge[3]
+        left_bbox = left_edge[4]
+        for right_index in range(index + 1, len(edge_records)):
+            right_edge = edge_records[right_index]
+            if left_edge[0] in (right_edge[0], right_edge[1]) or left_edge[1] in (
+                right_edge[0],
+                right_edge[1],
+            ):
+                continue
+            right_bbox = right_edge[4]
+            if (
+                left_bbox[1] < right_bbox[0]
+                or right_bbox[1] < left_bbox[0]
+                or left_bbox[3] < right_bbox[2]
+                or right_bbox[3] < left_bbox[2]
+            ):
                 continue
             if not _segments_cross_2d(
-                positions[left_edge[0]][:2],
-                positions[left_edge[1]][:2],
-                positions[right_edge[0]][:2],
-                positions[right_edge[1]][:2],
+                left_start,
+                left_end,
+                right_edge[2],
+                right_edge[3],
             ):
                 continue
             promoted = _choose_promotable_node(
                 graph,
                 component,
-                node_ids=left_edge + right_edge,
+                node_ids=(left_edge[0], left_edge[1], right_edge[0], right_edge[1]),
             )
             if promoted is None or layer_indices[promoted] != 0:
                 continue

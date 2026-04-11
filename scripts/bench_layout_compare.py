@@ -34,7 +34,9 @@ from tensor_network_viz._core.graph import (
     _EdgeEndpoint,
     _GraphData,
     _make_contraction_edge,
+    _make_dangling_edge,
     _make_node,
+    _NodeData,
 )
 
 
@@ -105,6 +107,97 @@ def _generic_subdivided_k5_graph(
     return _GraphData(nodes=nodes, edges=edges)
 
 
+def _axis_lookup(
+    nodes: dict[int, _NodeData],
+) -> dict[int, dict[str, int]]:
+    return {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+
+
+def _planar_wheel_graph(spoke_count: int = 300) -> _GraphData:
+    axes_by_node: dict[int, list[str]] = {node_id: [] for node_id in range(spoke_count + 1)}
+    edge_specs: list[tuple[int, int, str]] = []
+
+    def add_edge(left_id: int, right_id: int, name: str) -> None:
+        axes_by_node[left_id].append(name)
+        axes_by_node[right_id].append(name)
+        edge_specs.append((left_id, right_id, name))
+
+    for index, node_id in enumerate(range(1, spoke_count + 1)):
+        add_edge(node_id, 1 + ((index + 1) % spoke_count), f"ring_{index}")
+        add_edge(0, node_id, f"spoke_{index}")
+
+    nodes = {
+        node_id: _make_node(f"W{node_id}", tuple(axis_names))
+        for node_id, axis_names in axes_by_node.items()
+    }
+    axis_lookup = _axis_lookup(nodes)
+    edges = tuple(
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][name], name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][name], name),
+            name=name,
+            label=None,
+        )
+        for left_id, right_id, name in edge_specs
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
+def _planar_cycle_tails_graph(
+    *,
+    core_count: int = 60,
+    tail_length: int = 10,
+) -> _GraphData:
+    axes_by_node: dict[int, list[str]] = {node_id: [] for node_id in range(core_count)}
+    edge_specs: list[tuple[int, int, str]] = []
+    next_node_id = core_count
+
+    def add_edge(left_id: int, right_id: int, name: str) -> None:
+        axes_by_node.setdefault(left_id, []).append(name)
+        axes_by_node.setdefault(right_id, []).append(name)
+        edge_specs.append((left_id, right_id, name))
+
+    for node_id in range(core_count):
+        add_edge(node_id, (node_id + 1) % core_count, f"cycle_{node_id}")
+
+    for core_id in range(core_count):
+        previous_id = core_id
+        for step in range(tail_length):
+            current_id = next_node_id
+            next_node_id += 1
+            add_edge(previous_id, current_id, f"tail_{core_id}_{step}")
+            previous_id = current_id
+        axes_by_node[previous_id].append(f"open_{core_id}")
+
+    nodes = {
+        node_id: _make_node(f"P{node_id}", tuple(axis_names))
+        for node_id, axis_names in axes_by_node.items()
+    }
+    axis_lookup = _axis_lookup(nodes)
+    edges = [
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][name], name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][name], name),
+            name=name,
+            label=None,
+        )
+        for left_id, right_id, name in edge_specs
+    ]
+    for node_id, node in nodes.items():
+        for axis_index, axis_name in enumerate(node.axes_names):
+            if axis_name.startswith("open_"):
+                edges.append(
+                    _make_dangling_edge(
+                        _EdgeEndpoint(node_id, axis_index, axis_name),
+                        name=axis_name,
+                    )
+                )
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
 def _median_wall_seconds(
     fn: Callable[[], object],
     *,
@@ -126,7 +219,7 @@ def main() -> None:
     parser.add_argument("--tag", type=str, default="", help="Label prepended to each line")
     parser.add_argument(
         "--suite",
-        choices=("all", "chain", "generic"),
+        choices=("all", "chain", "generic", "coarsening"),
         default="all",
         help="Benchmark suite to run",
     )
@@ -158,10 +251,20 @@ def main() -> None:
     generic_suites: list[tuple[str, _GraphData]] = [
         ("generic_k5_subdivided_tails", _generic_subdivided_k5_graph()),
     ]
+    coarsening_suites: list[tuple[str, _GraphData]] = [
+        ("planar_wheel_no_tails", _planar_wheel_graph()),
+        ("planar_cycle_decorated_tails", _planar_cycle_tails_graph()),
+        (
+            "generic_k5_subdivided_tails_large",
+            _generic_subdivided_k5_graph(subdivisions=20, pendant_length=20),
+        ),
+    ]
     if args.suite == "chain":
         suites = chain_suites
     elif args.suite == "generic":
         suites = generic_suites
+    elif args.suite == "coarsening":
+        suites = coarsening_suites
     else:
         suites = [*chain_suites, *generic_suites]
     plot_config = PlotConfig(figsize=(6, 4), tensor_label_refinement="never")

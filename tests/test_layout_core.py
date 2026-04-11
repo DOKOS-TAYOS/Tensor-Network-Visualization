@@ -38,6 +38,7 @@ from tensor_network_viz._core.layout.free_directions_3d import (
 )
 from tensor_network_viz._core.layout.generic_coarsening import (
     _compress_degree_two_paths,
+    _compute_coarsened_layout_2d,
     _distinct_neighbor_counts,
     _peel_degree_one_trees,
 )
@@ -1024,6 +1025,51 @@ def _build_placement_triangle_with_chains_graph() -> _GraphData:
             label=None,
         ),
         _make_dangling_edge(_EdgeEndpoint(5, 1, "target_label"), name="target_label"),
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
+def _build_planar_cycle_with_tails_graph(
+    *,
+    core_count: int,
+    tail_length: int,
+) -> _GraphData:
+    axes_by_node: dict[int, list[str]] = {node_id: [] for node_id in range(core_count)}
+    edge_specs: list[tuple[int, int, str]] = []
+    next_node_id = core_count
+
+    def add_edge(left_id: int, right_id: int, name: str) -> None:
+        axes_by_node.setdefault(left_id, []).append(name)
+        axes_by_node.setdefault(right_id, []).append(name)
+        edge_specs.append((left_id, right_id, name))
+
+    for node_id in range(core_count):
+        add_edge(node_id, (node_id + 1) % core_count, f"cycle_{node_id}")
+
+    for core_id in range(core_count):
+        previous_id = core_id
+        for step in range(tail_length):
+            current_id = next_node_id
+            next_node_id += 1
+            add_edge(previous_id, current_id, f"tail_{core_id}_{step}")
+            previous_id = current_id
+
+    nodes = {
+        node_id: _make_node(f"P{node_id}", tuple(axis_names))
+        for node_id, axis_names in axes_by_node.items()
+    }
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+    edges = tuple(
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][name], name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][name], name),
+            name=name,
+            label=None,
+        )
+        for left_id, right_id, name in edge_specs
     )
     return _GraphData(nodes=nodes, edges=edges)
 
@@ -2381,6 +2427,35 @@ def test_generic_coarsening_recursively_peels_degree_one_trees() -> None:
     assert peeled.parent_by_removed_node == {5: 4, 4: 0}
 
 
+def test_coarsened_planar_without_degree_one_neighbors_skips_full_peel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.layout.generic_coarsening as generic_coarsening
+
+    graph = _build_planar_house_graph_with_phys()
+    component = _analyze_layout_components_cached(graph)[0]
+
+    def fail_peel(*args: object, **kwargs: object) -> object:
+        raise AssertionError("planar without contraction leaves should not enter full peel")
+
+    monkeypatch.setattr(
+        generic_coarsening,
+        "_peel_degree_one_trees_from_coarsening",
+        fail_peel,
+    )
+
+    assert component.structure_kind == "planar"
+    assert (
+        _compute_coarsened_layout_2d(
+            graph,
+            component,
+            seed=0,
+            iterations=50,
+        )
+        is None
+    )
+
+
 @pytest.mark.parametrize("dimensions", [2, 3])
 def test_coarsened_decorated_planar_layout_places_chains_outward(
     dimensions: int,
@@ -2416,6 +2491,24 @@ def test_coarsened_decorated_planar_layout_places_chains_outward(
     _assert_outward_chain_2d(
         positions, anchor_id=4, chain_node_ids=(5,), core_centroid=core_centroid
     )
+
+
+@pytest.mark.parametrize("dimensions", [2, 3])
+def test_coarsened_decorated_planar_long_tails_are_finite_and_spread(
+    dimensions: int,
+) -> None:
+    graph = _build_planar_cycle_with_tails_graph(core_count=12, tail_length=8)
+
+    first = _compute_layout(graph, dimensions=dimensions, seed=0, iterations=50)
+    second = _compute_layout(graph, dimensions=dimensions, seed=0, iterations=50)
+    coords = np.stack([first[node_id] for node_id in sorted(graph.nodes)])
+    pairwise_distance = np.linalg.norm(coords[:, None, :] - coords[None, :, :], axis=2)
+    np.fill_diagonal(pairwise_distance, np.inf)
+
+    assert np.all(np.isfinite(coords))
+    assert float(pairwise_distance.min()) > 1e-4
+    for node_id in sorted(graph.nodes):
+        assert np.allclose(first[node_id], second[node_id], atol=1e-9)
 
 
 def test_generic_coarsening_preserves_closed_degree_two_cycles() -> None:
