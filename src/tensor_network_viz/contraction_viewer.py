@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+from textwrap import fill
 from typing import Any, Literal, Protocol, cast
 
 import matplotlib.pyplot as plt
@@ -77,6 +78,187 @@ from .config import PlotConfig
 
 VisualizerMode = Literal["cumulative", "highlight_current", "window"]
 _SchemeAvailability = Literal["not_computed", "computed", "unavailable"]
+_COST_PANEL_ELLIPSIS = "..."
+_COST_PANEL_TEXT_PADDING_PX = 6.0
+_COST_PANEL_SMALL_FONT_SCALE = 0.8
+_COST_PANEL_FALLBACK_MAX_LINES = 5
+_COST_PANEL_FALLBACK_SMALL_MAX_LINES = 7
+_COST_PANEL_FALLBACK_MAX_CHARS = 80
+_COST_PANEL_FALLBACK_SMALL_MAX_CHARS = 100
+_COST_PANEL_HOVER_WRAP_CHARS = 96
+
+
+def _get_cost_panel_renderer(fig: Figure) -> Any | None:
+    get_renderer = getattr(fig.canvas, "get_renderer", None)
+    if not callable(get_renderer):
+        return None
+    with suppress(RuntimeError, AttributeError, TypeError, ValueError):
+        return get_renderer()
+    return None
+
+
+def _cost_panel_ellipsis_candidate(text: str, prefix_len: int) -> str:
+    prefix = text[:prefix_len].rstrip()
+    if not prefix:
+        return _COST_PANEL_ELLIPSIS
+    return f"{prefix}{_COST_PANEL_ELLIPSIS}"
+
+
+def _cost_panel_text_bbox(
+    text: str,
+    *,
+    ax: Axes,
+    text_artist: Text,
+    renderer: Any,
+    font_size: float,
+) -> Any:
+    probe = ax.text(0.0, 1.0, "")
+    probe.update_from(text_artist)
+    probe.set_text(text)
+    probe.set_fontsize(font_size)
+    probe.set_visible(True)
+    try:
+        return probe.get_window_extent(renderer=renderer)
+    finally:
+        with suppress(RuntimeError, ValueError):
+            probe.remove()
+
+
+def _cost_panel_text_fits(
+    text: str,
+    *,
+    ax: Axes,
+    text_artist: Text,
+    renderer: Any,
+    font_size: float,
+) -> bool:
+    text_bbox = _cost_panel_text_bbox(
+        text,
+        ax=ax,
+        text_artist=text_artist,
+        renderer=renderer,
+        font_size=font_size,
+    )
+
+    panel_bbox = ax.get_window_extent(renderer=renderer)
+    width_limit = max(0.0, float(panel_bbox.width) - _COST_PANEL_TEXT_PADDING_PX)
+    height_limit = max(0.0, float(panel_bbox.height) - _COST_PANEL_TEXT_PADDING_PX)
+    return bool(text_bbox.width <= width_limit and text_bbox.height <= height_limit)
+
+
+def _fallback_resolve_cost_panel_text(
+    text: str,
+    *,
+    base_font_size: float,
+) -> tuple[str, float, bool]:
+    lines = text.splitlines()
+    if len(lines) <= _COST_PANEL_FALLBACK_MAX_LINES and all(
+        len(line) <= _COST_PANEL_FALLBACK_MAX_CHARS for line in lines
+    ):
+        return text, base_font_size, False
+
+    small_font_size = base_font_size * _COST_PANEL_SMALL_FONT_SCALE
+    if len(lines) <= _COST_PANEL_FALLBACK_SMALL_MAX_LINES and all(
+        len(line) <= _COST_PANEL_FALLBACK_SMALL_MAX_CHARS for line in lines
+    ):
+        return text, small_font_size, False
+
+    display_lines = list(lines)
+    for index, line in enumerate(display_lines):
+        if len(line) > _COST_PANEL_FALLBACK_SMALL_MAX_CHARS:
+            prefix_len = _COST_PANEL_FALLBACK_SMALL_MAX_CHARS - len(_COST_PANEL_ELLIPSIS)
+            display_lines[index] = _cost_panel_ellipsis_candidate(line, prefix_len)
+            return "\n".join(display_lines[: index + 1]), small_font_size, True
+    return (
+        "\n".join(display_lines[:_COST_PANEL_FALLBACK_SMALL_MAX_LINES]) + _COST_PANEL_ELLIPSIS,
+        small_font_size,
+        True,
+    )
+
+
+def _resolve_cost_panel_text_to_fit(
+    text: str,
+    *,
+    ax: Axes,
+    text_artist: Text,
+    base_font_size: float,
+) -> tuple[str, float, bool]:
+    if not text:
+        return "", base_font_size, False
+
+    small_font_size = base_font_size * _COST_PANEL_SMALL_FONT_SCALE
+
+    renderer = _get_cost_panel_renderer(ax.figure)
+    if renderer is None:
+        return _fallback_resolve_cost_panel_text(
+            text,
+            base_font_size=base_font_size,
+        )
+
+    if _cost_panel_text_fits(
+        text,
+        ax=ax,
+        text_artist=text_artist,
+        renderer=renderer,
+        font_size=base_font_size,
+    ):
+        return text, base_font_size, False
+
+    if _cost_panel_text_fits(
+        text,
+        ax=ax,
+        text_artist=text_artist,
+        renderer=renderer,
+        font_size=small_font_size,
+    ):
+        return text, small_font_size, False
+
+    best = _COST_PANEL_ELLIPSIS
+    if not _cost_panel_text_fits(
+        best,
+        ax=ax,
+        text_artist=text_artist,
+        renderer=renderer,
+        font_size=small_font_size,
+    ):
+        return best, small_font_size, True
+
+    lo = 0
+    hi = len(text)
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        candidate = _cost_panel_ellipsis_candidate(text, mid)
+        if _cost_panel_text_fits(
+            candidate,
+            ax=ax,
+            text_artist=text_artist,
+            renderer=renderer,
+            font_size=small_font_size,
+        ):
+            best = candidate
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return best, small_font_size, True
+
+
+def _wrap_cost_panel_hover_text(text: str) -> str:
+    wrapped_lines: list[str] = []
+    for line in text.splitlines():
+        if not line:
+            wrapped_lines.append("")
+            continue
+        leading = line[: len(line) - len(line.lstrip())]
+        wrapped_lines.append(
+            fill(
+                line,
+                width=_COST_PANEL_HOVER_WRAP_CHARS,
+                break_long_words=False,
+                break_on_hyphens=False,
+                subsequent_indent=f"{leading}    ",
+            )
+        )
+    return "\n".join(wrapped_lines)
 
 
 @dataclass
@@ -172,6 +354,10 @@ class _ContractionViewerBase:
         self._cid_close: int | None = None
         self._cost_panel_ax: Axes | None = None
         self._cost_text_artist: Text | None = None
+        self._cost_panel_base_fontsize: float | None = None
+        self._cost_panel_hover_annotation: Text | None = None
+        self._cost_panel_hover_cid: int | None = None
+        self._cost_panel_hover_text: str | None = None
         self._step_changed_callbacks: list[Callable[[int], None]] = []
 
     @property
@@ -305,8 +491,84 @@ class _ContractionViewerBase:
         ax_details, text = _create_playback_details_panel(self.figure)
         self._cost_panel_ax = ax_details
         self._cost_text_artist = text
+        self._cost_panel_base_fontsize = float(text.get_fontsize())
+        self._build_cost_panel_hover(ax_details)
         _set_axes_visible(ax_details, False)
         text.set_visible(False)
+
+    def _build_cost_panel_hover(self, _ax_details: Axes) -> None:
+        if self._cost_panel_hover_annotation is not None:
+            return
+        ann = self.figure.text(
+            0.0,
+            0.0,
+            "",
+            transform=self.figure.transFigure,
+            ha="left",
+            va="bottom",
+            fontsize=8.5,
+            color="#1A202C",
+            bbox={
+                "boxstyle": "round,pad=0.35",
+                "facecolor": (0.99, 0.97, 0.92, 0.97),
+                "edgecolor": (0.35, 0.35, 0.4, 0.55),
+                "linewidth": 0.6,
+            },
+            visible=False,
+            zorder=1_000_000,
+            clip_on=False,
+        )
+        self._cost_panel_hover_annotation = ann
+        self._cost_panel_hover_cid = self.figure.canvas.mpl_connect(
+            "motion_notify_event",
+            self._on_cost_panel_hover,
+        )
+
+    def _hide_cost_panel_hover(self) -> None:
+        ann = self._cost_panel_hover_annotation
+        if ann is None or not ann.get_visible():
+            return
+        ann.set_visible(False)
+        self.figure.canvas.draw_idle()
+
+    def _on_cost_panel_hover(self, event: Any) -> None:
+        ann = self._cost_panel_hover_annotation
+        ax = self._cost_panel_ax
+        full_text = self._cost_panel_hover_text
+        if ann is None or ax is None:
+            return
+        if (
+            not full_text
+            or not ax.get_visible()
+            or event.inaxes is not ax
+            or event.x is None
+            or event.y is None
+            or event.xdata is None
+            or event.ydata is None
+        ):
+            self._hide_cost_panel_hover()
+            return
+
+        x_fig, y_fig = self.figure.transFigure.inverted().transform(
+            (float(event.x), float(event.y))
+        )
+        bbox = self.figure.bbox
+        x_pad = 8.0 / max(1.0, float(bbox.width))
+        y_pad = 8.0 / max(1.0, float(bbox.height))
+        ann.set_position((min(0.98, x_fig + x_pad), min(0.98, y_fig + y_pad)))
+        ann.set_text(full_text)
+        ann.set_visible(True)
+        self.figure.canvas.draw_idle()
+
+    def _disconnect_cost_panel_hover(self) -> None:
+        if self._cost_panel_hover_cid is not None:
+            with suppress(RuntimeError, AttributeError, TypeError, ValueError):
+                self.figure.canvas.mpl_disconnect(self._cost_panel_hover_cid)
+            self._cost_panel_hover_cid = None
+        if self._cost_panel_hover_annotation is not None:
+            with suppress(RuntimeError, AttributeError, TypeError, ValueError):
+                self._cost_panel_hover_annotation.remove()
+            self._cost_panel_hover_annotation = None
 
     def _current_step_details_text(self) -> str | None:
         if (
@@ -325,7 +587,30 @@ class _ContractionViewerBase:
             return
         detail_text = self._current_step_details_text()
         visible = bool(detail_text)
-        self._cost_text_artist.set_text(detail_text or "")
+        display_text = ""
+        base_fontsize = self._cost_panel_base_fontsize
+        if base_fontsize is None:
+            base_fontsize = float(self._cost_text_artist.get_fontsize())
+            self._cost_panel_base_fontsize = base_fontsize
+        display_fontsize = base_fontsize
+        truncated = False
+        if detail_text:
+            display_text, display_fontsize, truncated = _resolve_cost_panel_text_to_fit(
+                detail_text,
+                ax=self._cost_panel_ax,
+                text_artist=self._cost_text_artist,
+                base_font_size=base_fontsize,
+            )
+        self._cost_panel_hover_text = (
+            _wrap_cost_panel_hover_text(detail_text) if truncated else None
+        )
+        if self._cost_panel_hover_annotation is not None:
+            if self._cost_panel_hover_text is not None:
+                self._cost_panel_hover_annotation.set_text(self._cost_panel_hover_text)
+            else:
+                self._hide_cost_panel_hover()
+        self._cost_text_artist.set_fontsize(display_fontsize)
+        self._cost_text_artist.set_text(display_text)
         self._cost_text_artist.set_visible(visible)
         _set_axes_visible(self._cost_panel_ax, visible)
 
@@ -362,6 +647,7 @@ class _ContractionViewerBase:
 
         def _on_close(_: Any) -> None:
             self.pause()
+            self._disconnect_cost_panel_hover()
             if self._cid_close is not None:
                 self.figure.canvas.mpl_disconnect(self._cid_close)
                 self._cid_close = None

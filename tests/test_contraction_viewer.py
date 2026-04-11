@@ -667,6 +667,214 @@ def test_cost_hover_click_auto_enables_scheme_and_registers_hover() -> None:
     assert not controls._viewer._cost_panel_ax.get_visible()
 
 
+def test_cost_hover_truncates_overflow_and_shows_full_text_on_hover() -> None:
+    fig, ax = matplotlib.pyplot.subplots(figsize=(4, 3))
+    rect = Rectangle((0, 0), 1, 1)
+    ax.add_patch(rect)
+    long_hover_line = "Long context: " + " ".join(f"label_{i}" for i in range(30))
+    full_text = "\n".join(
+        [
+            "Contraction: A_with_a_long_name x B_with_a_long_name -> C_with_a_long_name",
+            "Equation: abcdefghijklmnopqrstuvwxyz,abcdefghijklmnopqrstuvwxyz->long_output",
+            "MACs: 123456789",
+            "FLOPs: 246913578",
+            "Peak tensor size: 987654321",
+            long_hover_line,
+        ]
+    )
+    viewer = ContractionViewer2D(
+        [rect],
+        fig=fig,
+        ax=ax,
+        enable_playback=True,
+        step_details_by_step=[full_text],
+        initial_step=1,
+    )
+    try:
+        viewer.build_ui()
+        viewer.set_step_details_enabled(True)
+        viewer.set_step(1)
+        fig.canvas.draw()
+
+        assert viewer._cost_panel_ax is not None
+        assert viewer._cost_text_artist is not None
+        assert viewer._cost_panel_hover_annotation is not None
+        panel_text = viewer._cost_text_artist.get_text()
+        assert panel_text != full_text
+        assert panel_text.endswith("...")
+
+        renderer = fig.canvas.get_renderer()
+        bbox = viewer._cost_panel_ax.get_window_extent(renderer)
+        event = MouseEvent(
+            "motion_notify_event",
+            fig.canvas,
+            int(round((bbox.x0 + bbox.x1) / 2.0)),
+            int(round((bbox.y0 + bbox.y1) / 2.0)),
+        )
+        fig.canvas.callbacks.process("motion_notify_event", event)
+
+        assert viewer._cost_panel_hover_annotation.get_visible()
+        hover_text = viewer._cost_panel_hover_annotation.get_text()
+        assert "label_29" in hover_text
+        assert max(len(line) for line in hover_text.splitlines()) < len(long_hover_line)
+        assert viewer._cost_panel_hover_annotation.axes is None
+    finally:
+        matplotlib.pyplot.close(fig)
+
+
+def test_cost_hover_truncation_does_not_flash_full_panel_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fig, ax = matplotlib.pyplot.subplots(figsize=(4, 3))
+    rect = Rectangle((0, 0), 1, 1)
+    ax.add_patch(rect)
+    full_text = (
+        "Contraction: "
+        "A_with_an_extremely_long_name_and_many_labels x "
+        "B_with_an_extremely_long_name_and_many_labels -> "
+        "C_with_an_extremely_long_name_and_many_labels"
+    )
+    viewer = ContractionViewer2D(
+        [rect],
+        fig=fig,
+        ax=ax,
+        enable_playback=True,
+        step_details_by_step=[full_text],
+        initial_step=0,
+    )
+    try:
+        viewer.build_ui()
+        assert viewer._cost_text_artist is not None
+        recorded_text: list[str] = []
+        original_set_text = viewer._cost_text_artist.set_text
+
+        def recording_set_text(text: object) -> None:
+            recorded_text.append(str(text))
+            original_set_text(text)
+
+        monkeypatch.setattr(viewer._cost_text_artist, "set_text", recording_set_text)
+
+        viewer.set_step_details_enabled(True)
+        viewer.set_step(1)
+
+        assert full_text not in recorded_text
+        assert viewer._cost_text_artist.get_text().endswith("...")
+    finally:
+        matplotlib.pyplot.close(fig)
+
+
+def test_cost_hover_keeps_multiline_text_when_each_line_fits() -> None:
+    fig, ax = matplotlib.pyplot.subplots(figsize=(9.88, 7.68))
+    rect = Rectangle((0, 0), 1, 1)
+    ax.add_patch(rect)
+    full_text = "\n".join(
+        [
+            "Contraction: ab,bc->ac (contracts: b)",
+            "Index sizes: a=2, b=16, c=2",
+            "Tensor shapes: MPS=[2, 16], MPO=[16, 2]",
+            "Naive operations: 64 MACs (approx 128 FLOPs)",
+            "Complexity: O(N_a N_b N_c)",
+        ]
+    )
+    viewer = ContractionViewer2D(
+        [rect],
+        fig=fig,
+        ax=ax,
+        enable_playback=True,
+        step_details_by_step=[full_text],
+        initial_step=1,
+    )
+    try:
+        viewer.build_ui()
+        viewer.set_step_details_enabled(True)
+        viewer.set_step(1)
+        fig.canvas.draw()
+
+        assert viewer._cost_text_artist is not None
+        assert viewer._cost_text_artist.get_text() == full_text
+        assert viewer._cost_panel_hover_text is None
+    finally:
+        matplotlib.pyplot.close(fig)
+
+
+def test_cost_hover_shrinks_text_before_enabling_hover() -> None:
+    fig, ax = matplotlib.pyplot.subplots(figsize=(9.88, 7.68))
+    rect = Rectangle((0, 0), 1, 1)
+    ax.add_patch(rect)
+    full_text = "\n".join(
+        [
+            "Contraction: ab,bc->ac",
+            "Index sizes: a=2, b=16, c=2",
+            "Tensor shapes: A=[2, 16], B=[16, 2]",
+            "Naive operations: 64 MACs",
+            "Complexity: O(N_a N_b N_c)",
+            "Output labels: a, c",
+            "Contracted labels: b",
+        ]
+    )
+    viewer = ContractionViewer2D(
+        [rect],
+        fig=fig,
+        ax=ax,
+        enable_playback=True,
+        step_details_by_step=[full_text],
+        initial_step=1,
+    )
+    try:
+        viewer.build_ui()
+        assert viewer._cost_text_artist is not None
+        base_fontsize = viewer._cost_text_artist.get_fontsize()
+
+        viewer.set_step_details_enabled(True)
+        viewer.set_step(1)
+        fig.canvas.draw()
+
+        assert viewer._cost_text_artist.get_text() == full_text
+        assert viewer._cost_text_artist.get_fontsize() == pytest.approx(base_fontsize * 0.8)
+        assert viewer._cost_panel_hover_text is None
+    finally:
+        matplotlib.pyplot.close(fig)
+
+
+def test_cost_hover_leaves_short_text_without_panel_hover() -> None:
+    fig, ax = matplotlib.pyplot.subplots(figsize=(4, 3))
+    rect = Rectangle((0, 0), 1, 1)
+    ax.add_patch(rect)
+    full_text = "Contraction: A x B -> C"
+    viewer = ContractionViewer2D(
+        [rect],
+        fig=fig,
+        ax=ax,
+        enable_playback=True,
+        step_details_by_step=[full_text],
+        initial_step=1,
+    )
+    try:
+        viewer.build_ui()
+        viewer.set_step_details_enabled(True)
+        viewer.set_step(1)
+        fig.canvas.draw()
+
+        assert viewer._cost_panel_ax is not None
+        assert viewer._cost_text_artist is not None
+        assert viewer._cost_panel_hover_annotation is not None
+        assert viewer._cost_text_artist.get_text() == full_text
+
+        renderer = fig.canvas.get_renderer()
+        bbox = viewer._cost_panel_ax.get_window_extent(renderer)
+        event = MouseEvent(
+            "motion_notify_event",
+            fig.canvas,
+            int(round((bbox.x0 + bbox.x1) / 2.0)),
+            int(round((bbox.y0 + bbox.y1) / 2.0)),
+        )
+        fig.canvas.callbacks.process("motion_notify_event", event)
+
+        assert not viewer._cost_panel_hover_annotation.get_visible()
+    finally:
+        matplotlib.pyplot.close(fig)
+
+
 def test_cost_hover_with_manual_scheme_and_no_metrics_does_not_crash() -> None:
     graph = _GraphData(
         nodes={
