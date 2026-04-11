@@ -33,6 +33,7 @@ from tensor_network_viz._core.layout.free_directions_2d import (
 )
 from tensor_network_viz._core.layout.free_directions_3d import (
     _direction_angle_conflicts_3d,
+    _direction_conflicts_3d,
     _pick_candidate_direction_3d,
 )
 from tensor_network_viz._core.renderer import (
@@ -200,6 +201,31 @@ def test_direction_angle_conflicts_3d_uses_ten_degree_threshold_without_opposite
         np.array([0.0, 0.0, 1.0], dtype=float),
         np.array([0.0, 0.0, -1.0], dtype=float),
     )
+
+
+def test_direction_conflicts_3d_ignores_nonlocal_bond_geometry() -> None:
+    conflicts = _direction_conflicts_3d(
+        node_id=0,
+        origin=np.array([0.0, 0.0, 0.0], dtype=float),
+        direction=np.array([1.0, 0.0, 0.0], dtype=float),
+        assigned_segments=[],
+        bond_segments=(
+            (
+                np.array([0.5, -1.0, 0.0], dtype=float),
+                np.array([0.5, 1.0, 0.0], dtype=float),
+            ),
+        ),
+        positions={
+            0: np.array([0.0, 0.0, 0.0], dtype=float),
+            1: np.array([0.5, -1.0, 0.0], dtype=float),
+            2: np.array([0.5, 1.0, 0.0], dtype=float),
+        },
+        draw_scale=1.0,
+        strict_physical_node_clearance=True,
+        conflict_data=object(),
+    )
+
+    assert not conflicts
 
 
 def test_pick_candidate_direction_3d_returns_last_tried_when_all_fail() -> None:
@@ -1570,6 +1596,39 @@ def test_compute_axis_directions_chain_3d_skips_random_bucket_when_ordered_candi
 
     assert np.allclose(directions[(1, 2)], np.array([0.0, 0.0, 1.0]), atol=1e-6)
     assert calls == []
+
+
+def test_compute_axis_directions_chain_3d_generates_deterministic_candidates_lazily(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.layout.free_directions_3d as free_directions_3d
+
+    graph = _build_chain_graph(length=3, dangling_axis_counts={1: 1})
+    positions = {
+        0: np.array([0.0, 0.0, 0.0], dtype=float),
+        1: np.array([1.0, 0.0, 0.0], dtype=float),
+        2: np.array([2.0, 0.0, 0.0], dtype=float),
+    }
+    original = free_directions_3d._local_to_world_direction_3d
+    calls: list[tuple[float, float, float]] = []
+
+    def counting_local_to_world(
+        frame: object,
+        local_direction: tuple[float, float, float],
+    ) -> np.ndarray:
+        calls.append(local_direction)
+        return original(frame, local_direction)
+
+    monkeypatch.setattr(
+        free_directions_3d,
+        "_local_to_world_direction_3d",
+        counting_local_to_world,
+    )
+
+    directions = _compute_axis_directions(graph, positions, dimensions=3, draw_scale=1.0)
+
+    assert np.allclose(directions[(1, 2)], np.array([0.0, 0.0, 1.0]), atol=1e-6)
+    assert calls == [(0.0, 0.0, 1.0)]
 
 
 def test_compute_axis_directions_3d_supports_xp_alias_for_free_axes() -> None:

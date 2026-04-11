@@ -165,7 +165,7 @@ def test_switch_to_3d_limits_exact_segment_distance_checks(
         assert controls is not None
 
         calls = {"count": 0}
-        original = directions_3d._segment_segment_min_distance_sq_3d
+        original = getattr(directions_3d, "_segment_segment_min_distance_sq_3d", None)
 
         def counting_distance(
             start_a: np.ndarray,
@@ -176,11 +176,12 @@ def test_switch_to_3d_limits_exact_segment_distance_checks(
             calls["count"] += 1
             return float(original(start_a, end_a, start_b, end_b))
 
-        monkeypatch.setattr(
-            directions_3d,
-            "_segment_segment_min_distance_sq_3d",
-            counting_distance,
-        )
+        if original is not None:
+            monkeypatch.setattr(
+                directions_3d,
+                "_segment_segment_min_distance_sq_3d",
+                counting_distance,
+            )
 
         controls.set_view("3d")
 
