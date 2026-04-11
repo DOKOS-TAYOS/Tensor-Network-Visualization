@@ -87,6 +87,7 @@ def test_auto_save_path_uses_engine_and_example() -> None:
 
 def _demo_args(
     *,
+    theme: str = "default",
     scheme: bool = False,
     hover_cost: bool = False,
     tensor_inspector: bool = False,
@@ -97,6 +98,7 @@ def _demo_args(
         labels_edges=False,
         labels=None,
         hover_labels=True,
+        theme=theme,
         scheme=scheme,
         hover_cost=hover_cost,
         tensor_inspector=tensor_inspector,
@@ -119,6 +121,17 @@ def test_finalize_contraction_scheme_enables_slider_behavior_directly() -> None:
     )
     assert cfg.show_contraction_scheme is True
     assert not hasattr(cfg, "contraction_playback")
+
+
+def test_finalize_demo_plot_config_passes_visual_theme() -> None:
+    cfg = finalize_demo_plot_config(
+        _demo_args(theme="paper"),
+        engine="einsum",
+        scheme_tensor_names=None,
+    )
+
+    assert cfg.theme == "paper"
+    assert cfg.node_color == "#FFFFFF"
 
 
 def test_finalize_contraction_cost_hover_auto_enables_scheme() -> None:
@@ -217,6 +230,7 @@ def test_run_demo_parser_defaults_match_cli_contract() -> None:
     assert args.engine == "quimb"
     assert args.example == "mps"
     assert args.view == "2d"
+    assert args.theme == "default"
     assert args.labels_nodes is True
     assert args.labels_edges is False
     assert args.labels is None
@@ -236,6 +250,14 @@ def test_run_demo_parser_defaults_match_cli_contract() -> None:
     assert args.lz == 3
     assert args.mera_log2 == 3
     assert args.tree_depth == 4
+
+
+def test_run_demo_parser_accepts_visual_theme() -> None:
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_parser_theme")
+
+    args = module.parse_args(["quimb", "mps", "--theme", "paper"])
+
+    assert args.theme == "paper"
 
 
 def test_run_demo_defaults_to_contracted_for_small_tensorkrowch_demo() -> None:

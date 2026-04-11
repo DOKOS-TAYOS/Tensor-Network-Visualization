@@ -22,7 +22,7 @@ The package exports these user-facing names from `tensor_network_viz.__all__`.
 | Area | Names |
 | --- | --- |
 | Rendering | `show_tensor_network`, `show_tensor_elements`, `show_tensor_comparison` |
-| Tensor-network config | `PlotConfig`, `TensorNetworkDiagnosticsConfig`, `TensorNetworkFocus`, `EngineName`, `ViewName` |
+| Tensor-network config | `PlotConfig`, `TensorNetworkDiagnosticsConfig`, `TensorNetworkFocus`, `PlotTheme`, `EngineName`, `ViewName` |
 | Tensor inspection config | `TensorElementsConfig`, `TensorAnalysisConfig`, `TensorComparisonConfig` |
 | Normalized exports | `normalize_tensor_network`, `export_tensor_network_snapshot`, `NormalizedTensorGraph`, `NormalizedTensorNode`, `NormalizedTensorEdge`, `NormalizedTensorEndpoint`, `TensorNetworkSnapshot`, `TensorNetworkLayoutSnapshot`, `NormalizedContractionStepMetrics` |
 | `einsum` tracing | `EinsumTrace`, `einsum`, `einsum_trace_step`, `pair_tensor` |
@@ -219,6 +219,7 @@ from tensor_network_viz import (
     EngineName,
     NormalizedTensorGraph,
     PlotConfig,
+    PlotTheme,
     TensorNetworkSnapshot,
     ViewName,
 )
@@ -273,12 +274,25 @@ Common fields:
 | `contraction_tensor_inspector` | Link playback steps to tensor inspection when tensors are available. |
 | `diagnostics` | Optional `TensorNetworkDiagnosticsConfig`. |
 | `focus` | Optional `TensorNetworkFocus` for neighborhood/path views. |
+| `theme` | Visual preset: `default`, `paper`, or `colorblind`. Manual color and line-width overrides still win. |
 | `figsize` | Matplotlib figure size. |
 | `positions` | Explicit node-id positions. |
 | `layout_iterations` | Force-layout iteration override. |
 | `tensor_label_fontsize`, `edge_label_fontsize` | Preferred label sizes. |
 | `node_color`, `bond_edge_color`, `dangling_edge_color` | Main styling colors. |
 | `contraction_scheme_by_name` | Explicit contraction steps by visible tensor name. |
+
+For clean exported figures, start with the paper theme and disable controls:
+
+```python
+fig, ax = show_tensor_network(
+    network,
+    config=PlotConfig(theme="paper", show_tensor_labels=True),
+    show_controls=False,
+    show=False,
+)
+fig.savefig("network-paper.png", dpi=180, bbox_inches="tight")
+```
 
 ### `TensorElementsConfig`
 

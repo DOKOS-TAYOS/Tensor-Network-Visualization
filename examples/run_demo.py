@@ -10,10 +10,13 @@ if str(_EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES_DIR))
 
 import einsum_demo
+import geometry_demo
+import placements_demo
 import quimb_demo
 import tenpy_demo
 import tensorkrowch_demo
 import tensornetwork_demo
+import themes_demo
 from demo_cli import (
     AUTO_SAVE_SENTINEL,
     ExampleCliArgs,
@@ -30,10 +33,13 @@ from demo_cli import (
 
 EngineModule: dict[str, Any] = {
     "einsum": einsum_demo,
+    "geometry": geometry_demo,
+    "placements": placements_demo,
     "quimb": quimb_demo,
     "tenpy": tenpy_demo,
     "tensorkrowch": tensorkrowch_demo,
     "tensornetwork": tensornetwork_demo,
+    "themes": themes_demo,
 }
 _SMALL_CONTRACTED_TENSORKROWCH_EXAMPLES = frozenset({"mps", "mpo"})
 _MAX_SMALL_CONTRACTED_N_SITES = 6

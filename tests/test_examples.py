@@ -36,6 +36,19 @@ def _require_torch() -> None:
     pytest.importorskip("torch")
 
 
+def _require_demo_backend(engine: str) -> None:
+    if engine in {"themes", "placements", "geometry", "quimb"}:
+        _require_quimb()
+    elif engine == "tenpy":
+        _require_tenpy()
+    elif engine == "tensornetwork":
+        _require_tensornetwork()
+    elif engine in {"tensorkrowch", "einsum"}:
+        _require_torch()
+        if engine == "tensorkrowch":
+            pytest.importorskip("tensorkrowch")
+
+
 def _load_example_module(path: Path, module_name: str):
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
@@ -48,6 +61,16 @@ def _load_example_module(path: Path, module_name: str):
 def test_run_demo_registry_declares_expected_example_sets() -> None:
     module = _load_example_module(Path("examples/run_demo.py"), "run_demo_registry")
 
+    assert set(module.available_engines()) == {
+        "einsum",
+        "geometry",
+        "placements",
+        "quimb",
+        "tenpy",
+        "tensorkrowch",
+        "tensornetwork",
+        "themes",
+    }
     assert set(module.available_examples("tensorkrowch")) == {
         "cubic_peps",
         "disconnected",
@@ -60,27 +83,14 @@ def test_run_demo_registry_declares_expected_example_sets() -> None:
         "weird",
     }
     assert set(module.available_examples("tensornetwork")) == {
-        "cubic_peps",
-        "disconnected",
-        "ladder",
-        "mera",
-        "mera_ttn",
         "mps",
-        "mpo",
         "peps",
         "weird",
     }
     assert set(module.available_examples("quimb")) == {
-        "cubic_peps",
-        "disconnected",
         "hyper",
-        "ladder",
-        "mera",
-        "mera_ttn",
         "mps",
-        "mpo",
         "peps",
-        "weird",
     }
     assert set(module.available_examples("tenpy")) == {
         "chain",
@@ -107,6 +117,25 @@ def test_run_demo_registry_declares_expected_example_sets() -> None:
         "trace",
         "unary",
     }
+    assert set(module.available_examples("themes")) == {"overview"}
+    assert set(module.available_examples("placements")) == {
+        "grid2d",
+        "grid3d",
+        "list",
+        "manual_positions",
+        "manual_scheme",
+        "named_indices",
+        "object",
+    }
+    assert set(module.available_examples("geometry")) == {
+        "circular_chords",
+        "disconnected_irregular",
+        "partial_grid2d",
+        "partial_grid3d",
+        "random_irregular",
+        "upper_pyramid3d",
+        "upper_triangle2d",
+    }
 
 
 def test_run_demo_alias_tt_resolves_to_mps() -> None:
@@ -125,7 +154,10 @@ def test_run_demo_unknown_engine_lists_valid_engines(capsys: pytest.CaptureFixtu
 
     captured = capsys.readouterr()
     assert "Unknown engine 'bad-engine'" in captured.err
-    assert "einsum, quimb, tenpy, tensorkrowch, tensornetwork" in captured.err
+    assert (
+        "einsum, geometry, placements, quimb, tenpy, tensorkrowch, tensornetwork, themes"
+        in captured.err
+    )
 
 
 def test_run_demo_unknown_example_lists_valid_examples_for_engine(
@@ -139,7 +171,7 @@ def test_run_demo_unknown_example_lists_valid_examples_for_engine(
     captured = capsys.readouterr()
     assert "Unknown example 'bad-example' for engine 'quimb'" in captured.err
     assert "hyper" in captured.err
-    assert "mera_ttn" in captured.err
+    assert "peps" in captured.err
 
 
 def test_run_demo_rejects_unsupported_from_list(capsys: pytest.CaptureFixture[str]) -> None:
@@ -251,6 +283,46 @@ def test_einsum_ellipsis_saves_figure_without_showing() -> None:
     assert image.shape[1] > 0
 
 
+@pytest.mark.parametrize(
+    ("engine", "example", "view"),
+    [
+        ("themes", "overview", "2d"),
+        ("placements", "manual_scheme", "2d"),
+        ("placements", "grid3d", "3d"),
+        ("geometry", "upper_triangle2d", "2d"),
+        ("geometry", "partial_grid3d", "3d"),
+        ("geometry", "disconnected_irregular", "2d"),
+        ("tensorkrowch", "weird", "2d"),
+        ("tensornetwork", "weird", "2d"),
+        ("quimb", "hyper", "2d"),
+        ("tenpy", "chain", "2d"),
+        ("einsum", "batch", "2d"),
+    ],
+)
+def test_realistic_gallery_demos_save_figures_without_showing(
+    engine: str,
+    example: str,
+    view: str,
+) -> None:
+    _require_demo_backend(engine)
+    module = _load_example_module(
+        Path("examples/run_demo.py"),
+        f"run_demo_{engine}_{example}_{view}",
+    )
+    output_dir = Path(".tmp") / "example-tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{engine}-{example}-{view}.png"
+
+    exit_code = module.main(
+        [engine, example, "--view", view, "--save", str(output_path), "--no-show"]
+    )
+
+    assert exit_code == 0
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
+
+
 @pytest.mark.parametrize("example_name", ["mps", "ellipsis"])
 def test_einsum_auto_examples_keep_tensors_alive_for_tensor_inspector(example_name: str) -> None:
     _require_torch()
@@ -329,17 +401,17 @@ def test_einsum_auto_examples_keep_inspector_and_costs_aligned_to_real_trace_ste
     assert "Contraction:" in viewer._cost_text_artist.get_text()
 
 
-def test_tensornetwork_mera_ttn_saves_figure_without_showing() -> None:
+def test_tensornetwork_weird_saves_figure_without_showing() -> None:
     _require_tensornetwork()
-    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_tn_mera_ttn")
+    module = _load_example_module(Path("examples/run_demo.py"), "run_demo_tn_weird")
     output_dir = Path(".tmp") / "example-tests"
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "tensornetwork-mera-ttn-demo.png"
+    output_path = output_dir / "tensornetwork-weird-demo.png"
 
     exit_code = module.main(
         [
             "tensornetwork",
-            "mera_ttn",
+            "weird",
             "--view",
             "2d",
             "--save",
@@ -352,6 +424,15 @@ def test_tensornetwork_mera_ttn_saves_figure_without_showing() -> None:
     image = assert_readable_image(output_path)
     assert image.shape[0] > 0
     assert image.shape[1] > 0
+
+
+def test_commands_doc_lists_copy_paste_demo_commands() -> None:
+    text = Path("commands.md").read_text(encoding="utf-8")
+
+    assert "python examples/run_demo.py themes overview" in text
+    assert "python examples/run_demo.py placements manual_scheme" in text
+    assert "python examples/run_demo.py geometry disconnected_irregular" in text
+    assert "python examples/run_demo.py quimb hyper" in text
 
 
 def test_tensorkrowch_run_example_2d_calls_renderer_without_scope_patch(
@@ -502,25 +583,26 @@ def test_tensorkrowch_contracted_demo_saves_figure_without_showing() -> None:
     assert image.shape[1] > 0
 
 
-def test_run_all_examples_default_2d_matches_new_matrix() -> None:
-    module = _load_example_module(Path("examples/run_all_examples.py"), "run_all_examples_default")
+def test_run_all_examples_engines_2d_matches_new_matrix() -> None:
+    module = _load_example_module(Path("examples/run_all_examples.py"), "run_all_examples_engines")
 
-    commands = module.select_example_commands(group="default", views="2d")
+    commands = module.select_example_commands(group="engines", views="2d")
     argvs = {command.argv for command in commands}
 
     assert ("examples/run_demo.py", "tensorkrowch", "disconnected", "--view", "2d") in argvs
+    assert ("examples/run_demo.py", "tensornetwork", "weird", "--view", "2d") in argvs
     assert ("examples/run_demo.py", "quimb", "hyper", "--view", "2d") in argvs
     assert ("examples/run_demo.py", "tenpy", "chain", "--view", "2d") in argvs
-    assert ("examples/run_demo.py", "einsum", "ellipsis", "--view", "2d") in argvs
+    assert ("examples/run_demo.py", "einsum", "batch", "--view", "2d") in argvs
 
 
-def test_run_all_examples_hover_group_appends_hover_flag() -> None:
-    module = _load_example_module(Path("examples/run_all_examples.py"), "run_all_examples_hover")
+def test_run_all_examples_themes_group_runs_overview() -> None:
+    module = _load_example_module(Path("examples/run_all_examples.py"), "run_all_examples_themes")
 
-    commands = module.select_example_commands(group="hover", views="3d")
+    commands = module.select_example_commands(group="themes", views="2d")
+    argvs = {command.argv for command in commands}
 
-    assert commands
-    assert all("--hover-labels" in command.argv for command in commands)
+    assert ("examples/run_demo.py", "themes", "overview", "--view", "2d") in argvs
 
 
 def test_run_all_examples_builds_headless_subprocess_command(tmp_path: Path) -> None:
@@ -560,37 +642,29 @@ def test_run_all_examples_list_mode_prints_without_running_subprocesses(
 
     monkeypatch.setattr(module.subprocess, "run", _fail_run)
 
-    exit_code = module.main(["--group", "contraction", "--views", "2d", "--list"])
+    exit_code = module.main(["--group", "geometry", "--views", "2d", "--list"])
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert "examples/run_demo.py tensornetwork mera_ttn --view 2d" in captured.out
+    assert "examples/run_demo.py geometry upper_triangle2d --view 2d" in captured.out
 
 
-def test_run_all_examples_contraction_group_includes_small_contracted_tensorkrowch_demo() -> None:
+def test_run_all_examples_placements_group_includes_input_shapes() -> None:
     module = _load_example_module(
-        Path("examples/run_all_examples.py"), "run_all_examples_tk_contracted"
+        Path("examples/run_all_examples.py"), "run_all_examples_placements"
     )
 
-    commands = module.select_example_commands(group="contraction", views="2d")
+    commands = module.select_example_commands(group="placements", views="2d")
     argvs = {command.argv for command in commands}
 
-    assert (
-        "examples/run_demo.py",
-        "tensorkrowch",
-        "mps",
-        "--view",
-        "2d",
-        "--contracted",
-        "--n-sites",
-        "6",
-    ) in argvs
+    assert ("examples/run_demo.py", "placements", "manual_scheme", "--view", "2d") in argvs
+    assert ("examples/run_demo.py", "placements", "grid2d", "--view", "2d") in argvs
 
 
 def test_run_all_examples_all_group_contains_more_commands_than_default() -> None:
     module = _load_example_module(Path("examples/run_all_examples.py"), "run_all_examples_all")
 
-    default_commands = module.select_example_commands(group="default", views="both")
+    default_commands = module.select_example_commands(group="engines", views="both")
     all_commands = module.select_example_commands(group="all", views="both")
 
     assert len(all_commands) > len(default_commands)

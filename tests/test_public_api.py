@@ -21,6 +21,7 @@ from tensor_network_viz import (
     TensorNetworkFocus,
     export_tensor_network_snapshot,
     normalize_tensor_network,
+    pair_tensor,
     show_tensor_comparison,
     show_tensor_network,
 )
@@ -49,6 +50,21 @@ def test_plot_config_has_expected_defaults() -> None:
     assert config.hover_labels is True
     assert config.diagnostics is None
     assert config.focus is None
+    assert config.theme == "default"
+    assert config.node_color == "#F1F5F9"
+    assert config.node_edge_color == "#334155"
+    assert config.node_color_degree_one == "#FFEDD5"
+    assert config.node_edge_color_degree_one == "#C2410C"
+    assert config.tensor_label_color == "#111827"
+    assert config.bond_edge_color == "#2563EB"
+    assert config.dangling_edge_color == "#DC2626"
+
+
+def test_plot_theme_is_public_type_alias() -> None:
+    import tensor_network_viz as tnv
+
+    assert hasattr(tnv, "PlotTheme")
+    assert tnv.PlotTheme.__args__ == ("default", "paper", "colorblind")
 
 
 def test_plot_config_public_signature_orders_modes_before_detail() -> None:
@@ -64,6 +80,7 @@ def test_plot_config_public_signature_orders_modes_before_detail() -> None:
         "contraction_tensor_inspector",
         "diagnostics",
         "focus",
+        "theme",
         "tensor_label_refinement",
         "approximate_3d_tensor_disk_px",
         "figsize",
@@ -123,6 +140,74 @@ def test_plot_config_accepts_overrides() -> None:
     assert config.tensor_label_refinement == "never"
     assert config.diagnostics == TensorNetworkDiagnosticsConfig(show_overlay=True)
     assert config.focus == TensorNetworkFocus(kind="neighborhood", center="A", radius=2)
+
+
+def test_plot_config_rejects_unknown_theme() -> None:
+    with pytest.raises(ValueError, match="theme must be one of"):
+        PlotConfig(theme="presentation")  # type: ignore[arg-type]
+
+
+def test_plot_config_paper_theme_applies_style_defaults() -> None:
+    config = PlotConfig(theme="paper")
+
+    assert config.node_color == "#FFFFFF"
+    assert config.node_edge_color == "#111827"
+    assert config.node_color_degree_one == "#FFF7ED"
+    assert config.node_edge_color_degree_one == "#9A3412"
+    assert config.tensor_label_color == "#111827"
+    assert config.label_color == "#374151"
+    assert config.bond_edge_color == "#1D4ED8"
+    assert config.dangling_edge_color == "#B91C1C"
+    assert config.line_width_2d == pytest.approx(1.0)
+    assert config.line_width_3d == pytest.approx(0.9)
+    assert config.contraction_scheme_colors == (
+        "#93C5FD",
+        "#FCA5A5",
+        "#86EFAC",
+        "#FDBA74",
+        "#C4B5FD",
+        "#67E8F9",
+    )
+
+
+def test_plot_config_theme_preserves_manual_overrides() -> None:
+    config = PlotConfig(
+        theme="paper",
+        node_color="#ABCDEF",
+        line_width_2d=2.5,
+        contraction_scheme_colors=("#123456",),
+    )
+
+    assert config.node_color == "#ABCDEF"
+    assert config.node_edge_color == "#111827"
+    assert config.line_width_2d == pytest.approx(2.5)
+    assert config.line_width_3d == pytest.approx(0.9)
+    assert config.contraction_scheme_colors == ("#123456",)
+
+
+def test_plot_config_colorblind_theme_uses_okabe_ito_palette() -> None:
+    config = PlotConfig(theme="colorblind")
+
+    assert config.node_color == "#F7F7F7"
+    assert config.node_edge_color == "#000000"
+    assert config.node_color_degree_one == "#F0E442"
+    assert config.node_edge_color_degree_one == "#000000"
+    assert config.tensor_label_color == "#000000"
+    assert config.label_color == "#000000"
+    assert config.bond_edge_color == "#0072B2"
+    assert config.dangling_edge_color == "#D55E00"
+    assert config.line_width_2d == pytest.approx(1.0)
+    assert config.line_width_3d == pytest.approx(0.9)
+    assert config.contraction_scheme_colors == (
+        "#E69F00",
+        "#56B4E9",
+        "#009E73",
+        "#F0E442",
+        "#0072B2",
+        "#D55E00",
+        "#CC79A7",
+        "#000000",
+    )
 
 
 def test_tensor_elements_config_accepts_analysis_overrides() -> None:
@@ -261,6 +346,27 @@ def test_show_tensor_network_returns_fig_ax_with_show_false() -> None:
     assert controls.current_view == "2d"
     assert controls._view_caches["2d"].ax is ax
     assert len(fig.axes) >= 3
+
+
+@pytest.mark.parametrize("theme", ["paper", "colorblind"])
+@pytest.mark.parametrize("view", ["2d", "3d"])
+def test_show_tensor_network_renders_visual_themes(theme: str, view: str) -> None:
+    trace = [pair_tensor("A", "x", "r0", "ab,b->a")]
+
+    fig, ax = show_tensor_network(
+        trace,
+        engine="einsum",
+        view=view,  # type: ignore[arg-type]
+        config=PlotConfig(theme=theme),  # type: ignore[arg-type]
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    if view == "3d":
+        assert ax.name == "3d"
+    else:
+        assert ax.name != "3d"
 
 
 def test_show_tensor_network_defaults_to_2d_when_view_is_omitted() -> None:

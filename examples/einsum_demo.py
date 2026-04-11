@@ -4,7 +4,7 @@ import string
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import matplotlib
 
@@ -24,7 +24,9 @@ from demo_cli import (
     render_demo_tensor_network,
     resolve_example_definition,
 )
-from demo_tensors import build_demo_torch_tensor
+from demo_tensors import build_demo_numpy_tensor, build_demo_torch_tensor
+
+ArrayBackend = Literal["numpy", "torch"]
 
 TAGLINES: dict[str, str] = {
     "batch": "Hadamard-style batch contraction with kept indices.",
@@ -55,6 +57,20 @@ def _torch() -> Any:
     import torch
 
     return torch
+
+
+def _build_demo_array(*, name: str, shape: tuple[int, ...], backend: ArrayBackend) -> Any:
+    if backend == "numpy":
+        return build_demo_numpy_tensor(name=name, shape=shape, dtype=float)
+    return build_demo_torch_tensor(name=name, shape=shape)
+
+
+def _backend_for_example(name: str, *, from_scratch: bool) -> str:
+    if from_scratch:
+        return "manual trace"
+    if name in {"batch", "trace", "ternary", "unary"}:
+        return "NumPy"
+    return "PyTorch"
 
 
 def _einsum_api() -> tuple[Any, Any, Any, Any]:
@@ -501,70 +517,73 @@ def _build_peps_manual(lx: int, ly: int) -> list[Any]:
 
 
 def _build_pattern_trace(example: str) -> Any:
-    torch = _torch()
     EinsumTrace, einsum, _einsum_trace_step, _pair_tensor = _einsum_api()
     trace = EinsumTrace()
+    backend: ArrayBackend = (
+        "numpy" if example in {"batch", "trace", "ternary", "unary"} else "torch"
+    )
     if example == "ellipsis":
-        a = build_demo_torch_tensor(name="A", shape=(2, 3, 4))
-        b = build_demo_torch_tensor(name="B", shape=(2, 4, 5))
+        a = _build_demo_array(name="A", shape=(2, 3, 4), backend=backend)
+        b = _build_demo_array(name="B", shape=(2, 4, 5), backend=backend)
         trace.bind("A", a)
         trace.bind("B", b)
         _keep_trace_tensors_alive(trace, a, b)
-        result = einsum("...ij,...jk->...ik", a, b, trace=trace, backend="torch")
+        result = einsum("...ij,...jk->...ik", a, b, trace=trace, backend=backend)
         _keep_trace_tensors_alive(trace, result)
         return trace
     if example == "batch":
-        u = build_demo_torch_tensor(name="U", shape=(3, 4))
-        v = build_demo_torch_tensor(name="V", shape=(3, 4))
+        u = _build_demo_array(name="U", shape=(3, 4), backend=backend)
+        v = _build_demo_array(name="V", shape=(3, 4), backend=backend)
         trace.bind("U", u)
         trace.bind("V", v)
         _keep_trace_tensors_alive(trace, u, v)
-        result = einsum("ab,ab->ab", u, v, trace=trace, backend="torch")
+        result = einsum("ab,ab->ab", u, v, trace=trace, backend=backend)
         _keep_trace_tensors_alive(trace, result)
         return trace
     if example == "trace":
-        matrix = build_demo_torch_tensor(name="M", shape=(4, 4))
-        vector = build_demo_torch_tensor(name="x", shape=(4,))
+        matrix = _build_demo_array(name="M", shape=(4, 4), backend=backend)
+        vector = _build_demo_array(name="x", shape=(4,), backend=backend)
         trace.bind("M", matrix)
         trace.bind("x", vector)
         _keep_trace_tensors_alive(trace, matrix, vector)
-        result = einsum("ii,i->i", matrix, vector, trace=trace, backend="torch")
+        result = einsum("ii,i->i", matrix, vector, trace=trace, backend=backend)
         _keep_trace_tensors_alive(trace, result)
         return trace
     if example == "ternary":
-        a = build_demo_torch_tensor(name="A", shape=(2, 3))
-        b = build_demo_torch_tensor(name="B", shape=(3, 4))
-        c = build_demo_torch_tensor(name="C", shape=(4, 5))
+        a = _build_demo_array(name="A", shape=(2, 3), backend=backend)
+        b = _build_demo_array(name="B", shape=(3, 4), backend=backend)
+        c = _build_demo_array(name="C", shape=(4, 5), backend=backend)
         trace.bind("A", a)
         trace.bind("B", b)
         trace.bind("C", c)
         _keep_trace_tensors_alive(trace, a, b, c)
-        result = einsum("ab,bc,cd->ad", a, b, c, trace=trace, backend="torch")
+        result = einsum("ab,bc,cd->ad", a, b, c, trace=trace, backend=backend)
         _keep_trace_tensors_alive(trace, result)
         return trace
     if example == "unary":
-        matrix = build_demo_torch_tensor(name="M", shape=(4, 4))
+        matrix = _build_demo_array(name="M", shape=(4, 4), backend=backend)
         trace.bind("M", matrix)
         _keep_trace_tensors_alive(trace, matrix)
-        result = einsum("ii->i", matrix, trace=trace, backend="torch")
+        result = einsum("ii->i", matrix, trace=trace, backend=backend)
         _keep_trace_tensors_alive(trace, result)
         return trace
     if example == "nway":
-        t = build_demo_torch_tensor(name="T", shape=(3, 4, 5))
-        u = build_demo_torch_tensor(name="U", shape=(3, 4, 6))
-        v = build_demo_torch_tensor(name="V", shape=(5, 6, 7))
+        t = _build_demo_array(name="T", shape=(3, 4, 5), backend=backend)
+        u = _build_demo_array(name="U", shape=(3, 4, 6), backend=backend)
+        v = _build_demo_array(name="V", shape=(5, 6, 7), backend=backend)
         trace.bind("T", t)
         trace.bind("U", u)
         trace.bind("V", v)
         _keep_trace_tensors_alive(trace, t, u, v)
-        reduced = einsum("abc,abd->cd", t, u, trace=trace, backend="torch")
+        reduced = einsum("abc,abd->cd", t, u, trace=trace, backend=backend)
         _keep_trace_tensors_alive(trace, reduced)
-        result = einsum("cd,cde->e", reduced, v, trace=trace, backend="torch")
+        result = einsum("cd,cde->e", reduced, v, trace=trace, backend=backend)
         _keep_trace_tensors_alive(trace, result)
         return trace
     if example == "implicit_out":
-        a = build_demo_torch_tensor(name="A", shape=(2, 3))
-        b = build_demo_torch_tensor(name="b", shape=(3,))
+        torch = _torch()
+        a = _build_demo_array(name="A", shape=(2, 3), backend=backend)
+        b = _build_demo_array(name="b", shape=(3,), backend=backend)
         out = torch.empty((2,))
         trace.bind("A", a)
         trace.bind("b", b)
@@ -622,11 +641,12 @@ def _scheme_steps(name: str, args: ExampleCliArgs) -> tuple[tuple[str, ...], ...
 
 def _build_example(args: ExampleCliArgs, definition: ExampleDefinition) -> BuiltExample:
     trace = _trace_steps_for(definition.name, args)
+    backend_label = _backend_for_example(definition.name, from_scratch=args.from_scratch)
     footer = "Render an EinsumTrace or an explicit ordered list of trace steps."
     if not args.from_scratch and not args.from_list:
         footer = (
-            "Auto-traced EinsumTrace example. Try --tensor-inspector to inspect tensors during "
-            "playback."
+            f"Auto-traced EinsumTrace using {backend_label}. Try --tensor-inspector to inspect "
+            "tensors during playback."
         )
     return BuiltExample(
         network=_renderable_trace(trace, args),

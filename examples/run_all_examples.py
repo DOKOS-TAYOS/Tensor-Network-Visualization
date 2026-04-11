@@ -7,7 +7,16 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal, NamedTuple
 
-BatchGroup = Literal["default", "hover", "contraction", "all"]
+BatchGroup = Literal[
+    "engines",
+    "themes",
+    "placements",
+    "geometry",
+    "default",
+    "hover",
+    "contraction",
+    "all",
+]
 BatchViews = Literal["2d", "3d", "both"]
 
 _DEFAULT_OUTPUT_DIR = Path(".tmp") / "run-all-examples"
@@ -27,18 +36,21 @@ def _command(
     )
 
 
-def _default_commands(view: Literal["2d", "3d"]) -> tuple[ExampleCommand, ...]:
+def _engine_commands(view: Literal["2d", "3d"]) -> tuple[ExampleCommand, ...]:
     return (
         _command("tensorkrowch", "disconnected", view, slug=f"tensorkrowch_disconnected_{view}"),
+        _command("tensorkrowch", "weird", view, slug=f"tensorkrowch_weird_{view}"),
         _command("tensorkrowch", "mps", view, slug=f"tensorkrowch_mps_{view}"),
-        _command("tensornetwork", "mera_ttn", view, slug=f"tensornetwork_mera_ttn_{view}"),
+        _command("tensornetwork", "weird", view, slug=f"tensornetwork_weird_{view}"),
+        _command("tensornetwork", "mps", view, slug=f"tensornetwork_mps_{view}"),
         _command("tensornetwork", "peps", view, slug=f"tensornetwork_peps_{view}"),
         _command("quimb", "hyper", view, slug=f"quimb_hyper_{view}"),
-        _command("quimb", "ladder", view, slug=f"quimb_ladder_{view}"),
+        _command("quimb", "peps", view, slug=f"quimb_peps_{view}"),
         _command("tenpy", "mps", view, slug=f"tenpy_mps_{view}"),
         _command("tenpy", "imps", view, slug=f"tenpy_imps_{view}"),
         _command("tenpy", "chain", view, slug=f"tenpy_chain_{view}"),
         _command("einsum", "mps", view, slug=f"einsum_mps_{view}"),
+        _command("einsum", "batch", view, slug=f"einsum_batch_{view}"),
         _command("einsum", "ellipsis", view, slug=f"einsum_ellipsis_{view}"),
     )
 
@@ -66,13 +78,72 @@ def _contraction_commands(view: Literal["2d", "3d"]) -> tuple[ExampleCommand, ..
         ),
         _command(
             "tensornetwork",
-            "mera_ttn",
+            "mps",
             view,
-            slug=f"tensornetwork_mera_ttn_{view}_scheme",
+            slug=f"tensornetwork_mps_{view}_scheme",
         ),
         _command("quimb", "hyper", view, slug=f"quimb_hyper_{view}_scheme"),
+        _command("placements", "manual_scheme", view, slug=f"placements_manual_scheme_{view}"),
         _command("tenpy", "chain", view, slug=f"tenpy_chain_{view}_scheme"),
         _command("einsum", "mps", view, slug=f"einsum_mps_{view}_scheme"),
+    )
+
+
+def _theme_commands(view: Literal["2d", "3d"]) -> tuple[ExampleCommand, ...]:
+    return (_command("themes", "overview", view, slug=f"themes_overview_{view}"),)
+
+
+def _placement_commands(view: Literal["2d", "3d"]) -> tuple[ExampleCommand, ...]:
+    return (
+        _command("placements", "object", view, slug=f"placements_object_{view}"),
+        _command("placements", "list", view, slug=f"placements_list_{view}"),
+        _command("placements", "grid2d", view, slug=f"placements_grid2d_{view}"),
+        _command("placements", "grid3d", view, slug=f"placements_grid3d_{view}"),
+        _command(
+            "placements",
+            "manual_positions",
+            view,
+            slug=f"placements_manual_positions_{view}",
+        ),
+        _command("placements", "manual_scheme", view, slug=f"placements_manual_scheme_{view}"),
+        _command("placements", "named_indices", view, slug=f"placements_named_indices_{view}"),
+    )
+
+
+def _geometry_commands(view: Literal["2d", "3d"]) -> tuple[ExampleCommand, ...]:
+    return (
+        _command("geometry", "partial_grid2d", view, slug=f"geometry_partial_grid2d_{view}"),
+        _command(
+            "geometry",
+            "upper_triangle2d",
+            view,
+            slug=f"geometry_upper_triangle2d_{view}",
+        ),
+        _command("geometry", "partial_grid3d", view, slug=f"geometry_partial_grid3d_{view}"),
+        _command(
+            "geometry",
+            "upper_pyramid3d",
+            view,
+            slug=f"geometry_upper_pyramid3d_{view}",
+        ),
+        _command(
+            "geometry",
+            "random_irregular",
+            view,
+            slug=f"geometry_random_irregular_{view}",
+        ),
+        _command(
+            "geometry",
+            "circular_chords",
+            view,
+            slug=f"geometry_circular_chords_{view}",
+        ),
+        _command(
+            "geometry",
+            "disconnected_irregular",
+            view,
+            slug=f"geometry_disconnected_irregular_{view}",
+        ),
     )
 
 
@@ -84,21 +155,28 @@ def _views_to_run(views: BatchViews) -> tuple[Literal["2d", "3d"], ...]:
 
 def select_example_commands(*, group: BatchGroup, views: BatchViews) -> tuple[ExampleCommand, ...]:
     selected_views = _views_to_run(views)
-    if group == "default":
-        return tuple(command for view in selected_views for command in _default_commands(view))
+    if group in {"engines", "default"}:
+        return tuple(command for view in selected_views for command in _engine_commands(view))
     if group == "hover":
         return tuple(
             command
             for view in selected_views
-            for command in _hover_commands(_default_commands(view))
+            for command in _hover_commands(_engine_commands(view))
         )
     if group == "contraction":
         return tuple(command for view in selected_views for command in _contraction_commands(view))
+    if group == "themes":
+        return tuple(command for view in selected_views for command in _theme_commands(view))
+    if group == "placements":
+        return tuple(command for view in selected_views for command in _placement_commands(view))
+    if group == "geometry":
+        return tuple(command for view in selected_views for command in _geometry_commands(view))
     if group == "all":
         return (
-            *select_example_commands(group="default", views=views),
-            *select_example_commands(group="hover", views=views),
-            *select_example_commands(group="contraction", views=views),
+            *select_example_commands(group="engines", views=views),
+            *select_example_commands(group="themes", views=views),
+            *select_example_commands(group="placements", views=views),
+            *select_example_commands(group="geometry", views=views),
         )
     raise ValueError(f"Unsupported example group: {group}")
 
@@ -131,9 +209,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--group",
-        choices=("default", "hover", "contraction", "all"),
-        default="default",
-        help="Which command set to run (default: default).",
+        choices=(
+            "engines",
+            "themes",
+            "placements",
+            "geometry",
+            "default",
+            "hover",
+            "contraction",
+            "all",
+        ),
+        default="engines",
+        help="Which command set to run (default: engines).",
     )
     parser.add_argument(
         "--views",

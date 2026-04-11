@@ -4,7 +4,8 @@ All commands on this page are meant to be run from the repository root.
 
 Use these examples when you want to see the package behavior quickly. For API explanations, use
 [../docs/api.md](../docs/api.md). For backend-specific code snippets, use
-[../docs/backends.md](../docs/backends.md).
+[../docs/backends.md](../docs/backends.md). For a copy-paste command list for every demo, use
+[../commands.md](../commands.md).
 
 ## Contents
 
@@ -52,8 +53,10 @@ Examples:
 
 ```bash
 python examples/run_demo.py quimb hyper --view 2d
-python examples/run_demo.py tensornetwork mera_ttn --view 3d
-python examples/run_demo.py einsum ellipsis --view 2d --scheme
+python examples/run_demo.py tensornetwork weird --view 3d
+python examples/run_demo.py themes overview --view 2d
+python examples/run_demo.py placements manual_scheme --view 2d
+python examples/run_demo.py geometry disconnected_irregular --view 2d
 ```
 
 ## Standalone Tensor Inspection
@@ -78,7 +81,8 @@ Open an interactive figure:
 
 ```bash
 python examples/run_demo.py quimb hyper --view 2d
-python examples/run_demo.py tensornetwork mera_ttn --view 3d
+python examples/run_demo.py tensornetwork weird --view 3d
+python examples/run_demo.py themes overview --view 2d
 ```
 
 Save a clean static export:
@@ -91,10 +95,10 @@ python examples/run_demo.py quimb mps --view 2d --save quimb_mps.png --no-show
 Visualize contraction schemes:
 
 ```bash
-python examples/run_demo.py einsum ellipsis --view 2d --scheme
-python examples/run_demo.py einsum mps --view 2d --scheme --playback
+python examples/run_demo.py einsum mps --view 2d --scheme
 python examples/run_demo.py tenpy chain --view 2d --scheme
 python examples/run_demo.py tensorkrowch mps --view 2d --n-sites 6 --scheme
+python examples/run_demo.py placements manual_scheme --view 2d
 ```
 
 Open linked tensor inspection during playback:
@@ -116,12 +120,12 @@ examples with `--n-sites 6`, where contraction history recovery is safe enough f
 | Option | Meaning |
 | --- | --- |
 | `--view {2d,3d}` | Initial view. |
+| `--theme {default,paper,colorblind}` | Visual theme preset. Use `paper` for clean exports and `colorblind` for high-contrast accessible colors. |
 | `--labels-nodes` | Show tensor labels. |
 | `--labels-edges` | Show index labels. |
 | `--labels` | Override both label flags at once. |
 | `--hover-labels` | Enable hover tooltips. |
 | `--scheme` | Draw contraction-scheme overlays when available. |
-| `--playback` | Start with contraction playback enabled. |
 | `--hover-cost` | Show contraction-cost details in the playback panel. |
 | `--tensor-inspector` | Open linked tensor inspection for supported playback data. |
 | `--contracted` | For small TensorKrowch demos, contract first and show recovered history. |
@@ -139,13 +143,11 @@ examples with `--n-sites 6`, where contraction history recovery is safe enough f
 
 ### `tensornetwork`
 
-`mps`, `tt`, `mpo`, `ladder`, `peps`, `cubic_peps`, `mera`, `mera_ttn`, `weird`,
-`disconnected`
+`mps`, `tt`, `peps`, `weird`
 
 ### `quimb`
 
-`mps`, `tt`, `mpo`, `ladder`, `peps`, `cubic_peps`, `mera`, `mera_ttn`, `weird`,
-`disconnected`, `hyper`
+`mps`, `tt`, `peps`, `hyper`
 
 ### `tenpy`
 
@@ -157,25 +159,43 @@ examples with `--n-sites 6`, where contraction history recovery is safe enough f
 `mps`, `mpo`, `peps`, `disconnected`, `ellipsis`, `batch`, `trace`, `ternary`, `unary`,
 `nway`, `implicit_out`
 
+### `themes`
+
+`overview`
+
+### `placements`
+
+`object`, `list`, `grid2d`, `grid3d`, `manual_positions`, `manual_scheme`, `named_indices`
+
+### `geometry`
+
+`partial_grid2d`, `upper_triangle2d`, `partial_grid3d`, `upper_pyramid3d`,
+`random_irregular`, `circular_chords`, `disconnected_irregular`
+
 ## Batch Rendering
 
 List selected commands without running them:
 
 ```bash
-python examples/run_all_examples.py --group default --views 2d --list
+python examples/run_all_examples.py --group engines --views 2d --list
 ```
 
 Render a group headlessly:
 
 ```bash
-python examples/run_all_examples.py --group default --views 2d --output-dir .tmp/examples
+python examples/run_all_examples.py --group geometry --views 2d --output-dir .tmp/examples
 ```
 
 Useful groups include:
 
+- `engines`
+- `themes`
+- `placements`
+- `geometry`
 - `default`
 - `hover`
 - `contraction`
 - `all`
 
-Start with `default` before running `all`, because `all` is intentionally broader and slower.
+Start with `engines` before running `all`, because `all` is intentionally broader and slower.
+`default`, `hover`, and `contraction` remain as compatibility groups for older demo workflows.

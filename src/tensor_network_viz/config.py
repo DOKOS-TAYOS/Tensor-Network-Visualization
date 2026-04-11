@@ -9,8 +9,57 @@ from ._engine_specs import EngineName
 from ._typing import PositionMapping
 
 ViewName: TypeAlias = Literal["2d", "3d"]
+PlotTheme: TypeAlias = Literal["default", "paper", "colorblind"]
 FocusRadius: TypeAlias = Literal[1, 2]
 TensorLabelRefinement: TypeAlias = Literal["auto", "always", "never"]
+
+_PLOT_THEME_NAMES: frozenset[str] = frozenset(("default", "paper", "colorblind"))
+_PAPER_CONTRACTION_SCHEME_COLORS: tuple[str, ...] = (
+    "#93C5FD",
+    "#FCA5A5",
+    "#86EFAC",
+    "#FDBA74",
+    "#C4B5FD",
+    "#67E8F9",
+)
+_COLORBLIND_CONTRACTION_SCHEME_COLORS: tuple[str, ...] = (
+    "#E69F00",
+    "#56B4E9",
+    "#009E73",
+    "#F0E442",
+    "#0072B2",
+    "#D55E00",
+    "#CC79A7",
+    "#000000",
+)
+_PLOT_THEME_OVERRIDES: dict[str, dict[str, object]] = {
+    "paper": {
+        "node_color": "#FFFFFF",
+        "node_edge_color": "#111827",
+        "node_color_degree_one": "#FFF7ED",
+        "node_edge_color_degree_one": "#9A3412",
+        "tensor_label_color": "#111827",
+        "label_color": "#374151",
+        "bond_edge_color": "#1D4ED8",
+        "dangling_edge_color": "#B91C1C",
+        "line_width_2d": 1.0,
+        "line_width_3d": 0.9,
+        "contraction_scheme_colors": _PAPER_CONTRACTION_SCHEME_COLORS,
+    },
+    "colorblind": {
+        "node_color": "#F7F7F7",
+        "node_edge_color": "#000000",
+        "node_color_degree_one": "#F0E442",
+        "node_edge_color_degree_one": "#000000",
+        "tensor_label_color": "#000000",
+        "label_color": "#000000",
+        "bond_edge_color": "#0072B2",
+        "dangling_edge_color": "#D55E00",
+        "line_width_2d": 1.0,
+        "line_width_3d": 0.9,
+        "contraction_scheme_colors": _COLORBLIND_CONTRACTION_SCHEME_COLORS,
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -70,6 +119,9 @@ class PlotConfig:
             when playback tensors are available.
         diagnostics: Optional diagnostics settings for shape / bond / memory overlays.
         focus: Optional subnetwork focus settings shared by snapshots and interactive views.
+        theme: Visual theme preset. ``"default"`` uses the library defaults, ``"paper"`` uses
+            a cleaner high-contrast export style, and ``"colorblind"`` uses a colorblind-safe
+            palette. Explicit color and line-width overrides still win over theme presets.
         tensor_label_refinement: Policy for the post-draw passes that shrink tensor labels
             to fit their node marker. ``"always"`` always refits, ``"never"`` skips it,
             and ``"auto"`` applies it only when it is still cheap.
@@ -108,8 +160,8 @@ class PlotConfig:
     DEFAULT_NODE_RADIUS: ClassVar[float] = 0.08
     DEFAULT_STUB_LENGTH: ClassVar[float] = 0.16
     DEFAULT_SELF_LOOP_RADIUS: ClassVar[float] = 0.2
-    DEFAULT_LINE_WIDTH_2D: ClassVar[float] = 0.85
-    DEFAULT_LINE_WIDTH_3D: ClassVar[float] = 0.75
+    DEFAULT_LINE_WIDTH_2D: ClassVar[float] = 0.95
+    DEFAULT_LINE_WIDTH_3D: ClassVar[float] = 0.8
     DEFAULT_CONTRACTION_SCHEME_LINEWIDTH: ClassVar[float] = 0.12
     DEFAULT_LAYOUT_ITERATIONS: ClassVar[int] = 220
 
@@ -122,6 +174,7 @@ class PlotConfig:
     contraction_tensor_inspector: bool = False
     diagnostics: TensorNetworkDiagnosticsConfig | None = None
     focus: TensorNetworkFocus | None = None
+    theme: PlotTheme = "default"
     tensor_label_refinement: TensorLabelRefinement = "auto"
     approximate_3d_tensor_disk_px: bool = True
     figsize: tuple[float, float] | None = (8, 6)
@@ -135,25 +188,41 @@ class PlotConfig:
     self_loop_radius: float | None = None
     line_width_2d: float | None = None
     line_width_3d: float | None = None
-    node_color: str = "#E8EEF5"
-    node_edge_color: str = "#1E293B"
-    node_color_degree_one: str = "#FEE2E2"
-    node_edge_color_degree_one: str = "#7F1D1D"
-    tensor_label_color: str = "#0F172A"
+    node_color: str = "#F1F5F9"
+    node_edge_color: str = "#334155"
+    node_color_degree_one: str = "#FFEDD5"
+    node_edge_color_degree_one: str = "#C2410C"
+    tensor_label_color: str = "#111827"
     label_color: str = "#334155"
-    bond_edge_color: str = "#0369A1"
-    dangling_edge_color: str = "#BE123C"
+    bond_edge_color: str = "#2563EB"
+    dangling_edge_color: str = "#DC2626"
     contraction_scheme_by_name: tuple[tuple[str, ...], ...] | None = None
     contraction_scheme_colors: tuple[str, ...] | None = None
     contraction_scheme_alpha: float = 0.0
     contraction_scheme_edge_alpha: float | None = None
     contraction_scheme_linewidth: float | None = None
 
+    def __post_init__(self) -> None:
+        """Validate and resolve visual theme presets."""
+        theme = str(self.theme)
+        if theme not in _PLOT_THEME_NAMES:
+            available = ", ".join(f"{name!r}" for name in sorted(_PLOT_THEME_NAMES))
+            raise ValueError(f"theme must be one of {available}.")
+        object.__setattr__(self, "theme", theme)
+        if theme == "default":
+            return
+
+        for field_name, themed_value in _PLOT_THEME_OVERRIDES[theme].items():
+            base_value = getattr(type(self), field_name)
+            if getattr(self, field_name) == base_value:
+                object.__setattr__(self, field_name, themed_value)
+
 
 __all__ = [
     "EngineName",
     "FocusRadius",
     "PlotConfig",
+    "PlotTheme",
     "TensorLabelRefinement",
     "TensorNetworkDiagnosticsConfig",
     "TensorNetworkFocus",

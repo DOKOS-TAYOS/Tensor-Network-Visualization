@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .config import (
         EngineName,
         PlotConfig,
+        PlotTheme,
         TensorNetworkDiagnosticsConfig,
         TensorNetworkFocus,
         ViewName,
@@ -161,6 +162,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "NormalizedTensorGraph": (".snapshot", "NormalizedTensorGraph"),
     "NormalizedTensorNode": (".snapshot", "NormalizedTensorNode"),
     "PlotConfig": (".config", "PlotConfig"),
+    "PlotTheme": (".config", "PlotTheme"),
     "TenPyTensorNetwork": (".tenpy.explicit", "TenPyTensorNetwork"),
     "TensorComparisonConfig": (".tensor_comparison_config", "TensorComparisonConfig"),
     "TensorAnalysisConfig": (".tensor_elements_config", "TensorAnalysisConfig"),
@@ -214,6 +216,7 @@ __all__ = [
     "NormalizedTensorGraph",
     "NormalizedTensorNode",
     "PlotConfig",
+    "PlotTheme",
     "TensorComparisonConfig",
     "TensorAnalysisConfig",
     "TensorDataError",

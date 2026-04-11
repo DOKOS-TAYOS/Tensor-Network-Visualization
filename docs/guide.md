@@ -107,7 +107,7 @@ from tensor_network_viz import PlotConfig, show_tensor_network
 
 fig, ax = show_tensor_network(
     network,
-    config=PlotConfig(show_tensor_labels=True),
+    config=PlotConfig(theme="paper", show_tensor_labels=True),
     show_controls=False,
     show=False,
 )
@@ -115,7 +115,8 @@ fig.savefig("network.png", dpi=180, bbox_inches="tight")
 ```
 
 Use this pattern for papers, reports, CI-generated images, and scripts that should not open a GUI
-window.
+window. Use `theme="paper"` for clean exports, or `theme="colorblind"` when maximum color
+distinguishability matters.
 
 Tensor inspection exports work the same way:
 
@@ -244,6 +245,15 @@ The most common controls are:
 
 For dense graphs, static labels can become noisy. A practical pattern is to export with tensor
 labels only, then keep index labels available through hover while exploring.
+
+Use visual themes when you want a consistent look without setting each color manually:
+
+```python
+config = PlotConfig(theme="colorblind", hover_labels=True)
+```
+
+Manual color settings still override the selected theme, so `PlotConfig(theme="paper",
+node_color="#ABCDEF")` keeps the custom node color.
 
 ## Contraction Schemes
 

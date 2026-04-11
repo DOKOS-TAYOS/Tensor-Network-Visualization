@@ -123,6 +123,31 @@ figures with embedded controls. See [Installation](docs/installation.md) and
 - [Troubleshooting](docs/troubleshooting.md): common install, Jupyter, Matplotlib, backend, and data
   issues.
 - [Repository Examples](examples/README.md): command-line demo launcher and example catalog.
+- [Demo Commands](commands.md): copy-paste commands for every repository demo.
+
+## Demo Gallery
+
+The repository examples are organized around the same launcher:
+
+```bash
+python examples/run_demo.py <group> <demo>
+```
+
+The gallery includes backend demos for TensorKrowch, TensorNetwork, Quimb, TeNPy, and `einsum`,
+plus three focused groups:
+
+- `themes overview`: compares `default`, `paper`, and `colorblind` visual modes.
+- `placements`: shows object, list, 2D grid, 3D grid, manual positions, manual schemes, and named
+  index inputs.
+- `geometry`: renders larger irregular, incomplete, triangular, pyramidal, circular, and
+  disconnected networks.
+
+For batch checks, use:
+
+```bash
+python examples/run_all_examples.py --group engines --views 2d --list
+python examples/run_all_examples.py --group all --views 2d --output-dir .tmp/examples
+```
 
 ## Project Links
 

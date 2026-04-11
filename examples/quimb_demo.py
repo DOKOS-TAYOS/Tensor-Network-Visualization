@@ -38,16 +38,9 @@ from demo_cli import (
 from demo_tensors import build_demo_numpy_tensor
 
 TAGLINES: dict[str, str] = {
-    "cubic_peps": "Cubic lattice encoded through shared index names.",
-    "disconnected": "Disconnected components in a single TensorNetwork.",
-    "hyper": "Three tensors share one common hyper-index.",
-    "ladder": "Two coupled chains linked by rungs.",
-    "mera": "Binary MERA hierarchy expressed with tensor indices.",
-    "mera_ttn": "Binary MERA connected to a TTN.",
+    "hyper": "Multi-index hypergraph with pairwise bonds around the shared-index hubs.",
     "mps": "Finite tensor-train / MPS chain.",
-    "mpo": "Finite MPO chain.",
     "peps": "2D PEPS grid.",
-    "weird": "Irregular topology for layout fallback.",
 }
 
 
@@ -101,12 +94,16 @@ def _build_quimb_network(blueprint: GraphBlueprint) -> tuple[Any, list[Any]]:
 
 
 def _scheme_steps(example: str, blueprint: GraphBlueprint) -> tuple[tuple[str, ...], ...] | None:
-    if example in {"mps", "mpo"}:
+    if example == "mps":
         return pairwise_merge_contraction_scheme(graph_tensor_names(blueprint))
-    if example in {"ladder", "peps", "cubic_peps"}:
+    if example == "peps":
         return cumulative_prefix_contraction_scheme(graph_tensor_names(blueprint))
     if example == "hyper":
-        return (("A", "B", "C"),)
+        return (
+            ("H0", "H1", "H2", "H3"),
+            ("H3", "H4", "H5"),
+            ("H6", "H7", "H8", "H9", "H10"),
+        )
     return None
 
 
@@ -136,26 +133,6 @@ EXAMPLES: tuple[ExampleDefinition, ...] = (
         description="Finite MPS / tensor-train chain.",
     ),
     ExampleDefinition(
-        name="mpo",
-        aliases=(),
-        size_knobs=frozenset({"n_sites"}),
-        supports_native_object=True,
-        supports_from_scratch=True,
-        supports_list=True,
-        builder=_build_example,
-        description="Finite MPO chain.",
-    ),
-    ExampleDefinition(
-        name="ladder",
-        aliases=(),
-        size_knobs=frozenset({"n_sites"}),
-        supports_native_object=True,
-        supports_from_scratch=True,
-        supports_list=True,
-        builder=_build_example,
-        description="Two coupled chains.",
-    ),
-    ExampleDefinition(
         name="peps",
         aliases=(),
         size_knobs=frozenset({"lx", "ly"}),
@@ -164,56 +141,6 @@ EXAMPLES: tuple[ExampleDefinition, ...] = (
         supports_list=True,
         builder=_build_example,
         description="2D PEPS grid.",
-    ),
-    ExampleDefinition(
-        name="cubic_peps",
-        aliases=(),
-        size_knobs=frozenset({"lx", "ly", "lz"}),
-        supports_native_object=True,
-        supports_from_scratch=True,
-        supports_list=True,
-        builder=_build_example,
-        description="3D PEPS lattice.",
-    ),
-    ExampleDefinition(
-        name="mera",
-        aliases=(),
-        size_knobs=frozenset({"mera_log2"}),
-        supports_native_object=True,
-        supports_from_scratch=True,
-        supports_list=True,
-        builder=_build_example,
-        description="Binary MERA hierarchy.",
-    ),
-    ExampleDefinition(
-        name="mera_ttn",
-        aliases=(),
-        size_knobs=frozenset({"mera_log2", "tree_depth"}),
-        supports_native_object=True,
-        supports_from_scratch=True,
-        supports_list=True,
-        builder=_build_example,
-        description="Binary MERA connected to a TTN.",
-    ),
-    ExampleDefinition(
-        name="weird",
-        aliases=(),
-        size_knobs=frozenset(),
-        supports_native_object=True,
-        supports_from_scratch=True,
-        supports_list=True,
-        builder=_build_example,
-        description="Irregular non-grid network.",
-    ),
-    ExampleDefinition(
-        name="disconnected",
-        aliases=(),
-        size_knobs=frozenset(),
-        supports_native_object=True,
-        supports_from_scratch=True,
-        supports_list=True,
-        builder=_build_example,
-        description="Multiple disconnected components.",
     ),
     ExampleDefinition(
         name="hyper",

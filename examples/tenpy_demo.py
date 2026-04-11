@@ -32,7 +32,7 @@ TAGLINES: dict[str, str] = {
     "chain": "Explicit TenPyTensorNetwork open chain.",
     "excitation": "Momentum-style excitation chain on top of a UniformMPS.",
     "hub": "Explicit TenPyTensorNetwork star topology.",
-    "hyper": "Explicit TenPyTensorNetwork hyperedge / shared bond.",
+    "hyper": "Explicit TenPyTensorNetwork with several shared-index hubs.",
     "impo": "Infinite MPO unit cell.",
     "imps": "Infinite MPS unit cell.",
     "mps": "Finite MPS from a product state.",
@@ -177,7 +177,11 @@ def _build_explicit_example(args: ExampleCliArgs, definition: ExampleDefinition)
     elif definition.name == "hub":
         scheme_steps = (("H0", "L1", "L2"),)
     elif definition.name == "hyper":
-        scheme_steps = (("A", "B", "C"),)
+        scheme_steps = (
+            ("H0", "H1", "H2", "H3"),
+            ("H3", "H4", "H5"),
+            ("H6", "H7", "H8", "H9", "H10"),
+        )
     return BuiltExample(
         network=network,
         plot_engine="tenpy",

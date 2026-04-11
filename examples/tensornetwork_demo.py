@@ -37,15 +37,9 @@ from demo_cli import (
 from demo_tensors import build_demo_numpy_tensor
 
 TAGLINES: dict[str, str] = {
-    "cubic_peps": "Cubic lattice with six-neighbor bulk tensors.",
-    "disconnected": "Several disconnected components in a single render.",
-    "ladder": "Two coupled chains linked by rungs.",
-    "mera": "Binary MERA hierarchy built node by node.",
-    "mera_ttn": "Binary MERA topped by a binary TTN.",
     "mps": "Finite tensor-train / MPS chain.",
-    "mpo": "Finite matrix-product operator chain.",
     "peps": "Rectangular PEPS grid with local nearest-neighbor bonds.",
-    "weird": "Irregular topology for force-directed placement.",
+    "weird": "Larger irregular topology built from backend-native Node objects.",
 }
 
 
@@ -94,9 +88,9 @@ def _build_tensornetwork_nodes(blueprint: GraphBlueprint) -> list[Any]:
 
 
 def _scheme_steps(example: str, blueprint: GraphBlueprint) -> tuple[tuple[str, ...], ...] | None:
-    if example in {"mps", "mpo"}:
+    if example == "mps":
         return pairwise_merge_contraction_scheme(graph_tensor_names(blueprint))
-    if example in {"ladder", "peps", "cubic_peps"}:
+    if example == "peps":
         return cumulative_prefix_contraction_scheme(graph_tensor_names(blueprint))
     return None
 
@@ -126,26 +120,6 @@ EXAMPLES: tuple[ExampleDefinition, ...] = (
         description="Finite MPS / tensor-train chain.",
     ),
     ExampleDefinition(
-        name="mpo",
-        aliases=(),
-        size_knobs=frozenset({"n_sites"}),
-        supports_native_object=False,
-        supports_from_scratch=True,
-        supports_list=True,
-        builder=_build_example,
-        description="Finite MPO chain.",
-    ),
-    ExampleDefinition(
-        name="ladder",
-        aliases=(),
-        size_knobs=frozenset({"n_sites"}),
-        supports_native_object=False,
-        supports_from_scratch=True,
-        supports_list=True,
-        builder=_build_example,
-        description="Two coupled chains.",
-    ),
-    ExampleDefinition(
         name="peps",
         aliases=(),
         size_knobs=frozenset({"lx", "ly"}),
@@ -156,36 +130,6 @@ EXAMPLES: tuple[ExampleDefinition, ...] = (
         description="2D PEPS grid.",
     ),
     ExampleDefinition(
-        name="cubic_peps",
-        aliases=(),
-        size_knobs=frozenset({"lx", "ly", "lz"}),
-        supports_native_object=False,
-        supports_from_scratch=True,
-        supports_list=True,
-        builder=_build_example,
-        description="3D PEPS lattice.",
-    ),
-    ExampleDefinition(
-        name="mera",
-        aliases=(),
-        size_knobs=frozenset({"mera_log2"}),
-        supports_native_object=False,
-        supports_from_scratch=True,
-        supports_list=True,
-        builder=_build_example,
-        description="Binary MERA hierarchy.",
-    ),
-    ExampleDefinition(
-        name="mera_ttn",
-        aliases=(),
-        size_knobs=frozenset({"mera_log2", "tree_depth"}),
-        supports_native_object=False,
-        supports_from_scratch=True,
-        supports_list=True,
-        builder=_build_example,
-        description="Binary MERA connected to a TTN.",
-    ),
-    ExampleDefinition(
         name="weird",
         aliases=(),
         size_knobs=frozenset(),
@@ -194,16 +138,6 @@ EXAMPLES: tuple[ExampleDefinition, ...] = (
         supports_list=True,
         builder=_build_example,
         description="Irregular non-grid network.",
-    ),
-    ExampleDefinition(
-        name="disconnected",
-        aliases=(),
-        size_knobs=frozenset(),
-        supports_native_object=False,
-        supports_from_scratch=True,
-        supports_list=True,
-        builder=_build_example,
-        description="Multiple disconnected components.",
     ),
 )
 

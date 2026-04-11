@@ -11,7 +11,7 @@ from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from tensor_network_viz import PlotConfig, show_tensor_network
-from tensor_network_viz.config import EngineName, ViewName
+from tensor_network_viz.config import EngineName, PlotTheme, ViewName
 
 RenderedAxes: TypeAlias = Axes | Axes3D
 SizeKnob: TypeAlias = Literal["n_sites", "lx", "ly", "lz", "mera_log2", "tree_depth"]
@@ -43,6 +43,7 @@ class ExampleCliArgs:
     lz: int
     mera_log2: int
     tree_depth: int
+    theme: PlotTheme = "default"
 
 
 @dataclass(frozen=True)
@@ -126,6 +127,12 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
         choices=("2d", "3d"),
         default="2d",
         help="Visualization mode (default: 2d).",
+    )
+    parser.add_argument(
+        "--theme",
+        choices=("default", "paper", "colorblind"),
+        default="default",
+        help="Visual theme preset (default: default).",
     )
     add_bool_flag(
         parser,
@@ -242,6 +249,7 @@ def namespace_to_cli_args(namespace: argparse.Namespace) -> ExampleCliArgs:
         engine=str(namespace.engine),
         example=str(namespace.example),
         view=namespace.view,
+        theme=namespace.theme,
         labels_nodes=bool(namespace.labels_nodes),
         labels_edges=bool(namespace.labels_edges),
         labels=namespace.labels,
@@ -357,6 +365,7 @@ def finalize_demo_plot_config(
         show_tensor_labels=labels_nodes,
         show_index_labels=labels_edges,
         hover_labels=bool(getattr(args, "hover_labels", True)),
+        theme=getattr(args, "theme", "default"),
         show_contraction_scheme=scheme_enabled,
         contraction_scheme_cost_hover=bool(getattr(args, "hover_cost", False)),
         contraction_tensor_inspector=bool(getattr(args, "tensor_inspector", False)),
@@ -549,44 +558,130 @@ def build_cubic_peps_blueprint(lx: int, ly: int, lz: int) -> GraphBlueprint:
     return builder.build()
 
 
-def build_weird_blueprint() -> GraphBlueprint:
+def _build_pairwise_blueprint(
+    node_names: tuple[str, ...],
+    edges: tuple[tuple[str, str], ...],
+) -> GraphBlueprint:
+    axes_by_node: dict[str, list[str]] = {name: ["phys"] for name in node_names}
+    for edge_index, (left, right) in enumerate(edges):
+        axis_name = f"b{edge_index}"
+        axes_by_node[left].append(axis_name)
+        axes_by_node[right].append(axis_name)
+
     builder = _GraphBlueprintBuilder()
-    builder.add_node("center", ("north", "east", "south", "west", "phys"))
-    builder.add_node("north", ("center", "east", "phys"))
-    builder.add_node("east", ("center", "north", "south", "phys"))
-    builder.add_node("south", ("center", "east", "west_a", "west_b", "phys"))
-    builder.add_node("west", ("center", "south_a", "south_b", "phys"))
-    builder.add_bond(("center", "north"), ("north", "center"))
-    builder.add_bond(("center", "east"), ("east", "center"))
-    builder.add_bond(("center", "south"), ("south", "center"))
-    builder.add_bond(("center", "west"), ("west", "center"))
-    builder.add_bond(("north", "east"), ("east", "north"))
-    builder.add_bond(("east", "south"), ("south", "east"))
-    builder.add_bond(("south", "west_a"), ("west", "south_a"))
-    builder.add_bond(("south", "west_b"), ("west", "south_b"))
+    for node_name in node_names:
+        builder.add_node(node_name, tuple(axes_by_node[node_name]))
+    for edge_index, (left, right) in enumerate(edges):
+        axis_name = f"b{edge_index}"
+        builder.add_bond((left, axis_name), (right, axis_name))
     return builder.build()
+
+
+def build_weird_blueprint() -> GraphBlueprint:
+    node_names = tuple(f"V{index}" for index in range(23))
+    edges = (
+        ("V0", "V1"),
+        ("V1", "V2"),
+        ("V2", "V5"),
+        ("V5", "V8"),
+        ("V8", "V7"),
+        ("V7", "V6"),
+        ("V6", "V3"),
+        ("V3", "V0"),
+        ("V3", "V4"),
+        ("V4", "V5"),
+        ("V1", "V4"),
+        ("V4", "V7"),
+        ("V0", "V4"),
+        ("V2", "V4"),
+        ("V6", "V4"),
+        ("V8", "V4"),
+        ("V1", "V9"),
+        ("V9", "V10"),
+        ("V10", "V11"),
+        ("V11", "V5"),
+        ("V3", "V12"),
+        ("V12", "V13"),
+        ("V13", "V14"),
+        ("V14", "V7"),
+        ("V0", "V15"),
+        ("V15", "V16"),
+        ("V16", "V8"),
+        ("V10", "V17"),
+        ("V17", "V18"),
+        ("V18", "V19"),
+        ("V19", "V13"),
+        ("V10", "V13"),
+        ("V11", "V14"),
+        ("V16", "V19"),
+        ("V2", "V20"),
+        ("V18", "V21"),
+        ("V12", "V22"),
+    )
+    return _build_pairwise_blueprint(node_names, edges)
 
 
 def build_disconnected_blueprint() -> GraphBlueprint:
-    builder = _GraphBlueprintBuilder()
-    builder.add_node("A", ("bond", "phys"))
-    builder.add_node("B", ("bond", "phys"))
-    builder.add_node("C", ("left", "right", "phys"))
-    builder.add_node("D", ("left", "right", "phys"))
-    builder.add_node("E", ("left", "right", "phys"))
-    builder.add_bond(("A", "bond"), ("B", "bond"))
-    builder.add_bond(("C", "left"), ("D", "right"))
-    builder.add_bond(("D", "left"), ("E", "right"))
-    builder.add_bond(("E", "left"), ("C", "right"))
-    return builder.build()
+    chain = tuple(f"A{index}" for index in range(8))
+    ring = tuple(f"B{index}" for index in range(6))
+    grid = tuple(f"C{i}_{j}" for i in range(3) for j in range(3))
+    star = tuple(f"D{index}" for index in range(6))
+    node_names = (*chain, *ring, *grid, *star)
+    edges: list[tuple[str, str]] = []
+    edges.extend((f"A{index}", f"A{index + 1}") for index in range(7))
+    edges.extend((f"B{index}", f"B{(index + 1) % 6}") for index in range(6))
+    edges.extend((f"B{index}", f"B{(index + 3) % 6}") for index in range(3))
+    for i in range(3):
+        for j in range(3):
+            if i < 2:
+                edges.append((f"C{i}_{j}", f"C{i + 1}_{j}"))
+            if j < 2:
+                edges.append((f"C{i}_{j}", f"C{i}_{j + 1}"))
+    edges.extend(("D0", f"D{index}") for index in range(1, 6))
+    edges.extend((f"D{index}", f"D{index + 1}") for index in range(1, 5))
+    return _build_pairwise_blueprint(node_names, tuple(edges))
 
 
 def build_hyper_blueprint() -> GraphBlueprint:
     builder = _GraphBlueprintBuilder()
-    builder.add_node("A", ("hub", "phys"))
-    builder.add_node("B", ("hub", "phys"))
-    builder.add_node("C", ("hub", "phys"))
-    builder.add_bond(("A", "hub"), ("B", "hub"), ("C", "hub"))
+    node_axes: dict[str, list[str]] = {f"H{index}": ["phys"] for index in range(12)}
+    hyper_bonds = (
+        (("H0", "alpha"), ("H1", "alpha"), ("H2", "alpha"), ("H3", "alpha")),
+        (("H3", "beta"), ("H4", "beta"), ("H5", "beta")),
+        (
+            ("H6", "gamma"),
+            ("H7", "gamma"),
+            ("H8", "gamma"),
+            ("H9", "gamma"),
+            ("H10", "gamma"),
+        ),
+    )
+    pair_bonds = (
+        ("H0", "H4"),
+        ("H1", "H6"),
+        ("H2", "H7"),
+        ("H5", "H8"),
+        ("H8", "H11"),
+        ("H11", "H9"),
+        ("H9", "H4"),
+        ("H10", "H2"),
+        ("H11", "H3"),
+    )
+    for bond in hyper_bonds:
+        for node_name, axis_name in bond:
+            node_axes[node_name].append(axis_name)
+    for edge_index, (left, right) in enumerate(pair_bonds):
+        axis_name = f"ring_{edge_index}"
+        node_axes[left].append(axis_name)
+        node_axes[right].append(axis_name)
+
+    for node_name in node_axes:
+        builder.add_node(node_name, tuple(node_axes[node_name]))
+    for bond in hyper_bonds:
+        builder.add_bond(*bond)
+    for edge_index, (left, right) in enumerate(pair_bonds):
+        axis_name = f"ring_{edge_index}"
+        builder.add_bond((left, axis_name), (right, axis_name))
     return builder.build()
 
 
