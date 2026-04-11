@@ -8,7 +8,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.widgets import Button, CheckButtons
 
-from .._ui_utils import _set_axes_visible, _style_control_tray_axes
+from .._ui_utils import _set_axes_visible, _style_control_button, _style_control_tray_axes
 from .._widgets import _SafeButton
 from ..config import ViewName
 from .state import InteractiveFeatureState
@@ -80,7 +80,7 @@ def _view_toggle_label(view: ViewName) -> str:
 
 
 def _style_compact_button(button: Button) -> None:
-    button.label.set_fontsize(_COMPACT_BUTTON_FONT_SIZE)
+    _style_control_button(button, font_size=_COMPACT_BUTTON_FONT_SIZE)
 
 
 def _compact_button_bounds(*, left: float, width: float) -> tuple[float, float, float, float]:

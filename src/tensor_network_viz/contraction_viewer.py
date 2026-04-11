@@ -73,7 +73,12 @@ from ._contraction_viewer_ui import (
 )
 from ._matplotlib_state import set_contraction_viewer
 from ._typing import root_figure
-from ._ui_utils import _reserve_figure_bottom, _set_axes_visible, _set_widget_active
+from ._ui_utils import (
+    _reserve_figure_bottom,
+    _set_axes_visible,
+    _set_widget_active,
+    _style_control_button,
+)
 from .config import PlotConfig
 
 VisualizerMode = Literal["cumulative", "highlight_current", "window"]
@@ -462,6 +467,7 @@ class _ContractionViewerBase:
                 self._slider_callback_guard = False
 
         self._refresh_step_details_panel()
+        self._sync_playback_button_states()
         for callback in tuple(self._step_changed_callbacks):
             callback(k_clamped)
         self.figure.canvas.draw_idle()
@@ -644,6 +650,7 @@ class _ContractionViewerBase:
         btn_play.on_clicked(lambda _e: self.play())
         btn_pause.on_clicked(lambda _e: self.pause())
         btn_reset.on_clicked(lambda _e: self.reset())
+        self._sync_playback_button_states()
 
         def _on_close(_: Any) -> None:
             self.pause()
@@ -683,15 +690,29 @@ class _ContractionViewerBase:
             return
         self._is_playing = True
         self._timer.start()
+        self._sync_playback_button_states()
 
     def pause(self) -> None:
         self._is_playing = False
         if self._timer is not None:
             self._timer.stop()
+        self._sync_playback_button_states()
 
     def reset(self) -> None:
         self.pause()
         self.set_step(0)
+
+    def _sync_playback_button_states(self) -> None:
+        if self._btn_play is not None:
+            _style_control_button(self._btn_play, active=self._is_playing, font_size=8.8)
+        if self._btn_pause is not None:
+            _style_control_button(self._btn_pause, active=not self._is_playing, font_size=8.8)
+        if self._btn_reset is not None:
+            _style_control_button(
+                self._btn_reset,
+                muted=self.current_step == 0,
+                font_size=8.8,
+            )
 
     def set_playback_widgets_visible(self, visible: bool) -> None:
         if not self._ui_built:

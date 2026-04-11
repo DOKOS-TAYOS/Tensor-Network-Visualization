@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
 import numpy as np
+from matplotlib import patheffects
 from matplotlib.axes import Axes
 from matplotlib.colors import BoundaryNorm, ListedColormap
+from matplotlib.ticker import MaxNLocator
 
 from ._tensor_elements_support import (
     _HeatmapPayload,
@@ -18,6 +20,8 @@ from ._tensor_elements_support import (
 from .tensor_elements_config import TensorElementsConfig
 
 _OUTLIER_EDGE_COLOR: Final[str] = "#F8FAFC"
+_OUTLIER_CONTRAST_COLOR: Final[str] = "#0F172A"
+_SOFT_GRID_COLOR: Final[str] = "#CBD5E1"
 _DATA_TEXT_BOX: Final[dict[str, Any]] = {
     "boxstyle": "round,pad=0.45",
     "facecolor": "#F8FAFC",
@@ -117,6 +121,28 @@ def _axis_label_text(prefix: str, labels: tuple[str, ...]) -> str:
     return f"{prefix}: {', '.join(labels)}"
 
 
+def _panel_title(record: _TensorRecord, payload: _TensorElementsPayload) -> str:
+    return f"{record.name} - {payload.mode_label}"
+
+
+def _apply_soft_axis_grid(ax: Axes) -> None:
+    ax.set_axisbelow(True)
+    ax.grid(
+        True,
+        color=_SOFT_GRID_COLOR,
+        alpha=0.16,
+        linewidth=0.7,
+        linestyle=":",
+    )
+
+
+def _style_continuous_colorbar(colorbar: Any) -> None:
+    colorbar.locator = MaxNLocator(nbins=4)
+    colorbar.update_ticks()
+    colorbar.ax.tick_params(labelsize=8.5, length=2.5, pad=2.0)
+    colorbar.outline.set_linewidth(0.6)
+
+
 def _remove_colorbar(panel: _PanelLike) -> None:
     if panel.colorbar is None:
         return
@@ -179,7 +205,7 @@ def _render_panel(
 
     if isinstance(payload, _TextSummaryPayload):
         panel.main_ax.axis("off")
-        panel.main_ax.set_title(f"{record.name} [{record.engine}] - {payload.mode_label}")
+        panel.main_ax.set_title(_panel_title(record, payload))
         panel.main_ax.text(
             0.02,
             0.98,
@@ -204,9 +230,10 @@ def _render_panel(
             edgecolor="#0F172A",
             alpha=0.85,
         )
+        _apply_soft_axis_grid(panel.main_ax)
         panel.main_ax.set_xlabel(payload.xlabel)
         panel.main_ax.set_ylabel("count")
-        panel.main_ax.set_title(f"{record.name} [{record.engine}] - {payload.mode_label}")
+        panel.main_ax.set_title(_panel_title(record, payload))
         return
 
     if isinstance(payload, _SeriesPayload):
@@ -232,8 +259,8 @@ def _render_panel(
         panel.main_ax.set_xlabel(payload.xlabel)
         panel.main_ax.set_ylabel(payload.ylabel)
         panel.main_ax.set_yscale(payload.yscale)
-        panel.main_ax.grid(True, alpha=0.25)
-        panel.main_ax.set_title(f"{record.name} [{record.engine}] - {payload.mode_label}")
+        _apply_soft_axis_grid(panel.main_ax)
+        panel.main_ax.set_title(_panel_title(record, payload))
         return
 
     assert isinstance(payload, _HeatmapPayload)
@@ -250,7 +277,7 @@ def _render_panel(
     )
     panel.main_ax.set_ylabel(_axis_label_text("rows", metadata.row_names))
     panel.main_ax.set_xlabel(_axis_label_text("cols", metadata.col_names))
-    panel.main_ax.set_title(f"{record.name} [{record.engine}] - {payload.mode_label}")
+    panel.main_ax.set_title(_panel_title(record, payload))
     if payload.outlier_mask is not None and np.any(payload.outlier_mask):
         y_coords, x_coords = np.nonzero(payload.outlier_mask)
         panel.main_ax.scatter(
@@ -261,6 +288,10 @@ def _render_panel(
             color=_OUTLIER_EDGE_COLOR,
             linewidths=1.5,
             zorder=3,
+            path_effects=[
+                patheffects.Stroke(linewidth=3.0, foreground=_OUTLIER_CONTRAST_COLOR),
+                patheffects.Normal(),
+            ],
         )
     panel.colorbar = panel.main_ax.figure.colorbar(
         image,
@@ -277,6 +308,8 @@ def _render_panel(
     elif style_key == "nan_inf":
         panel.colorbar.set_ticks([0.0, 1.0, 2.0, 3.0])
         panel.colorbar.set_ticklabels(["finite", "NaN", "+Inf", "-Inf"])
+    else:
+        _style_continuous_colorbar(panel.colorbar)
     panel.colorbar.ax.set_ylabel(payload.colorbar_label, rotation=90)
 
 

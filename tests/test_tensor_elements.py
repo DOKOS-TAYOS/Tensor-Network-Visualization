@@ -222,6 +222,25 @@ def test_show_tensor_elements_returns_fig_ax_for_single_tensor_with_autodetect()
     assert "Left" in ax.get_title()
 
 
+def test_show_tensor_elements_heatmap_uses_compact_title_without_engine_suffix() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(6, dtype=float).reshape(2, 3),
+        name="CompactTitle",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="elements"),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert ax.get_title() == "CompactTitle - elements"
+    assert "[" not in ax.get_title()
+
+
 def test_show_tensor_elements_supports_single_quimb_like_tensor() -> None:
     tensor = DummyQuimbTensor(
         np.arange(6, dtype=float).reshape(2, 3),
@@ -233,7 +252,7 @@ def test_show_tensor_elements_supports_single_quimb_like_tensor() -> None:
 
     assert_rendered_figure(fig, ax)
     assert ax.images
-    assert "quimb" in ax.get_title().lower()
+    assert ax.get_title() == "Q0 - elements"
 
 
 def test_show_tensor_elements_supports_direct_numpy_array_input() -> None:
@@ -934,6 +953,30 @@ def test_show_tensor_elements_distribution_mode_filters_nonfinite_values() -> No
     assert ax.patches
 
 
+def test_show_tensor_elements_distribution_mode_uses_soft_grid() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(16, dtype=float).reshape(4, 4),
+        name="SoftGridDistribution",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="distribution"),
+        show=False,
+        show_controls=False,
+    )
+    fig.canvas.draw()
+    visible_gridlines = [
+        line for line in (*ax.get_xgridlines(), *ax.get_ygridlines()) if line.get_visible()
+    ]
+
+    assert_rendered_figure(fig, ax)
+    assert visible_gridlines
+    assert all(float(line.get_alpha() or 1.0) <= 0.18 for line in visible_gridlines)
+    assert all(line.get_linestyle() == ":" for line in visible_gridlines)
+
+
 def test_show_tensor_elements_sparsity_mode_marks_near_zero_entries() -> None:
     tensor = DummyTensorNetworkNode(
         np.array([[0.0, 1e-14, 1e-3]], dtype=float),
@@ -1021,6 +1064,33 @@ def test_show_tensor_elements_singular_values_mode_renders_ordered_spectrum() ->
     assert ax.get_yscale() == "log"
     assert len(ax.lines) == 1
     np.testing.assert_allclose(_line_ydata_as_float(ax), np.array([3.0, 1.0]))
+
+
+def test_show_tensor_elements_profiles_mode_uses_soft_grid() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="SoftGridProfile",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(
+            mode="profiles",
+            analysis=TensorAnalysisConfig(profile_axis="mid", profile_method="norm"),
+        ),
+        show=False,
+        show_controls=False,
+    )
+    fig.canvas.draw()
+    visible_gridlines = [
+        line for line in (*ax.get_xgridlines(), *ax.get_ygridlines()) if line.get_visible()
+    ]
+
+    assert_rendered_figure(fig, ax)
+    assert visible_gridlines
+    assert all(float(line.get_alpha() or 1.0) <= 0.18 for line in visible_gridlines)
+    assert all(line.get_linestyle() == ":" for line in visible_gridlines)
 
 
 def test_show_tensor_elements_singular_values_mode_switches_to_log_scale_for_wide_ranges() -> None:
@@ -1404,6 +1474,27 @@ def test_show_tensor_elements_heatmap_adds_colorbar_axis_on_the_right() -> None:
     assert colorbar_ax.get_position().x0 >= ax.get_position().x1
 
 
+def test_show_tensor_elements_continuous_colorbar_uses_compact_ticks() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(100, dtype=float).reshape(10, 10),
+        name="CompactColorbar",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="elements"),
+        show=False,
+        show_controls=False,
+    )
+    colorbar_ax = next(axis for axis in fig.axes if axis is not ax)
+    ticklabels = [tick.get_text() for tick in colorbar_ax.get_yticklabels()]
+
+    assert_rendered_figure(fig, ax)
+    assert len(colorbar_ax.get_yticks()) <= 5
+    assert all("e+" not in label.lower() for label in ticklabels)
+
+
 def test_show_tensor_elements_phase_mode_labels_colorbar() -> None:
     tensor = DummyTensorNetworkNode(
         np.array([[1.0 + 0.0j, 1.0j]], dtype=np.complex128),
@@ -1532,6 +1623,7 @@ def test_show_tensor_elements_outlier_overlay_appears_for_continuous_heatmaps() 
 
     assert_rendered_figure(fig, ax)
     assert len(ax.collections) == 1
+    assert ax.collections[0].get_path_effects()
 
 
 def test_show_tensor_elements_outlier_overlay_skips_discrete_heatmaps() -> None:
@@ -2130,6 +2222,34 @@ def test_show_tensor_elements_slider_uses_thicker_control_height() -> None:
 
     assert slider_bounds == pytest.approx((0.48, 0.01, 0.38, 0.055))
     assert controller._slider.label.get_position() == pytest.approx((-0.075, 0.5))
+
+
+def test_show_tensor_elements_slider_uses_polished_progress_track() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.arange(6, dtype=float).reshape(2, 3),
+            name="A",
+            axis_names=("x", "y"),
+        ),
+        DummyTensorNetworkNode(
+            np.arange(12, dtype=float).reshape(3, 4),
+            name="B",
+            axis_names=("u", "v"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert_rendered_figure(fig, ax)
+    assert controller._slider is not None
+    assert controller._slider.poly.get_facecolor() == pytest.approx(
+        matplotlib.colors.to_rgba("#0369A1")
+    )
+    assert controller._slider.track.get_facecolor() == pytest.approx(
+        matplotlib.colors.to_rgba("#D7EAF2")
+    )
+    assert controller._slider._handle.get_markersize() == pytest.approx(11.0)
 
 
 def test_show_tensor_elements_analysis_axis_controls_stretch_left_and_down() -> None:

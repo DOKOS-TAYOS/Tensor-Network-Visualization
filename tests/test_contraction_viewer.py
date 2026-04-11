@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from matplotlib.artist import Artist
 from matplotlib.backend_bases import MouseButton, MouseEvent
-from matplotlib.colors import to_rgba
+from matplotlib.colors import to_hex, to_rgba
 from matplotlib.patches import FancyBboxPatch, Rectangle
 from matplotlib.widgets import Button, CheckButtons, Slider
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -167,6 +167,35 @@ def test_default_playback_slider_uses_theme_bond_purple() -> None:
     )
     assert v.slider._handle.get_markerfacecolor() == config.bond_edge_color
     assert v.slider._handle.get_markeredgecolor() == config.node_edge_color
+
+
+def test_playback_buttons_use_polished_state_styles() -> None:
+    fig, ax = matplotlib.pyplot.subplots()
+    rects = [Rectangle((index, 0), 1, 1) for index in range(2)]
+    for rect in rects:
+        ax.add_patch(rect)
+    v = ContractionViewer2D(rects, fig=fig, ax=ax, enable_playback=True)
+
+    v.build_ui()
+
+    assert v._btn_play is not None
+    assert v._btn_pause is not None
+    assert v._btn_reset is not None
+    assert to_hex(v._btn_play.ax.patch.get_facecolor()).lower() == "#f8fafc"
+    assert to_hex(v._btn_pause.ax.patch.get_facecolor()).lower() == "#dbeafe"
+    assert to_hex(v._btn_reset.ax.patch.get_facecolor()).lower() == "#f8fafc"
+
+    v.play()
+    assert to_hex(v._btn_play.ax.patch.get_facecolor()).lower() == "#dbeafe"
+    assert to_hex(v._btn_pause.ax.patch.get_facecolor()).lower() == "#f8fafc"
+
+    v.pause()
+    assert to_hex(v._btn_play.ax.patch.get_facecolor()).lower() == "#f8fafc"
+    assert to_hex(v._btn_pause.ax.patch.get_facecolor()).lower() == "#dbeafe"
+
+    v.reset()
+    assert to_hex(v._btn_reset.ax.patch.get_facecolor()).lower() == "#e5e7eb"
+    assert to_hex(v._btn_reset.label.get_color()).lower() == "#64748b"
 
 
 def test_playback_slider_releases_stale_mouse_grabber_before_drag() -> None:

@@ -184,6 +184,43 @@ def test_interactive_controls_panel_emits_raw_requested_state_from_widget_change
         plt.close(fig)
 
 
+def test_interactive_controls_compact_buttons_use_polished_control_style() -> None:
+    fig = plt.figure()
+    initial_state = InteractiveFeatureState(
+        hover=True,
+        nodes=True,
+        tensor_labels=False,
+        edge_labels=False,
+        scheme=False,
+        playback=False,
+        cost_hover=False,
+        tensor_inspector=False,
+    )
+    try:
+        panel = _InteractiveControlsPanel(
+            fig=fig,
+            layout=_InteractiveControlsLayout(
+                include_view_selector=True,
+                include_scheme_toggles=False,
+                include_tensor_inspector=False,
+                include_diagnostics=False,
+                include_focus_controls=True,
+            ),
+            initial_view="2d",
+            initial_state=initial_state,
+            on_view_selected=lambda _view: None,
+            on_state_changed=lambda _state: None,
+        )
+
+        assert panel.view_toggle_button is not None
+        assert panel.focus_mode_button is not None
+        assert to_hex(panel.view_toggle_button.ax.patch.get_facecolor()).lower() == "#f8fafc"
+        assert to_hex(panel.view_toggle_button.label.get_color()).lower() == "#0f172a"
+        assert to_hex(panel.focus_mode_button.ax.patch.get_facecolor()).lower() == "#f8fafc"
+    finally:
+        plt.close(fig)
+
+
 def test_interactive_controls_panel_keeps_playback_off_when_only_tensor_inspector_is_enabled() -> (
     None
 ):

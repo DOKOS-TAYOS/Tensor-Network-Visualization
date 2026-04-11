@@ -4,11 +4,11 @@ from collections.abc import Sequence
 from typing import Any
 
 from matplotlib.axes import Axes
-from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 from matplotlib.text import Text
 from matplotlib.widgets import Button, Slider
 
+from ._ui_utils import _control_slider_handle_style, _slider_track_color, _style_control_button
 from ._widgets import _SafeButton, _SafeSlider
 from .config import PlotConfig
 
@@ -54,24 +54,13 @@ _CONTROL_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _CONTROL_CHECK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
 
 
-def _slider_track_color(base_color: str) -> tuple[float, float, float, float]:
-    r, g, b, _ = to_rgba(base_color)
-    mix = float(_PLAYBACK_SLIDER_TRACK_WHITE_MIX)
-    return (
-        mix + (1.0 - mix) * float(r),
-        mix + (1.0 - mix) * float(g),
-        mix + (1.0 - mix) * float(b),
-        1.0,
-    )
-
-
 def _playback_slider_handle_style(config: PlotConfig | None) -> dict[str, Any]:
     resolved = config if config is not None else PlotConfig()
-    return {
-        "facecolor": resolved.bond_edge_color,
-        "edgecolor": resolved.node_edge_color,
-        "size": _PLAYBACK_SLIDER_HANDLE_STYLE["size"],
-    }
+    return _control_slider_handle_style(
+        active_color=resolved.bond_edge_color,
+        edge_color=resolved.node_edge_color,
+        size=float(_PLAYBACK_SLIDER_HANDLE_STYLE["size"]),
+    )
 
 
 def create_playback_details_panel(fig: Figure) -> tuple[Axes, Text]:
@@ -118,7 +107,10 @@ def create_playback_slider(
         valinit=float(initial_step),
         valstep=1,
         color=active_color,
-        track_color=_slider_track_color(active_color),
+        track_color=_slider_track_color(
+            active_color,
+            white_mix=_PLAYBACK_SLIDER_TRACK_WHITE_MIX,
+        ),
         handle_style=_playback_slider_handle_style(config),
     )
 
@@ -132,11 +124,12 @@ def create_playback_buttons(fig: Figure) -> tuple[Button, Button, Button]:
     ax_play = fig.add_axes((bx, by, bw, bh))
     ax_pause = fig.add_axes((bx + bw + gap, by, bw, bh))
     ax_reset = fig.add_axes((bx + 2.0 * (bw + gap), by, _PLAYBACK_RESET_WIDTH, bh))
-    return (
-        _SafeButton(ax_play, "Play"),
-        _SafeButton(ax_pause, "Pause"),
-        _SafeButton(ax_reset, "Reset"),
-    )
+    btn_play = _SafeButton(ax_play, "Play")
+    btn_pause = _SafeButton(ax_pause, "Pause")
+    btn_reset = _SafeButton(ax_reset, "Reset")
+    for button in (btn_play, btn_pause, btn_reset):
+        _style_control_button(button, font_size=8.8)
+    return (btn_play, btn_pause, btn_reset)
 
 
 __all__ = [

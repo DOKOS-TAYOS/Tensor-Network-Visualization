@@ -28,7 +28,12 @@ from ._tensor_elements_support import (
     _TensorRecord,
     _valid_group_modes_for_record,
 )
-from ._ui_utils import _reserve_figure_bottom, _style_control_tray_axes
+from ._ui_utils import (
+    _CONTROL_SLIDER_TRACK_COLOR,
+    _control_slider_handle_style,
+    _reserve_figure_bottom,
+    _style_control_tray_axes,
+)
 from ._widgets import _SafeSlider
 from .tensor_elements_config import TensorAnalysisConfig, TensorElementsConfig, TensorElementsMode
 
@@ -272,6 +277,11 @@ class _TensorElementsFigureController:
                     valinit=0.0,
                     valstep=1,
                     color=_SLIDER_ACTIVE_COLOR,
+                    track_color=_CONTROL_SLIDER_TRACK_COLOR,
+                    handle_style=_control_slider_handle_style(
+                        active_color=_SLIDER_ACTIVE_COLOR,
+                        edge_color="#075985",
+                    ),
                 )
                 self._slider.label.set_x(self._controls_layout.tensor_slider_label_x)
                 self._slider.on_changed(self._on_slider_changed)
@@ -397,6 +407,11 @@ class _TensorElementsFigureController:
                 valinit=float(analysis.slice_index),
                 valstep=1,
                 color=_SLIDER_ACTIVE_COLOR,
+                track_color=_CONTROL_SLIDER_TRACK_COLOR,
+                handle_style=_control_slider_handle_style(
+                    active_color=_SLIDER_ACTIVE_COLOR,
+                    edge_color="#075985",
+                ),
             )
             self._analysis_slider.label.set_x(_ANALYSIS_SLIDER_LABEL_X)
             self._analysis_slider.on_changed(self._on_analysis_slider_changed)
