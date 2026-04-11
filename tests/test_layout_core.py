@@ -37,9 +37,11 @@ from tensor_network_viz._core.layout.free_directions_3d import (
     _pick_candidate_direction_3d,
 )
 from tensor_network_viz._core.layout.generic_coarsening import (
+    _CoarseningGraph,
     _compress_degree_two_paths,
     _compute_coarsened_layout_2d,
     _distinct_neighbor_counts,
+    _ordered_initial_circle_node_ids,
     _peel_degree_one_trees,
 )
 from tensor_network_viz._core.renderer import (
@@ -2408,6 +2410,146 @@ def test_compute_layout_generic_graph_uses_force_fallback_produces_valid_positio
     assert np.all(np.isfinite(coords))
 
 
+def _make_coarsening_graph(
+    *,
+    neighbors_by_node: dict[int, tuple[int, ...]],
+    edge_weights: dict[tuple[int, int], float],
+) -> _CoarseningGraph:
+    return _CoarseningGraph(
+        node_ids=tuple(sorted(neighbors_by_node)),
+        neighbors_by_node={
+            int(node_id): tuple(int(neighbor_id) for neighbor_id in neighbors)
+            for node_id, neighbors in sorted(neighbors_by_node.items())
+        },
+        edge_weights={
+            tuple(sorted((int(left_id), int(right_id)))): float(weight)
+            for (left_id, right_id), weight in edge_weights.items()
+        },
+    )
+
+
+def test_ordered_initial_circle_node_ids_prefers_heaviest_start_neighbor() -> None:
+    coarsening_graph = _make_coarsening_graph(
+        neighbors_by_node={
+            0: (1, 2),
+            1: (0, 3),
+            2: (0, 3),
+            3: (1, 2),
+        },
+        edge_weights={
+            (0, 1): 2.0,
+            (0, 2): 1.0,
+            (1, 3): 1.0,
+            (2, 3): 1.0,
+        },
+    )
+
+    assert _ordered_initial_circle_node_ids(coarsening_graph) == [2, 0, 1, 3]
+
+
+def test_ordered_initial_circle_node_ids_breaks_endpoint_ties_by_placed_connections() -> None:
+    coarsening_graph = _make_coarsening_graph(
+        neighbors_by_node={
+            0: (1, 2),
+            1: (0, 3, 4),
+            2: (0, 3, 6),
+            3: (1, 2),
+            4: (1, 6),
+            6: (2, 4),
+        },
+        edge_weights={
+            (0, 1): 2.0,
+            (0, 2): 1.0,
+            (1, 3): 1.0,
+            (1, 4): 1.0,
+            (2, 3): 1.0,
+            (2, 6): 1.0,
+            (4, 6): 1.0,
+        },
+    )
+
+    order = _ordered_initial_circle_node_ids(coarsening_graph)
+
+    assert order[order.index(1) + 1] == 3
+
+
+def test_ordered_initial_circle_node_ids_breaks_remaining_ties_by_lower_degree() -> None:
+    coarsening_graph = _make_coarsening_graph(
+        neighbors_by_node={
+            0: (1, 2),
+            1: (0, 3, 4),
+            2: (0, 6),
+            3: (1, 5),
+            4: (1, 5, 6),
+            5: (3, 4),
+            6: (2, 4),
+        },
+        edge_weights={
+            (0, 1): 2.0,
+            (0, 2): 1.0,
+            (1, 3): 1.0,
+            (1, 4): 1.0,
+            (2, 6): 1.0,
+            (3, 5): 1.0,
+            (4, 5): 1.0,
+            (4, 6): 1.0,
+        },
+    )
+
+    order = _ordered_initial_circle_node_ids(coarsening_graph)
+
+    assert order[order.index(1) + 1] == 3
+
+
+def test_ordered_initial_circle_node_ids_skips_blocked_side_and_continues_other_branch() -> None:
+    coarsening_graph = _make_coarsening_graph(
+        neighbors_by_node={
+            0: (1, 2),
+            1: (0, 2),
+            2: (0, 1, 3, 4),
+            3: (2, 4),
+            4: (2, 3),
+        },
+        edge_weights={
+            (0, 1): 2.0,
+            (0, 2): 1.0,
+            (1, 2): 1.0,
+            (2, 3): 1.0,
+            (2, 4): 1.0,
+            (3, 4): 1.0,
+        },
+    )
+
+    assert _ordered_initial_circle_node_ids(coarsening_graph) == [4, 3, 2, 0, 1]
+
+
+def test_ordered_initial_circle_node_ids_uses_recovery_when_both_ends_block() -> None:
+    coarsening_graph = _make_coarsening_graph(
+        neighbors_by_node={
+            0: (1, 2),
+            1: (0, 2),
+            2: (0, 1, 3, 4, 5, 6),
+            3: (2, 4),
+            4: (2, 3),
+            5: (2, 6),
+            6: (2, 5),
+        },
+        edge_weights={
+            (0, 1): 2.0,
+            (0, 2): 1.0,
+            (1, 2): 1.0,
+            (2, 3): 3.0,
+            (2, 4): 2.0,
+            (2, 5): 2.0,
+            (2, 6): 1.0,
+            (3, 4): 1.0,
+            (5, 6): 1.0,
+        },
+    )
+
+    assert _ordered_initial_circle_node_ids(coarsening_graph) == [4, 3, 2, 0, 1, 5, 6]
+
+
 def test_generic_coarsening_counts_distinct_neighbors_for_parallel_edges() -> None:
     graph = _build_parallel_pair_graph()
     component = _analyze_layout_components_cached(graph)[0]
@@ -2547,6 +2689,7 @@ def test_generic_coarsening_force_layout_uses_small_skeleton(
     assert set(positions) == set(graph.nodes)
     assert set(captured_node_ids) == set(range(5))
     assert len(captured_node_ids) < len(graph.nodes) / 4
+    assert captured_node_ids == [4, 2, 0, 1, 3]
 
 
 def test_generic_coarsening_layout_is_finite_spread_and_deterministic() -> None:

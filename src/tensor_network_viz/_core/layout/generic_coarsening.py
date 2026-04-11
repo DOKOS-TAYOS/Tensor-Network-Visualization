@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import heapq
 import math
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import cast
@@ -351,6 +351,146 @@ def _pair_weights_from_coarsening(
     return dict(coarsening_graph.edge_weights)
 
 
+def _connection_weight(
+    coarsening_graph: _CoarseningGraph,
+    left_id: int,
+    right_id: int,
+) -> float:
+    return float(coarsening_graph.edge_weights.get(_edge_key(left_id, right_id), 0.0))
+
+
+def _total_weight_to_node_ids(
+    coarsening_graph: _CoarseningGraph,
+    node_id: int,
+    node_ids: set[int],
+) -> float:
+    return float(
+        sum(
+            _connection_weight(coarsening_graph, node_id, neighbor_id)
+            for neighbor_id in coarsening_graph.neighbors_by_node[node_id]
+            if neighbor_id in node_ids
+        )
+    )
+
+
+def _ordered_endpoint_candidates(
+    coarsening_graph: _CoarseningGraph,
+    *,
+    endpoint_id: int,
+    placed_node_ids: set[int],
+    degree_by_node_id: dict[int, int],
+) -> list[int]:
+    candidates = [
+        neighbor_id
+        for neighbor_id in coarsening_graph.neighbors_by_node[endpoint_id]
+        if neighbor_id not in placed_node_ids
+    ]
+    return sorted(
+        candidates,
+        key=lambda node_id: (
+            -_connection_weight(coarsening_graph, endpoint_id, node_id),
+            -_total_weight_to_node_ids(coarsening_graph, node_id, placed_node_ids),
+            degree_by_node_id[node_id],
+            node_id,
+        ),
+    )
+
+
+def _ordered_recovery_candidates(
+    coarsening_graph: _CoarseningGraph,
+    *,
+    remaining_node_ids: set[int],
+    placed_node_ids: set[int],
+    degree_by_node_id: dict[int, int],
+) -> list[int]:
+    return sorted(
+        remaining_node_ids,
+        key=lambda node_id: (
+            -_total_weight_to_node_ids(coarsening_graph, node_id, placed_node_ids),
+            degree_by_node_id[node_id],
+            node_id,
+        ),
+    )
+
+
+def _ordered_initial_circle_node_ids(coarsening_graph: _CoarseningGraph) -> list[int]:
+    node_ids = list(coarsening_graph.node_ids)
+    if len(node_ids) <= 2:
+        return node_ids
+
+    degree_by_node_id = {
+        node_id: len(coarsening_graph.neighbors_by_node[node_id])
+        for node_id in coarsening_graph.node_ids
+    }
+    start_id = min(node_ids, key=lambda node_id: (degree_by_node_id[node_id], node_id))
+    ordered_node_ids: deque[int] = deque((start_id,))
+    placed_node_ids = {start_id}
+    remaining_node_ids = set(node_ids)
+    remaining_node_ids.remove(start_id)
+
+    initial_candidates = _ordered_endpoint_candidates(
+        coarsening_graph,
+        endpoint_id=start_id,
+        placed_node_ids=placed_node_ids,
+        degree_by_node_id=degree_by_node_id,
+    )
+    if initial_candidates:
+        right_id = initial_candidates[0]
+        ordered_node_ids.append(right_id)
+        placed_node_ids.add(right_id)
+        remaining_node_ids.remove(right_id)
+    if len(initial_candidates) > 1:
+        left_id = initial_candidates[1]
+        ordered_node_ids.appendleft(left_id)
+        placed_node_ids.add(left_id)
+        remaining_node_ids.remove(left_id)
+
+    next_side = "right"
+    while remaining_node_ids:
+        chosen_node_id: int | None = None
+        chosen_side: str | None = None
+
+        for side in (next_side, "left" if next_side == "right" else "right"):
+            endpoint_id = ordered_node_ids[-1] if side == "right" else ordered_node_ids[0]
+            candidates = _ordered_endpoint_candidates(
+                coarsening_graph,
+                endpoint_id=endpoint_id,
+                placed_node_ids=placed_node_ids,
+                degree_by_node_id=degree_by_node_id,
+            )
+            if candidates:
+                chosen_node_id = candidates[0]
+                chosen_side = side
+                break
+
+        used_recovery = False
+        if chosen_node_id is None or chosen_side is None:
+            used_recovery = True
+            chosen_side = next_side
+            chosen_node_id = _ordered_recovery_candidates(
+                coarsening_graph,
+                remaining_node_ids=remaining_node_ids,
+                placed_node_ids=placed_node_ids,
+                degree_by_node_id=degree_by_node_id,
+            )[0]
+
+        if chosen_side == "right":
+            ordered_node_ids.append(chosen_node_id)
+        else:
+            ordered_node_ids.appendleft(chosen_node_id)
+        placed_node_ids.add(chosen_node_id)
+        remaining_node_ids.remove(chosen_node_id)
+
+        if used_recovery:
+            next_side = chosen_side
+        elif chosen_side == next_side:
+            next_side = "left" if chosen_side == "right" else "right"
+        else:
+            next_side = chosen_side
+
+    return list(ordered_node_ids)
+
+
 def _normalize_direction(vector: np.ndarray, fallback: np.ndarray) -> np.ndarray:
     norm = float(np.linalg.norm(vector))
     if norm > 1e-9:
@@ -506,6 +646,10 @@ def _compute_coarsened_layout_2d(
         positions = _classified_positions_2d(skeleton_graph, graph)
         if positions is None:
             skeleton_node_ids = list(compression.skeleton_node_ids)
+            if component.structure_kind == "generic":
+                skeleton_node_ids = _ordered_initial_circle_node_ids(
+                    _coarsening_graph_from_nx(skeleton_graph, compression.skeleton_node_ids)
+                )
             positions = _compute_weighted_force_layout(
                 node_ids=skeleton_node_ids,
                 pair_weights=_pair_weights_from_graph(skeleton_graph),
@@ -567,5 +711,6 @@ __all__ = [
     "_compute_coarsened_layout_2d",
     "_compute_generic_coarsened_layout_2d",
     "_distinct_neighbor_counts",
+    "_ordered_initial_circle_node_ids",
     "_peel_degree_one_trees",
 ]
