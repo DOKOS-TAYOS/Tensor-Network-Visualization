@@ -114,10 +114,14 @@ def _apply_custom_positions(
                     UserWarning,
                     stacklevel=2,
                 )
-            elif len(position) < dimensions:
+                continue
+            position_dimensions = len(position)
+            required_position_dimensions = min(dimensions, 2)
+            if position_dimensions < required_position_dimensions:
                 warnings.warn(
-                    f"Custom position for node {key} has {len(position)} coords but view "
-                    f"requires {dimensions}; missing coords will be zero-filled.",
+                    f"Custom position for node {key} has {position_dimensions} coords but view "
+                    f"requires at least {required_position_dimensions}; missing coords will be "
+                    "zero-filled.",
                     UserWarning,
                     stacklevel=2,
                 )

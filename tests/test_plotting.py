@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -842,6 +843,38 @@ def test_show_tensor_network_builds_3d_view_lazily_once(
     controls.set_view("2d")
     controls.set_view("3d")
     assert calls["3d"] == 1
+
+
+def test_show_tensor_network_uses_2d_custom_positions_in_3d_without_coordinate_warnings() -> None:
+    left = DummyTensorKrowchNode("A", ["left"])
+    right = DummyTensorKrowchNode("B", ["right"])
+    connect(left, 0, right, 0, name="bond")
+
+    fig, _ax = show_tensor_network(
+        DummyNetwork(nodes=[left, right]),
+        engine="tensorkrowch",
+        config=PlotConfig(
+            positions={
+                id(left): (0.0, 0.0),
+                id(right): (2.0, 0.0),
+            },
+            validate_positions=True,
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        controls.set_view("3d")
+
+    assert not [
+        warning
+        for warning in caught
+        if "missing coords will be zero-filled" in str(warning.message)
+    ]
 
 
 def test_show_tensor_network_view_toggle_button_switches_between_2d_and_3d() -> None:
