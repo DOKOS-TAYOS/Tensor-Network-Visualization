@@ -36,6 +36,11 @@ from tensor_network_viz._core.layout.free_directions_3d import (
     _direction_conflicts_3d,
     _pick_candidate_direction_3d,
 )
+from tensor_network_viz._core.layout.generic_coarsening import (
+    _compress_degree_two_paths,
+    _distinct_neighbor_counts,
+    _peel_degree_one_trees,
+)
 from tensor_network_viz._core.renderer import (
     _SHORTEST_EDGE_RADIUS_FRACTION,
     _resolve_draw_scale,
@@ -970,6 +975,59 @@ def _build_planar_house_graph_with_phys() -> _GraphData:
     return _GraphData(nodes=nodes, edges=edges)
 
 
+def _build_placement_triangle_with_chains_graph() -> _GraphData:
+    nodes = {
+        0: _make_node("Prior", ("sample_state", "latent_prev")),
+        1: _make_node("Transition", ("latent_prev", "latent_now", "control_signal")),
+        2: _make_node("Emission", ("latent_now", "sensor_reading", "readout_latent")),
+        3: _make_node("Calibrator", ("sensor_reading", "calibration_feature")),
+        4: _make_node("Readout", ("readout_latent", "calibration_feature", "class_score")),
+        5: _make_node("Loss", ("class_score", "target_label")),
+    }
+    edges = (
+        _make_dangling_edge(_EdgeEndpoint(0, 0, "sample_state"), name="sample_state"),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 1, "latent_prev"),
+            _EdgeEndpoint(1, 0, "latent_prev"),
+            name="latent_prev",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(1, 1, "latent_now"),
+            _EdgeEndpoint(2, 0, "latent_now"),
+            name="latent_now",
+            label=None,
+        ),
+        _make_dangling_edge(_EdgeEndpoint(1, 2, "control_signal"), name="control_signal"),
+        _make_contraction_edge(
+            _EdgeEndpoint(2, 1, "sensor_reading"),
+            _EdgeEndpoint(3, 0, "sensor_reading"),
+            name="sensor_reading",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(2, 2, "readout_latent"),
+            _EdgeEndpoint(4, 0, "readout_latent"),
+            name="readout_latent",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(3, 1, "calibration_feature"),
+            _EdgeEndpoint(4, 1, "calibration_feature"),
+            name="calibration_feature",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(4, 2, "class_score"),
+            _EdgeEndpoint(5, 0, "class_score"),
+            name="class_score",
+            label=None,
+        ),
+        _make_dangling_edge(_EdgeEndpoint(5, 1, "target_label"), name="target_label"),
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
 def _build_star_with_free_axes() -> _GraphData:
     nodes = {
         0: _make_node("Center", ("left", "right", "up", "down", "f0", "f1", "f2", "f3")),
@@ -1109,6 +1167,115 @@ def _build_complete_graph_5() -> _GraphData:
                 )
             )
     return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
+def _build_parallel_pair_graph() -> _GraphData:
+    nodes = {
+        0: _make_node("A", ("ab0", "ab1")),
+        1: _make_node("B", ("ab0", "ab1")),
+    }
+    edges = (
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 0, "ab0"),
+            _EdgeEndpoint(1, 0, "ab0"),
+            name="ab0",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 1, "ab1"),
+            _EdgeEndpoint(1, 1, "ab1"),
+            name="ab1",
+            label=None,
+        ),
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
+def _build_cycle_with_recursive_tail_graph() -> _GraphData:
+    axes_by_node = {node_id: [] for node_id in range(6)}
+    edge_pairs = (
+        (0, 1, "c01"),
+        (1, 2, "c12"),
+        (2, 3, "c23"),
+        (3, 0, "c30"),
+        (0, 4, "t04"),
+        (4, 5, "t45"),
+    )
+    for left_id, right_id, name in edge_pairs:
+        axes_by_node[left_id].append(name)
+        axes_by_node[right_id].append(name)
+    nodes = {
+        node_id: _make_node(f"C{node_id}", tuple(axis_names))
+        for node_id, axis_names in axes_by_node.items()
+    }
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+    edges = tuple(
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][name], name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][name], name),
+            name=name,
+            label=None,
+        )
+        for left_id, right_id, name in edge_pairs
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
+def _build_subdivided_generic_graph(
+    *,
+    subdivisions: int,
+    pendant_length: int,
+) -> _GraphData:
+    axes_by_node: dict[int, list[str]] = {node_id: [] for node_id in range(5)}
+    edge_specs: list[tuple[int, int, str]] = []
+    next_node_id = 5
+
+    def add_edge(left_id: int, right_id: int, name: str) -> None:
+        axes_by_node.setdefault(left_id, []).append(name)
+        axes_by_node.setdefault(right_id, []).append(name)
+        edge_specs.append((left_id, right_id, name))
+
+    for left_id in range(5):
+        for right_id in range(left_id + 1, 5):
+            previous_id = left_id
+            for step in range(subdivisions):
+                current_id = next_node_id
+                next_node_id += 1
+                axes_by_node[current_id] = []
+                add_edge(previous_id, current_id, f"k5_{left_id}_{right_id}_{step}")
+                previous_id = current_id
+            add_edge(previous_id, right_id, f"k5_{left_id}_{right_id}_end")
+
+    for core_id in range(5):
+        previous_id = core_id
+        for step in range(pendant_length):
+            current_id = next_node_id
+            next_node_id += 1
+            axes_by_node[current_id] = []
+            add_edge(previous_id, current_id, f"tail_{core_id}_{step}")
+            previous_id = current_id
+
+    nodes = {
+        node_id: _make_node(f"G_{node_id}", tuple(axis_names))
+        for node_id, axis_names in axes_by_node.items()
+    }
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+    edges = tuple(
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][name], name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][name], name),
+            name=name,
+            label=None,
+        )
+        for left_id, right_id, name in edge_specs
+    )
+    return _GraphData(nodes=nodes, edges=edges)
 
 
 def _with_one_dangling_phys_per_node(graph: _GraphData) -> _GraphData:
@@ -1339,6 +1506,32 @@ def _principal_axis(points: np.ndarray) -> np.ndarray:
     _, _, vh = np.linalg.svd(centered, full_matrices=False)
     axis = vh[0]
     return axis / np.linalg.norm(axis)
+
+
+def _unit_2d(vector: np.ndarray) -> np.ndarray:
+    flat = np.asarray(vector, dtype=float).reshape(-1)[:2]
+    norm = float(np.linalg.norm(flat))
+    assert norm > 1e-9
+    return flat / norm
+
+
+def _assert_outward_chain_2d(
+    positions: dict[int, np.ndarray],
+    *,
+    anchor_id: int,
+    chain_node_ids: tuple[int, ...],
+    core_centroid: np.ndarray,
+) -> None:
+    previous = np.asarray(positions[anchor_id], dtype=float).reshape(-1)[:2]
+    outward = _unit_2d(previous - core_centroid[:2])
+    previous_direction = outward
+    for node_id in chain_node_ids:
+        current = np.asarray(positions[node_id], dtype=float).reshape(-1)[:2]
+        step_direction = _unit_2d(current - previous)
+        assert float(np.dot(step_direction, outward)) > 0.90
+        assert float(np.dot(step_direction, previous_direction)) > 0.97
+        previous = current
+        previous_direction = step_direction
 
 
 def test_compute_layout_line_chain_2d_is_colinear_and_evenly_spaced() -> None:
@@ -2167,6 +2360,128 @@ def test_compute_layout_generic_graph_uses_force_fallback_produces_valid_positio
     assert not np.any(np.isnan(coords))
     assert not np.any(np.isinf(coords))
     assert np.all(np.isfinite(coords))
+
+
+def test_generic_coarsening_counts_distinct_neighbors_for_parallel_edges() -> None:
+    graph = _build_parallel_pair_graph()
+    component = _analyze_layout_components_cached(graph)[0]
+
+    counts = _distinct_neighbor_counts(component.contraction_graph, component.node_ids)
+
+    assert counts == {0: 1, 1: 1}
+
+
+def test_generic_coarsening_recursively_peels_degree_one_trees() -> None:
+    graph = _build_cycle_with_recursive_tail_graph()
+    component = _analyze_layout_components_cached(graph)[0]
+
+    peeled = _peel_degree_one_trees(component.contraction_graph, component.node_ids)
+
+    assert peeled.core_node_ids == (0, 1, 2, 3)
+    assert peeled.parent_by_removed_node == {5: 4, 4: 0}
+
+
+@pytest.mark.parametrize("dimensions", [2, 3])
+def test_coarsened_decorated_planar_layout_places_chains_outward(
+    dimensions: int,
+) -> None:
+    graph = _build_placement_triangle_with_chains_graph()
+    component = _analyze_layout_components_cached(graph)[0]
+
+    positions = _compute_layout(graph, dimensions=dimensions, seed=0, iterations=50)
+    core_centroid = np.mean(
+        np.stack(
+            [np.asarray(positions[node_id], dtype=float).reshape(-1)[:2] for node_id in (2, 3, 4)]
+        ),
+        axis=0,
+    )
+    core_area = abs(
+        float(
+            np.linalg.det(
+                np.stack(
+                    [
+                        positions[3][:2] - positions[2][:2],
+                        positions[4][:2] - positions[2][:2],
+                    ]
+                )
+            )
+        )
+    )
+
+    assert component.structure_kind == "planar"
+    assert core_area > 0.15
+    _assert_outward_chain_2d(
+        positions, anchor_id=2, chain_node_ids=(1, 0), core_centroid=core_centroid
+    )
+    _assert_outward_chain_2d(
+        positions, anchor_id=4, chain_node_ids=(5,), core_centroid=core_centroid
+    )
+
+
+def test_generic_coarsening_preserves_closed_degree_two_cycles() -> None:
+    graph = _build_named_ring_graph(8)
+    component = _analyze_layout_components_cached(graph)[0]
+
+    compressed = _compress_degree_two_paths(component.contraction_graph, component.node_ids)
+
+    assert compressed.skeleton_node_ids == tuple(range(8))
+    assert compressed.paths == ()
+
+
+def test_generic_coarsening_force_layout_uses_small_skeleton(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.layout.generic_coarsening as generic_coarsening
+
+    graph = _build_subdivided_generic_graph(subdivisions=2, pendant_length=3)
+    captured_node_ids: list[int] = []
+    original = generic_coarsening._compute_weighted_force_layout
+
+    def counting_force_layout(*args: object, **kwargs: object) -> dict[int, np.ndarray]:
+        node_ids = kwargs["node_ids"]
+        assert isinstance(node_ids, list)
+        captured_node_ids[:] = [int(node_id) for node_id in node_ids]
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        generic_coarsening,
+        "_compute_weighted_force_layout",
+        counting_force_layout,
+    )
+
+    positions = _compute_layout(graph, dimensions=2, seed=0, iterations=50)
+
+    assert set(positions) == set(graph.nodes)
+    assert set(captured_node_ids) == set(range(5))
+    assert len(captured_node_ids) < len(graph.nodes) / 4
+
+
+def test_generic_coarsening_layout_is_finite_spread_and_deterministic() -> None:
+    graph = _build_subdivided_generic_graph(subdivisions=2, pendant_length=3)
+
+    first_2d = _compute_layout(graph, dimensions=2, seed=0, iterations=50)
+    second_2d = _compute_layout(graph, dimensions=2, seed=0, iterations=50)
+    first_3d = _compute_layout(graph, dimensions=3, seed=0, iterations=50)
+
+    coords_2d = np.stack([first_2d[node_id] for node_id in sorted(graph.nodes)])
+    coords_3d = np.stack([first_3d[node_id] for node_id in sorted(graph.nodes)])
+    pairwise_distance_2d = np.linalg.norm(
+        coords_2d[:, None, :] - coords_2d[None, :, :],
+        axis=2,
+    )
+    pairwise_distance_3d = np.linalg.norm(
+        coords_3d[:, None, :] - coords_3d[None, :, :],
+        axis=2,
+    )
+    np.fill_diagonal(pairwise_distance_2d, np.inf)
+    np.fill_diagonal(pairwise_distance_3d, np.inf)
+
+    assert np.all(np.isfinite(coords_2d))
+    assert np.all(np.isfinite(coords_3d))
+    for node_id in sorted(graph.nodes):
+        assert np.allclose(first_2d[node_id], second_2d[node_id], atol=1e-9)
+    assert float(pairwise_distance_2d.min()) > 1e-4
+    assert float(pairwise_distance_3d.min()) > 1e-4
 
 
 def test_tree_component_layout_2d_skips_force_layout_when_anchors_cover_all_nodes(

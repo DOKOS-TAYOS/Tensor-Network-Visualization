@@ -96,6 +96,25 @@ def _visible_node_ids_in_graph_order(graph: _GraphData) -> list[int]:
     return [node_id for node_id, node in graph.nodes.items() if not node.is_virtual]
 
 
+def _virtual_node_ids_in_graph_order(graph: _GraphData) -> list[int]:
+    return [node_id for node_id, node in graph.nodes.items() if node.is_virtual]
+
+
+def _draw_virtual_hub_markers(
+    *,
+    plotter: _PlotAdapter,
+    graph: _GraphData,
+    positions: NodePositions,
+    config: PlotConfig,
+    zorder: float,
+) -> None:
+    virtual_node_ids = _virtual_node_ids_in_graph_order(graph)
+    if not virtual_node_ids:
+        return
+    coords = np.stack([np.asarray(positions[node_id], dtype=float) for node_id in virtual_node_ids])
+    plotter.draw_virtual_hub_markers(coords, config=config, zorder=zorder)
+
+
 def _draw_nodes(
     *,
     plotter: _PlotAdapter,
@@ -258,6 +277,7 @@ def _refit_tensor_labels_to_disks(
 __all__ = [
     "_draw_labels",
     "_draw_nodes",
+    "_draw_virtual_hub_markers",
     "_refit_tensor_labels_to_disks",
     "_resolved_tensor_label_font_cap_pt",
     "_tensor_label_data_anchor",
@@ -265,4 +285,5 @@ __all__ = [
     "_tensor_label_fontsize_to_fit",
     "_textpath_diagonal_points_ref10",
     "_visible_node_ids_in_graph_order",
+    "_virtual_node_ids_in_graph_order",
 ]

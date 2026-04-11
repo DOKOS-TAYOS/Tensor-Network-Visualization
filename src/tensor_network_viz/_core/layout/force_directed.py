@@ -96,7 +96,7 @@ def _apply_attraction_forces(
     positions: np.ndarray,
     *,
     index_by_node: dict[int, int],
-    pair_weights: dict[tuple[int, int], int],
+    pair_weights: dict[tuple[int, int], int | float],
     k: float,
 ) -> None:
     if not pair_weights:
@@ -160,10 +160,10 @@ def _initial_positions(node_ids: list[int], dimensions: int, seed: int) -> Vecto
     return positions
 
 
-def _compute_force_layout(
-    graph: _GraphData,
+def _compute_weighted_force_layout(
     *,
     node_ids: list[int],
+    pair_weights: dict[tuple[int, int], int | float],
     dimensions: int,
     seed: int,
     iterations: int,
@@ -172,7 +172,6 @@ def _compute_force_layout(
     rng_rep = np.random.default_rng(seed + 917_733)
     positions = _initial_positions(node_ids, dimensions=dimensions, seed=seed)
     index_by_node = {node_id: index for index, node_id in enumerate(node_ids)}
-    pair_weights = _pair_weights_for_node_ids(graph, node_ids=node_ids)
     fixed_mask = np.zeros(len(node_ids), dtype=bool)
     fixed_array = np.zeros_like(positions)
     displacement = np.zeros_like(positions)
@@ -216,11 +215,31 @@ def _compute_force_layout(
     return {node_id: positions[index].copy() for index, node_id in enumerate(node_ids)}
 
 
+def _compute_force_layout(
+    graph: _GraphData,
+    *,
+    node_ids: list[int],
+    dimensions: int,
+    seed: int,
+    iterations: int,
+    fixed_positions: NodePositions | None = None,
+) -> NodePositions:
+    return _compute_weighted_force_layout(
+        node_ids=node_ids,
+        pair_weights=_pair_weights_for_node_ids(graph, node_ids=node_ids),
+        dimensions=dimensions,
+        seed=seed,
+        iterations=iterations,
+        fixed_positions=fixed_positions,
+    )
+
+
 __all__ = [
     "_accumulate_attraction_forces",
     "_apply_attraction_forces",
     "_apply_force_step",
     "_compute_force_layout",
+    "_compute_weighted_force_layout",
     "_initial_positions",
     "_pair_weights_for_node_ids",
     "_repulsion_displacement",

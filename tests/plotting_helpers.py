@@ -69,6 +69,21 @@ def path_collection_point_count(ax: Any) -> int:
     return n
 
 
+def _collection_uses_triangle_marker(collection: PathCollection) -> bool:
+    return any(len(path.vertices) == 4 for path in collection.get_paths())
+
+
+def triangle_marker_point_count(ax: Any) -> int:
+    """Count 2D point markers using Matplotlib's triangle marker path."""
+    n = 0
+    for c in ax.collections:
+        if isinstance(c, PathCollection) and _collection_uses_triangle_marker(c):
+            offsets = np.asarray(c.get_offsets(), dtype=float)
+            if offsets.ndim == 2:
+                n += int(offsets.shape[0])
+    return n
+
+
 def point_collection_sizes(ax: Any) -> list[tuple[float, ...]]:
     """Marker areas from 2D PathCollections, preserving collection grouping."""
     out: list[tuple[float, ...]] = []
@@ -99,6 +114,16 @@ def path3d_collection_point_count(ax: Any) -> int:
     n = 0
     for c in ax.collections:
         if isinstance(c, Path3DCollection):
+            xs, _ys, _zs = c._offsets3d
+            n += len(xs)
+    return n
+
+
+def path3d_triangle_marker_point_count(ax: Any) -> int:
+    """Count 3D point markers using Matplotlib's triangle marker path."""
+    n = 0
+    for c in ax.collections:
+        if isinstance(c, Path3DCollection) and _collection_uses_triangle_marker(c):
             xs, _ys, _zs = c._offsets3d
             n += len(xs)
     return n

@@ -37,6 +37,9 @@ _EDGE_OUTLINE_LINEWIDTH_DELTA: float = 0.35
 _COMPACT_NODE_MARKER_AREA_2D_PT2: float = 16.0
 _COMPACT_NODE_MARKER_AREA_3D_PT2: float = 22.0
 _COMPACT_NODE_MARKER_LINEWIDTH_PT: float = 0.7
+_VIRTUAL_HUB_MARKER_AREA_2D_PT2: float = 24.0
+_VIRTUAL_HUB_MARKER_AREA_3D_PT2: float = 30.0
+_VIRTUAL_HUB_MARKER_LINEWIDTH_PT: float = 0.75
 
 NodeRenderMode: TypeAlias = Literal["normal", "compact"]
 
@@ -104,6 +107,13 @@ class _PlotAdapter(Protocol):
         p: _DrawScaleParams,
         degree_one_mask: np.ndarray,
         mode: NodeRenderMode,
+    ) -> None: ...
+    def draw_virtual_hub_markers(
+        self,
+        coords: np.ndarray,
+        *,
+        config: PlotConfig,
+        zorder: float,
     ) -> None: ...
     def get_node_artist_bundle(self) -> _NodeArtistBundle | None: ...
     def get_edge_artists(self) -> tuple[Any, ...]: ...
@@ -291,6 +301,26 @@ def _make_plotter(
                     hover_target=coll,
                 )
 
+            def draw_virtual_hub_markers(
+                self,
+                coords: np.ndarray,
+                *,
+                config: PlotConfig,
+                zorder: float,
+            ) -> None:
+                if int(coords.shape[0]) == 0:
+                    return
+                self._ax.scatter(
+                    coords[:, 0],
+                    coords[:, 1],
+                    marker="^",
+                    s=_VIRTUAL_HUB_MARKER_AREA_2D_PT2,
+                    c=[config.dangling_edge_color],
+                    edgecolors=[config.node_edge_color_degree_one],
+                    linewidths=_VIRTUAL_HUB_MARKER_LINEWIDTH_PT,
+                    zorder=zorder,
+                )
+
             def style_axes(self, coords: np.ndarray, *, view_margin: float) -> None:
                 _apply_axis_limits_with_outset(
                     self._ax, coords, view_margin=view_margin, dimensions=2
@@ -401,6 +431,29 @@ def _make_plotter(
                 artists=(coll,),
                 hover_target=None,
             )
+
+        def draw_virtual_hub_markers(
+            self,
+            coords: np.ndarray,
+            *,
+            config: PlotConfig,
+            zorder: float,
+        ) -> None:
+            if int(coords.shape[0]) == 0:
+                return
+            coll = ax.scatter(
+                coords[:, 0],
+                coords[:, 1],
+                coords[:, 2],
+                marker="^",
+                s=_VIRTUAL_HUB_MARKER_AREA_3D_PT2,
+                c=[config.dangling_edge_color],
+                edgecolors=[config.node_edge_color_degree_one],
+                linewidths=_VIRTUAL_HUB_MARKER_LINEWIDTH_PT,
+                depthshade=False,
+            )
+            if hasattr(coll, "set_sort_zpos"):
+                coll.set_sort_zpos(zorder)
 
         def style_axes(self, coords: np.ndarray, *, view_margin: float) -> None:
             _apply_axis_limits_with_outset(ax, coords, view_margin=view_margin, dimensions=3)

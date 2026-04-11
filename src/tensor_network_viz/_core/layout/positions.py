@@ -20,6 +20,7 @@ from ..layout_structure import (
 )
 from .direction_common import _preferred_component_directions_2d
 from .force_directed import _compute_force_layout
+from .generic_coarsening import _compute_coarsened_layout_2d
 from .geometry import (
     _BondSegment2D,
     _planar_contraction_bond_segment_records_2d,
@@ -136,6 +137,20 @@ def _compute_component_layout_2d(
 ) -> NodePositions:
     """Lay out one component in 2D, then restore virtual hubs and trimmed leaves."""
     node_ids = list(component.node_ids)
+    coarsened_positions = _compute_coarsened_layout_2d(
+        graph,
+        component,
+        seed=seed,
+        iterations=iterations,
+    )
+    if coarsened_positions is not None:
+        positions = coarsened_positions
+        _snap_virtual_nodes_to_barycenters(component, positions)
+        _spread_colocated_virtual_hubs_2d(component, positions)
+        _nudge_singleton_attachment_virtual_hubs_2d(graph, component, positions)
+        _offset_virtual_hubs_off_direct_tensor_chords_2d(graph, component, positions)
+        return _center_positions(positions, node_ids=node_ids)
+
     trimmed_leaf_ids = {leaf_id for leaf_id, _ in component.trimmed_leaf_parents}
     layout_node_ids = [node_id for node_id in node_ids if node_id not in trimmed_leaf_ids]
     if not layout_node_ids:

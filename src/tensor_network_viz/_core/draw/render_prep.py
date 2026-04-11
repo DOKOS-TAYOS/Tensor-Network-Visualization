@@ -18,6 +18,7 @@ from .constants import (
     _ZORDER_LAYER_DISK,
     _ZORDER_LAYER_STRIDE,
     _ZORDER_LAYER_TENSOR_NAME,
+    _ZORDER_NODE_DISK,
 )
 from .edges import _draw_edges, _draw_edges_2d_layered
 from .fonts_and_scale import (
@@ -37,6 +38,7 @@ from .scene_state import _InteractiveSceneState, _RenderedEdgeGeometry
 from .tensors import (
     _draw_labels,
     _draw_nodes,
+    _draw_virtual_hub_markers,
     _refit_tensor_labels_to_disks,
     _visible_node_ids_in_graph_order,
 )
@@ -375,6 +377,9 @@ def _draw_edges_nodes_and_labels(
         coords = np.stack(
             [np.asarray(context.positions[node_id], dtype=float) for node_id in visible_order]
         )
+        virtual_marker_zorder = float(
+            _ZORDER_LAYER_BASE + len(visible_order) * _ZORDER_LAYER_STRIDE + _ZORDER_LAYER_DISK
+        )
     else:
         _draw_edges(
             plotter=context.plotter,
@@ -402,6 +407,15 @@ def _draw_edges_nodes_and_labels(
             visible_node_ids=visible_order,
             node_degrees=node_degrees,
         )
+        virtual_marker_zorder = float(_ZORDER_NODE_DISK) + 0.5
+
+    _draw_virtual_hub_markers(
+        plotter=context.plotter,
+        graph=context.graph,
+        positions=context.positions,
+        config=context.config,
+        zorder=virtual_marker_zorder,
+    )
 
     context.plotter.style_axes(context.viewport_coords, view_margin=context.view_margin)
     _draw_labels(

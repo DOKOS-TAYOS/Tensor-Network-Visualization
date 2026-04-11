@@ -99,16 +99,23 @@ def test_plot_quimb_network_3d_returns_3d_axes() -> None:
     assert len(ax.lines) == 1
 
 
-def test_plot_quimb_network_2d_draws_hypergraph_without_showing_virtual_hub() -> None:
-    from plotting_helpers import line_collection_segment_count
+def test_plot_quimb_network_2d_draws_hypergraph_with_virtual_hub_marker() -> None:
+    from matplotlib.colors import to_rgba
+
+    from plotting_helpers import (
+        line_collection_segment_count,
+        point_collection_facecolors,
+        triangle_marker_point_count,
+    )
 
     a = _make_tensor(inds=("bond",), tag="A")
     b = _make_tensor(inds=("bond",), tag="B")
     c = _make_tensor(inds=("bond",), tag="C")
+    config = PlotConfig(show_tensor_labels=True, show_index_labels=True)
 
     fig, ax = plot_quimb_network_2d(
         qtn.TensorNetwork([a, b, c]),
-        config=PlotConfig(show_tensor_labels=True, show_index_labels=True),
+        config=config,
     )
 
     labels = {text.get_text() for text in ax.texts if text.get_text()}
@@ -116,16 +123,25 @@ def test_plot_quimb_network_2d_draws_hypergraph_without_showing_virtual_hub() ->
     assert labels == {"A", "B", "C", "bond"}
     assert sum(1 for t in ax.texts if t.get_text() == "bond") == 6
     assert line_collection_segment_count(ax) == 3
+    assert triangle_marker_point_count(ax) == 1
+    assert point_collection_facecolors(ax) == [
+        tuple(float(value) for value in to_rgba(config.dangling_edge_color))
+    ]
 
 
 def test_plot_quimb_network_3d_draws_hypergraph() -> None:
+    from matplotlib.colors import to_rgba
+
+    from plotting_helpers import path3d_collection_facecolors, path3d_triangle_marker_point_count
+
     a = _make_tensor(inds=("bond",), tag="A")
     b = _make_tensor(inds=("bond",), tag="B")
     c = _make_tensor(inds=("bond",), tag="C")
+    config = PlotConfig(show_tensor_labels=True, show_index_labels=True)
 
     fig, ax = plot_quimb_network_3d(
         qtn.TensorNetwork([a, b, c]),
-        config=PlotConfig(show_tensor_labels=True, show_index_labels=True),
+        config=config,
     )
 
     labels = {text.get_text() for text in ax.texts if text.get_text()}
@@ -134,3 +150,7 @@ def test_plot_quimb_network_3d_draws_hypergraph() -> None:
     assert labels == {"A", "B", "C", "bond"}
     assert sum(1 for t in ax.texts if t.get_text() == "bond") == 6
     assert len(ax.lines) == 3
+    assert path3d_triangle_marker_point_count(ax) == 1
+    assert path3d_collection_facecolors(ax) == [
+        tuple(float(value) for value in to_rgba(config.dangling_edge_color))
+    ]
