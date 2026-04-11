@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import re
 from dataclasses import dataclass
 from itertools import combinations
 from typing import Literal
@@ -12,7 +14,16 @@ import numpy as np
 from .contractions import _iter_contractions
 from .graph import _GraphData
 
-StructureKind = Literal["chain", "grid", "grid3d", "tree", "planar", "generic"]
+StructureKind = Literal[
+    "chain",
+    "grid",
+    "grid3d",
+    "tube",
+    "circular",
+    "tree",
+    "planar",
+    "generic",
+]
 
 # Oblique 2D projection (i,j,k) → layout xy. The depth axis uses an asymmetric skew so
 # free stubs on projected cubic grids get a cleaner outward corridor between bonds.
@@ -64,6 +75,11 @@ def _analyze_layout_components(graph: _GraphData) -> tuple[_LayoutComponent, ...
             component_node_ids=component_node_ids,
             visible_graph=visible_graph,
         )
+        untrimmed_anchor_graph = _select_anchor_graph(
+            component_graph=component_graph,
+            visible_graph=visible_graph,
+            proxy_visible_graph=proxy_visible_graph,
+        )
         anchor_graph = _select_anchor_graph(
             component_graph=component_graph,
             visible_graph=(
@@ -73,9 +89,20 @@ def _analyze_layout_components(graph: _GraphData) -> tuple[_LayoutComponent, ...
             ),
             proxy_visible_graph=proxy_visible_graph,
         )
-        structure_kind, chain_order, grid_mapping, grid3d_mapping, tree_root = (
-            _classify_anchor_graph(anchor_graph)
+        untrimmed_classification = _classify_untrimmed_structured_anchor_graph(
+            untrimmed_anchor_graph,
+            graph,
         )
+        if untrimmed_classification is not None:
+            anchor_graph = untrimmed_anchor_graph
+            trimmed_leaf_parents = ()
+            structure_kind, chain_order, grid_mapping, grid3d_mapping, tree_root = (
+                untrimmed_classification
+            )
+        else:
+            structure_kind, chain_order, grid_mapping, grid3d_mapping, tree_root = (
+                _classify_anchor_graph(anchor_graph, graph)
+            )
         components.append(
             _LayoutComponent(
                 node_ids=tuple(sorted(component_node_ids)),
@@ -219,6 +246,7 @@ def _sorted_connected_components(nx_graph: nx.Graph) -> list[tuple[int, ...]]:
 
 def _classify_anchor_graph(
     anchor_graph: nx.Graph,
+    graph: _GraphData,
 ) -> tuple[
     StructureKind,
     tuple[int, ...],
@@ -238,6 +266,22 @@ def _classify_anchor_graph(
     if grid3d_mapping is not None:
         return "grid3d", (), None, grid3d_mapping, None
 
+    grid3d_mapping = _detect_coordinate_grid_3d(anchor_graph, graph)
+    if grid3d_mapping is not None:
+        return "grid3d", (), None, grid3d_mapping, None
+
+    grid_mapping = _detect_coordinate_grid_2d(anchor_graph, graph)
+    if grid_mapping is not None:
+        return "grid", (), grid_mapping, None, None
+
+    tube_mapping = _detect_tube(anchor_graph, graph)
+    if tube_mapping is not None:
+        return "tube", (), tube_mapping, None, None
+
+    circular_order = _detect_circular_order(anchor_graph, graph)
+    if circular_order is not None:
+        return "circular", circular_order, None, None, None
+
     if anchor_graph.number_of_nodes() > 0 and nx.is_tree(anchor_graph):
         return "tree", (), None, None, _tree_root(anchor_graph)
 
@@ -248,13 +292,52 @@ def _classify_anchor_graph(
     return "generic", (), None, None, None
 
 
+def _classify_untrimmed_structured_anchor_graph(
+    anchor_graph: nx.Graph,
+    graph: _GraphData,
+) -> (
+    tuple[
+        StructureKind,
+        tuple[int, ...],
+        dict[int, tuple[int, int]] | None,
+        dict[int, tuple[int, int, int]] | None,
+        int | None,
+    ]
+    | None
+):
+    if _detect_grid(anchor_graph) is not None or _detect_grid_3d(anchor_graph) is not None:
+        return None
+
+    grid3d_mapping = _detect_coordinate_grid_3d(anchor_graph, graph)
+    if grid3d_mapping is not None:
+        return "grid3d", (), None, grid3d_mapping, None
+
+    grid_mapping = _detect_coordinate_grid_2d(anchor_graph, graph)
+    if grid_mapping is not None:
+        return "grid", (), grid_mapping, None, None
+
+    tube_mapping = _detect_tube(anchor_graph, graph)
+    if tube_mapping is not None:
+        return "tube", (), tube_mapping, None, None
+
+    circular_order = _detect_circular_order(anchor_graph, graph)
+    if circular_order is not None:
+        return "circular", circular_order, None, None, None
+
+    return None
+
+
 def _specialized_anchor_positions(component: _LayoutComponent) -> dict[int, np.ndarray]:
     if not component.anchor_node_ids:
         return {}
     if component.structure_kind == "chain":
         return _layout_chain(component.chain_order)
+    if component.structure_kind == "circular":
+        return _layout_circular(component.chain_order)
     if component.structure_kind == "grid" and component.grid_mapping is not None:
         return _layout_grid(component.grid_mapping)
+    if component.structure_kind == "tube" and component.grid_mapping is not None:
+        return _layout_tube_projection_2d(component.grid_mapping)
     if component.structure_kind == "grid3d" and component.grid3d_mapping is not None:
         return _layout_grid3d_projection_2d(component.grid3d_mapping)
     if component.structure_kind == "tree" and component.tree_root is not None:
@@ -340,6 +423,69 @@ def _layout_grid(grid_mapping: dict[int, tuple[int, int]]) -> dict[int, np.ndarr
     }
 
 
+def _layout_circular(node_order: tuple[int, ...]) -> dict[int, np.ndarray]:
+    if not node_order:
+        return {}
+    radius = max(float(len(node_order)) / (2.0 * math.pi), 1.0)
+    return {
+        node_id: np.array(
+            [
+                radius * math.cos(2.0 * math.pi * index / len(node_order)),
+                radius * math.sin(2.0 * math.pi * index / len(node_order)),
+            ],
+            dtype=float,
+        )
+        for index, node_id in enumerate(node_order)
+    }
+
+
+def _tube_radius(periodic_count: int) -> float:
+    return max(float(periodic_count) / (2.0 * math.pi), 1.0)
+
+
+def _layout_tube_projection_2d(
+    tube_mapping: dict[int, tuple[int, int]],
+) -> dict[int, np.ndarray]:
+    if not tube_mapping:
+        return {}
+    periodic_count = max(theta for theta, _ in tube_mapping.values()) + 1
+    radius = _tube_radius(periodic_count)
+    axial_spacing = 2.25 * radius
+    axial_skew = 0.28 * radius
+    return {
+        node_id: np.array(
+            [
+                float(axial_index) * axial_spacing
+                + radius * math.cos(2.0 * math.pi * float(theta_index) / periodic_count),
+                float(axial_index) * axial_skew
+                + radius * math.sin(2.0 * math.pi * float(theta_index) / periodic_count),
+            ],
+            dtype=float,
+        )
+        for node_id, (theta_index, axial_index) in tube_mapping.items()
+    }
+
+
+def _layout_tube_3d(
+    tube_mapping: dict[int, tuple[int, int]],
+) -> dict[int, np.ndarray]:
+    if not tube_mapping:
+        return {}
+    periodic_count = max(theta for theta, _ in tube_mapping.values()) + 1
+    radius = _tube_radius(periodic_count)
+    return {
+        node_id: np.array(
+            [
+                radius * math.cos(2.0 * math.pi * float(theta_index) / periodic_count),
+                radius * math.sin(2.0 * math.pi * float(theta_index) / periodic_count),
+                float(axial_index),
+            ],
+            dtype=float,
+        )
+        for node_id, (theta_index, axial_index) in tube_mapping.items()
+    }
+
+
 def _expected_edges_3d_grid(lx: int, ly: int, lz: int) -> int:
     return (lx - 1) * ly * lz + lx * (ly - 1) * lz + lx * ly * (lz - 1)
 
@@ -378,6 +524,298 @@ def _detect_grid_3d(nx_graph: nx.Graph) -> dict[int, tuple[int, int, int]] | Non
                 }
 
     return best_mapping
+
+
+def _node_coordinate_from_metadata(
+    graph: _GraphData,
+    node_id: int,
+    *,
+    dimensions: int,
+) -> tuple[str, tuple[int, ...]] | None:
+    node = graph.nodes[int(node_id)]
+    pattern = re.compile(
+        r"^obs_(?P<prefix>.+)"
+        + "".join(rf"_(?P<c{index}>-?\d+)" for index in range(dimensions))
+        + r"$"
+    )
+    for axis_name in node.axes_names:
+        match = pattern.match(axis_name)
+        if match is None:
+            continue
+        return (
+            match.group("prefix"),
+            tuple(int(match.group(f"c{index}")) for index in range(dimensions)),
+        )
+
+    name_parts = node.name.rsplit("_", dimensions)
+    if len(name_parts) == dimensions + 1 and all(
+        re.fullmatch(r"-?\d+", part) for part in name_parts[1:]
+    ):
+        return name_parts[0], tuple(int(part) for part in name_parts[1:])
+
+    return None
+
+
+def _coordinate_map_from_node_metadata(
+    nx_graph: nx.Graph,
+    graph: _GraphData,
+    *,
+    dimensions: int,
+) -> dict[int, tuple[int, ...]] | None:
+    coords_by_node: dict[int, tuple[int, ...]] = {}
+    prefix: str | None = None
+    seen_coords: set[tuple[int, ...]] = set()
+    for node_id in nx_graph.nodes:
+        parsed = _node_coordinate_from_metadata(graph, int(node_id), dimensions=dimensions)
+        if parsed is None:
+            return None
+        node_prefix, coords = parsed
+        if prefix is None:
+            prefix = node_prefix
+        elif node_prefix != prefix:
+            return None
+        if coords in seen_coords:
+            return None
+        seen_coords.add(coords)
+        coords_by_node[int(node_id)] = coords
+    return coords_by_node
+
+
+def _node_edge_set(nx_graph: nx.Graph) -> set[tuple[int, int]]:
+    return {tuple(sorted((int(left_id), int(right_id)))) for left_id, right_id in nx_graph.edges()}
+
+
+def _expected_grid_edges_from_coords(
+    coords_by_node: dict[int, tuple[int, ...]],
+    *,
+    dimensions: int,
+) -> set[tuple[int, int]]:
+    node_by_coord = {coords: node_id for node_id, coords in coords_by_node.items()}
+    expected_edges: set[tuple[int, int]] = set()
+    for node_id, coords in coords_by_node.items():
+        for axis_index in range(dimensions):
+            neighbor = list(coords)
+            neighbor[axis_index] += 1
+            neighbor_id = node_by_coord.get(tuple(neighbor))
+            if neighbor_id is None:
+                continue
+            expected_edges.add(tuple(sorted((node_id, neighbor_id))))
+    return expected_edges
+
+
+def _coordinate_axis_lengths(coords_by_node: dict[int, tuple[int, ...]]) -> tuple[int, ...]:
+    if not coords_by_node:
+        return ()
+    dimensions = len(next(iter(coords_by_node.values())))
+    return tuple(
+        len({coords[axis_index] for coords in coords_by_node.values()})
+        for axis_index in range(dimensions)
+    )
+
+
+def _detect_coordinate_grid_2d(
+    nx_graph: nx.Graph,
+    graph: _GraphData,
+) -> dict[int, tuple[int, int]] | None:
+    if nx_graph.number_of_nodes() <= 1 or not nx.is_connected(nx_graph):
+        return None
+    coords_by_node = _coordinate_map_from_node_metadata(nx_graph, graph, dimensions=2)
+    if coords_by_node is None:
+        return None
+    if any(axis_length <= 1 for axis_length in _coordinate_axis_lengths(coords_by_node)):
+        return None
+    if _node_edge_set(nx_graph) != _expected_grid_edges_from_coords(
+        coords_by_node,
+        dimensions=2,
+    ):
+        return None
+    return {node_id: (int(coords[1]), int(coords[0])) for node_id, coords in coords_by_node.items()}
+
+
+def _detect_coordinate_grid_3d(
+    nx_graph: nx.Graph,
+    graph: _GraphData,
+) -> dict[int, tuple[int, int, int]] | None:
+    if nx_graph.number_of_nodes() <= 1 or not nx.is_connected(nx_graph):
+        return None
+    coords_by_node = _coordinate_map_from_node_metadata(nx_graph, graph, dimensions=3)
+    if coords_by_node is None:
+        return None
+    if any(axis_length <= 1 for axis_length in _coordinate_axis_lengths(coords_by_node)):
+        return None
+    if _node_edge_set(nx_graph) != _expected_grid_edges_from_coords(
+        coords_by_node,
+        dimensions=3,
+    ):
+        return None
+    return {
+        node_id: (int(coords[0]), int(coords[1]), int(coords[2]))
+        for node_id, coords in coords_by_node.items()
+    }
+
+
+def _detect_tube(
+    nx_graph: nx.Graph,
+    graph: _GraphData,
+) -> dict[int, tuple[int, int]] | None:
+    coordinate_mapping = _detect_coordinate_tube(nx_graph, graph)
+    if coordinate_mapping is not None:
+        return coordinate_mapping
+    return _detect_topological_tube(nx_graph)
+
+
+def _detect_coordinate_tube(
+    nx_graph: nx.Graph,
+    graph: _GraphData,
+) -> dict[int, tuple[int, int]] | None:
+    if nx_graph.number_of_nodes() <= 5 or not nx.is_connected(nx_graph):
+        return None
+    coords_by_node = _coordinate_map_from_node_metadata(nx_graph, graph, dimensions=2)
+    if coords_by_node is None:
+        return None
+    node_by_coord = {coords: node_id for node_id, coords in coords_by_node.items()}
+    actual_edges = _node_edge_set(nx_graph)
+
+    for periodic_axis in (0, 1):
+        axial_axis = 1 - periodic_axis
+        periodic_values = sorted({coords[periodic_axis] for coords in coords_by_node.values()})
+        axial_values = sorted({coords[axial_axis] for coords in coords_by_node.values()})
+        if len(periodic_values) < 3 or len(axial_values) < 2:
+            continue
+        if len(node_by_coord) != len(periodic_values) * len(axial_values):
+            continue
+
+        periodic_index = {value: index for index, value in enumerate(periodic_values)}
+        axial_index = {value: index for index, value in enumerate(axial_values)}
+        expected_edges: set[tuple[int, int]] = set()
+        for periodic_value in periodic_values:
+            for axial_value in axial_values:
+                coord = [0, 0]
+                coord[periodic_axis] = periodic_value
+                coord[axial_axis] = axial_value
+                node_id = node_by_coord.get(tuple(coord))
+                if node_id is None:
+                    expected_edges.clear()
+                    break
+
+                next_periodic_value = periodic_values[
+                    (periodic_index[periodic_value] + 1) % len(periodic_values)
+                ]
+                periodic_coord = list(coord)
+                periodic_coord[periodic_axis] = next_periodic_value
+                expected_edges.add(tuple(sorted((node_id, node_by_coord[tuple(periodic_coord)]))))
+
+                next_axial_idx = axial_index[axial_value] + 1
+                if next_axial_idx < len(axial_values):
+                    axial_coord = list(coord)
+                    axial_coord[axial_axis] = axial_values[next_axial_idx]
+                    expected_edges.add(tuple(sorted((node_id, node_by_coord[tuple(axial_coord)]))))
+            else:
+                continue
+            break
+
+        if expected_edges and actual_edges == expected_edges:
+            return {
+                node_id: (
+                    periodic_index[coords[periodic_axis]],
+                    axial_index[coords[axial_axis]],
+                )
+                for node_id, coords in coords_by_node.items()
+            }
+    return None
+
+
+def _detect_topological_tube(nx_graph: nx.Graph) -> dict[int, tuple[int, int]] | None:
+    n_nodes = nx_graph.number_of_nodes()
+    if n_nodes <= 5 or not nx.is_connected(nx_graph):
+        return None
+    n_edges = nx_graph.number_of_edges()
+    for periodic in range(3, n_nodes + 1):
+        if n_nodes % periodic != 0:
+            continue
+        length = n_nodes // periodic
+        if length < 2 or n_edges != periodic * length + periodic * (length - 1):
+            continue
+        template = nx.cartesian_product(nx.cycle_graph(periodic), nx.path_graph(length))
+        mapping = nx.vf2pp_isomorphism(nx_graph, template)
+        if mapping is None:
+            continue
+        return {
+            int(node_id): (int(coords[0]), int(coords[1])) for node_id, coords in mapping.items()
+        }
+    return None
+
+
+def _detect_circular_order(
+    nx_graph: nx.Graph,
+    graph: _GraphData,
+) -> tuple[int, ...] | None:
+    named_order = _detect_named_ring_order(nx_graph, graph)
+    if named_order is not None:
+        return named_order
+    return _detect_simple_cycle_order(nx_graph)
+
+
+def _detect_named_ring_order(
+    nx_graph: nx.Graph,
+    graph: _GraphData,
+) -> tuple[int, ...] | None:
+    if nx_graph.number_of_nodes() < 3 or not nx.is_connected(nx_graph):
+        return None
+    entries: list[tuple[str, int, int]] = []
+    for node_id in nx_graph.nodes:
+        node_name = graph.nodes[int(node_id)].name
+        match = re.fullmatch(r"(?P<prefix>[^_\d]+)(?P<index>\d+)", node_name)
+        if match is None:
+            return None
+        entries.append((match.group("prefix"), int(match.group("index")), int(node_id)))
+
+    prefixes = {prefix for prefix, _, _ in entries}
+    if len(prefixes) != 1:
+        return None
+    entries.sort(key=lambda item: item[1])
+    indices = [index for _, index, _ in entries]
+    if indices != list(range(indices[0], indices[0] + len(indices))):
+        return None
+    order = tuple(node_id for _, _, node_id in entries)
+    if all(
+        nx_graph.has_edge(order[index], order[(index + 1) % len(order)])
+        for index in range(len(order))
+    ):
+        return order
+    return None
+
+
+def _detect_simple_cycle_order(nx_graph: nx.Graph) -> tuple[int, ...] | None:
+    if nx_graph.number_of_nodes() < 3 or not nx.is_connected(nx_graph):
+        return None
+    if nx_graph.number_of_edges() != nx_graph.number_of_nodes():
+        return None
+    if any(degree != 2 for _, degree in nx_graph.degree()):
+        return None
+
+    start = min(int(node_id) for node_id in nx_graph.nodes)
+    order = [start]
+    previous_id: int | None = None
+    current_id = start
+    while len(order) < nx_graph.number_of_nodes():
+        candidates = sorted(
+            int(neighbor_id)
+            for neighbor_id in nx_graph.neighbors(current_id)
+            if int(neighbor_id) != previous_id
+        )
+        next_candidates = [node_id for node_id in candidates if node_id != start]
+        if not next_candidates:
+            return None
+        next_id = next_candidates[0]
+        if next_id in order:
+            return None
+        order.append(next_id)
+        previous_id, current_id = current_id, next_id
+
+    if not nx_graph.has_edge(order[-1], start):
+        return None
+    return tuple(order)
 
 
 def _layout_grid3d_projection_2d(

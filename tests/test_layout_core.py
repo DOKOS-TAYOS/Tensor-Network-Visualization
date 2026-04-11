@@ -682,6 +682,204 @@ def _build_grid_graph_with_dangling_phys(rows: int, cols: int) -> _GraphData:
     return _GraphData(nodes=nodes, edges=tuple(edges))
 
 
+def _build_coord_graph_2d(
+    active: set[tuple[int, int]],
+    *,
+    prefix: str = "SG",
+) -> _GraphData:
+    node_id_by_coord = {coord: index for index, coord in enumerate(sorted(active))}
+    axes_by_node = {
+        node_id: [f"obs_{prefix}_{row}_{col}"] for (row, col), node_id in node_id_by_coord.items()
+    }
+    edge_specs: list[tuple[int, int, str]] = []
+    for row, col in sorted(active):
+        node_id = node_id_by_coord[(row, col)]
+        for dr, dc, label in ((1, 0, "down"), (0, 1, "right")):
+            neighbor = (row + dr, col + dc)
+            if neighbor not in node_id_by_coord:
+                continue
+            other_id = node_id_by_coord[neighbor]
+            edge_name = f"grid_{prefix}_{row}_{col}_{label}"
+            axes_by_node[node_id].append(edge_name)
+            axes_by_node[other_id].append(edge_name)
+            edge_specs.append((node_id, other_id, edge_name))
+
+    nodes = {
+        node_id: _make_node(
+            f"{prefix}{row}_{col}",
+            tuple(axes_by_node[node_id]),
+        )
+        for (row, col), node_id in node_id_by_coord.items()
+    }
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+    edges = [
+        _make_dangling_edge(
+            _EdgeEndpoint(node_id, axis_lookup[node_id][f"obs_{prefix}_{row}_{col}"], "obs"),
+            name=f"obs_{prefix}_{row}_{col}",
+            label=None,
+        )
+        for (row, col), node_id in node_id_by_coord.items()
+    ]
+    edges.extend(
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][edge_name], edge_name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][edge_name], edge_name),
+            name=edge_name,
+            label=None,
+        )
+        for left_id, right_id, edge_name in edge_specs
+    )
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
+def _build_coord_graph_3d(
+    active: set[tuple[int, int, int]],
+    *,
+    prefix: str = "S3",
+) -> _GraphData:
+    node_id_by_coord = {coord: index for index, coord in enumerate(sorted(active))}
+    axes_by_node = {
+        node_id: [f"obs_{prefix}_{x}_{y}_{z}"] for (x, y, z), node_id in node_id_by_coord.items()
+    }
+    edge_specs: list[tuple[int, int, str]] = []
+    for x, y, z in sorted(active):
+        node_id = node_id_by_coord[(x, y, z)]
+        for dx, dy, dz, label in (
+            (1, 0, 0, "xp"),
+            (0, 1, 0, "yp"),
+            (0, 0, 1, "zp"),
+        ):
+            neighbor = (x + dx, y + dy, z + dz)
+            if neighbor not in node_id_by_coord:
+                continue
+            other_id = node_id_by_coord[neighbor]
+            edge_name = f"grid_{prefix}_{x}_{y}_{z}_{label}"
+            axes_by_node[node_id].append(edge_name)
+            axes_by_node[other_id].append(edge_name)
+            edge_specs.append((node_id, other_id, edge_name))
+
+    nodes = {
+        node_id: _make_node(
+            f"{prefix}{x}_{y}_{z}",
+            tuple(axes_by_node[node_id]),
+        )
+        for (x, y, z), node_id in node_id_by_coord.items()
+    }
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+    edges = [
+        _make_dangling_edge(
+            _EdgeEndpoint(node_id, axis_lookup[node_id][f"obs_{prefix}_{x}_{y}_{z}"], "obs"),
+            name=f"obs_{prefix}_{x}_{y}_{z}",
+            label=None,
+        )
+        for (x, y, z), node_id in node_id_by_coord.items()
+    ]
+    edges.extend(
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][edge_name], edge_name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][edge_name], edge_name),
+            name=edge_name,
+            label=None,
+        )
+        for left_id, right_id, edge_name in edge_specs
+    )
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
+def _build_named_ring_graph(
+    length: int,
+    *,
+    chords: tuple[tuple[int, int], ...] = (),
+) -> _GraphData:
+    edge_pairs = [(node_id, (node_id + 1) % length, f"ring_{node_id}") for node_id in range(length)]
+    edge_pairs.extend(
+        (left_id, right_id, f"chord_{index}") for index, (left_id, right_id) in enumerate(chords)
+    )
+    axes_by_node = {node_id: [] for node_id in range(length)}
+    for left_id, right_id, edge_name in edge_pairs:
+        axes_by_node[left_id].append(edge_name)
+        axes_by_node[right_id].append(edge_name)
+
+    nodes = {
+        node_id: _make_node(f"C{node_id:02d}", tuple(axes_by_node[node_id]))
+        for node_id in range(length)
+    }
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+    edges = [
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][edge_name], edge_name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][edge_name], edge_name),
+            name=edge_name,
+            label=None,
+        )
+        for left_id, right_id, edge_name in edge_pairs
+    ]
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
+def _build_tubular_grid_graph(periodic: int, length: int) -> _GraphData:
+    node_id_by_coord = {
+        (theta, z): theta * length + z for theta in range(periodic) for z in range(length)
+    }
+    axes_by_node = {
+        node_id: [f"obs_TB_{theta}_{z}"] for (theta, z), node_id in node_id_by_coord.items()
+    }
+    edge_specs: list[tuple[int, int, str]] = []
+    for theta in range(periodic):
+        for z in range(length):
+            node_id = node_id_by_coord[(theta, z)]
+            wrapped = node_id_by_coord[((theta + 1) % periodic, z)]
+            ring_edge = f"tube_TB_{theta}_{z}_ring"
+            axes_by_node[node_id].append(ring_edge)
+            axes_by_node[wrapped].append(ring_edge)
+            edge_specs.append((node_id, wrapped, ring_edge))
+            if z < length - 1:
+                axial = node_id_by_coord[(theta, z + 1)]
+                axial_edge = f"tube_TB_{theta}_{z}_axial"
+                axes_by_node[node_id].append(axial_edge)
+                axes_by_node[axial].append(axial_edge)
+                edge_specs.append((node_id, axial, axial_edge))
+
+    nodes = {
+        node_id: _make_node(
+            f"TB{theta}_{z}",
+            tuple(axes_by_node[node_id]),
+        )
+        for (theta, z), node_id in node_id_by_coord.items()
+    }
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+    edges = [
+        _make_dangling_edge(
+            _EdgeEndpoint(node_id, axis_lookup[node_id][f"obs_TB_{theta}_{z}"], "obs"),
+            name=f"obs_TB_{theta}_{z}",
+            label=None,
+        )
+        for (theta, z), node_id in node_id_by_coord.items()
+    ]
+    edges.extend(
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][edge_name], edge_name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][edge_name], edge_name),
+            name=edge_name,
+            label=None,
+        )
+        for left_id, right_id, edge_name in edge_specs
+    )
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
 def _build_planar_cycle_graph() -> _GraphData:
     nodes = {
         0: _make_node("A", ("right", "up")),
@@ -1317,6 +1515,119 @@ def test_compute_layout_grid_2d_places_nodes_on_regular_lattice() -> None:
     )
 
 
+def test_compute_layout_2x2_grid_remains_grid_not_circular() -> None:
+    graph = _build_grid_graph(2, 2)
+
+    _compute_layout(graph, dimensions=2, seed=0)
+    component = _analyze_layout_components_cached(graph)[0]
+
+    assert component.structure_kind == "grid"
+    assert component.grid_mapping is not None
+
+
+def test_compute_layout_circular_ring_2d_places_nodes_on_circle() -> None:
+    graph = _build_named_ring_graph(10)
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    component = _analyze_layout_components_cached(graph)[0]
+    coords = np.stack([positions[node_id] for node_id in range(10)])
+    radii = np.linalg.norm(coords - coords.mean(axis=0, keepdims=True), axis=1)
+
+    assert component.structure_kind == "circular"
+    assert component.chain_order == tuple(range(10))
+    assert float(np.ptp(radii)) < 1e-6
+    assert float(radii.min()) > 0.1
+
+
+def test_compute_layout_circular_chords_2d_uses_named_ring_order() -> None:
+    graph = _build_named_ring_graph(12, chords=((0, 4), (3, 9), (6, 10)))
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    component = _analyze_layout_components_cached(graph)[0]
+    coords = np.stack([positions[node_id] for node_id in range(12)])
+    radii = np.linalg.norm(coords - coords.mean(axis=0, keepdims=True), axis=1)
+
+    assert component.structure_kind == "circular"
+    assert component.chain_order == tuple(range(12))
+    assert float(np.ptp(radii)) < 1e-6
+    assert float(radii.min()) > 0.1
+
+
+def test_compute_layout_tubular_grid_uses_circular_layers_in_2d_and_3d() -> None:
+    graph = _build_tubular_grid_graph(periodic=6, length=4)
+
+    positions_2d = _compute_layout(graph, dimensions=2, seed=0)
+    positions_3d = _compute_layout(graph, dimensions=3, seed=0)
+    component = _analyze_layout_components_cached(graph)[0]
+
+    assert component.structure_kind == "tube"
+    assert component.grid_mapping is not None
+    for axial_index in range(4):
+        layer_node_ids = [
+            node_id
+            for node_id, (_theta, z_index) in component.grid_mapping.items()
+            if z_index == axial_index
+        ]
+        coords_2d = np.stack([positions_2d[node_id] for node_id in layer_node_ids])
+        radii_2d = np.linalg.norm(
+            coords_2d - coords_2d.mean(axis=0, keepdims=True),
+            axis=1,
+        )
+        coords_3d = np.stack([positions_3d[node_id] for node_id in layer_node_ids])
+        radii_3d = np.linalg.norm(
+            coords_3d[:, :2] - coords_3d[:, :2].mean(axis=0, keepdims=True),
+            axis=1,
+        )
+        assert float(np.ptp(radii_2d)) < 1e-6
+        assert float(np.ptp(radii_3d)) < 1e-6
+
+    z_values = [
+        float(
+            np.mean(
+                [
+                    positions_3d[node_id][2]
+                    for node_id, (_theta, z_index) in component.grid_mapping.items()
+                    if z_index == axial_index
+                ]
+            )
+        )
+        for axial_index in range(4)
+    ]
+    assert len({round(value, 6) for value in z_values}) == 4
+
+
+def test_compute_layout_sparse_grid_2d_recovers_coordinate_holes() -> None:
+    size = 6
+    active = {(row, col) for row in range(size) for col in range(row, size)}
+    graph = _build_coord_graph_2d(active, prefix="UT")
+
+    _compute_layout(graph, dimensions=2, seed=0)
+    component = _analyze_layout_components_cached(graph)[0]
+
+    assert component.structure_kind == "grid"
+    assert component.grid_mapping is not None
+    assert set(component.grid_mapping.values()) == {(col, row) for row, col in active}
+
+
+def test_compute_layout_sparse_grid_3d_recovers_coordinate_holes() -> None:
+    active = {
+        (x, y, z)
+        for z in range(3)
+        for x in range(5)
+        for y in range(5)
+        if abs(x - 2) + abs(y - 2) <= 2 - z
+    }
+    graph = _build_coord_graph_3d(active, prefix="PY")
+
+    positions = _compute_layout(graph, dimensions=3, seed=0)
+    component = _analyze_layout_components_cached(graph)[0]
+
+    assert component.structure_kind == "grid3d"
+    assert component.grid3d_mapping is not None
+    assert set(component.grid3d_mapping.values()) == active
+    assert len({round(float(position[2]), 6) for position in positions.values()}) == 3
+
+
 def test_compute_layout_3d_grid_spans_three_axes() -> None:
     graph = _build_3d_grid_graph(2, 2, 2)
 
@@ -1371,6 +1682,19 @@ def test_layered_visible_order_2d_draws_grid3d_from_far_face_to_near_face() -> N
     k_sequence = [component.grid3d_mapping[node_id][2] for node_id in layered_order]
 
     assert k_sequence == sorted(k_sequence)
+
+
+def test_layered_visible_order_2d_draws_tube_by_axial_layers() -> None:
+    import tensor_network_viz._core.draw.render_prep as render_prep
+
+    graph = _build_tubular_grid_graph(periodic=5, length=3)
+
+    layered_order = render_prep._layered_visible_order_2d(graph)
+    component = _analyze_layout_components_cached(graph)[0]
+    assert component.grid_mapping is not None
+    z_sequence = [component.grid_mapping[node_id][1] for node_id in layered_order]
+
+    assert z_sequence == sorted(z_sequence)
 
 
 def test_layered_tensor_label_zorders_2d_stay_above_all_node_disks() -> None:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import random
 import sys
 from dataclasses import replace
@@ -35,7 +34,9 @@ TAGLINES: dict[str, str] = {
     "partial_grid3d": "A 3D lattice with missing cells across several layers.",
     "upper_pyramid3d": "A stacked 3D pyramid with fewer nodes on each upper layer.",
     "random_irregular": "A deterministic irregular graph with many short and long links.",
+    "circular_ring": "A pure ring where only the endpoints wrap around.",
     "circular_chords": "A circular network with ring bonds and internal chords.",
+    "tubular_grid": "A 2D grid wrapped around one periodic direction.",
     "disconnected_irregular": "Several unrelated irregular components in one figure.",
 }
 
@@ -60,9 +61,7 @@ def _tensor(name: str, inds: tuple[str, ...]) -> Any:
 def _network_from_edges(
     node_names: tuple[str, ...],
     edges: tuple[tuple[str, str], ...],
-) -> Any:
-    import quimb.tensor as qtn
-
+) -> list[Any]:
     inds_by_node: dict[str, list[str]] = {
         node_name: [f"obs_{node_name}"] for node_name in node_names
     }
@@ -70,8 +69,18 @@ def _network_from_edges(
         ind_name = f"edge_{edge_index}"
         inds_by_node[left].append(ind_name)
         inds_by_node[right].append(ind_name)
-    tensors = [_tensor(node_name, tuple(inds_by_node[node_name])) for node_name in node_names]
-    return qtn.TensorNetwork(tensors)
+    return [_tensor(node_name, tuple(inds_by_node[node_name])) for node_name in node_names]
+
+
+def _flatten_tensor_grid(grid: Any) -> list[Any]:
+    if grid is None:
+        return []
+    if isinstance(grid, list):
+        flattened: list[Any] = []
+        for item in grid:
+            flattened.extend(_flatten_tensor_grid(item))
+        return flattened
+    return [grid]
 
 
 def _grid_tensors_2d(
@@ -132,7 +141,7 @@ def _grid_tensors_3d(
     ]
 
 
-def _partial_grid2d() -> list[list[Any | None]]:
+def _partial_grid2d() -> list[Any]:
     rows, cols = 6, 8
     active = {
         (i, j)
@@ -140,16 +149,16 @@ def _partial_grid2d() -> list[list[Any | None]]:
         for j in range(cols)
         if (i + 2 * j) % 7 != 0 and not (i in {0, rows - 1} and j in {0, cols - 1})
     }
-    return _grid_tensors_2d(active, rows=rows, cols=cols, prefix="PG")
+    return _flatten_tensor_grid(_grid_tensors_2d(active, rows=rows, cols=cols, prefix="PG"))
 
 
-def _upper_triangle2d() -> list[list[Any | None]]:
+def _upper_triangle2d() -> list[Any]:
     size = 8
     active = {(i, j) for i in range(size) for j in range(i, size)}
-    return _grid_tensors_2d(active, rows=size, cols=size, prefix="UT")
+    return _flatten_tensor_grid(_grid_tensors_2d(active, rows=size, cols=size, prefix="UT"))
 
 
-def _partial_grid3d() -> list[list[list[Any | None]]]:
+def _partial_grid3d() -> list[Any]:
     layers, rows, cols = 3, 4, 5
     active = {
         (k, i, j)
@@ -158,10 +167,12 @@ def _partial_grid3d() -> list[list[list[Any | None]]]:
         for j in range(cols)
         if (k + i + 2 * j) % 4 != 0
     }
-    return _grid_tensors_3d(active, layers=layers, rows=rows, cols=cols, prefix="P3")
+    return _flatten_tensor_grid(
+        _grid_tensors_3d(active, layers=layers, rows=rows, cols=cols, prefix="P3")
+    )
 
 
-def _upper_pyramid3d() -> list[list[list[Any | None]]]:
+def _upper_pyramid3d() -> list[Any]:
     layers, rows, cols = 4, 7, 7
     center = rows // 2
     active = {
@@ -171,7 +182,9 @@ def _upper_pyramid3d() -> list[list[list[Any | None]]]:
         for j in range(cols)
         if abs(i - center) + abs(j - center) <= center - k
     }
-    return _grid_tensors_3d(active, layers=layers, rows=rows, cols=cols, prefix="PY")
+    return _flatten_tensor_grid(
+        _grid_tensors_3d(active, layers=layers, rows=rows, cols=cols, prefix="PY")
+    )
 
 
 def _random_irregular() -> Any:
@@ -212,15 +225,32 @@ def _circular_chords() -> Any:
     return _network_from_edges(node_names, tuple(sorted(edges)))
 
 
-def _circular_positions(network: Any) -> dict[int, tuple[float, float]]:
-    radius = 3.5
-    positions: dict[int, tuple[float, float]] = {}
-    for tensor in network.tensors:
-        tag = next(iter(tensor.tags))
-        index = int(tag[1:])
-        angle = 2.0 * math.pi * index / 36
-        positions[id(tensor)] = (radius * math.cos(angle), radius * math.sin(angle))
-    return positions
+def _circular_ring() -> list[Any]:
+    node_names = tuple(f"O{index:02d}" for index in range(28))
+    edges = tuple(
+        sorted((f"O{index:02d}", f"O{(index + 1) % len(node_names):02d}"))
+        for index in range(len(node_names))
+    )
+    return _network_from_edges(node_names, tuple(edges))
+
+
+def _tubular_grid() -> list[Any]:
+    periodic, length = 12, 5
+    node_names = tuple(
+        f"TB_{theta}_{z_index}" for theta in range(periodic) for z_index in range(length)
+    )
+    edges: list[tuple[str, str]] = []
+    for theta in range(periodic):
+        for z_index in range(length):
+            edges.append(
+                (
+                    f"TB_{theta}_{z_index}",
+                    f"TB_{(theta + 1) % periodic}_{z_index}",
+                )
+            )
+            if z_index < length - 1:
+                edges.append((f"TB_{theta}_{z_index}", f"TB_{theta}_{z_index + 1}"))
+    return _network_from_edges(node_names, tuple(sorted(tuple(sorted(edge)) for edge in edges)))
 
 
 def _disconnected_irregular() -> Any:
@@ -254,8 +284,12 @@ def _build_example(args: ExampleCliArgs, definition: ExampleDefinition) -> Built
         network = _upper_pyramid3d()
     elif definition.name == "random_irregular":
         network = _random_irregular()
+    elif definition.name == "circular_ring":
+        network = _circular_ring()
     elif definition.name == "circular_chords":
         network = _circular_chords()
+    elif definition.name == "tubular_grid":
+        network = _tubular_grid()
     elif definition.name == "disconnected_irregular":
         network = _disconnected_irregular()
     else:
@@ -276,7 +310,9 @@ EXAMPLES: tuple[ExampleDefinition, ...] = (
     ExampleDefinition("partial_grid3d", (), frozenset(), True, False, False, _build_example),
     ExampleDefinition("upper_pyramid3d", (), frozenset(), True, False, False, _build_example),
     ExampleDefinition("random_irregular", (), frozenset(), True, False, False, _build_example),
+    ExampleDefinition("circular_ring", (), frozenset(), True, False, False, _build_example),
     ExampleDefinition("circular_chords", (), frozenset(), True, False, False, _build_example),
+    ExampleDefinition("tubular_grid", (), frozenset(), True, False, False, _build_example),
     ExampleDefinition(
         "disconnected_irregular",
         (),
@@ -300,12 +336,6 @@ def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
     built = definition.builder(args, definition)
     config = finalize_demo_plot_config(args, engine="quimb", scheme_tensor_names=None)
     config = replace(config, tensor_label_fontsize=7.0, layout_iterations=360)
-    if definition.name == "circular_chords":
-        config = replace(
-            config,
-            positions=_circular_positions(built.network),
-            validate_positions=True,
-        )
     fig, _ax = show_tensor_network(
         built.network,
         engine="quimb",

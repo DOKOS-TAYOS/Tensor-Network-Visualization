@@ -130,10 +130,12 @@ def test_run_demo_registry_declares_expected_example_sets() -> None:
     }
     assert set(module.available_examples("geometry")) == {
         "circular_chords",
+        "circular_ring",
         "disconnected_irregular",
         "partial_grid2d",
         "partial_grid3d",
         "random_irregular",
+        "tubular_grid",
         "upper_pyramid3d",
         "upper_triangle2d",
     }
@@ -438,11 +440,11 @@ def test_commands_doc_lists_copy_paste_demo_commands() -> None:
     assert "python examples/run_demo.py geometry partial_grid3d --view 2d" in text
     assert "python examples/run_demo.py geometry upper_pyramid3d --view 2d" in text
     assert "partial_grid2d" in examples_text
-    assert "listas 2D" in examples_text
     assert "partial_grid3d" in examples_text
-    assert "listas 3D" in examples_text
+    assert "listas planas" in examples_text
     assert "layout automatico" in examples_text
-    assert "posiciones manuales circulares" in examples_text
+    assert "circular_ring" in examples_text
+    assert "tubular_grid" in examples_text
 
 
 def test_placements_manual_positions_3d_saves_without_coordinate_warnings() -> None:

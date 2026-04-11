@@ -134,6 +134,13 @@ def _layered_visible_order_2d(graph: _GraphData) -> tuple[int, ...]:
                     base_index[node_id],
                 )
             )
+        elif component.structure_kind == "tube" and component.grid_mapping is not None:
+            component_visible.sort(
+                key=lambda node_id: (
+                    int(component.grid_mapping[node_id][1]),
+                    base_index[node_id],
+                )
+            )
         layered_order.extend(component_visible)
         seen.update(component_visible)
 

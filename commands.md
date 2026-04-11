@@ -93,7 +93,10 @@ python examples/run_demo.py geometry partial_grid3d --view 3d
 python examples/run_demo.py geometry upper_pyramid3d --view 2d
 python examples/run_demo.py geometry upper_pyramid3d --view 3d
 python examples/run_demo.py geometry random_irregular
+python examples/run_demo.py geometry circular_ring
 python examples/run_demo.py geometry circular_chords
+python examples/run_demo.py geometry tubular_grid --view 2d
+python examples/run_demo.py geometry tubular_grid --view 3d
 python examples/run_demo.py geometry disconnected_irregular
 ```
 

@@ -13,6 +13,7 @@ from ..graph import _GraphData
 from ..layout_structure import (
     _analyze_layout_components,
     _component_orthogonal_basis,
+    _layout_tube_3d,
     _LayoutComponent,
     _leaf_nodes,
     _specialized_anchor_positions,
@@ -194,8 +195,14 @@ def _lift_component_layout_3d(
     if component.structure_kind == "grid3d" and component.grid3d_mapping is not None:
         for node_id, (i, j, k) in component.grid3d_mapping.items():
             positions[node_id] = np.array([float(i), float(j), float(k)], dtype=float)
+    if component.structure_kind == "tube" and component.grid_mapping is not None:
+        positions.update(_layout_tube_3d(component.grid_mapping))
     _place_trimmed_leaf_nodes_3d(component, positions)
-    if component.structure_kind != "grid3d" or component.grid3d_mapping is None:
+    if (
+        component.structure_kind not in {"grid3d", "tube"}
+        or (component.structure_kind == "grid3d" and component.grid3d_mapping is None)
+        or (component.structure_kind == "tube" and component.grid_mapping is None)
+    ):
         _promote_3d_layers(graph, component, positions)
     return positions
 
