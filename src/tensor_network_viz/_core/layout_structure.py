@@ -16,7 +16,7 @@ StructureKind = Literal["chain", "grid", "grid3d", "tree", "planar", "generic"]
 
 # Oblique 2D projection (i,j,k) → layout xy. The depth axis uses an asymmetric skew so
 # free stubs on projected cubic grids get a cleaner outward corridor between bonds.
-_GRID3D_PROJECTION_X: float = 0.45
+_GRID3D_PROJECTION_X: float = -0.45
 _GRID3D_PROJECTION_Y: float = -0.25
 
 

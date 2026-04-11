@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 from matplotlib.artist import Artist
 from matplotlib.backend_bases import MouseButton, MouseEvent
+from matplotlib.colors import to_rgba
 from matplotlib.patches import FancyBboxPatch, Rectangle
 from matplotlib.widgets import Button, CheckButtons, Slider
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -147,6 +148,25 @@ def test_enable_playback_true_creates_slider_and_buttons() -> None:
     main_bounds = ax.get_position().bounds
     assert slider_bounds[2] <= 0.48
     assert main_bounds[1] >= 0.22
+
+
+def test_default_playback_slider_uses_theme_bond_purple() -> None:
+    fig, ax = matplotlib.pyplot.subplots()
+    r = Rectangle((0, 0), 1, 1)
+    ax.add_patch(r)
+    config = PlotConfig()
+    v = ContractionViewer2D([r], fig=fig, ax=ax, config=config, enable_playback=True)
+
+    v.build_ui()
+
+    assert v.slider is not None
+    assert v.slider.poly.get_facecolor() == pytest.approx(to_rgba(config.bond_edge_color))
+    assert v.slider.track.get_facecolor() == pytest.approx(
+        (0.907, 0.861, 0.987, 1.0),
+        abs=0.001,
+    )
+    assert v.slider._handle.get_markerfacecolor() == config.bond_edge_color
+    assert v.slider._handle.get_markeredgecolor() == config.node_edge_color
 
 
 def test_playback_slider_releases_stale_mouse_grabber_before_drag() -> None:

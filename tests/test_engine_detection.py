@@ -13,6 +13,10 @@ import matplotlib.pyplot as plt
 import pytest
 
 from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network
+from tensor_network_viz._input_inspection import (
+    _grid_positions_for_network_input,
+    _prepare_network_input,
+)
 from tensor_network_viz.viewer import _detect_engine
 
 
@@ -151,6 +155,24 @@ def test_show_tensor_network_autodetects_nested_tensornetwork_grid_3d() -> None:
 
     assert fig is ax.figure
     assert ax.name == "3d"
+
+
+def test_nested_grid_3d_2d_projection_offsets_deeper_layers_negative_x_negative_y() -> None:
+    front = DummyTensorNetworkNode("front", ["a"])
+    middle = DummyTensorNetworkNode("middle", ["b"])
+    back = DummyTensorNetworkNode("back", ["c"])
+    prepared = _prepare_network_input([[[front]], [[middle]], [[back]]])
+
+    positions = _grid_positions_for_network_input(prepared, dimensions=2)
+
+    assert positions is not None
+    front_pos = positions[id(front)]
+    middle_pos = positions[id(middle)]
+    back_pos = positions[id(back)]
+    assert middle_pos[0] < front_pos[0]
+    assert middle_pos[1] < front_pos[1]
+    assert back_pos[0] < middle_pos[0]
+    assert back_pos[1] < middle_pos[1]
 
 
 def test_show_tensor_network_keeps_first_node_for_single_pass_nodes_attribute() -> None:

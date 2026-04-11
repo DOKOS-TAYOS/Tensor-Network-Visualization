@@ -51,13 +51,14 @@ def test_plot_config_has_expected_defaults() -> None:
     assert config.diagnostics is None
     assert config.focus is None
     assert config.theme == "default"
-    assert config.node_color == "#F1F5F9"
-    assert config.node_edge_color == "#334155"
-    assert config.node_color_degree_one == "#FFEDD5"
-    assert config.node_edge_color_degree_one == "#C2410C"
-    assert config.tensor_label_color == "#111827"
-    assert config.bond_edge_color == "#2563EB"
-    assert config.dangling_edge_color == "#DC2626"
+    assert config.node_color == "#F5F3FF"
+    assert config.node_edge_color == "#000000"
+    assert config.node_color_degree_one == "#ECFDF5"
+    assert config.node_edge_color_degree_one == "#047857"
+    assert config.tensor_label_color == "#000000"
+    assert config.label_color == "#000000"
+    assert config.bond_edge_color == "#7C3AED"
+    assert config.dangling_edge_color == "#10B981"
 
 
 def test_plot_theme_is_public_type_alias() -> None:

@@ -9,6 +9,7 @@ matplotlib.use("Agg")
 import pytest
 
 from tensor_network_viz import PlotConfig, pair_tensor
+from tensor_network_viz._core.draw.contraction_scheme import _scheme_color_rgba
 from tensor_network_viz._core.graph import (
     _GraphData,
     _make_node,
@@ -164,6 +165,36 @@ def test_resolve_contraction_scheme_by_name_duplicate_name_raises() -> None:
     )
     with pytest.raises(ValueError, match="duplicate"):
         _resolve_contraction_scheme_by_name(graph, (("A",),))
+
+
+def test_default_contraction_scheme_palette_uses_light_readable_fills() -> None:
+    config = PlotConfig()
+
+    assert _scheme_color_rgba(0, config=config) == pytest.approx(
+        (0.769, 0.710, 0.992, 1.0),
+        abs=0.001,
+    )
+    assert _scheme_color_rgba(1, config=config) == pytest.approx(
+        (0.525, 0.937, 0.675, 1.0),
+        abs=0.001,
+    )
+    assert _scheme_color_rgba(2, config=config) == pytest.approx(
+        (0.992, 0.729, 0.455, 1.0),
+        abs=0.001,
+    )
+    assert _scheme_color_rgba(3, config=config) == pytest.approx(
+        (0.941, 0.671, 0.988, 1.0),
+        abs=0.001,
+    )
+
+
+def test_contraction_scheme_palette_override_still_wins() -> None:
+    config = PlotConfig(contraction_scheme_colors=("#123456",))
+
+    assert _scheme_color_rgba(0, config=config) == pytest.approx(
+        (0.071, 0.204, 0.337, 1.0),
+        abs=0.001,
+    )
 
 
 def test_plot_graph_contraction_scheme_is_dynamic_only() -> None:

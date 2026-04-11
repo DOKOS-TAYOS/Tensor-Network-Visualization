@@ -75,15 +75,27 @@ def _tensor_by_tag(network: Any, tag: str) -> Any:
     raise ValueError(f"Tensor tag {tag!r} was not found.")
 
 
-def _manual_positions(network: Any) -> dict[int, tuple[float, float]]:
-    return {
-        id(_tensor_by_tag(network, "Prior")): (-2.7, 0.4),
-        id(_tensor_by_tag(network, "Transition")): (-1.4, 0.4),
-        id(_tensor_by_tag(network, "Emission")): (0.0, 0.25),
-        id(_tensor_by_tag(network, "Calibrator")): (0.0, -1.0),
-        id(_tensor_by_tag(network, "Readout")): (1.45, 0.2),
-        id(_tensor_by_tag(network, "Loss")): (2.75, 0.15),
+def _manual_positions(network: Any, *, view: str) -> dict[int, tuple[float, ...]]:
+    xy_by_tag = {
+        "Prior": (-2.7, 0.4),
+        "Transition": (-1.4, 0.4),
+        "Emission": (0.0, 0.25),
+        "Calibrator": (0.0, -1.0),
+        "Readout": (1.45, 0.2),
+        "Loss": (2.75, 0.15),
     }
+    positions_2d = {id(_tensor_by_tag(network, tag)): xy for tag, xy in xy_by_tag.items()}
+    if view != "3d":
+        return positions_2d
+    z_by_tag = {
+        "Prior": 0.0,
+        "Transition": 0.15,
+        "Emission": 0.45,
+        "Calibrator": -0.35,
+        "Readout": 0.25,
+        "Loss": 0.0,
+    }
+    return {id(_tensor_by_tag(network, tag)): (*xy, z_by_tag[tag]) for tag, xy in xy_by_tag.items()}
 
 
 def _grid_tensors_2d(active: set[Coord2D], *, rows: int, cols: int) -> list[list[Any | None]]:
@@ -255,7 +267,7 @@ def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
     if definition.name == "manual_positions":
         config = replace(
             config,
-            positions=_manual_positions(built.network),
+            positions=_manual_positions(built.network, view=args.view),
             validate_positions=True,
         )
     if definition.name == "named_indices":

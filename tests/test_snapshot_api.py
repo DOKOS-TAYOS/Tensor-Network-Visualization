@@ -202,7 +202,7 @@ def test_export_tensor_network_snapshot_projects_3d_grid_input_in_2d() -> None:
     expected = _normalize_positions(
         {
             id(left): np.array([0.0, 0.0], dtype=float),
-            id(right): np.array([1.45, -0.25], dtype=float),
+            id(right): np.array([0.55, -0.25], dtype=float),
         },
         [id(left), id(right)],
     )

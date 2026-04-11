@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 import numpy as np
+from matplotlib.colors import to_rgba
 
 from ...config import PlotConfig
 from .._label_format import format_tensor_node_label
@@ -37,18 +38,26 @@ def _edge_index_text_kwargs(
     zorder: float | None = None,
 ) -> dict[str, Any]:
     """Matplotlib kwargs for index labels (semi-transparent, tinted bbox)."""
-    if stub_kind == "dangling":
-        rgb = (0.99, 0.92, 0.91)
-        edgecolor: tuple[float, float, float, float] = (0.58, 0.36, 0.36, 0.52)
-    else:
-        rgb = (0.90, 0.93, 0.99)
-        edgecolor = (0.36, 0.42, 0.58, 0.52)
+    base_color = config.dangling_edge_color if stub_kind == "dangling" else config.bond_edge_color
+    r, g, b, _ = to_rgba(base_color)
+    white_mix = 0.82
+    rgb = (
+        white_mix + (1.0 - white_mix) * float(r),
+        white_mix + (1.0 - white_mix) * float(g),
+        white_mix + (1.0 - white_mix) * float(b),
+    )
+    edgecolor: tuple[float, float, float, float] = (
+        float(r),
+        float(g),
+        float(b),
+        0.38,
+    )
     if bbox_pad <= 0.09:
-        alpha_fill = 0.52
+        alpha_fill = 0.22
     elif bbox_pad <= 0.14:
-        alpha_fill = 0.64
+        alpha_fill = 0.28
     else:
-        alpha_fill = 0.74
+        alpha_fill = 0.34
     facecolor: tuple[float, float, float, float] = (rgb[0], rgb[1], rgb[2], alpha_fill)
     z = float(_ZORDER_EDGE_INDEX_LABEL) if zorder is None else float(zorder)
     return {

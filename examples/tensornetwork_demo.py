@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias
 
 import matplotlib
 
@@ -14,27 +14,20 @@ from demo_cli import (
     BuiltExample,
     ExampleCliArgs,
     ExampleDefinition,
-    GraphBlueprint,
     apply_demo_caption,
     axis_dimension,
-    build_cubic_peps_blueprint,
-    build_disconnected_blueprint,
-    build_ladder_blueprint,
-    build_mera_blueprint,
-    build_mera_ttn_blueprint,
-    build_mpo_blueprint,
-    build_mps_blueprint,
-    build_peps_blueprint,
-    build_weird_blueprint,
     cumulative_prefix_contraction_scheme,
     demo_runs_headless,
+    ensure_minimum,
     finalize_demo_plot_config,
-    graph_tensor_names,
     pairwise_merge_contraction_scheme,
     render_demo_tensor_network,
     resolve_example_definition,
 )
 from demo_tensors import build_demo_numpy_tensor
+
+NodeSpec: TypeAlias = tuple[str, tuple[str, ...]]
+BondSpec: TypeAlias = tuple[tuple[str, str], ...]
 
 TAGLINES: dict[str, str] = {
     "mps": "Finite tensor-train / MPS chain.",
@@ -43,43 +36,25 @@ TAGLINES: dict[str, str] = {
 }
 
 
-def _build_blueprint(example: str, args: ExampleCliArgs) -> GraphBlueprint:
-    if example == "mps":
-        return build_mps_blueprint(args.n_sites)
-    if example == "mpo":
-        return build_mpo_blueprint(args.n_sites)
-    if example == "ladder":
-        return build_ladder_blueprint(args.n_sites)
-    if example == "peps":
-        return build_peps_blueprint(args.lx, args.ly)
-    if example == "cubic_peps":
-        return build_cubic_peps_blueprint(args.lx, args.ly, args.lz)
-    if example == "mera":
-        return build_mera_blueprint(args.mera_log2)
-    if example == "mera_ttn":
-        return build_mera_ttn_blueprint(args.mera_log2, args.tree_depth)
-    if example == "weird":
-        return build_weird_blueprint()
-    if example == "disconnected":
-        return build_disconnected_blueprint()
-    raise ValueError(f"Unsupported TensorNetwork example: {example}")
-
-
-def _build_tensornetwork_nodes(blueprint: GraphBlueprint) -> list[Any]:
+def _build_tensornetwork_nodes(
+    node_specs: tuple[NodeSpec, ...],
+    bond_specs: tuple[BondSpec, ...],
+) -> list[Any]:
     import tensornetwork as tn
 
     nodes: dict[str, Any] = {}
     ordered_nodes: list[Any] = []
-    for node in blueprint.nodes:
-        shape = tuple(axis_dimension(axis) for axis in node.axes)
-        created = tn.Node(
-            build_demo_numpy_tensor(name=node.name, shape=shape, dtype=float),
-            name=node.name,
-            axis_names=node.axes,
+    for name, axes in node_specs:
+        shape = tuple(axis_dimension(axis) for axis in axes)
+        node = tn.Node(
+            build_demo_numpy_tensor(name=name, shape=shape, dtype=float),
+            name=name,
+            axis_names=axes,
         )
-        nodes[node.name] = created
-        ordered_nodes.append(created)
-    for bond in blueprint.bonds:
+        nodes[name] = node
+        ordered_nodes.append(node)
+
+    for bond in bond_specs:
         if len(bond) != 2:
             raise ValueError("TensorNetwork examples only support pairwise bonds.")
         (left_name, left_axis), (right_name, right_axis) = bond
@@ -87,24 +62,146 @@ def _build_tensornetwork_nodes(blueprint: GraphBlueprint) -> list[Any]:
     return ordered_nodes
 
 
-def _scheme_steps(example: str, blueprint: GraphBlueprint) -> tuple[tuple[str, ...], ...] | None:
+def _mps_specs(n_sites: int) -> tuple[tuple[NodeSpec, ...], tuple[BondSpec, ...]]:
+    ensure_minimum("n_sites", n_sites)
+    node_specs: list[NodeSpec] = []
+    bond_specs: list[BondSpec] = []
+    for index in range(n_sites):
+        name = f"A{index}"
+        axes: list[str] = []
+        if index > 0:
+            axes.append("left")
+        axes.append("phys")
+        if index < n_sites - 1:
+            axes.append("right")
+        node_specs.append((name, tuple(axes)))
+        if index > 0:
+            bond_specs.append(((f"A{index - 1}", "right"), (name, "left")))
+    return tuple(node_specs), tuple(bond_specs)
+
+
+def _peps_specs(lx: int, ly: int) -> tuple[tuple[NodeSpec, ...], tuple[BondSpec, ...]]:
+    ensure_minimum("lx", lx)
+    ensure_minimum("ly", ly)
+    node_specs: list[NodeSpec] = []
+    bond_specs: list[BondSpec] = []
+    for i in range(lx):
+        for j in range(ly):
+            name = f"P{i}_{j}"
+            axes: list[str] = []
+            if i > 0:
+                axes.append("up")
+            if j > 0:
+                axes.append("left")
+            axes.append("phys")
+            if j < ly - 1:
+                axes.append("right")
+            if i < lx - 1:
+                axes.append("down")
+            node_specs.append((name, tuple(axes)))
+            if i > 0:
+                bond_specs.append(((f"P{i - 1}_{j}", "down"), (name, "up")))
+            if j > 0:
+                bond_specs.append(((f"P{i}_{j - 1}", "right"), (name, "left")))
+    return tuple(node_specs), tuple(bond_specs)
+
+
+def _pairwise_specs(
+    node_names: tuple[str, ...],
+    edges: tuple[tuple[str, str], ...],
+) -> tuple[tuple[NodeSpec, ...], tuple[BondSpec, ...]]:
+    axes_by_node: dict[str, list[str]] = {name: ["phys"] for name in node_names}
+    for edge_index, (left, right) in enumerate(edges):
+        axis_name = f"b{edge_index}"
+        axes_by_node[left].append(axis_name)
+        axes_by_node[right].append(axis_name)
+    node_specs = tuple((name, tuple(axes_by_node[name])) for name in node_names)
+    bond_specs = tuple(
+        ((left, f"b{edge_index}"), (right, f"b{edge_index}"))
+        for edge_index, (left, right) in enumerate(edges)
+    )
+    return node_specs, bond_specs
+
+
+def _weird_specs() -> tuple[tuple[NodeSpec, ...], tuple[BondSpec, ...]]:
+    node_names = tuple(f"V{index}" for index in range(23))
+    edges = (
+        ("V0", "V1"),
+        ("V1", "V2"),
+        ("V2", "V5"),
+        ("V5", "V8"),
+        ("V8", "V7"),
+        ("V7", "V6"),
+        ("V6", "V3"),
+        ("V3", "V0"),
+        ("V3", "V4"),
+        ("V4", "V5"),
+        ("V1", "V4"),
+        ("V4", "V7"),
+        ("V0", "V4"),
+        ("V2", "V4"),
+        ("V6", "V4"),
+        ("V8", "V4"),
+        ("V1", "V9"),
+        ("V9", "V10"),
+        ("V10", "V11"),
+        ("V11", "V5"),
+        ("V3", "V12"),
+        ("V12", "V13"),
+        ("V13", "V14"),
+        ("V14", "V7"),
+        ("V0", "V15"),
+        ("V15", "V16"),
+        ("V16", "V8"),
+        ("V10", "V17"),
+        ("V17", "V18"),
+        ("V18", "V19"),
+        ("V19", "V13"),
+        ("V10", "V13"),
+        ("V11", "V14"),
+        ("V16", "V19"),
+        ("V2", "V20"),
+        ("V18", "V21"),
+        ("V12", "V22"),
+    )
+    return _pairwise_specs(node_names, edges)
+
+
+def _specs_for_example(
+    example: str,
+    args: ExampleCliArgs,
+) -> tuple[tuple[NodeSpec, ...], tuple[BondSpec, ...]]:
     if example == "mps":
-        return pairwise_merge_contraction_scheme(graph_tensor_names(blueprint))
+        return _mps_specs(args.n_sites)
     if example == "peps":
-        return cumulative_prefix_contraction_scheme(graph_tensor_names(blueprint))
+        return _peps_specs(args.lx, args.ly)
+    if example == "weird":
+        return _weird_specs()
+    raise ValueError(f"Unsupported TensorNetwork example: {example}")
+
+
+def _scheme_steps(
+    example: str,
+    tensor_names: tuple[str, ...],
+) -> tuple[tuple[str, ...], ...] | None:
+    if example == "mps":
+        return pairwise_merge_contraction_scheme(tensor_names)
+    if example == "peps":
+        return cumulative_prefix_contraction_scheme(tensor_names)
     return None
 
 
 def _build_example(args: ExampleCliArgs, definition: ExampleDefinition) -> BuiltExample:
-    blueprint = _build_blueprint(definition.name, args)
-    nodes = _build_tensornetwork_nodes(blueprint)
+    node_specs, bond_specs = _specs_for_example(definition.name, args)
+    nodes = _build_tensornetwork_nodes(node_specs, bond_specs)
+    tensor_names = tuple(name for name, _axes in node_specs)
     return BuiltExample(
         network=nodes,
         plot_engine="tensornetwork",
-        title=f"TensorNetwork · {definition.name.upper()} · {args.view.upper()}",
+        title=f"TensorNetwork - {definition.name.upper()} - {args.view.upper()}",
         subtitle=TAGLINES.get(definition.name),
         footer="Backend-native tensornetwork.Node objects passed into show_tensor_network.",
-        scheme_steps_by_name=_scheme_steps(definition.name, blueprint),
+        scheme_steps_by_name=_scheme_steps(definition.name, tensor_names),
     )
 
 

@@ -1285,7 +1285,7 @@ def test_compute_layout_3d_grid_uniform_nearest_neighbor_spacing() -> None:
     assert all(math.isclose(L, mean_len, rel_tol=1e-5, abs_tol=1e-8) for L in lengths)
 
 
-def test_compute_layout_2d_grid3d_depth_projects_with_positive_x_and_negative_y() -> None:
+def test_compute_layout_2d_grid3d_depth_projects_with_negative_x_and_negative_y() -> None:
     graph = _build_3d_grid_graph(2, 2, 3)
 
     positions = _compute_layout(graph, dimensions=2, seed=0)
@@ -1297,9 +1297,9 @@ def test_compute_layout_2d_grid3d_depth_projects_with_positive_x_and_negative_y(
     p001 = positions[node_id_by_coords[(0, 0, 1)]]
     p002 = positions[node_id_by_coords[(0, 0, 2)]]
 
-    assert float(p001[0]) > float(p000[0])
+    assert float(p001[0]) < float(p000[0])
     assert float(p001[1]) < float(p000[1])
-    assert float(p002[0]) > float(p001[0])
+    assert float(p002[0]) < float(p001[0])
     assert float(p002[1]) < float(p001[1])
 
 

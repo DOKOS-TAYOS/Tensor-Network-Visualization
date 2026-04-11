@@ -33,14 +33,14 @@ from .plotter import _edge_outline_effects, _node_edge_degrees
 from .scene_state import _InteractiveSceneState
 
 _DEFAULT_SCHEME_COLORS: tuple[str, ...] = (
-    "#2563EB",
-    "#DC2626",
-    "#16A34A",
-    "#F59E0B",
-    "#7C3AED",
-    "#0891B2",
-    "#DB2777",
-    "#4B5563",
+    "#C4B5FD",
+    "#86EFAC",
+    "#FDBA74",
+    "#F0ABFC",
+    "#A78BFA",
+    "#6EE7B7",
+    "#FCD34D",
+    "#F9A8D4",
 )
 
 _CONTRACTION_SCHEME_GID: str = "tnv_contraction_scheme"

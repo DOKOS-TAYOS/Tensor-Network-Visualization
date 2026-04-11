@@ -48,6 +48,7 @@ from tensor_network_viz import (
 )
 from tensor_network_viz._contraction_viewer_ui import _PLAYBACK_SLIDER_BOUNDS
 from tensor_network_viz._core import _draw_common
+from tensor_network_viz._core.draw.labels_misc import _edge_index_text_kwargs
 from tensor_network_viz._core.focus import filter_graph_for_focus
 from tensor_network_viz._core.graph import (
     _EdgeEndpoint,
@@ -98,6 +99,40 @@ class DummyTensorNetworkNode:
         self.name = name
         self.axis_names = list(axis_names)
         self.edges: list[DummyEdge | None] = [None] * len(axis_names)
+
+
+def test_default_edge_index_label_boxes_are_tinted_from_index_edge_colors() -> None:
+    config = PlotConfig()
+
+    bond_kwargs = _edge_index_text_kwargs(
+        config,
+        fontsize=10.0,
+        stub_kind="bond",
+        bbox_pad=0.18,
+    )
+    dangling_kwargs = _edge_index_text_kwargs(
+        config,
+        fontsize=10.0,
+        stub_kind="dangling",
+        bbox_pad=0.18,
+    )
+
+    assert bond_kwargs["bbox"]["facecolor"] == pytest.approx(
+        (0.907, 0.861, 0.987, 0.34),
+        abs=0.001,
+    )
+    assert dangling_kwargs["bbox"]["facecolor"] == pytest.approx(
+        (0.831, 0.951, 0.911, 0.34),
+        abs=0.001,
+    )
+    assert bond_kwargs["bbox"]["edgecolor"] == pytest.approx(
+        (0.486, 0.227, 0.929, 0.38),
+        abs=0.001,
+    )
+    assert dangling_kwargs["bbox"]["edgecolor"] == pytest.approx(
+        (0.063, 0.725, 0.506, 0.38),
+        abs=0.001,
+    )
 
 
 class DummyNetwork:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import sys
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -428,11 +429,54 @@ def test_tensornetwork_weird_saves_figure_without_showing() -> None:
 
 def test_commands_doc_lists_copy_paste_demo_commands() -> None:
     text = Path("commands.md").read_text(encoding="utf-8")
+    examples_text = Path("examples/README.md").read_text(encoding="utf-8")
 
     assert "python examples/run_demo.py themes overview" in text
     assert "python examples/run_demo.py placements manual_scheme" in text
     assert "python examples/run_demo.py geometry disconnected_irregular" in text
     assert "python examples/run_demo.py quimb hyper" in text
+    assert "python examples/run_demo.py geometry partial_grid3d --view 2d" in text
+    assert "python examples/run_demo.py geometry upper_pyramid3d --view 2d" in text
+    assert "partial_grid2d" in examples_text
+    assert "listas 2D" in examples_text
+    assert "partial_grid3d" in examples_text
+    assert "listas 3D" in examples_text
+    assert "layout automatico" in examples_text
+    assert "posiciones manuales circulares" in examples_text
+
+
+def test_placements_manual_positions_3d_saves_without_coordinate_warnings() -> None:
+    _require_quimb()
+    module = _load_example_module(
+        Path("examples/run_demo.py"),
+        "run_demo_placements_manual_positions_3d",
+    )
+    output_dir = Path(".tmp") / "example-tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "placements-manual-positions-3d.png"
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        exit_code = module.main(
+            [
+                "placements",
+                "manual_positions",
+                "--view",
+                "3d",
+                "--save",
+                str(output_path),
+                "--no-show",
+            ]
+        )
+
+    assert exit_code == 0
+    assert not [
+        warning
+        for warning in caught
+        if "missing coords will be zero-filled" in str(warning.message)
+    ]
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
 
 
 def test_tensorkrowch_run_example_2d_calls_renderer_without_scope_patch(
@@ -708,32 +752,44 @@ def test_representative_demo_tensors_are_deterministic_and_non_constant() -> Non
         tree_depth=2,
     )
 
-    tk_blueprint = tk_demo._build_blueprint("mps", args)
-    _tk_network_a, tk_nodes_a = tk_demo._build_tensorkrowch_network(tk_blueprint)
-    _tk_network_b, tk_nodes_b = tk_demo._build_tensorkrowch_network(tk_blueprint)
+    tk_node_specs, tk_bond_specs = tk_demo._mps_specs(args.n_sites)
+    _tk_network_a, tk_nodes_a = tk_demo._build_tensorkrowch_network(
+        tk_node_specs,
+        tk_bond_specs,
+    )
+    _tk_network_b, tk_nodes_b = tk_demo._build_tensorkrowch_network(
+        tk_node_specs,
+        tk_bond_specs,
+    )
     tk_array_a = np.asarray(tk_nodes_a[0].tensor)
     tk_array_b = np.asarray(tk_nodes_b[0].tensor)
     assert np.array_equal(tk_array_a, tk_array_b)
     assert not np.allclose(tk_array_a, tk_array_a.flat[0])
 
-    tn_blueprint = tn_demo._build_blueprint("mps", args)
-    tn_nodes_a = tn_demo._build_tensornetwork_nodes(tn_blueprint)
-    tn_nodes_b = tn_demo._build_tensornetwork_nodes(tn_blueprint)
+    tn_node_specs, tn_bond_specs = tn_demo._mps_specs(args.n_sites)
+    tn_nodes_a = tn_demo._build_tensornetwork_nodes(tn_node_specs, tn_bond_specs)
+    tn_nodes_b = tn_demo._build_tensornetwork_nodes(tn_node_specs, tn_bond_specs)
     tn_array_a = np.asarray(tn_nodes_a[0].tensor)
     tn_array_b = np.asarray(tn_nodes_b[0].tensor)
     assert np.array_equal(tn_array_a, tn_array_b)
     assert not np.allclose(tn_array_a, tn_array_a.flat[0])
 
-    quimb_blueprint = quimb_demo._build_blueprint("mps", args)
-    _quimb_network_a, quimb_tensors_a = quimb_demo._build_quimb_network(quimb_blueprint)
-    _quimb_network_b, quimb_tensors_b = quimb_demo._build_quimb_network(quimb_blueprint)
+    quimb_node_specs, quimb_bond_specs = quimb_demo._mps_specs(args.n_sites)
+    _quimb_network_a, quimb_tensors_a = quimb_demo._build_quimb_network(
+        quimb_node_specs,
+        quimb_bond_specs,
+    )
+    _quimb_network_b, quimb_tensors_b = quimb_demo._build_quimb_network(
+        quimb_node_specs,
+        quimb_bond_specs,
+    )
     quimb_array_a = np.asarray(quimb_tensors_a[0].data)
     quimb_array_b = np.asarray(quimb_tensors_b[0].data)
     assert np.array_equal(quimb_array_a, quimb_array_b)
     assert not np.allclose(quimb_array_a, quimb_array_a.flat[0])
 
-    tenpy_blueprint = tenpy_demo.build_chain_blueprint(3)
-    tenpy_network = tenpy_demo._build_explicit_network(tenpy_blueprint)
+    tenpy_node_specs, tenpy_bond_specs = tenpy_demo._chain_specs(3)
+    tenpy_network = tenpy_demo._build_explicit_network(tenpy_node_specs, tenpy_bond_specs)
     first_tenpy_tensor = tenpy_network.nodes[0][1]
     tenpy_array = np.asarray(first_tenpy_tensor.to_ndarray())
     assert not np.allclose(tenpy_array, tenpy_array.flat[0])

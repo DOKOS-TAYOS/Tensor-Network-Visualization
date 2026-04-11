@@ -4,11 +4,13 @@ from collections.abc import Sequence
 from typing import Any
 
 from matplotlib.axes import Axes
+from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 from matplotlib.text import Text
 from matplotlib.widgets import Button, Slider
 
 from ._widgets import _SafeButton, _SafeSlider
+from .config import PlotConfig
 
 _PLAYBACK_DETAILS_BOUNDS: tuple[float, float, float, float] = (0.23, 0.116, 0.7, 0.12)
 # Top of the cost / step-details axis; interactive chrome (checkboxes, 2d/3d) aligns to this y.
@@ -29,6 +31,7 @@ _PLAYBACK_SLIDER_HANDLE_STYLE: dict[str, Any] = {
     "edgecolor": "#1d4ed8",
     "size": 11,
 }
+_PLAYBACK_SLIDER_TRACK_WHITE_MIX: float = 0.82
 _PLAYBACK_BUTTON_START_X: float = 0.73
 _PLAYBACK_BUTTON_Y: float = 0.058
 _PLAYBACK_BUTTON_WIDTH: float = 0.055
@@ -49,6 +52,26 @@ _SCHEME_LABELS: tuple[str, str] = ("Scheme", "Costs")
 _CONTROL_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _CONTROL_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _CONTROL_CHECK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
+
+
+def _slider_track_color(base_color: str) -> tuple[float, float, float, float]:
+    r, g, b, _ = to_rgba(base_color)
+    mix = float(_PLAYBACK_SLIDER_TRACK_WHITE_MIX)
+    return (
+        mix + (1.0 - mix) * float(r),
+        mix + (1.0 - mix) * float(g),
+        mix + (1.0 - mix) * float(b),
+        1.0,
+    )
+
+
+def _playback_slider_handle_style(config: PlotConfig | None) -> dict[str, Any]:
+    resolved = config if config is not None else PlotConfig()
+    return {
+        "facecolor": resolved.bond_edge_color,
+        "edgecolor": resolved.node_edge_color,
+        "size": _PLAYBACK_SLIDER_HANDLE_STYLE["size"],
+    }
 
 
 def create_playback_details_panel(fig: Figure) -> tuple[Axes, Text]:
@@ -82,8 +105,11 @@ def create_playback_slider(
     *,
     num_steps: int,
     initial_step: int,
+    config: PlotConfig | None = None,
 ) -> Slider:
     ax_slider = fig.add_axes(_PLAYBACK_SLIDER_BOUNDS)
+    resolved = config if config is not None else PlotConfig()
+    active_color = resolved.bond_edge_color
     return _SafeSlider(
         ax_slider,
         "Step",
@@ -91,7 +117,9 @@ def create_playback_slider(
         float(max(0, num_steps)),
         valinit=float(initial_step),
         valstep=1,
-        handle_style=_PLAYBACK_SLIDER_HANDLE_STYLE,
+        color=active_color,
+        track_color=_slider_track_color(active_color),
+        handle_style=_playback_slider_handle_style(config),
     )
 
 

@@ -172,6 +172,11 @@ examples with `--n-sites 6`, where contraction history recovery is safe enough f
 `partial_grid2d`, `upper_triangle2d`, `partial_grid3d`, `upper_pyramid3d`,
 `random_irregular`, `circular_chords`, `disconnected_irregular`
 
+Uso de layout en estas demos: `partial_grid2d` y `upper_triangle2d` usan listas 2D
+con `None`; `partial_grid3d` y `upper_pyramid3d` usan listas 3D con `None`;
+`random_irregular` y `disconnected_irregular` usan layout automatico; `circular_chords`
+usa posiciones manuales circulares.
+
 ## Batch Rendering
 
 List selected commands without running them:

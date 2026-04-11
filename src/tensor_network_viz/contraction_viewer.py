@@ -341,6 +341,7 @@ class _ContractionViewerBase:
             self.figure,
             num_steps=n,
             initial_step=int(self._initial_step if self._initial_step is not None else n),
+            config=self.config,
         )
         self.slider = slider
 

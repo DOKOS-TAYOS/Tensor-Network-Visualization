@@ -36,3 +36,17 @@ def test_test_examples_scopes_optional_backend_skips_per_backend() -> None:
     path = Path("tests/test_examples.py")
 
     assert _top_level_importorskip_targets(path) == []
+
+
+def test_engine_demo_modules_do_not_use_shared_graph_blueprints() -> None:
+    engine_demo_paths = (
+        Path("examples/tensorkrowch_demo.py"),
+        Path("examples/tensornetwork_demo.py"),
+        Path("examples/quimb_demo.py"),
+        Path("examples/tenpy_demo.py"),
+    )
+
+    for path in engine_demo_paths:
+        source = path.read_text(encoding="utf-8")
+        assert "GraphBlueprint" not in source
+        assert "_blueprint" not in source

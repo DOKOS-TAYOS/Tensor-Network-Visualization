@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias
 
 import matplotlib
 
@@ -15,18 +15,18 @@ from demo_cli import (
     BuiltExample,
     ExampleCliArgs,
     ExampleDefinition,
-    GraphBlueprint,
     apply_demo_caption,
     axis_dimension,
-    build_chain_blueprint,
-    build_hub_blueprint,
-    build_hyper_blueprint,
     demo_runs_headless,
+    ensure_minimum,
     finalize_demo_plot_config,
     render_demo_tensor_network,
     resolve_example_definition,
 )
 from demo_tensors import build_demo_numpy_tensor
+
+NodeSpec: TypeAlias = tuple[str, tuple[str, ...]]
+BondSpec: TypeAlias = tuple[tuple[str, str], ...]
 
 TAGLINES: dict[str, str] = {
     "chain": "Explicit TenPyTensorNetwork open chain.",
@@ -126,11 +126,97 @@ def _npc_tensor(name: str, axes: tuple[str, ...]) -> Any:
         )
 
 
-def _build_explicit_network(blueprint: GraphBlueprint) -> Any:
+def _build_explicit_network(
+    node_specs: tuple[NodeSpec, ...],
+    bond_specs: tuple[BondSpec, ...],
+) -> Any:
     from tensor_network_viz import make_tenpy_tensor_network
 
-    nodes = [(node.name, _npc_tensor(node.name, node.axes)) for node in blueprint.nodes]
-    return make_tenpy_tensor_network(nodes=nodes, bonds=blueprint.bonds)
+    nodes = tuple((name, _npc_tensor(name, axes)) for name, axes in node_specs)
+    return make_tenpy_tensor_network(nodes=nodes, bonds=bond_specs)
+
+
+def _chain_specs(n_sites: int) -> tuple[tuple[NodeSpec, ...], tuple[BondSpec, ...]]:
+    ensure_minimum("n_sites", n_sites, minimum=2)
+    node_specs: list[NodeSpec] = []
+    bond_specs: list[BondSpec] = []
+    for index in range(n_sites):
+        name = f"T{index}"
+        axes: list[str] = []
+        if index > 0:
+            axes.append("left")
+        axes.append("phys")
+        if index < n_sites - 1:
+            axes.append("right")
+        node_specs.append((name, tuple(axes)))
+        if index > 0:
+            bond_specs.append(((f"T{index - 1}", "right"), (name, "left")))
+    return tuple(node_specs), tuple(bond_specs)
+
+
+def _hub_specs(n_sites: int) -> tuple[tuple[NodeSpec, ...], tuple[BondSpec, ...]]:
+    ensure_minimum("n_sites", n_sites, minimum=3)
+    center_axes = ["phys", *(f"leaf_{index}" for index in range(1, n_sites))]
+    node_specs: list[NodeSpec] = [("H0", tuple(center_axes))]
+    bond_specs: list[BondSpec] = []
+    for index in range(1, n_sites):
+        leaf = f"L{index}"
+        node_specs.append((leaf, ("center", "phys")))
+        bond_specs.append((("H0", f"leaf_{index}"), (leaf, "center")))
+    return tuple(node_specs), tuple(bond_specs)
+
+
+def _hyper_specs() -> tuple[tuple[NodeSpec, ...], tuple[BondSpec, ...]]:
+    axes_by_node: dict[str, list[str]] = {f"H{index}": ["phys"] for index in range(12)}
+    hyper_bonds: tuple[BondSpec, ...] = (
+        (("H0", "alpha"), ("H1", "alpha"), ("H2", "alpha"), ("H3", "alpha")),
+        (("H3", "beta"), ("H4", "beta"), ("H5", "beta")),
+        (
+            ("H6", "gamma"),
+            ("H7", "gamma"),
+            ("H8", "gamma"),
+            ("H9", "gamma"),
+            ("H10", "gamma"),
+        ),
+    )
+    pair_edges = (
+        ("H0", "H4"),
+        ("H1", "H6"),
+        ("H2", "H7"),
+        ("H5", "H8"),
+        ("H8", "H11"),
+        ("H11", "H9"),
+        ("H9", "H4"),
+        ("H10", "H2"),
+        ("H11", "H3"),
+    )
+
+    for bond in hyper_bonds:
+        for node_name, axis_name in bond:
+            axes_by_node[node_name].append(axis_name)
+
+    pair_bonds: list[BondSpec] = []
+    for edge_index, (left, right) in enumerate(pair_edges):
+        axis_name = f"ring_{edge_index}"
+        axes_by_node[left].append(axis_name)
+        axes_by_node[right].append(axis_name)
+        pair_bonds.append(((left, axis_name), (right, axis_name)))
+
+    node_specs = tuple((name, tuple(axes)) for name, axes in axes_by_node.items())
+    return node_specs, (*hyper_bonds, *tuple(pair_bonds))
+
+
+def _explicit_specs_for(
+    example: str,
+    n_sites: int,
+) -> tuple[tuple[NodeSpec, ...], tuple[BondSpec, ...]]:
+    if example == "chain":
+        return _chain_specs(n_sites)
+    if example == "hub":
+        return _hub_specs(n_sites)
+    if example == "hyper":
+        return _hyper_specs()
+    raise ValueError(f"Unsupported explicit TeNPy example: {example}")
 
 
 def _build_native_example(args: ExampleCliArgs, definition: ExampleDefinition) -> BuiltExample:
@@ -153,42 +239,41 @@ def _build_native_example(args: ExampleCliArgs, definition: ExampleDefinition) -
     return BuiltExample(
         network=network,
         plot_engine="tenpy",
-        title=f"TeNPy · {definition.name.upper()} · {args.view.upper()}",
+        title=f"TeNPy - {definition.name.upper()} - {args.view.upper()}",
         subtitle=TAGLINES.get(definition.name),
         footer="Render the native TeNPy object directly with engine='tenpy'.",
         scheme_steps_by_name=None,
     )
 
 
-def _build_explicit_example(args: ExampleCliArgs, definition: ExampleDefinition) -> BuiltExample:
-    if definition.name == "chain":
-        blueprint = build_chain_blueprint(args.n_sites)
-    elif definition.name == "hub":
-        blueprint = build_hub_blueprint(args.n_sites)
-    elif definition.name == "hyper":
-        blueprint = build_hyper_blueprint()
-    else:
-        raise ValueError(f"Unsupported explicit TeNPy example: {definition.name}")
-    network = _build_explicit_network(blueprint)
-    scheme_steps = None
-    if definition.name == "chain":
-        names = tuple(node.name for node in blueprint.nodes)
-        scheme_steps = tuple(tuple(names[:size]) for size in range(2, len(names) + 1))
-    elif definition.name == "hub":
-        scheme_steps = (("H0", "L1", "L2"),)
-    elif definition.name == "hyper":
-        scheme_steps = (
+def _explicit_scheme_steps(
+    example: str,
+    tensor_names: tuple[str, ...],
+) -> tuple[tuple[str, ...], ...] | None:
+    if example == "chain":
+        return tuple(tuple(tensor_names[:size]) for size in range(2, len(tensor_names) + 1))
+    if example == "hub":
+        return (("H0", "L1", "L2"),)
+    if example == "hyper":
+        return (
             ("H0", "H1", "H2", "H3"),
             ("H3", "H4", "H5"),
             ("H6", "H7", "H8", "H9", "H10"),
         )
+    return None
+
+
+def _build_explicit_example(args: ExampleCliArgs, definition: ExampleDefinition) -> BuiltExample:
+    node_specs, bond_specs = _explicit_specs_for(definition.name, args.n_sites)
+    network = _build_explicit_network(node_specs, bond_specs)
+    tensor_names = tuple(name for name, _axes in node_specs)
     return BuiltExample(
         network=network,
         plot_engine="tenpy",
-        title=f"TeNPy · {definition.name.upper()} · {args.view.upper()}",
+        title=f"TeNPy - {definition.name.upper()} - {args.view.upper()}",
         subtitle=TAGLINES.get(definition.name),
         footer="Render an explicit TenPyTensorNetwork built from npc.Array tensors.",
-        scheme_steps_by_name=scheme_steps,
+        scheme_steps_by_name=_explicit_scheme_steps(definition.name, tensor_names),
     )
 
 
