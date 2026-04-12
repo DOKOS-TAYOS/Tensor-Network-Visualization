@@ -167,16 +167,16 @@ def test_switch_to_3d_limits_exact_segment_distance_checks(
         calls = {"count": 0}
         original = getattr(directions_3d, "_segment_segment_min_distance_sq_3d", None)
 
-        def counting_distance(
-            start_a: np.ndarray,
-            end_a: np.ndarray,
-            start_b: np.ndarray,
-            end_b: np.ndarray,
-        ) -> float:
-            calls["count"] += 1
-            return float(original(start_a, end_a, start_b, end_b))
-
         if original is not None:
+            def counting_distance(
+                start_a: np.ndarray,
+                end_a: np.ndarray,
+                start_b: np.ndarray,
+                end_b: np.ndarray,
+            ) -> float:
+                calls["count"] += 1
+                return float(original(start_a, end_a, start_b, end_b))
+
             monkeypatch.setattr(
                 directions_3d,
                 "_segment_segment_min_distance_sq_3d",

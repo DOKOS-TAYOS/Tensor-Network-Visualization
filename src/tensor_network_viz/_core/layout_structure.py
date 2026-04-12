@@ -581,8 +581,17 @@ def _coordinate_map_from_node_metadata(
     return coords_by_node
 
 
+def _sorted_node_pair(left_id: int, right_id: int) -> tuple[int, int]:
+    if left_id < right_id:
+        return (left_id, right_id)
+    return (right_id, left_id)
+
+
 def _node_edge_set(nx_graph: nx.Graph) -> set[tuple[int, int]]:
-    return {tuple(sorted((int(left_id), int(right_id)))) for left_id, right_id in nx_graph.edges()}
+    return {
+        _sorted_node_pair(int(left_id), int(right_id))
+        for left_id, right_id in nx_graph.edges()
+    }
 
 
 def _expected_grid_edges_from_coords(
@@ -599,7 +608,7 @@ def _expected_grid_edges_from_coords(
             neighbor_id = node_by_coord.get(tuple(neighbor))
             if neighbor_id is None:
                 continue
-            expected_edges.add(tuple(sorted((node_id, neighbor_id))))
+            expected_edges.add(_sorted_node_pair(node_id, neighbor_id))
     return expected_edges
 
 
@@ -703,13 +712,17 @@ def _detect_coordinate_tube(
                 ]
                 periodic_coord = list(coord)
                 periodic_coord[periodic_axis] = next_periodic_value
-                expected_edges.add(tuple(sorted((node_id, node_by_coord[tuple(periodic_coord)]))))
+                expected_edges.add(
+                    _sorted_node_pair(node_id, node_by_coord[tuple(periodic_coord)])
+                )
 
                 next_axial_idx = axial_index[axial_value] + 1
                 if next_axial_idx < len(axial_values):
                     axial_coord = list(coord)
                     axial_coord[axial_axis] = axial_values[next_axial_idx]
-                    expected_edges.add(tuple(sorted((node_id, node_by_coord[tuple(axial_coord)]))))
+                    expected_edges.add(
+                        _sorted_node_pair(node_id, node_by_coord[tuple(axial_coord)])
+                    )
             else:
                 continue
             break

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 
 import numpy as np
 
@@ -96,7 +97,7 @@ def _apply_attraction_forces(
     positions: np.ndarray,
     *,
     index_by_node: dict[int, int],
-    pair_weights: dict[tuple[int, int], int | float],
+    pair_weights: Mapping[tuple[int, int], int | float],
     k: float,
 ) -> None:
     if not pair_weights:
@@ -163,7 +164,7 @@ def _initial_positions(node_ids: list[int], dimensions: int, seed: int) -> Vecto
 def _compute_weighted_force_layout(
     *,
     node_ids: list[int],
-    pair_weights: dict[tuple[int, int], int | float],
+    pair_weights: Mapping[tuple[int, int], int | float],
     dimensions: int,
     seed: int,
     iterations: int,

@@ -9,6 +9,7 @@ from tensor_network_viz import PlotConfig
 from tensor_network_viz._core._draw_common import _graph_edge_degree
 from tensor_network_viz._core.graph import (
     _EdgeEndpoint,
+    _EdgeData,
     _GraphData,
     _make_contraction_edge,
     _make_dangling_edge,
@@ -1198,7 +1199,7 @@ def _build_demo_hyper_graph() -> _GraphData:
         for node_id, node in nodes.items()
     }
 
-    edges: list[object] = []
+    edges: list[_EdgeData] = []
     next_virtual_id = -1
     for bond in hyper_bonds:
         hub_id = next_virtual_id
@@ -2306,7 +2307,7 @@ def test_compute_axis_directions_chain_3d_generates_deterministic_candidates_laz
     calls: list[tuple[float, float, float]] = []
 
     def counting_local_to_world(
-        frame: object,
+        frame: free_directions_3d._LocalFrame3D,
         local_direction: tuple[float, float, float],
     ) -> np.ndarray:
         calls.append(local_direction)
@@ -2557,16 +2558,20 @@ def _make_coarsening_graph(
     neighbors_by_node: dict[int, tuple[int, ...]],
     edge_weights: dict[tuple[int, int], float],
 ) -> _CoarseningGraph:
+    normalized_edge_weights: dict[tuple[int, int], float] = {}
+    for (left_id, right_id), weight in edge_weights.items():
+        left_key = int(left_id)
+        right_key = int(right_id)
+        if right_key < left_key:
+            left_key, right_key = right_key, left_key
+        normalized_edge_weights[(left_key, right_key)] = float(weight)
     return _CoarseningGraph(
         node_ids=tuple(sorted(neighbors_by_node)),
         neighbors_by_node={
             int(node_id): tuple(int(neighbor_id) for neighbor_id in neighbors)
             for node_id, neighbors in sorted(neighbors_by_node.items())
         },
-        edge_weights={
-            tuple(sorted((int(left_id), int(right_id)))): float(weight)
-            for (left_id, right_id), weight in edge_weights.items()
-        },
+        edge_weights=normalized_edge_weights,
     )
 
 

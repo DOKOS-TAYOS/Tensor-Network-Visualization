@@ -193,7 +193,7 @@ def _resolve_cost_panel_text_to_fit(
 
     small_font_size = base_font_size * _COST_PANEL_SMALL_FONT_SCALE
 
-    renderer = _get_cost_panel_renderer(ax.figure)
+    renderer = _get_cost_panel_renderer(root_figure(ax.figure))
     if renderer is None:
         return _fallback_resolve_cost_panel_text(
             text,
@@ -608,7 +608,9 @@ class _ContractionViewerBase:
                 base_font_size=base_fontsize,
             )
         self._cost_panel_hover_text = (
-            _wrap_cost_panel_hover_text(detail_text) if truncated else None
+            _wrap_cost_panel_hover_text(detail_text)
+            if truncated and detail_text is not None
+            else None
         )
         if self._cost_panel_hover_annotation is not None:
             if self._cost_panel_hover_text is not None:

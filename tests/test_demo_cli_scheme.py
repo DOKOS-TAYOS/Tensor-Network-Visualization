@@ -266,6 +266,7 @@ def test_build_run_demo_parser_exposes_all_visual_theme_choices() -> None:
     theme_action = next(
         action for action in parser._actions if "--theme" in getattr(action, "option_strings", ())
     )
+    assert theme_action.choices is not None
 
     assert tuple(theme_action.choices) == (
         "default",

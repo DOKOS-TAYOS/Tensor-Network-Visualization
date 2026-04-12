@@ -113,7 +113,8 @@ def _pick_candidate_direction_3d(
 
 def _direction_key_3d(direction: np.ndarray) -> tuple[float, float, float]:
     normalized = _normalize_direction(direction, dimensions=3)
-    return tuple(float(value) for value in np.round(normalized, decimals=6))
+    rounded = np.round(normalized, decimals=6)
+    return (float(rounded[0]), float(rounded[1]), float(rounded[2]))
 
 
 def _orthogonal_hint_3d(vector: np.ndarray) -> np.ndarray:

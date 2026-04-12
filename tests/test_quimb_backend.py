@@ -159,7 +159,10 @@ def test_plot_quimb_network_3d_draws_hypergraph() -> None:
         float(collection.get_zorder())
         for collection in ax.collections
         if isinstance(collection, Path3DCollection)
-        and any(len(path.vertices) == 4 for path in collection.get_paths())
+        and any(
+            np.asarray(path.vertices, dtype=float).shape[0] == 4
+            for path in collection.get_paths()
+        )
     ]
     node_zorders = [
         float(collection.get_zorder())

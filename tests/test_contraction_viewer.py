@@ -852,14 +852,16 @@ def test_cost_hover_shrinks_text_before_enabling_hover() -> None:
     try:
         viewer.build_ui()
         assert viewer._cost_text_artist is not None
-        base_fontsize = viewer._cost_text_artist.get_fontsize()
+        base_fontsize = float(viewer._cost_text_artist.get_fontsize())
 
         viewer.set_step_details_enabled(True)
         viewer.set_step(1)
         fig.canvas.draw()
 
         assert viewer._cost_text_artist.get_text() == full_text
-        assert viewer._cost_text_artist.get_fontsize() == pytest.approx(base_fontsize * 0.8)
+        assert float(viewer._cost_text_artist.get_fontsize()) == pytest.approx(
+            base_fontsize * 0.8
+        )
         assert viewer._cost_panel_hover_text is None
     finally:
         matplotlib.pyplot.close(fig)
