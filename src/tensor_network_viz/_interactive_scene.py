@@ -11,6 +11,7 @@ from mpl_toolkits.mplot3d.axes3d import Axes3D
 from ._core._label_format import format_tensor_node_label
 from ._core.draw.constants import (
     _EDGE_INDEX_LABEL_GID,
+    _LABEL_FONT_3D_SCALE,
     _TENSOR_LABEL_GID,
     _ZORDER_LAYER_BASE,
     _ZORDER_LAYER_DISK,
@@ -640,34 +641,21 @@ def _build_tensor_hover_payload(scene: _InteractiveSceneState) -> dict[int, tupl
         scene.tensor_hover_payload = dict(payload)
         return payload
 
-    for descriptor in _build_tensor_label_descriptors(scene):
-        if not isinstance(descriptor, _TextLabelDescriptor) or descriptor.node_id is None:
-            continue
-        fontsize_raw = descriptor.kwargs.get("fontsize")
-        if fontsize_raw is None:
-            node_position = scene.positions[descriptor.node_id]
-            if scene.tensor_disk_radius_px_3d is not None and scene.dimensions == 3:
-                pixel_radius = float(scene.tensor_disk_radius_px_3d)
-            else:
-                from ._core.draw.disk_metrics import _tensor_disk_radius_px
+    if scene.config.tensor_label_fontsize is not None:
+        fontsize_hint = float(max(3.0, float(scene.config.tensor_label_fontsize)))
+    else:
+        fontsize_hint = float(scene.params.font_tensor_label_max)
+        if scene.dimensions == 3:
+            fontsize_hint *= float(_LABEL_FONT_3D_SCALE)
 
-                pixel_radius = _tensor_disk_radius_px(
-                    scene.ax,
-                    node_position,
-                    scene.params,
-                    scene.dimensions,
-                )
-            fontsize_raw = _tensor_label_fontsize_for_render(
-                text=descriptor.text,
-                config=scene.config,
-                p=scene.params,
-                pixel_radius=float(pixel_radius),
-                fig=scene.ax.figure,
-                dimensions=scene.dimensions,
-            )
-        payload[int(descriptor.node_id)] = (
-            _node_hover_text(scene, int(descriptor.node_id), descriptor.text),
-            float(fontsize_raw),
+    for node_id in scene.visible_node_ids:
+        node = scene.graph.nodes.get(int(node_id))
+        if node is None or node.is_virtual:
+            continue
+        label_text = format_tensor_node_label(node.name)
+        payload[int(node_id)] = (
+            _node_hover_text(scene, int(node_id), label_text),
+            fontsize_hint,
         )
     scene.tensor_hover_payload = dict(payload)
     return payload

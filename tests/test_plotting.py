@@ -2514,10 +2514,37 @@ def test_viewer_static_render_keeps_interactive_viewer_module_lazy() -> None:
         plt.close(fig_interactive)
 
 
-def test_show_tensor_network_precomputes_label_descriptors_for_menu_toggles() -> None:
+def test_show_tensor_network_defers_label_descriptors_until_menu_toggle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._interactive_scene as interactive_scene_module
+
     left = DummyTensorKrowchNode("A", ["left"])
     right = DummyTensorKrowchNode("B", ["right"])
     connect(left, 0, right, 0, name="bond")
+
+    calls = {"edge": 0, "tensor": 0}
+    original_build_tensor = interactive_scene_module._build_tensor_label_descriptors
+    original_build_edge = interactive_scene_module._build_edge_label_descriptors
+
+    def counting_build_tensor(*args: object, **kwargs: object) -> object:
+        calls["tensor"] += 1
+        return original_build_tensor(*args, **kwargs)
+
+    def counting_build_edge(*args: object, **kwargs: object) -> object:
+        calls["edge"] += 1
+        return original_build_edge(*args, **kwargs)
+
+    monkeypatch.setattr(
+        interactive_scene_module,
+        "_build_tensor_label_descriptors",
+        counting_build_tensor,
+    )
+    monkeypatch.setattr(
+        interactive_scene_module,
+        "_build_edge_label_descriptors",
+        counting_build_edge,
+    )
 
     fig, _ax = show_tensor_network(
         DummyNetwork(nodes=[left, right]),
@@ -2529,15 +2556,25 @@ def test_show_tensor_network_precomputes_label_descriptors_for_menu_toggles() ->
     assert controls is not None
     scene = controls.current_scene
 
+    assert calls == {"edge": 0, "tensor": 0}
+    assert scene.tensor_label_descriptors is None
+    assert scene.edge_label_descriptors is None
+    assert scene.tensor_label_artists == []
+    assert scene.edge_label_artists == []
+
+    controls.set_tensor_labels_enabled(True)
+    controls.set_edge_labels_enabled(True)
+
+    assert calls == {"edge": 1, "tensor": 1}
     assert scene.tensor_label_descriptors is not None
     assert len(scene.tensor_label_descriptors) == 2
     assert scene.edge_label_descriptors is not None
     assert len(scene.edge_label_descriptors) == 2
-    assert scene.tensor_label_artists == []
-    assert scene.edge_label_artists == []
+    assert len(scene.tensor_label_artists) == 2
+    assert len(scene.edge_label_artists) == 2
 
 
-def test_show_tensor_network_menu_toggles_reuse_precomputed_label_descriptors(
+def test_show_tensor_network_menu_toggles_reuse_materialized_label_descriptors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import tensor_network_viz._interactive_scene as interactive_scene_module
@@ -2555,8 +2592,11 @@ def test_show_tensor_network_menu_toggles_reuse_precomputed_label_descriptors(
     controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
     assert controls is not None
 
+    controls.set_tensor_labels_enabled(True)
+    controls.set_edge_labels_enabled(True)
+
     def _unexpected_rebuild(*args: object, **kwargs: object) -> object:
-        raise AssertionError("label descriptors should already be cached in the scene")
+        raise AssertionError("label descriptors should already be materialized in the scene")
 
     monkeypatch.setattr(
         interactive_scene_module,
@@ -2569,6 +2609,8 @@ def test_show_tensor_network_menu_toggles_reuse_precomputed_label_descriptors(
         _unexpected_rebuild,
     )
 
+    controls.set_tensor_labels_enabled(False)
+    controls.set_edge_labels_enabled(False)
     controls.set_tensor_labels_enabled(True)
     controls.set_edge_labels_enabled(True)
 

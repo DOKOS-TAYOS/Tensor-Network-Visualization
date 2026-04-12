@@ -1722,6 +1722,29 @@ def test_compute_layout_line_chain_2d_is_colinear_and_evenly_spaced() -> None:
     assert np.allclose(np.diff(coords[:, 0]), np.diff(coords[:, 0])[0], atol=1e-6)
 
 
+def test_compute_layout_chain_short_circuits_before_grid_isomorphism(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.layout_structure as layout_structure
+
+    def unexpected_vf2pp_isomorphism(*args: object, **kwargs: object) -> object:
+        raise AssertionError("chain detection should not ask VF2 to test grid-like layouts")
+
+    monkeypatch.setattr(
+        layout_structure.nx,
+        "vf2pp_isomorphism",
+        unexpected_vf2pp_isomorphism,
+    )
+
+    graph = _build_chain_graph(length=40)
+
+    _compute_layout(graph, dimensions=2, seed=0)
+    component = _analyze_layout_components_cached(graph)[0]
+
+    assert component.structure_kind == "chain"
+    assert component.chain_order == tuple(range(1, 39))
+
+
 def test_compute_layout_line_chain_3d_keeps_backbone_straight_and_planar() -> None:
     graph = _build_chain_graph(length=4, dangling_axis_counts={0: 1, 3: 1})
 

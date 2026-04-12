@@ -258,14 +258,6 @@ def _classify_anchor_graph(
     if chain_order is not None:
         return "chain", chain_order, None, None, None
 
-    grid_mapping = _detect_grid(anchor_graph)
-    if grid_mapping is not None:
-        return "grid", (), grid_mapping, None, None
-
-    grid3d_mapping = _detect_grid_3d(anchor_graph)
-    if grid3d_mapping is not None:
-        return "grid3d", (), None, grid3d_mapping, None
-
     grid3d_mapping = _detect_coordinate_grid_3d(anchor_graph, graph)
     if grid3d_mapping is not None:
         return "grid3d", (), None, grid3d_mapping, None
@@ -274,16 +266,28 @@ def _classify_anchor_graph(
     if grid_mapping is not None:
         return "grid", (), grid_mapping, None, None
 
-    tube_mapping = _detect_tube(anchor_graph, graph)
+    tube_mapping = _detect_coordinate_tube(anchor_graph, graph)
+    if tube_mapping is not None:
+        return "tube", (), tube_mapping, None, None
+
+    if anchor_graph.number_of_nodes() > 0 and nx.is_tree(anchor_graph):
+        return "tree", (), None, None, _tree_root(anchor_graph)
+
+    grid_mapping = _detect_grid(anchor_graph)
+    if grid_mapping is not None:
+        return "grid", (), grid_mapping, None, None
+
+    grid3d_mapping = _detect_grid_3d(anchor_graph)
+    if grid3d_mapping is not None:
+        return "grid3d", (), None, grid3d_mapping, None
+
+    tube_mapping = _detect_topological_tube(anchor_graph)
     if tube_mapping is not None:
         return "tube", (), tube_mapping, None, None
 
     circular_order = _detect_circular_order(anchor_graph, graph)
     if circular_order is not None:
         return "circular", circular_order, None, None, None
-
-    if anchor_graph.number_of_nodes() > 0 and nx.is_tree(anchor_graph):
-        return "tree", (), None, None, _tree_root(anchor_graph)
 
     is_planar, _ = nx.check_planarity(anchor_graph)
     if anchor_graph.number_of_nodes() > 0 and is_planar:
@@ -305,7 +309,10 @@ def _classify_untrimmed_structured_anchor_graph(
     ]
     | None
 ):
-    if _detect_grid(anchor_graph) is not None or _detect_grid_3d(anchor_graph) is not None:
+    if _detect_chain(anchor_graph) is not None:
+        return None
+
+    if anchor_graph.number_of_nodes() > 0 and nx.is_tree(anchor_graph):
         return None
 
     grid3d_mapping = _detect_coordinate_grid_3d(anchor_graph, graph)
@@ -316,11 +323,11 @@ def _classify_untrimmed_structured_anchor_graph(
     if grid_mapping is not None:
         return "grid", (), grid_mapping, None, None
 
-    tube_mapping = _detect_tube(anchor_graph, graph)
+    tube_mapping = _detect_coordinate_tube(anchor_graph, graph)
     if tube_mapping is not None:
         return "tube", (), tube_mapping, None, None
 
-    circular_order = _detect_circular_order(anchor_graph, graph)
+    circular_order = _detect_named_ring_order(anchor_graph, graph)
     if circular_order is not None:
         return "circular", circular_order, None, None, None
 
