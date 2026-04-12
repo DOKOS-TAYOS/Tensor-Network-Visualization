@@ -360,6 +360,33 @@ def test_compute_axis_directions_chain_2d_skips_random_bucket_when_cardinals_wor
     assert calls == []
 
 
+def test_compute_axis_directions_large_chain_2d_uses_fast_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.layout.free_directions_2d as free_directions_2d
+
+    def fail_build_context(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("_build_context should not run for pure 2D chains")
+
+    def fail_random_bucket(*args: object, **kwargs: object) -> tuple[np.ndarray, ...]:
+        del args, kwargs
+        raise AssertionError("_random_direction_bucket_2d should not run for pure 2D chains")
+
+    monkeypatch.setattr(free_directions_2d, "_build_context", fail_build_context)
+    monkeypatch.setattr(free_directions_2d, "_random_direction_bucket_2d", fail_random_bucket)
+
+    dangling_axis_counts = dict.fromkeys(range(80), 1)
+    dangling_axis_counts[40] = 2
+    graph = _build_chain_graph(length=80, dangling_axis_counts=dangling_axis_counts)
+    positions = {node_id: np.array([float(node_id), 0.0], dtype=float) for node_id in graph.nodes}
+
+    directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=1.0)
+
+    assert np.allclose(directions[(40, 2)], np.array([0.0, 1.0], dtype=float), atol=1e-6)
+    assert np.allclose(directions[(40, 3)], np.array([0.0, -1.0], dtype=float), atol=1e-6)
+
+
 def test_physical_stub_2d_segment_clears_neighbor_node_disk() -> None:
     """Physical dangling legs use strict clearance: stub polyline must not pierce neighbor disks."""
     nodes = {
@@ -1755,6 +1782,63 @@ def test_compute_layout_line_chain_3d_keeps_backbone_straight_and_planar() -> No
     assert np.allclose(coords[:, 2], 0.0, atol=1e-6)
     assert np.all(np.diff(coords[:, 0]) > 0.0)
     assert np.allclose(np.diff(coords[:, 0]), np.diff(coords[:, 0])[0], atol=1e-6)
+
+
+def test_compute_layout_large_chain_3d_skips_layer_promotion_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.layout.positions as layout_positions
+
+    def fail_node_overlap(*args: object, **kwargs: object) -> bool:
+        del args, kwargs
+        raise AssertionError("_node_overlaps_component should not run for pure 3D chains")
+
+    def fail_crossing_edges(*args: object, **kwargs: object) -> bool:
+        del args, kwargs
+        raise AssertionError(
+            "_component_has_crossing_contraction_edges_2d should not run for pure 3D chains"
+        )
+
+    monkeypatch.setattr(layout_positions, "_node_overlaps_component", fail_node_overlap)
+    monkeypatch.setattr(
+        layout_positions,
+        "_component_has_crossing_contraction_edges_2d",
+        fail_crossing_edges,
+    )
+
+    positions = _compute_layout(_build_chain_graph(length=400), dimensions=3, seed=0)
+
+    assert len(positions) == 400
+    assert all(np.all(np.isfinite(position)) for position in positions.values())
+
+
+def test_compute_axis_directions_large_chain_3d_reuses_component_basis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.layout.free_directions_3d as free_directions_3d
+
+    original = free_directions_3d._component_orthogonal_basis
+    calls: list[int] = []
+
+    def counting_component_orthogonal_basis(*args: object, **kwargs: object) -> object:
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        free_directions_3d,
+        "_component_orthogonal_basis",
+        counting_component_orthogonal_basis,
+    )
+
+    graph = _build_chain_graph(length=400, dangling_axis_counts=dict.fromkeys(range(400), 1))
+    positions = {
+        node_id: np.array([float(node_id), 0.0, 0.0], dtype=float) for node_id in graph.nodes
+    }
+
+    directions = _compute_axis_directions(graph, positions, dimensions=3, draw_scale=1.0)
+
+    assert len(directions) == sum(max(node.degree, 1) for node in graph.nodes.values())
+    assert len(calls) == 1
 
 
 def test_compute_layout_einsum_like_mps_2d_reattaches_degree_one_nodes_as_Ls() -> None:

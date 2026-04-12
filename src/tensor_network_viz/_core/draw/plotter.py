@@ -10,7 +10,7 @@ from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection, PatchCollection, PathCollection
 from matplotlib.patches import Circle
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 
 from ...config import PlotConfig
 from ..graph import (
@@ -333,6 +333,7 @@ def _make_plotter(
             if hasattr(ax, "computed_zorder"):
                 ax.computed_zorder = False
             self._hover_edge_targets = hover_edges
+            self._edge_segments: list[tuple[float, str, float, np.ndarray]] = []
             self._edge_artists: list[Artist] = []
             self._node_artist_bundle: _NodeArtistBundle | None = None
 
@@ -342,21 +343,50 @@ def _make_plotter(
         def get_edge_artists(self) -> tuple[Artist, ...]:
             return tuple(self._edge_artists)
 
+        def flush_edge_collections(self) -> None:
+            if not self._edge_segments:
+                return
+            groups: dict[tuple[float, str, float], list[np.ndarray]] = defaultdict(list)
+            for z, color, lw, seg in self._edge_segments:
+                groups[(z, color, lw)].append(seg)
+            for (z, color, lw), segs in sorted(groups.items(), key=lambda kv: kv[0][0]):
+                coll = Line3DCollection(
+                    segs,
+                    colors=color,
+                    linewidths=lw,
+                    zorder=z,
+                    capstyle=_EDGE_LINE_CAP_STYLE,
+                    joinstyle=_EDGE_LINE_JOIN_STYLE,
+                )
+                coll.set_path_effects(_edge_outline_effects(float(lw)))
+                coll.set_zorder(z)
+                if hasattr(coll, "set_sort_zpos"):
+                    coll.set_sort_zpos(z)
+                ax.add_collection3d(coll)
+                self._edge_artists.append(coll)
+            self._edge_segments.clear()
+
         def plot_line(self, start: np.ndarray, end: np.ndarray, **kwargs: Any) -> None:
             _apply_edge_line_style(kwargs)
-            artists = ax.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]], **kwargs)
-            linewidth = float(kwargs.get("linewidth", 1.0))
-            for artist in artists:
-                artist.set_path_effects(_edge_outline_effects(linewidth))
-                self._edge_artists.append(artist)
+            z = float(kwargs.get("zorder", 1))
+            color = str(kwargs.get("color", "#000000"))
+            lw = float(kwargs.get("linewidth", 1.0))
+            seg = np.array(
+                [
+                    [float(start[0]), float(start[1]), float(start[2])],
+                    [float(end[0]), float(end[1]), float(end[2])],
+                ],
+                dtype=float,
+            )
+            self._edge_segments.append((z, color, lw, seg))
 
         def plot_curve(self, curve: np.ndarray, **kwargs: Any) -> None:
             _apply_edge_line_style(kwargs)
-            artists = ax.plot(curve[:, 0], curve[:, 1], curve[:, 2], **kwargs)
-            linewidth = float(kwargs.get("linewidth", 1.0))
-            for artist in artists:
-                artist.set_path_effects(_edge_outline_effects(linewidth))
-                self._edge_artists.append(artist)
+            z = float(kwargs.get("zorder", 1))
+            color = str(kwargs.get("color", "#000000"))
+            lw = float(kwargs.get("linewidth", 1.0))
+            seg = np.asarray(curve[:, :3], dtype=float, order="C")
+            self._edge_segments.append((z, color, lw, seg))
 
         def plot_text(self, pos: np.ndarray, text: str, **kwargs: Any) -> None:
             _apply_text_no_clip(kwargs)

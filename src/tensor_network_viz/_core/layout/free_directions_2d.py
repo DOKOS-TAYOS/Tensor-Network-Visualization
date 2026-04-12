@@ -692,6 +692,111 @@ def _candidate_conflicts_with_node_axes_2d(
     return False
 
 
+def _candidate_conflicts_with_same_node_axes_2d(
+    graph: _GraphData,
+    directions: AxisDirections,
+    *,
+    node_id: int,
+    axis_index: int,
+    candidate: np.ndarray,
+    pending_directions: AxisDirections | None = None,
+) -> bool:
+    axis_count = max(graph.nodes[node_id].degree, 1)
+    for other_axis_index in range(axis_count):
+        if other_axis_index == axis_index:
+            continue
+        other_axis_key = (node_id, other_axis_index)
+        other_direction = (
+            pending_directions.get(other_axis_key)
+            if pending_directions is not None and other_axis_key in pending_directions
+            else directions.get(other_axis_key)
+        )
+        if other_direction is None:
+            continue
+        if _direction_angle_conflicts_2d(
+            candidate,
+            other_direction,
+            treat_opposite_as_conflict=False,
+        ):
+            return True
+    return False
+
+
+def _is_chain_fast_path_component_2d(component: _LayoutComponent) -> bool:
+    if component.structure_kind != "chain" or component.virtual_node_ids:
+        return False
+    return all(component.contraction_graph.degree(node_id) <= 2 for node_id in component.node_ids)
+
+
+def _try_compute_chain_free_directions_2d(
+    graph: _GraphData,
+    directions: AxisDirections,
+    *,
+    layout_components: tuple[_LayoutComponent, ...],
+) -> bool:
+    if not layout_components:
+        return False
+    if not all(_is_chain_fast_path_component_2d(component) for component in layout_components):
+        return False
+
+    resolved: AxisDirections = {}
+    candidate_order = _behavior_direction_order_2d("north")
+    for component in layout_components:
+        ordered_node_ids = [
+            node_id for node_id in component.chain_order if node_id in component.node_ids
+        ]
+        ordered_node_ids.extend(
+            sorted(node_id for node_id in component.node_ids if node_id not in ordered_node_ids)
+        )
+        for node_id in ordered_node_ids:
+            if node_id not in graph.nodes:
+                continue
+            node = graph.nodes[node_id]
+            axis_count = max(node.degree, 1)
+            for axis_index in range(axis_count):
+                axis_key = (node_id, axis_index)
+                if axis_key in directions or axis_key in resolved:
+                    continue
+                named_direction = _direction_from_axis_name(
+                    node.axes_names[axis_index] if axis_index < len(node.axes_names) else None,
+                    dimensions=2,
+                )
+                if named_direction is not None:
+                    candidate = _normalize_2d(named_direction)
+                    if not _candidate_conflicts_with_same_node_axes_2d(
+                        graph,
+                        directions,
+                        node_id=node_id,
+                        axis_index=axis_index,
+                        candidate=candidate,
+                        pending_directions=resolved,
+                    ):
+                        resolved[axis_key] = candidate
+                        continue
+
+                picked = _first_valid_candidate_2d(
+                    candidates=candidate_order,
+                    is_valid=lambda candidate, node_id=node_id, axis_index=axis_index: (
+                        not (
+                            _candidate_conflicts_with_same_node_axes_2d(
+                                graph,
+                                directions,
+                                node_id=node_id,
+                                axis_index=axis_index,
+                                candidate=candidate,
+                                pending_directions=resolved,
+                            )
+                        )
+                    ),
+                )
+                if picked is None:
+                    return False
+                resolved[axis_key] = picked
+
+    directions.update(resolved)
+    return True
+
+
 def _candidate_crosses_neighbor_bonds_2d(
     context: _FreeDirectionContext2D,
     *,
@@ -854,6 +959,13 @@ def _compute_free_directions_2d(
     layout_components: tuple[_LayoutComponent, ...],
 ) -> None:
     del contraction_groups
+    if _try_compute_chain_free_directions_2d(
+        graph,
+        directions,
+        layout_components=layout_components,
+    ):
+        return
+
     context = _build_context(graph, positions, layout_components=layout_components)
     rng = np.random.default_rng()
     processed_node_ids: set[int] = set()

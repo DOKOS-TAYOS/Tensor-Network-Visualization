@@ -896,6 +896,10 @@ def _component_requires_3d_layer_promotion(
         return False
     if component.virtual_node_ids:
         return True
+    if component.structure_kind == "chain" and all(
+        component.contraction_graph.degree(node_id) <= 2 for node_id in component.node_ids
+    ):
+        return False
     if any(
         _node_overlaps_component(node_id, component, positions) for node_id in component.node_ids
     ):
