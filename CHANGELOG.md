@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] — 2026-04-12
+
+### Added
+
+- **Color themes:** New color themes for plots and graphs.
+
+### Changed
+
+- **Geometry algorithms:** Generic and planar geometry determination now applies prior pruning earlier in the pipeline.
+- **Geometry performance:** The end-to-end geometry-determination process is faster.
+- **Visuals:** Broad visual improvements across the visualization.
+- **Controls:** Improved interactive controls.
+- **Examples:** Examples updated and refined.
+
 ## [1.6.0] — 2026-04-10
 
 ### Added
@@ -165,6 +179,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[1.6.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.4...v1.6.0
 [1.5.4]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.3...v1.5.4
 [1.5.3]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.2...v1.5.3
