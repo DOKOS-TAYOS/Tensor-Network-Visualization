@@ -2204,6 +2204,44 @@ def test_show_tensor_elements_analysis_controls_fall_back_when_slider_changes_ra
     assert float(controller._analysis_slider.val) == pytest.approx(0.0)
 
 
+def test_show_tensor_elements_analysis_controls_reuse_widgets_for_same_tensor_shape() -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.arange(24, dtype=float).reshape(2, 3, 4),
+            name="Rank3A",
+            axis_names=("row", "mid", "col"),
+        ),
+        DummyTensorNetworkNode(
+            (np.arange(24, dtype=float).reshape(2, 3, 4) + 100.0),
+            name="Rank3B",
+            axis_names=("row", "mid", "col"),
+        ),
+    ]
+
+    fig, ax = show_tensor_elements(
+        tensors,
+        config=TensorElementsConfig(mode="slice"),
+        show=False,
+        show_controls=True,
+    )
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    assert controller._analysis_axis_radio is not None
+    assert controller._analysis_slider is not None
+    _click_radio_label(controller._analysis_axis_radio, 1)
+    controller._analysis_slider.set_val(2.0)
+    axis_radio = controller._analysis_axis_radio
+    slice_slider = controller._analysis_slider
+
+    controller._slider.set_val(1.0)
+
+    assert_rendered_figure(fig, ax)
+    assert controller._analysis_axis_radio is axis_radio
+    assert controller._analysis_slider is slice_slider
+    assert controller._analysis_axis_radio.value_selected == "mid"
+    assert float(controller._analysis_slider.val) == pytest.approx(2.0)
+
+
 def test_show_tensor_elements_widgets_hide_eigen_modes_for_non_square_tensor() -> None:
     tensors = [
         DummyTensorNetworkNode(

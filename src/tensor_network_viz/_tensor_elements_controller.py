@@ -69,6 +69,7 @@ _PLACEHOLDER_TEXT_BOX: Final[dict[str, Any]] = {
     "facecolor": "#F8FAFC",
     "edgecolor": "#CBD5E1",
 }
+_AnalysisControlsSignature = tuple[object, ...]
 _COMPLEX_ONLY_MODES: Final[frozenset[str]] = frozenset({"imag", "phase"})
 _SPECTRAL_MODES: Final[frozenset[str]] = frozenset({"singular_values", "eigen_real", "eigen_imag"})
 
@@ -172,6 +173,7 @@ class _TensorElementsFigureController:
         self._analysis_check_callback_guard = False
         self._analysis_method_callback_guard = False
         self._analysis_slider_callback_guard = False
+        self._analysis_controls_signature: _AnalysisControlsSignature | None = None
         self._group_callback_guard = False
         self._mode_callback_guard = False
         self._slider_callback_guard = False
@@ -460,10 +462,117 @@ class _TensorElementsFigureController:
         self._analysis_checkbuttons = None
         self._analysis_method_radio = None
         self._analysis_slider = None
+        self._analysis_controls_signature = None
+
+    def _analysis_controls_signature_for(
+        self,
+        analysis: Any,
+    ) -> _AnalysisControlsSignature:
+        if self._mode == "slice":
+            return ("slice", tuple(analysis.original_axis_names), int(analysis.slice_axis_size))
+        if self._mode == "reduce":
+            return ("reduce", tuple(analysis.post_slice_axis_names))
+        return ("profiles", tuple(analysis.post_slice_axis_names))
+
+    def _sync_slice_analysis_controls(self, analysis: Any) -> bool:
+        if self._analysis_slider is None:
+            return False
+        if analysis.original_axis_names:
+            if self._analysis_axis_radio is None:
+                return False
+            target_index = int(analysis.slice_axis or 0)
+            target_label = analysis.original_axis_names[target_index]
+            if getattr(self._analysis_axis_radio, "value_selected", None) != target_label:
+                try:
+                    self._analysis_axis_callback_guard = True
+                    self._analysis_axis_radio.set_active(target_index)
+                finally:
+                    self._analysis_axis_callback_guard = False
+        elif self._analysis_axis_radio is not None:
+            return False
+        if float(self._analysis_slider.val) == float(analysis.slice_index):
+            return True
+        try:
+            self._analysis_slider_callback_guard = True
+            self._analysis_slider.set_val(float(analysis.slice_index))
+        finally:
+            self._analysis_slider_callback_guard = False
+        return True
+
+    def _sync_reduce_analysis_controls(self, analysis: Any) -> bool:
+        if self._analysis_method_radio is None:
+            return False
+        if analysis.post_slice_axis_names:
+            if self._analysis_checkbuttons is None:
+                return False
+            statuses = tuple(bool(value) for value in self._analysis_checkbuttons.get_status())
+            expected_statuses = tuple(
+                axis_name in analysis.reduce_axis_names
+                for axis_name in analysis.post_slice_axis_names
+            )
+            if len(statuses) != len(expected_statuses):
+                return False
+            try:
+                self._analysis_check_callback_guard = True
+                for index, (current, expected) in enumerate(
+                    zip(statuses, expected_statuses, strict=True)
+                ):
+                    if current != expected:
+                        self._analysis_checkbuttons.set_active(index)
+            finally:
+                self._analysis_check_callback_guard = False
+        elif self._analysis_checkbuttons is not None:
+            return False
+        if getattr(self._analysis_method_radio, "value_selected", None) == analysis.reduce_method:
+            return True
+        try:
+            self._analysis_method_callback_guard = True
+            self._analysis_method_radio.set_active(
+                _ANALYSIS_METHOD_OPTIONS.index(analysis.reduce_method)
+            )
+        finally:
+            self._analysis_method_callback_guard = False
+        return True
+
+    def _sync_profiles_analysis_controls(self, analysis: Any) -> bool:
+        if self._analysis_method_radio is None:
+            return False
+        if analysis.post_slice_axis_names:
+            if self._analysis_axis_radio is None:
+                return False
+            target_index = int(analysis.profile_axis or 0)
+            target_label = analysis.post_slice_axis_names[target_index]
+            if getattr(self._analysis_axis_radio, "value_selected", None) != target_label:
+                try:
+                    self._analysis_axis_callback_guard = True
+                    self._analysis_axis_radio.set_active(target_index)
+                finally:
+                    self._analysis_axis_callback_guard = False
+        elif self._analysis_axis_radio is not None:
+            return False
+        if getattr(self._analysis_method_radio, "value_selected", None) == analysis.profile_method:
+            return True
+        try:
+            self._analysis_method_callback_guard = True
+            self._analysis_method_radio.set_active(
+                _ANALYSIS_METHOD_OPTIONS.index(analysis.profile_method)
+            )
+        finally:
+            self._analysis_method_callback_guard = False
+        return True
+
+    def _sync_existing_analysis_controls(self, analysis: Any) -> bool:
+        if self._mode == "slice":
+            return self._sync_slice_analysis_controls(analysis)
+        if self._mode == "reduce":
+            return self._sync_reduce_analysis_controls(analysis)
+        if self._mode == "profiles":
+            return self._sync_profiles_analysis_controls(analysis)
+        return False
 
     def _rebuild_analysis_controls(self) -> None:
-        self._clear_analysis_controls()
         if self._mode not in _ANALYSIS_MODES:
+            self._clear_analysis_controls()
             return
         analysis = _resolve_tensor_analysis(
             self._current_record(),
@@ -471,6 +580,12 @@ class _TensorElementsFigureController:
             mode=self._mode,
             fallback=self._allow_interactive_fallback,
         )
+        signature = self._analysis_controls_signature_for(analysis)
+        if self._analysis_controls_signature == signature and self._sync_existing_analysis_controls(
+            analysis
+        ):
+            return
+        self._clear_analysis_controls()
         if self._mode == "slice":
             if analysis.original_axis_names:
                 self._analysis_axis_ax = self._figure.add_axes(
@@ -506,6 +621,7 @@ class _TensorElementsFigureController:
             )
             self._analysis_slider.label.set_x(_ANALYSIS_SLIDER_LABEL_X)
             self._analysis_slider.on_changed(self._on_analysis_slider_changed)
+            self._analysis_controls_signature = signature
             return
 
         if self._mode == "reduce":
@@ -538,6 +654,7 @@ class _TensorElementsFigureController:
                 radio_props=_INTERACTIVE_RADIO_PROPS,
             )
             self._analysis_method_radio.on_clicked(self._on_analysis_method_clicked)
+            self._analysis_controls_signature = signature
             return
 
         if analysis.post_slice_axis_names:
@@ -566,6 +683,7 @@ class _TensorElementsFigureController:
             radio_props=_INTERACTIVE_RADIO_PROPS,
         )
         self._analysis_method_radio.on_clicked(self._on_analysis_method_clicked)
+        self._analysis_controls_signature = signature
 
     def _clear_analysis_caches(self) -> None:
         self._reset_payload_caches()
