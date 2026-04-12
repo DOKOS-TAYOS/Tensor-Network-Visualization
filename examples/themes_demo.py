@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast, get_args
 
 import matplotlib
 
@@ -21,8 +22,28 @@ from demo_cli import (
 from demo_tensors import build_demo_numpy_tensor
 
 from tensor_network_viz import PlotConfig, show_tensor_network
+from tensor_network_viz.config import PlotTheme
 
-_THEMES = ("default", "paper", "colorblind")
+_THEMES: tuple[PlotTheme, ...] = cast(tuple[PlotTheme, ...], get_args(PlotTheme))
+
+
+def _theme_grid() -> tuple[int, int]:
+    theme_count = len(_THEMES)
+    columns = min(4, max(theme_count, 1))
+    rows = math.ceil(theme_count / columns)
+    return rows, columns
+
+
+def _theme_figure_size(view: str) -> tuple[float, float]:
+    rows, columns = _theme_grid()
+    width = max(11.0, 4.6 * columns)
+    height = max(5.2, (4.2 if view == "2d" else 4.8) * rows)
+    return width, height
+
+
+def _theme_footer() -> str:
+    theme_names = ", ".join(_THEMES[:-1])
+    return f"Compare the available PlotConfig theme presets: {theme_names} and {_THEMES[-1]}."
 
 
 def _dim_for_index(index_name: str) -> int:
@@ -71,10 +92,7 @@ def _build_example(args: ExampleCliArgs, definition: ExampleDefinition) -> Built
         subtitle=(
             "Normal tensors, degree-one tensors, free indices, labels, bonds and a hyper-index."
         ),
-        footer=(
-            "Compare PlotConfig(theme='default'), PlotConfig(theme='paper') and "
-            "PlotConfig(theme='colorblind')."
-        ),
+        footer=_theme_footer(),
         scheme_steps_by_name=None,
     )
 
@@ -93,10 +111,10 @@ EXAMPLES: tuple[ExampleDefinition, ...] = (
 )
 
 
-def _subplot_for_view(fig: Any, index: int, view: str) -> Any:
+def _subplot_for_view(fig: Any, *, index: int, view: str, rows: int, columns: int) -> Any:
     if view == "3d":
-        return fig.add_subplot(1, len(_THEMES), index, projection="3d")
-    return fig.add_subplot(1, len(_THEMES), index)
+        return fig.add_subplot(rows, columns, index, projection="3d")
+    return fig.add_subplot(rows, columns, index)
 
 
 def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
@@ -108,9 +126,16 @@ def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
     import matplotlib.pyplot as plt
 
     built = definition.builder(args, definition)
-    fig = plt.figure(figsize=(15, 5.5) if args.view == "2d" else (15, 6.5))
+    rows, columns = _theme_grid()
+    fig = plt.figure(figsize=_theme_figure_size(args.view))
     for index, theme in enumerate(_THEMES, start=1):
-        ax = _subplot_for_view(fig, index, args.view)
+        ax = _subplot_for_view(
+            fig,
+            index=index,
+            view=args.view,
+            rows=rows,
+            columns=columns,
+        )
         show_tensor_network(
             built.network,
             engine="quimb",
@@ -130,7 +155,7 @@ def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
         )
         ax.set_title(theme, fontsize=12, fontweight="semibold")
     apply_demo_caption(fig, title=built.title, subtitle=built.subtitle, footer=built.footer)
-    fig.tight_layout(rect=(0.02, 0.08, 0.98, 0.86))
+    fig.tight_layout(rect=(0.02, 0.08, 0.98, 0.9))
     if args.save is not None:
         args.save.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(args.save, bbox_inches="tight")

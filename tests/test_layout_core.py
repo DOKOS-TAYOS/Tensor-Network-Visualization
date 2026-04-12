@@ -44,6 +44,8 @@ from tensor_network_viz._core.layout.generic_coarsening import (
     _ordered_initial_circle_node_ids,
     _peel_degree_one_trees,
 )
+from tensor_network_viz._core.layout.parameters import _LAYER_SPACING
+from tensor_network_viz._core.layout.positions import _promote_3d_layers
 from tensor_network_viz._core.renderer import (
     _SHORTEST_EDGE_RADIUS_FRACTION,
     _resolve_draw_scale,
@@ -1157,6 +1159,74 @@ def _build_hypergraph_with_virtual_hub() -> _GraphData:
     return _GraphData(nodes=nodes, edges=edges)
 
 
+def _build_demo_hyper_graph() -> _GraphData:
+    axes_by_node: dict[int, list[str]] = {node_id: ["phys"] for node_id in range(12)}
+    hyper_bonds = (
+        ((0, "alpha"), (1, "alpha"), (2, "alpha"), (3, "alpha")),
+        ((3, "beta"), (4, "beta"), (5, "beta")),
+        ((6, "gamma"), (7, "gamma"), (8, "gamma"), (9, "gamma"), (10, "gamma")),
+    )
+    pair_edges = (
+        (0, 4),
+        (1, 6),
+        (2, 7),
+        (5, 8),
+        (8, 11),
+        (11, 9),
+        (9, 4),
+        (10, 2),
+        (11, 3),
+    )
+
+    for bond in hyper_bonds:
+        for node_id, axis_name in bond:
+            axes_by_node[node_id].append(axis_name)
+
+    pair_bonds: list[tuple[tuple[int, str], tuple[int, str]]] = []
+    for edge_index, (left_id, right_id) in enumerate(pair_edges):
+        axis_name = f"ring_{edge_index}"
+        axes_by_node[left_id].append(axis_name)
+        axes_by_node[right_id].append(axis_name)
+        pair_bonds.append(((left_id, axis_name), (right_id, axis_name)))
+
+    nodes = {
+        node_id: _make_node(f"H{node_id}", tuple(axis_names))
+        for node_id, axis_names in axes_by_node.items()
+    }
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+
+    edges: list[object] = []
+    next_virtual_id = -1
+    for bond in hyper_bonds:
+        hub_id = next_virtual_id
+        next_virtual_id -= 1
+        hub_axes = tuple(f"{bond[0][1]}_{axis_index}" for axis_index in range(len(bond)))
+        nodes[hub_id] = _make_node("", hub_axes, label=bond[0][1], is_virtual=True)
+        for axis_slot, (node_id, axis_name) in enumerate(bond):
+            edges.append(
+                _make_contraction_edge(
+                    _EdgeEndpoint(node_id, axis_lookup[node_id][axis_name], axis_name),
+                    _EdgeEndpoint(hub_id, axis_slot, hub_axes[axis_slot]),
+                    name=axis_name,
+                    label=None,
+                )
+            )
+
+    edges.extend(
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][axis_name], axis_name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][axis_name], axis_name),
+            name=axis_name,
+            label=None,
+        )
+        for (left_id, axis_name), (right_id, _axis_name) in pair_bonds
+    )
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
 def _build_einsum_like_mps_graph() -> _GraphData:
     nodes = {
         0: _make_node("A0", ("p", "a")),
@@ -1238,6 +1308,59 @@ def _build_parallel_pair_graph() -> _GraphData:
             _EdgeEndpoint(0, 1, "ab1"),
             _EdgeEndpoint(1, 1, "ab1"),
             name="ab1",
+            label=None,
+        ),
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
+def _build_crossed_pair_graph() -> _GraphData:
+    nodes = {
+        0: _make_node("A", ("ab", "ac")),
+        1: _make_node("D", ("ab",)),
+        2: _make_node("B", ("cd", "ac")),
+        3: _make_node("C", ("cd",)),
+    }
+    edges = (
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 0, "ab"),
+            _EdgeEndpoint(1, 0, "ab"),
+            name="ab",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(2, 0, "cd"),
+            _EdgeEndpoint(3, 0, "cd"),
+            name="cd",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 1, "ac"),
+            _EdgeEndpoint(2, 1, "ac"),
+            name="ac",
+            label=None,
+        ),
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
+def _build_virtual_overlap_graph() -> _GraphData:
+    nodes = {
+        0: _make_node("A", ("hub_a",)),
+        1: _make_node("B", ("hub_b",)),
+        -1: _make_node("Hub", ("hub_a", "hub_b"), is_virtual=True),
+    }
+    edges = (
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 0, "hub_a"),
+            _EdgeEndpoint(-1, 0, "hub_a"),
+            name="hub_a",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(1, 0, "hub_b"),
+            _EdgeEndpoint(-1, 1, "hub_b"),
+            name="hub_b",
             label=None,
         ),
     )
@@ -2403,6 +2526,19 @@ def test_compute_layout_hypergraph_3d_keeps_visible_nodes_planar() -> None:
     assert np.allclose(visible_coords[:, 2], 0.0, atol=1e-6)
 
 
+def test_compute_layout_demo_hypergraph_3d_lifts_virtual_hubs_off_plane() -> None:
+    graph = _build_demo_hyper_graph()
+
+    positions = _compute_layout(graph, dimensions=3, seed=0)
+    component = _analyze_layout_components_cached(graph)[0]
+    virtual_z_levels = {
+        round(float(positions[node_id][2]), 6) for node_id in component.virtual_node_ids
+    }
+
+    assert len(virtual_z_levels) >= 2
+    assert any(abs(float(positions[node_id][2])) > 1e-6 for node_id in component.virtual_node_ids)
+
+
 def test_compute_layout_generic_graph_uses_force_fallback_produces_valid_positions() -> None:
     """Generic (non-planar) graphs fall back to force-directed layout; output must be valid."""
     graph = _build_complete_graph_5()
@@ -2724,6 +2860,54 @@ def test_generic_coarsening_layout_is_finite_spread_and_deterministic() -> None:
         assert np.allclose(first_2d[node_id], second_2d[node_id], atol=1e-9)
     assert float(pairwise_distance_2d.min()) > 1e-4
     assert float(pairwise_distance_3d.min()) > 1e-4
+
+
+def test_promote_3d_layers_moves_overlapping_node_to_next_even_layer() -> None:
+    graph = _build_chain_graph(length=2)
+    component = _analyze_layout_components_cached(graph)[0]
+    positions = {
+        0: np.array([0.0, 0.0, 0.0], dtype=float),
+        1: np.array([0.0, 0.0, 0.0], dtype=float),
+    }
+
+    _promote_3d_layers(graph, component, positions)
+
+    assert positions[0][2] == pytest.approx(0.0)
+    assert positions[1][2] == pytest.approx(2.0 * _LAYER_SPACING)
+
+
+def test_promote_3d_layers_uses_odd_layer_for_edge_crossing_without_node_overlap() -> None:
+    graph = _build_crossed_pair_graph()
+    component = _analyze_layout_components_cached(graph)[0]
+    positions = {
+        0: np.array([-1.0, -1.0, 0.0], dtype=float),
+        1: np.array([1.0, 1.0, 0.0], dtype=float),
+        2: np.array([-1.0, 1.0, 0.0], dtype=float),
+        3: np.array([1.0, -1.0, 0.0], dtype=float),
+    }
+
+    _promote_3d_layers(graph, component, positions)
+
+    assert positions[0][2] == pytest.approx(0.0)
+    assert positions[2][2] == pytest.approx(0.0)
+    assert positions[3][2] == pytest.approx(0.0)
+    assert positions[1][2] == pytest.approx(_LAYER_SPACING)
+
+
+def test_promote_3d_layers_includes_virtual_nodes_in_layer_assignment() -> None:
+    graph = _build_virtual_overlap_graph()
+    component = _analyze_layout_components_cached(graph)[0]
+    positions = {
+        -1: np.array([0.0, 0.0, 0.0], dtype=float),
+        0: np.array([0.0, 0.0, 0.0], dtype=float),
+        1: np.array([1.0, 0.0, 0.0], dtype=float),
+    }
+
+    _promote_3d_layers(graph, component, positions)
+
+    assert positions[0][2] == pytest.approx(0.0)
+    assert positions[1][2] == pytest.approx(0.0)
+    assert positions[-1][2] == pytest.approx(2.0 * _LAYER_SPACING)
 
 
 def test_tree_component_layout_2d_skips_force_layout_when_anchors_cover_all_nodes(

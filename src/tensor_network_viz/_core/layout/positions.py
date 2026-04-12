@@ -5,10 +5,10 @@ from __future__ import annotations
 import weakref
 from collections import defaultdict
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 import numpy as np
 
-from ..contractions import _iter_contractions
 from ..graph import _GraphData
 from ..layout_structure import (
     _analyze_layout_components,
@@ -46,6 +46,9 @@ from .parameters import (
 from .types import NodePositions
 
 _layout_components_by_id: dict[int, tuple[_LayoutComponent, ...]] = {}
+
+_LAYER_NODE_DIAMETER_EDGE_FRACTION: float = 0.6
+_LAYER_NODE_OVERLAP_FALLBACK: float = 0.18
 
 
 def _analyze_layout_components_cached(graph: _GraphData) -> tuple[_LayoutComponent, ...]:
@@ -212,12 +215,9 @@ def _lift_component_layout_3d(
             positions[node_id] = np.array([float(i), float(j), float(k)], dtype=float)
     if component.structure_kind == "tube" and component.grid_mapping is not None:
         positions.update(_layout_tube_3d(component.grid_mapping))
+    should_promote_layers = _component_requires_3d_layer_promotion(component, positions)
     _place_trimmed_leaf_nodes_3d(component, positions)
-    if (
-        component.structure_kind not in {"grid3d", "tube"}
-        or (component.structure_kind == "grid3d" and component.grid3d_mapping is None)
-        or (component.structure_kind == "tube" and component.grid_mapping is None)
-    ):
+    if should_promote_layers:
         _promote_3d_layers(graph, component, positions)
     return positions
 
@@ -717,75 +717,235 @@ def _best_attachment_position_3d(
     return origin + candidates[0] * distance
 
 
+@dataclass(frozen=True)
+class _LayerEdgeRecord:
+    node_ids: tuple[int, int]
+    start: np.ndarray
+    end: np.ndarray
+    bbox: tuple[float, float, float, float]
+
+
+def _layering_node_order_3d(
+    graph: _GraphData,
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> tuple[int, ...]:
+    coords_2d = np.stack(
+        [
+            np.asarray(positions[node_id], dtype=float).reshape(-1)[:2]
+            for node_id in component.node_ids
+        ],
+        axis=0,
+    )
+    centroid = coords_2d.mean(axis=0)
+
+    def priority(node_id: int) -> tuple[int, int, float, float, float, str, int]:
+        node = graph.nodes[node_id]
+        point = np.asarray(positions[node_id], dtype=float).reshape(-1)[:2]
+        radial_distance = float(np.linalg.norm(point - centroid))
+        return (
+            1 if node.is_virtual else 0,
+            -int(node.degree),
+            radial_distance,
+            float(point[0]),
+            float(point[1]),
+            str(node.name),
+            int(node_id),
+        )
+
+    return tuple(sorted(component.node_ids, key=priority))
+
+
+def _layer_node_overlap_clearance_2d(
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> float:
+    min_edge_length: float | None = None
+    for left_id, right_id in component.contraction_graph.edges():
+        if left_id not in positions or right_id not in positions:
+            continue
+        delta = (
+            np.asarray(positions[left_id], dtype=float).reshape(-1)[:2]
+            - np.asarray(positions[right_id], dtype=float).reshape(-1)[:2]
+        )
+        edge_length = float(np.linalg.norm(delta))
+        if edge_length <= 1e-12 or not np.isfinite(edge_length):
+            continue
+        min_edge_length = (
+            edge_length if min_edge_length is None else min(min_edge_length, edge_length)
+        )
+    if min_edge_length is None:
+        return _LAYER_NODE_OVERLAP_FALLBACK
+    return float(min_edge_length * _LAYER_NODE_DIAMETER_EDGE_FRACTION)
+
+
+def _next_layer_after_overlap(layer_index: int) -> int:
+    if layer_index % 2 == 0:
+        return layer_index + 2
+    return layer_index + 1
+
+
+def _node_overlaps_layer(
+    node_id: int,
+    layer_node_ids: tuple[int, ...],
+    positions: NodePositions,
+    *,
+    clearance: float,
+) -> bool:
+    point = np.asarray(positions[node_id], dtype=float).reshape(-1)[:2]
+    for other_id in layer_node_ids:
+        other = np.asarray(positions[other_id], dtype=float).reshape(-1)[:2]
+        if float(np.linalg.norm(point - other)) < clearance:
+            return True
+    return False
+
+
+def _make_layer_edge_record(
+    left_id: int,
+    right_id: int,
+    positions: NodePositions,
+) -> _LayerEdgeRecord:
+    start = np.asarray(positions[left_id], dtype=float).reshape(-1)[:2]
+    end = np.asarray(positions[right_id], dtype=float).reshape(-1)[:2]
+    return _LayerEdgeRecord(
+        node_ids=(left_id, right_id),
+        start=start,
+        end=end,
+        bbox=(
+            min(float(start[0]), float(end[0])),
+            max(float(start[0]), float(end[0])),
+            min(float(start[1]), float(end[1])),
+            max(float(start[1]), float(end[1])),
+        ),
+    )
+
+
+def _layer_crosses_existing_edges(
+    component: _LayoutComponent,
+    positions: NodePositions,
+    *,
+    node_id: int,
+    layer_node_ids: tuple[int, ...],
+    layer_edge_records: tuple[_LayerEdgeRecord, ...],
+) -> bool:
+    candidate_edge_records = tuple(
+        _make_layer_edge_record(node_id, neighbor_id, positions)
+        for neighbor_id in component.contraction_graph.neighbors(node_id)
+        if neighbor_id in layer_node_ids and neighbor_id != node_id
+    )
+    if not candidate_edge_records:
+        return False
+
+    for candidate in candidate_edge_records:
+        for existing in layer_edge_records:
+            if set(candidate.node_ids) & set(existing.node_ids):
+                continue
+            if not _segment_bboxes_overlap_2d(
+                candidate.start,
+                candidate.end,
+                existing.bbox,
+                padding=0.0,
+            ):
+                continue
+            if _segments_cross_2d(
+                candidate.start,
+                candidate.end,
+                existing.start,
+                existing.end,
+            ):
+                return True
+    return False
+
+
+def _component_has_crossing_contraction_edges_2d(
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> bool:
+    edge_records = tuple(
+        _make_layer_edge_record(left_id, right_id, positions)
+        for left_id, right_id in component.contraction_graph.edges()
+        if left_id in positions and right_id in positions and left_id != right_id
+    )
+
+    for index, left_edge in enumerate(edge_records):
+        for right_edge in edge_records[index + 1 :]:
+            if set(left_edge.node_ids) & set(right_edge.node_ids):
+                continue
+            if not _segment_bboxes_overlap_2d(
+                left_edge.start,
+                left_edge.end,
+                right_edge.bbox,
+                padding=0.0,
+            ):
+                continue
+            if _segments_cross_2d(
+                left_edge.start,
+                left_edge.end,
+                right_edge.start,
+                right_edge.end,
+            ):
+                return True
+    return False
+
+
+def _component_requires_3d_layer_promotion(
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> bool:
+    if component.grid3d_mapping is not None or component.grid_mapping is not None:
+        return False
+    if component.virtual_node_ids:
+        return True
+    if any(
+        _node_overlaps_component(node_id, component, positions) for node_id in component.node_ids
+    ):
+        return True
+    return _component_has_crossing_contraction_edges_2d(component, positions)
+
+
 def _promote_3d_layers(
     graph: _GraphData,
     component: _LayoutComponent,
     positions: NodePositions,
 ) -> None:
     layer_indices = dict.fromkeys(component.node_ids, 0)
+    placed_node_ids_by_layer: defaultdict[int, list[int]] = defaultdict(list)
+    layer_edge_records_by_layer: defaultdict[int, list[_LayerEdgeRecord]] = defaultdict(list)
+    overlap_clearance = _layer_node_overlap_clearance_2d(component, positions)
 
-    for node_id in component.virtual_node_ids:
-        if _node_overlaps_component(node_id, component, positions):
-            layer_indices[node_id] = _next_layer(used_layers=layer_indices.values())
-
-    edge_records: list[
-        tuple[int, int, np.ndarray, np.ndarray, tuple[float, float, float, float]]
-    ] = []
-    for record in _iter_contractions(graph):
-        edge = tuple(sorted(record.node_ids))
-        if not all(node_id in component.contraction_graph for node_id in edge):
-            continue
-        start = positions[edge[0]][:2]
-        end = positions[edge[1]][:2]
-        edge_records.append(
-            (
-                edge[0],
-                edge[1],
-                start,
-                end,
-                (
-                    min(float(start[0]), float(end[0])),
-                    max(float(start[0]), float(end[0])),
-                    min(float(start[1]), float(end[1])),
-                    max(float(start[1]), float(end[1])),
-                ),
-            )
-        )
-
-    for index, left_edge in enumerate(edge_records):
-        left_start = left_edge[2]
-        left_end = left_edge[3]
-        left_bbox = left_edge[4]
-        for right_index in range(index + 1, len(edge_records)):
-            right_edge = edge_records[right_index]
-            if left_edge[0] in (right_edge[0], right_edge[1]) or left_edge[1] in (
-                right_edge[0],
-                right_edge[1],
+    for node_id in _layering_node_order_3d(graph, component, positions):
+        layer_index = 0
+        while True:
+            layer_node_ids = tuple(placed_node_ids_by_layer[layer_index])
+            if _node_overlaps_layer(
+                node_id,
+                layer_node_ids,
+                positions,
+                clearance=overlap_clearance,
             ):
+                layer_index = _next_layer_after_overlap(layer_index)
                 continue
-            right_bbox = right_edge[4]
-            if (
-                left_bbox[1] < right_bbox[0]
-                or right_bbox[1] < left_bbox[0]
-                or left_bbox[3] < right_bbox[2]
-                or right_bbox[3] < left_bbox[2]
-            ):
-                continue
-            if not _segments_cross_2d(
-                left_start,
-                left_end,
-                right_edge[2],
-                right_edge[3],
-            ):
-                continue
-            promoted = _choose_promotable_node(
-                graph,
+            if _layer_crosses_existing_edges(
                 component,
-                node_ids=(left_edge[0], left_edge[1], right_edge[0], right_edge[1]),
-            )
-            if promoted is None or layer_indices[promoted] != 0:
+                positions,
+                node_id=node_id,
+                layer_node_ids=layer_node_ids,
+                layer_edge_records=tuple(layer_edge_records_by_layer[layer_index]),
+            ):
+                layer_index += 1
                 continue
-            layer_indices[promoted] = _next_layer(used_layers=layer_indices.values())
+            break
+
+        layer_indices[node_id] = layer_index
+        placed_node_ids_by_layer[layer_index].append(node_id)
+        for neighbor_id in component.contraction_graph.neighbors(node_id):
+            if neighbor_id not in placed_node_ids_by_layer[layer_index]:
+                continue
+            if neighbor_id == node_id:
+                continue
+            layer_edge_records_by_layer[layer_index].append(
+                _make_layer_edge_record(node_id, neighbor_id, positions)
+            )
 
     for node_id, layer_index in layer_indices.items():
         positions[node_id][2] += layer_index * _LAYER_SPACING

@@ -9,11 +9,28 @@ from ._engine_specs import EngineName
 from ._typing import PositionMapping
 
 ViewName: TypeAlias = Literal["2d", "3d"]
-PlotTheme: TypeAlias = Literal["default", "paper", "colorblind"]
+PlotTheme: TypeAlias = Literal[
+    "default",
+    "paper",
+    "colorblind",
+    "dark",
+    "midnight",
+    "forest",
+    "slate",
+]
 FocusRadius: TypeAlias = Literal[1, 2]
 TensorLabelRefinement: TypeAlias = Literal["auto", "always", "never"]
 
-_PLOT_THEME_NAMES: frozenset[str] = frozenset(("default", "paper", "colorblind"))
+_PLOT_THEME_ORDER: tuple[PlotTheme, ...] = (
+    "default",
+    "paper",
+    "colorblind",
+    "dark",
+    "midnight",
+    "forest",
+    "slate",
+)
+_PLOT_THEME_NAMES: frozenset[str] = frozenset(_PLOT_THEME_ORDER)
 _PAPER_CONTRACTION_SCHEME_COLORS: tuple[str, ...] = (
     "#93C5FD",
     "#FCA5A5",
@@ -31,6 +48,38 @@ _COLORBLIND_CONTRACTION_SCHEME_COLORS: tuple[str, ...] = (
     "#D55E00",
     "#CC79A7",
     "#000000",
+)
+_DARK_CONTRACTION_SCHEME_COLORS: tuple[str, ...] = (
+    "#60A5FA",
+    "#FBBF24",
+    "#34D399",
+    "#F472B6",
+    "#A78BFA",
+    "#F87171",
+)
+_MIDNIGHT_CONTRACTION_SCHEME_COLORS: tuple[str, ...] = (
+    "#38BDF8",
+    "#22D3EE",
+    "#818CF8",
+    "#C084FC",
+    "#F472B6",
+    "#F59E0B",
+)
+_FOREST_CONTRACTION_SCHEME_COLORS: tuple[str, ...] = (
+    "#86EFAC",
+    "#FCD34D",
+    "#93C5FD",
+    "#FCA5A5",
+    "#C4B5FD",
+    "#67E8F9",
+)
+_SLATE_CONTRACTION_SCHEME_COLORS: tuple[str, ...] = (
+    "#94A3B8",
+    "#38BDF8",
+    "#22C55E",
+    "#F59E0B",
+    "#A78BFA",
+    "#EF4444",
 )
 _PLOT_THEME_OVERRIDES: dict[str, dict[str, object]] = {
     "paper": {
@@ -59,7 +108,73 @@ _PLOT_THEME_OVERRIDES: dict[str, dict[str, object]] = {
         "line_width_3d": 0.9,
         "contraction_scheme_colors": _COLORBLIND_CONTRACTION_SCHEME_COLORS,
     },
+    "dark": {
+        "node_color": "#1F2937",
+        "node_edge_color": "#E5E7EB",
+        "node_color_degree_one": "#134E4A",
+        "node_edge_color_degree_one": "#99F6E4",
+        "tensor_label_color": "#F8FAFC",
+        "label_color": "#CBD5E1",
+        "bond_edge_color": "#60A5FA",
+        "dangling_edge_color": "#F59E0B",
+        "line_width_2d": 1.0,
+        "line_width_3d": 0.9,
+        "contraction_scheme_colors": _DARK_CONTRACTION_SCHEME_COLORS,
+    },
+    "midnight": {
+        "node_color": "#1E293B",
+        "node_edge_color": "#E2E8F0",
+        "node_color_degree_one": "#0F766E",
+        "node_edge_color_degree_one": "#99F6E4",
+        "tensor_label_color": "#F8FAFC",
+        "label_color": "#BFDBFE",
+        "bond_edge_color": "#38BDF8",
+        "dangling_edge_color": "#FB7185",
+        "line_width_2d": 1.0,
+        "line_width_3d": 0.9,
+        "contraction_scheme_colors": _MIDNIGHT_CONTRACTION_SCHEME_COLORS,
+    },
+    "forest": {
+        "node_color": "#ECFDF5",
+        "node_edge_color": "#14532D",
+        "node_color_degree_one": "#FEF3C7",
+        "node_edge_color_degree_one": "#A16207",
+        "tensor_label_color": "#14532D",
+        "label_color": "#365314",
+        "bond_edge_color": "#15803D",
+        "dangling_edge_color": "#B45309",
+        "line_width_2d": 1.0,
+        "line_width_3d": 0.9,
+        "contraction_scheme_colors": _FOREST_CONTRACTION_SCHEME_COLORS,
+    },
+    "slate": {
+        "node_color": "#E2E8F0",
+        "node_edge_color": "#334155",
+        "node_color_degree_one": "#F8FAFC",
+        "node_edge_color_degree_one": "#475569",
+        "tensor_label_color": "#0F172A",
+        "label_color": "#334155",
+        "bond_edge_color": "#0284C7",
+        "dangling_edge_color": "#B91C1C",
+        "line_width_2d": 1.0,
+        "line_width_3d": 0.9,
+        "contraction_scheme_colors": _SLATE_CONTRACTION_SCHEME_COLORS,
+    },
 }
+_PLOT_THEME_BACKGROUND_COLORS: dict[str, tuple[str, str]] = {
+    "default": ("#FFFFFF", "#FFFFFF"),
+    "paper": ("#FFFFFF", "#FFFFFF"),
+    "colorblind": ("#FFFFFF", "#FFFFFF"),
+    "dark": ("#0B1120", "#111827"),
+    "midnight": ("#020617", "#0F172A"),
+    "forest": ("#F7FDF9", "#F7FDF9"),
+    "slate": ("#F1F5F9", "#F8FAFC"),
+}
+
+
+def _theme_background_colors(theme: str) -> tuple[str, str]:
+    """Figure and axes background colors for a visual theme preset."""
+    return _PLOT_THEME_BACKGROUND_COLORS.get(theme, ("#FFFFFF", "#FFFFFF"))
 
 
 @dataclass(frozen=True)
@@ -120,8 +235,10 @@ class PlotConfig:
         diagnostics: Optional diagnostics settings for shape / bond / memory overlays.
         focus: Optional subnetwork focus settings shared by snapshots and interactive views.
         theme: Visual theme preset. ``"default"`` uses the library defaults, ``"paper"`` uses
-            a cleaner high-contrast export style, and ``"colorblind"`` uses a colorblind-safe
-            palette. Explicit color and line-width overrides still win over theme presets.
+            a cleaner high-contrast export style, ``"colorblind"`` uses a colorblind-safe
+            palette, ``"dark"`` and ``"midnight"`` use dark canvases, and ``"forest"`` and
+            ``"slate"`` provide softer practical light presets. Explicit color and line-width
+            overrides still win over theme presets.
         tensor_label_refinement: Policy for the post-draw passes that shrink tensor labels
             to fit their node marker. ``"always"`` always refits, ``"never"`` skips it,
             and ``"auto"`` applies it only when it is still cheap.

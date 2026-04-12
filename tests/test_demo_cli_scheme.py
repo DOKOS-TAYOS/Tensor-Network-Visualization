@@ -13,6 +13,7 @@ if str(_EXAMPLES) not in sys.path:
 
 from demo_cli import (  # noqa: E402
     auto_save_path,
+    build_run_demo_parser,
     cubic_peps_tensor_names,
     cumulative_prefix_contraction_scheme,
     demo_runs_headless,
@@ -255,9 +256,26 @@ def test_run_demo_parser_defaults_match_cli_contract() -> None:
 def test_run_demo_parser_accepts_visual_theme() -> None:
     module = _load_example_module(Path("examples/run_demo.py"), "run_demo_parser_theme")
 
-    args = module.parse_args(["quimb", "mps", "--theme", "paper"])
+    args = module.parse_args(["quimb", "mps", "--theme", "dark"])
 
-    assert args.theme == "paper"
+    assert args.theme == "dark"
+
+
+def test_build_run_demo_parser_exposes_all_visual_theme_choices() -> None:
+    parser = build_run_demo_parser()
+    theme_action = next(
+        action for action in parser._actions if "--theme" in getattr(action, "option_strings", ())
+    )
+
+    assert tuple(theme_action.choices) == (
+        "default",
+        "paper",
+        "colorblind",
+        "dark",
+        "midnight",
+        "forest",
+        "slate",
+    )
 
 
 def test_run_demo_defaults_to_contracted_for_small_tensorkrowch_demo() -> None:

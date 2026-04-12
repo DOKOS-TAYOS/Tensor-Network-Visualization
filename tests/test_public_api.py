@@ -6,6 +6,7 @@ import inspect
 from pathlib import Path
 
 import matplotlib
+from matplotlib.colors import to_hex
 
 matplotlib.use("Agg")
 
@@ -65,7 +66,15 @@ def test_plot_theme_is_public_type_alias() -> None:
     import tensor_network_viz as tnv
 
     assert hasattr(tnv, "PlotTheme")
-    assert tnv.PlotTheme.__args__ == ("default", "paper", "colorblind")
+    assert tnv.PlotTheme.__args__ == (
+        "default",
+        "paper",
+        "colorblind",
+        "dark",
+        "midnight",
+        "forest",
+        "slate",
+    )
 
 
 def test_plot_config_public_signature_orders_modes_before_detail() -> None:
@@ -211,6 +220,151 @@ def test_plot_config_colorblind_theme_uses_okabe_ito_palette() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("theme", "expected"),
+    [
+        (
+            "dark",
+            {
+                "node_color": "#1F2937",
+                "node_edge_color": "#E5E7EB",
+                "node_color_degree_one": "#134E4A",
+                "node_edge_color_degree_one": "#99F6E4",
+                "tensor_label_color": "#F8FAFC",
+                "label_color": "#CBD5E1",
+                "bond_edge_color": "#60A5FA",
+                "dangling_edge_color": "#F59E0B",
+                "line_width_2d": 1.0,
+                "line_width_3d": 0.9,
+                "contraction_scheme_colors": (
+                    "#60A5FA",
+                    "#FBBF24",
+                    "#34D399",
+                    "#F472B6",
+                    "#A78BFA",
+                    "#F87171",
+                ),
+            },
+        ),
+        (
+            "midnight",
+            {
+                "node_color": "#1E293B",
+                "node_edge_color": "#E2E8F0",
+                "node_color_degree_one": "#0F766E",
+                "node_edge_color_degree_one": "#99F6E4",
+                "tensor_label_color": "#F8FAFC",
+                "label_color": "#BFDBFE",
+                "bond_edge_color": "#38BDF8",
+                "dangling_edge_color": "#FB7185",
+                "line_width_2d": 1.0,
+                "line_width_3d": 0.9,
+                "contraction_scheme_colors": (
+                    "#38BDF8",
+                    "#22D3EE",
+                    "#818CF8",
+                    "#C084FC",
+                    "#F472B6",
+                    "#F59E0B",
+                ),
+            },
+        ),
+        (
+            "forest",
+            {
+                "node_color": "#ECFDF5",
+                "node_edge_color": "#14532D",
+                "node_color_degree_one": "#FEF3C7",
+                "node_edge_color_degree_one": "#A16207",
+                "tensor_label_color": "#14532D",
+                "label_color": "#365314",
+                "bond_edge_color": "#15803D",
+                "dangling_edge_color": "#B45309",
+                "line_width_2d": 1.0,
+                "line_width_3d": 0.9,
+                "contraction_scheme_colors": (
+                    "#86EFAC",
+                    "#FCD34D",
+                    "#93C5FD",
+                    "#FCA5A5",
+                    "#C4B5FD",
+                    "#67E8F9",
+                ),
+            },
+        ),
+        (
+            "slate",
+            {
+                "node_color": "#E2E8F0",
+                "node_edge_color": "#334155",
+                "node_color_degree_one": "#F8FAFC",
+                "node_edge_color_degree_one": "#475569",
+                "tensor_label_color": "#0F172A",
+                "label_color": "#334155",
+                "bond_edge_color": "#0284C7",
+                "dangling_edge_color": "#B91C1C",
+                "line_width_2d": 1.0,
+                "line_width_3d": 0.9,
+                "contraction_scheme_colors": (
+                    "#94A3B8",
+                    "#38BDF8",
+                    "#22C55E",
+                    "#F59E0B",
+                    "#A78BFA",
+                    "#EF4444",
+                ),
+            },
+        ),
+    ],
+)
+def test_plot_config_new_practical_themes_apply_style_defaults(
+    theme: str,
+    expected: dict[str, object],
+) -> None:
+    config = PlotConfig(theme=theme)  # type: ignore[arg-type]
+
+    assert config.node_color == expected["node_color"]
+    assert config.node_edge_color == expected["node_edge_color"]
+    assert config.node_color_degree_one == expected["node_color_degree_one"]
+    assert config.node_edge_color_degree_one == expected["node_edge_color_degree_one"]
+    assert config.tensor_label_color == expected["tensor_label_color"]
+    assert config.label_color == expected["label_color"]
+    assert config.bond_edge_color == expected["bond_edge_color"]
+    assert config.dangling_edge_color == expected["dangling_edge_color"]
+    assert config.line_width_2d == pytest.approx(expected["line_width_2d"])
+    assert config.line_width_3d == pytest.approx(expected["line_width_3d"])
+    assert config.contraction_scheme_colors == expected["contraction_scheme_colors"]
+
+
+@pytest.mark.parametrize(
+    ("theme", "expected_figure_color", "expected_axes_color"),
+    [
+        ("dark", "#0B1120", "#111827"),
+        ("midnight", "#020617", "#0F172A"),
+        ("forest", "#F7FDF9", "#F7FDF9"),
+        ("slate", "#F1F5F9", "#F8FAFC"),
+    ],
+)
+def test_show_tensor_network_applies_theme_background_colors(
+    theme: str,
+    expected_figure_color: str,
+    expected_axes_color: str,
+) -> None:
+    trace = [pair_tensor("A", "x", "r0", "ab,b->a")]
+
+    fig, ax = show_tensor_network(
+        trace,
+        engine="einsum",
+        view="2d",
+        config=PlotConfig(theme=theme),  # type: ignore[arg-type]
+        show=False,
+        show_controls=False,
+    )
+
+    assert to_hex(fig.get_facecolor()).lower() == expected_figure_color.lower()
+    assert to_hex(ax.get_facecolor()).lower() == expected_axes_color.lower()
+
+
 def test_tensor_elements_config_accepts_analysis_overrides() -> None:
     config = TensorElementsConfig(
         mode="slice",
@@ -349,7 +503,10 @@ def test_show_tensor_network_returns_fig_ax_with_show_false() -> None:
     assert len(fig.axes) >= 3
 
 
-@pytest.mark.parametrize("theme", ["paper", "colorblind"])
+@pytest.mark.parametrize(
+    "theme",
+    ["paper", "colorblind", "dark", "midnight", "forest", "slate"],
+)
 @pytest.mark.parametrize("view", ["2d", "3d"])
 def test_show_tensor_network_renders_visual_themes(theme: str, view: str) -> None:
     trace = [pair_tensor("A", "x", "r0", "ab,b->a")]

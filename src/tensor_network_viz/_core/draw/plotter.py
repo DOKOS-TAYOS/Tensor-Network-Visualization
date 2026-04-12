@@ -395,7 +395,9 @@ def _make_plotter(
                     edgecolors=edge_list,
                     linewidths=_COMPACT_NODE_MARKER_LINEWIDTH_PT,
                     depthshade=False,
+                    zorder=float(_ZORDER_NODE_DISK),
                 )
+                coll.set_zorder(float(_ZORDER_NODE_DISK))
                 if hasattr(coll, "set_sort_zpos"):
                     coll.set_sort_zpos(_ZORDER_NODE_DISK)
                 self._node_artist_bundle = _NodeArtistBundle(
@@ -426,6 +428,7 @@ def _make_plotter(
                 edgecolors=tri_edges,
                 linewidths=node_edge_lw,
             )
+            coll.set_zorder(float(_ZORDER_NODE_DISK))
             coll.set_sort_zpos(_ZORDER_NODE_DISK)
             ax.add_collection3d(coll)
             self._node_artist_bundle = _NodeArtistBundle(

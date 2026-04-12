@@ -786,6 +786,7 @@ def _draw_scheme_nodes_3d(
                 linewidths=node_edge_lw,
             )
             coll.set_gid(_NODE_GID_CUBE)
+            coll.set_zorder(float(_ZORDER_NODE_DISK))
         else:
             scaled = _UNIT_NODE_TRIS * float(scene.params.r)
             centers = np.stack(coords, axis=0)
@@ -798,6 +799,7 @@ def _draw_scheme_nodes_3d(
                 linewidths=node_edge_lw,
             )
             coll.set_gid(_NODE_GID_OCTAHEDRON)
+            coll.set_zorder(float(_ZORDER_NODE_DISK))
         coll._tnv_node_count = len(coords)  # type: ignore[attr-defined]
         coll.set_sort_zpos(float(_ZORDER_NODE_DISK))
         scene.ax.add_collection3d(coll)

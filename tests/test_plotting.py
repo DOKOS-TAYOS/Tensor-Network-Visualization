@@ -2854,6 +2854,29 @@ def test_plot_tensorkrowch_network_3d_show_nodes_false_keeps_degree_one_color() 
     assert facecolors == [tuple(float(value) for value in to_rgba(config.node_color_degree_one))]
 
 
+def test_plot_tensorkrowch_network_3d_draws_nodes_above_dangling_edges() -> None:
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+    node = DummyTensorKrowchNode("A", ["left"])
+    connect(node, 0, name="left")
+
+    _, ax = plot_tensorkrowch_network_3d(
+        DummyNetwork(leaf_nodes=[node]),
+        config=PlotConfig(show_nodes=True),
+    )
+
+    line_zorders = [float(line.get_zorder()) for line in ax.lines]
+    node_zorders = [
+        float(collection.get_zorder())
+        for collection in ax.collections
+        if isinstance(collection, Poly3DCollection)
+    ]
+
+    assert line_zorders
+    assert node_zorders
+    assert max(line_zorders) < min(node_zorders)
+
+
 def test_plot_tensornetwork_network_3d_returns_3d_axes() -> None:
     left = DummyTensorNetworkNode("A", ["left"])
     right = DummyTensorNetworkNode("B", ["right"])

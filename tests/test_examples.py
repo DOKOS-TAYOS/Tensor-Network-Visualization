@@ -20,6 +20,8 @@ _EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 if str(_EXAMPLES) not in sys.path:
     sys.path.insert(0, str(_EXAMPLES))
 
+from demo_cli import ExampleCliArgs  # noqa: E402
+
 
 def _require_quimb() -> None:
     pytest.importorskip("quimb.tensor")
@@ -666,6 +668,54 @@ def test_run_all_examples_themes_group_runs_overview() -> None:
     argvs = {command.argv for command in commands}
 
     assert ("examples/run_demo.py", "themes", "overview", "--view", "2d") in argvs
+
+
+def test_themes_demo_overview_titles_all_available_themes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_example_module(Path("examples/themes_demo.py"), "themes_demo_titles")
+    monkeypatch.setattr("matplotlib.pyplot.show", lambda: None)
+
+    args = ExampleCliArgs(
+        engine="themes",
+        example="overview",
+        view="2d",
+        labels_nodes=True,
+        labels_edges=False,
+        labels=None,
+        hover_labels=True,
+        scheme=False,
+        hover_cost=False,
+        tensor_inspector=False,
+        contracted=False,
+        from_scratch=False,
+        from_list=False,
+        save=None,
+        no_show=False,
+        n_sites=6,
+        lx=3,
+        ly=4,
+        lz=3,
+        mera_log2=3,
+        tree_depth=4,
+        theme="default",
+    )
+
+    fig, _ = module.run_example(args)
+
+    assert [ax.get_title() for ax in fig.axes if ax.get_title()] == [
+        "default",
+        "paper",
+        "colorblind",
+        "dark",
+        "midnight",
+        "forest",
+        "slate",
+    ]
+    fig.canvas.draw()
+    import matplotlib.pyplot as plt
+
+    plt.close(fig)
 
 
 def test_run_all_examples_builds_headless_subprocess_command(tmp_path: Path) -> None:

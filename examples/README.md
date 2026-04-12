@@ -120,7 +120,7 @@ examples with `--n-sites 6`, where contraction history recovery is safe enough f
 | Option | Meaning |
 | --- | --- |
 | `--view {2d,3d}` | Initial view. |
-| `--theme {default,paper,colorblind}` | Visual theme preset. Use `paper` for clean exports and `colorblind` for high-contrast accessible colors. |
+| `--theme {default,paper,colorblind,dark,midnight,forest,slate}` | Visual theme preset. Use `paper` for clean exports, `colorblind` for accessible colors, `dark` or `midnight` for dark canvases, and `forest` or `slate` for softer light palettes. |
 | `--labels-nodes` | Show tensor labels. |
 | `--labels-edges` | Show index labels. |
 | `--labels` | Override both label flags at once. |

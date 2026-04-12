@@ -4,7 +4,7 @@ import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, TypeAlias
+from typing import Any, Literal, TypeAlias, cast, get_args
 
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -16,6 +16,7 @@ from tensor_network_viz.config import EngineName, PlotTheme, ViewName
 RenderedAxes: TypeAlias = Axes | Axes3D
 SizeKnob: TypeAlias = Literal["n_sites", "lx", "ly", "lz", "mera_log2", "tree_depth"]
 SchemeByName: TypeAlias = tuple[tuple[str, ...], ...]
+_PLOT_THEME_CHOICES: tuple[PlotTheme, ...] = cast(tuple[PlotTheme, ...], get_args(PlotTheme))
 
 AUTO_SAVE_SENTINEL = Path("__AUTO_SAVE__")
 
@@ -130,7 +131,7 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--theme",
-        choices=("default", "paper", "colorblind"),
+        choices=_PLOT_THEME_CHOICES,
         default="default",
         help="Visual theme preset (default: default).",
     )

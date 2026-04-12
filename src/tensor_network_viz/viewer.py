@@ -20,7 +20,7 @@ from ._input_inspection import (
 from ._logging import package_logger
 from ._registry import _get_plotters
 from ._typing import FigureLike, root_figure
-from .config import EngineName, PlotConfig, ViewName
+from .config import EngineName, PlotConfig, ViewName, _theme_background_colors
 from .exceptions import AxisConfigurationError
 
 RenderedAxes: TypeAlias = Axes | Axes3D
@@ -51,6 +51,18 @@ def _detect_engine(network: Any) -> EngineName:
     """Infer the backend engine from the received tensor-network object."""
     detected_engine, _ = _detect_engine_with_network(network)
     return detected_engine
+
+
+def _apply_theme_background(
+    fig: FigureLike,
+    ax: RenderedAxes,
+    *,
+    theme: str,
+) -> None:
+    """Apply theme-driven figure and axes background colors."""
+    figure_color, axes_color = _theme_background_colors(theme)
+    root_figure(fig).patch.set_facecolor(figure_color)
+    ax.set_facecolor(axes_color)
 
 
 def show_tensor_network(
@@ -192,6 +204,7 @@ def show_tensor_network(
             config=style,
             ax=ax,
         )
+    _apply_theme_background(fig, ax_out, theme=style.theme)
     if show:
         _show_figure(fig)
     return root_figure(fig), ax_out
