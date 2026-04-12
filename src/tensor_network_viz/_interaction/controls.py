@@ -49,8 +49,6 @@ _INTERACTIVE_LABEL_PROPS: dict[str, Sequence[Any]] = {"fontsize": [9.5]}
 _INTERACTIVE_CHECK_FRAME_PROPS: dict[str, float] = {"s": 44.0, "linewidth": 0.9}
 _INTERACTIVE_CHECK_MARK_PROPS: dict[str, float] = {"s": 34.0, "linewidth": 1.0}
 _COMPACT_BUTTON_FONT_SIZE: float = 8.5
-_FOCUS_MODE_OPTIONS: tuple[str, str] = ("neighborhood", "path")
-_FOCUS_RADIUS_OPTIONS: tuple[str, str] = ("1", "2")
 
 
 @dataclass(frozen=True)

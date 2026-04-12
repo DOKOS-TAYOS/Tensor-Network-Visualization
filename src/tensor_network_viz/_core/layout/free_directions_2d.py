@@ -40,19 +40,8 @@ from .parameters import (
 from .types import AxisDirections, NodePositions
 
 _ANGLE_THRESHOLD_DEGREES_2D: float = 5.0
-_ANGLE_CONFLICT_DOT_2D: float = math.cos(math.radians(_ANGLE_THRESHOLD_DEGREES_2D))
 
 _Behavior2D = Literal["north", "south", "east", "west"]
-
-
-@dataclass(frozen=True)
-class _AssignedStub2D:
-    node_id: int
-    axis_index: int
-    origin: np.ndarray
-    direction: np.ndarray
-    start: np.ndarray
-    end: np.ndarray
 
 
 @dataclass(frozen=True)

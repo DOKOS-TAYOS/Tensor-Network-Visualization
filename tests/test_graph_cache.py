@@ -16,6 +16,19 @@ class _DummyNetwork:
     """Weak-key-friendly stand-in for a tensor network object."""
 
 
+class _DummyContainerValue:
+    """Simple value object for container-backed cache tests."""
+
+    def __init__(self, label: str) -> None:
+        self.label = label
+
+
+def _build_graph_from_dict_values(network: dict[str, _DummyContainerValue]) -> _GraphData:
+    items = list(network.values())
+    first_label = items[0].label if items else "empty"
+    return _GraphData(nodes={0: _make_node(first_label, ())}, edges=())
+
+
 def test_get_or_build_graph_reuses_instance() -> None:
     calls: list[int] = []
     nw = _DummyNetwork()
@@ -108,6 +121,47 @@ def test_get_or_build_graph_reuses_nested_list_instance() -> None:
 
     assert g1 is g2
     assert calls == [1]
+
+
+def test_get_or_build_graph_reuses_dict_instance() -> None:
+    calls: list[int] = []
+    network = {
+        "left": _DummyContainerValue("A"),
+        "right": _DummyContainerValue("B"),
+    }
+
+    def build(source: object) -> _GraphData:
+        calls.append(1)
+        assert isinstance(source, dict)
+        return _build_graph_from_dict_values(source)
+
+    g1 = _get_or_build_graph(network, build)
+    g2 = _get_or_build_graph(network, build)
+
+    assert g1 is g2
+    assert g1.nodes[0].name == "A"
+    assert calls == [1]
+
+
+def test_clear_tensor_network_graph_cache_forces_rebuild_for_dict_instance() -> None:
+    calls: list[int] = []
+    network = {
+        "left": _DummyContainerValue("A"),
+        "right": _DummyContainerValue("B"),
+    }
+
+    def build(source: object) -> _GraphData:
+        calls.append(1)
+        assert isinstance(source, dict)
+        return _build_graph_from_dict_values(source)
+
+    g1 = _get_or_build_graph(network, build)
+    clear_tensor_network_graph_cache(network)
+    g2 = _get_or_build_graph(network, build)
+
+    assert g1 is not g2
+    assert g2.nodes[0].name == "A"
+    assert calls == [1, 1]
 
 
 def test_get_or_build_graph_does_not_reuse_single_pass_iterator() -> None:

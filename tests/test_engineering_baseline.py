@@ -203,6 +203,18 @@ def test_tensor_elements_data_does_not_keep_unused_spectral_summary_helpers() ->
     assert not hasattr(tensor_elements_data, "_topk_eigenvalue_lines")
 
 
+def test_layout_and_controls_modules_do_not_keep_unused_internal_symbols() -> None:
+    free_directions_2d = importlib.import_module(
+        "tensor_network_viz._core.layout.free_directions_2d"
+    )
+    controls = importlib.import_module("tensor_network_viz._interaction.controls")
+
+    assert not hasattr(free_directions_2d, "_AssignedStub2D")
+    assert not hasattr(free_directions_2d, "_ANGLE_CONFLICT_DOT_2D")
+    assert not hasattr(controls, "_FOCUS_MODE_OPTIONS")
+    assert not hasattr(controls, "_FOCUS_RADIUS_OPTIONS")
+
+
 def test_tensorkrowch_history_uses_single_node_tuple_normalizer() -> None:
     history = importlib.import_module("tensor_network_viz.tensorkrowch._history")
 
