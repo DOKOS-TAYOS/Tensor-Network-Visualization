@@ -10,7 +10,6 @@ from mpl_toolkits.mplot3d.axes3d import Axes3D
 from .._contraction_viewer_ui import _MAIN_FIGURE_BOTTOM_RESERVED, _PLAYBACK_DETAILS_TOP
 from .._core.draw.scene_state import _InteractiveSceneState
 from .._interactive_scene import (
-    _ensure_scene_label_descriptors,
     _node_mode_from_show_nodes,
     _scene_from_axes,
 )
@@ -125,7 +124,6 @@ class _InteractiveViewManager:
         cache.ax = rendered_ax
         cache.scene = scene
         scene.contraction_controls = get_contraction_controls(rendered_ax)
-        _ensure_scene_label_descriptors(scene)
         return scene
 
     def build_view(
@@ -143,7 +141,6 @@ class _InteractiveViewManager:
         cache.scene = scene
         if scene is not None:
             scene.contraction_controls = get_contraction_controls(rendered_ax)
-            _ensure_scene_label_descriptors(scene)
         return fig, rendered_ax
 
     def deactivate_non_current_views(self, current_view: ViewName) -> None:
