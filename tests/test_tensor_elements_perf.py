@@ -92,3 +92,17 @@ def test_prepare_mode_payload_singular_values_stays_bounded_for_medium_tensors()
         "expected singular-values view to remain within a broad runtime guard "
         f"(magnitude={magnitude_s:.4f}s singular_values={singular_values_s:.4f}s)"
     )
+
+
+@pytest.mark.perf
+def test_prepare_mode_payload_data_stays_bounded_for_medium_tensors() -> None:
+    record = _complex_record((128, 96, 24))
+    config = TensorElementsConfig(max_matrix_shape=(64, 48))
+
+    magnitude_s = _measure_prepare_mode(record, config=config, mode="magnitude", repeats=4)
+    data_s = _measure_prepare_mode(record, config=config, mode="data", repeats=4)
+
+    assert data_s < magnitude_s * 25.0, (
+        "expected data view to avoid a full global ranking pass "
+        f"(magnitude={magnitude_s:.4f}s data={data_s:.4f}s)"
+    )

@@ -9,6 +9,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.widgets import CheckButtons, RadioButtons, Slider
 
+from . import _tensor_elements_payloads as _tensor_elements_payloads_module
 from ._matplotlib_state import set_tensor_elements_controls
 from ._tensor_elements_data import _analysis_config_from_resolved, _resolve_tensor_analysis
 from ._tensor_elements_rendering import (
@@ -23,10 +24,8 @@ from ._tensor_elements_support import (
     _group_modes,
     _HeatmapPayload,
     _mode_group,
-    _resolve_group_mode_for_record,
     _TensorElementsPayload,
     _TensorRecord,
-    _valid_group_modes_for_record,
 )
 from ._ui_utils import (
     _CONTROL_SLIDER_TRACK_COLOR,
@@ -70,6 +69,19 @@ _PLACEHOLDER_TEXT_BOX: Final[dict[str, Any]] = {
     "facecolor": "#F8FAFC",
     "edgecolor": "#CBD5E1",
 }
+_COMPLEX_ONLY_MODES: Final[frozenset[str]] = frozenset({"imag", "phase"})
+_SPECTRAL_MODES: Final[frozenset[str]] = frozenset({"singular_values", "eigen_real", "eigen_imag"})
+
+_AxisSelectorTuple = tuple[int | str, ...]
+_ModeAvailabilityCacheKey = tuple[
+    int,
+    tuple[int, ...],
+    str,
+    tuple[str, ...],
+    _AxisSelectorTuple | None,
+    _AxisSelectorTuple | None,
+    tuple[int, int],
+]
 
 
 @dataclass(frozen=True)
@@ -105,6 +117,12 @@ class _TensorPayloadCacheEntry:
     payloads: dict[str, _TensorElementsPayload] = field(default_factory=dict)
 
 
+@dataclass
+class _ModeAvailabilityCacheEntry:
+    valid_modes_by_group: dict[TensorElementsGroup, tuple[str, ...]] = field(default_factory=dict)
+    spectral_flags: tuple[bool, bool] | None = None
+
+
 class _TensorElementsFigureController:
     def __init__(
         self,
@@ -128,6 +146,9 @@ class _TensorElementsFigureController:
         self._allow_interactive_fallback = allow_interactive_fallback
         self._prepare_mode_payload = prepare_mode_payload
         self._payload_cache = {} if initial_payload_cache is None else dict(initial_payload_cache)
+        self._mode_availability_cache: dict[
+            _ModeAvailabilityCacheKey, _ModeAvailabilityCacheEntry
+        ] = {}
         self._shared_color_scale_cache: dict[str, tuple[float, float] | None] = {}
         self._analysis = config.analysis or TensorAnalysisConfig()
         self._tensor_index = 0
@@ -165,20 +186,84 @@ class _TensorElementsFigureController:
 
     def _reset_payload_caches(self) -> None:
         self._payload_cache.clear()
+        self._mode_availability_cache.clear()
         self._shared_color_scale_cache.clear()
 
-    def _set_group_mode_for_record(
+    def _mode_availability_cache_key(self, index: int) -> _ModeAvailabilityCacheKey:
+        record = self._records[index]
+        array = np.asarray(record.array)
+        row_axes = None if self._config.row_axes is None else tuple(self._config.row_axes)
+        col_axes = None if self._config.col_axes is None else tuple(self._config.col_axes)
+        return (
+            int(index),
+            tuple(int(dimension) for dimension in array.shape),
+            str(array.dtype),
+            tuple(str(axis_name) for axis_name in record.axis_names),
+            row_axes,
+            col_axes,
+            tuple(int(dimension) for dimension in self._config.max_matrix_shape),
+        )
+
+    def _mode_availability_cache_entry(self, index: int) -> _ModeAvailabilityCacheEntry:
+        key = self._mode_availability_cache_key(index)
+        if key not in self._mode_availability_cache:
+            self._mode_availability_cache[key] = _ModeAvailabilityCacheEntry()
+        return self._mode_availability_cache[key]
+
+    def _spectral_mode_flags_for_index(self, index: int) -> tuple[bool, bool]:
+        cache_entry = self._mode_availability_cache_entry(index)
+        if cache_entry.spectral_flags is None:
+            cache_entry.spectral_flags = _tensor_elements_payloads_module._spectral_mode_flags(
+                self._records[index],
+                config=self._config,
+            )
+        return cache_entry.spectral_flags
+
+    def _mode_supported_for_index(self, index: int, mode: str) -> bool:
+        record = self._records[index]
+        if mode in _SPECTRAL_MODES:
+            is_finite, is_square = self._spectral_mode_flags_for_index(index)
+            if mode == "singular_values":
+                return is_finite
+            return is_finite and is_square
+        if mode in _COMPLEX_ONLY_MODES:
+            return bool(np.iscomplexobj(record.array))
+        return True
+
+    def _valid_group_modes_for_index(
         self,
-        record: _TensorRecord,
         *,
+        index: int,
+        group: TensorElementsGroup,
+    ) -> tuple[str, ...]:
+        cache_entry = self._mode_availability_cache_entry(index)
+        if group not in cache_entry.valid_modes_by_group:
+            cache_entry.valid_modes_by_group[group] = tuple(
+                mode for mode in _group_modes(group) if self._mode_supported_for_index(index, mode)
+            )
+        return cache_entry.valid_modes_by_group[group]
+
+    def _set_group_mode_for_index(
+        self,
+        *,
+        index: int,
         group: TensorElementsGroup,
         preferred_mode: str | None,
     ) -> None:
-        self._group, self._mode = _resolve_group_mode_for_record(
-            record,
-            group=group,
-            preferred_mode=preferred_mode,
-            config=self._config,
+        modes_in_group = self._valid_group_modes_for_index(index=index, group=group)
+        if preferred_mode in modes_in_group:
+            self._group, self._mode = group, str(preferred_mode)
+            return
+        if modes_in_group:
+            self._group, self._mode = group, modes_in_group[0]
+            return
+        basic_modes = self._valid_group_modes_for_index(index=index, group="basic")
+        if basic_modes:
+            self._group, self._mode = "basic", basic_modes[0]
+            return
+        raise ValueError(
+            "Tensor "
+            f"{self._records[index].name!r} does not expose any supported visualization modes."
         )
 
     def _sync_controls_after_render(self, *, rebuild_analysis_controls: bool = True) -> None:
@@ -240,8 +325,8 @@ class _TensorElementsFigureController:
         requested_mode = self._initial_requested_mode()
         requested_group = cast(TensorElementsGroup, _mode_group(requested_mode))
         if self._allow_interactive_fallback:
-            self._set_group_mode_for_record(
-                self._current_record(),
+            self._set_group_mode_for_index(
+                index=self._tensor_index,
                 group=requested_group,
                 preferred_mode=requested_mode,
             )
@@ -294,11 +379,7 @@ class _TensorElementsFigureController:
     def _current_group_modes(self) -> tuple[str, ...]:
         if not self._allow_interactive_fallback:
             return _group_modes(self._group)
-        return _valid_group_modes_for_record(
-            self._current_record(),
-            self._group,
-            config=self._config,
-        )
+        return self._valid_group_modes_for_index(index=self._tensor_index, group=self._group)
 
     def _rebuild_mode_radio(self) -> None:
         if self._mode_radio_ax is not None:
@@ -332,11 +413,21 @@ class _TensorElementsFigureController:
         if self._mode_radio is None:
             return
         mode_options = self._current_group_modes()
+        if self._mode not in mode_options:
+            self._rebuild_mode_radio()
+            return
         current_labels = tuple(text.get_text() for text in self._mode_radio.labels)
         value_selected = getattr(self._mode_radio, "value_selected", None)
-        if value_selected == self._mode and current_labels == mode_options:
+        if current_labels != mode_options:
+            self._rebuild_mode_radio()
             return
-        self._rebuild_mode_radio()
+        if value_selected == self._mode:
+            return
+        try:
+            self._mode_callback_guard = True
+            self._mode_radio.set_active(mode_options.index(self._mode))
+        finally:
+            self._mode_callback_guard = False
 
     def _sync_slider_label(self) -> None:
         if self._slider is None:
@@ -609,8 +700,8 @@ class _TensorElementsFigureController:
 
     def set_group(self, group: TensorElementsGroup | str, *, redraw: bool = True) -> None:
         resolved_group = cast(TensorElementsGroup, str(group))
-        self._set_group_mode_for_record(
-            self._current_record(),
+        self._set_group_mode_for_index(
+            index=self._tensor_index,
             group=resolved_group,
             preferred_mode=self._mode if _mode_group(self._mode) == resolved_group else None,
         )
@@ -619,8 +710,8 @@ class _TensorElementsFigureController:
     def set_mode(self, mode: TensorElementsMode | str, *, redraw: bool = True) -> None:
         resolved_group = cast(TensorElementsGroup, _mode_group(str(mode)))
         if self._allow_interactive_fallback:
-            self._set_group_mode_for_record(
-                self._current_record(),
+            self._set_group_mode_for_index(
+                index=self._tensor_index,
                 group=resolved_group,
                 preferred_mode=str(mode),
             )
@@ -633,8 +724,8 @@ class _TensorElementsFigureController:
         clamped = int(np.clip(index, 0, len(self._records) - 1))
         self._tensor_index = clamped
         if self._allow_interactive_fallback:
-            self._set_group_mode_for_record(
-                self._current_record(),
+            self._set_group_mode_for_index(
+                index=self._tensor_index,
                 group=self._group,
                 preferred_mode=self._mode,
             )
@@ -648,8 +739,8 @@ class _TensorElementsFigureController:
         self._tensor_index = 0
         self._reset_payload_caches()
         if self._allow_interactive_fallback:
-            self._set_group_mode_for_record(
-                record,
+            self._set_group_mode_for_index(
+                index=self._tensor_index,
                 group=self._group,
                 preferred_mode=self._mode,
             )

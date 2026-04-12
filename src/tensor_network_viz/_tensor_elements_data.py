@@ -1293,6 +1293,46 @@ def _topk_sort_key(magnitude: float, flat_index: int) -> tuple[float, int]:
     return (-sortable_magnitude, flat_index)
 
 
+def _normalized_topk_magnitudes(magnitudes: NumericArray) -> NumericArray:
+    normalized = np.asarray(magnitudes, dtype=float).reshape(-1).copy()
+    normalized[np.isnan(normalized)] = float("-inf")
+    return normalized
+
+
+def _topk_flat_indices(magnitudes: NumericArray, *, count: int) -> NumericArray:
+    normalized = _normalized_topk_magnitudes(magnitudes)
+    size = int(normalized.size)
+    requested_count = min(max(int(count), 0), size)
+    if requested_count <= 0:
+        return np.asarray([], dtype=np.intp)
+    if requested_count >= size:
+        ranked = sorted(
+            range(size),
+            key=lambda flat_index: _topk_sort_key(float(normalized[flat_index]), flat_index),
+        )
+        return np.asarray(ranked, dtype=np.intp)
+
+    partition_index = size - requested_count
+    partitioned = np.argpartition(normalized, partition_index)
+    threshold = float(normalized[int(partitioned[partition_index])])
+    higher = np.flatnonzero(normalized > threshold)
+    higher_ranked = np.asarray(
+        sorted(
+            (int(flat_index) for flat_index in higher),
+            key=lambda flat_index: _topk_sort_key(float(normalized[flat_index]), flat_index),
+        ),
+        dtype=np.intp,
+    )
+    remaining = requested_count - int(higher_ranked.size)
+    if remaining <= 0:
+        return higher_ranked[:requested_count]
+    equal = np.flatnonzero(normalized == threshold)
+    selected_equal = np.asarray(equal[:remaining], dtype=np.intp)
+    if higher_ranked.size == 0:
+        return selected_equal
+    return np.concatenate((higher_ranked, selected_equal))
+
+
 def _build_topk_lines(record: _TensorRecord, *, count: int) -> list[str]:
     array = np.asarray(record.array)
     requested_count = min(int(count), int(array.size))
@@ -1304,11 +1344,9 @@ def _build_topk_lines(record: _TensorRecord, *, count: int) -> list[str]:
     magnitudes = np.ravel(np.abs(array))
     values = np.ravel(array)
     axis_names = _resolved_axis_names(record)
-    ranked_indices = sorted(
-        range(int(magnitudes.size)),
-        key=lambda flat_index: _topk_sort_key(float(magnitudes[flat_index]), flat_index),
-    )
-    for rank, flat_index in enumerate(ranked_indices[:requested_count], start=1):
+    ranked_indices = _topk_flat_indices(magnitudes, count=requested_count)
+    for rank, flat_index_raw in enumerate(ranked_indices, start=1):
+        flat_index = int(flat_index_raw)
         coordinates = np.unravel_index(flat_index, array.shape) if array.shape else ()
         if coordinates:
             coordinate_text = ", ".join(

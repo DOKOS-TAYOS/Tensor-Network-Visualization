@@ -18,6 +18,7 @@ from matplotlib.axes import Axes
 from matplotlib.backend_bases import MouseButton, MouseEvent
 
 import tensor_network_viz._tensor_elements_data as tensor_elements_data_module
+import tensor_network_viz._tensor_elements_payloads as tensor_elements_payloads_module
 from plotting_helpers import assert_rendered_figure
 from tensor_network_viz import (
     EinsumTrace,
@@ -28,6 +29,7 @@ from tensor_network_viz import (
     show_tensor_elements,
 )
 from tensor_network_viz._tensor_elements_data import (
+    _build_topk_lines,
     _extract_einsum_playback_step_records,
     _extract_playback_step_records,
 )
@@ -718,6 +720,128 @@ def test_show_tensor_elements_reuses_prepared_payloads_for_revisited_modes(
     assert counts["distribution"] == 1
 
 
+def test_show_tensor_elements_reuses_prepared_payloads_for_revisited_data_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz.tensor_elements as tensor_elements_module
+
+    tensor = DummyTensorNetworkNode(
+        np.arange(12, dtype=float).reshape(3, 4),
+        name="CachedDataMode",
+        axis_names=("row", "col"),
+    )
+    counts: dict[str, int] = {}
+    original_prepare_mode_payload = tensor_elements_module._prepare_mode_payload
+
+    def counting_prepare_mode_payload(
+        record: Any,
+        *,
+        config: TensorElementsConfig,
+        mode: str,
+    ) -> tuple[str, Any]:
+        counts[mode] = counts.get(mode, 0) + 1
+        return original_prepare_mode_payload(record, config=config, mode=mode)
+
+    monkeypatch.setattr(
+        tensor_elements_module,
+        "_prepare_mode_payload",
+        counting_prepare_mode_payload,
+    )
+
+    fig, _ = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="magnitude"),
+        show=False,
+        show_controls=True,
+    )
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    controller.set_mode("data", redraw=False)
+    controller.set_mode("magnitude", redraw=False)
+    controller.set_mode("data", redraw=False)
+
+    assert counts["magnitude"] == 1
+    assert counts["data"] == 1
+
+
+def test_show_tensor_elements_mode_switch_with_same_options_reuses_mode_radio(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(6, dtype=float).reshape(2, 3),
+        name="ModeRadioReuse",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(tensor, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+    mode_radio_before = controller._mode_radio
+    rebuild_calls = {"count": 0}
+    original_rebuild_mode_radio = controller._rebuild_mode_radio
+
+    def counting_rebuild_mode_radio() -> None:
+        rebuild_calls["count"] += 1
+        original_rebuild_mode_radio()
+
+    monkeypatch.setattr(controller, "_rebuild_mode_radio", counting_rebuild_mode_radio)
+
+    controller.set_mode("magnitude", redraw=False)
+
+    assert_rendered_figure(fig, ax)
+    assert rebuild_calls["count"] == 0
+    assert controller._mode_radio is mode_radio_before
+
+
+def test_show_tensor_elements_reuses_spectral_mode_flags_for_seen_tensors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.arange(4, dtype=float).reshape(2, 2),
+            name="SpectralA",
+            axis_names=("row", "col"),
+        ),
+        DummyTensorNetworkNode(
+            (np.arange(4, dtype=float).reshape(2, 2) + 10.0),
+            name="SpectralB",
+            axis_names=("row", "col"),
+        ),
+    ]
+    calls = {"count": 0}
+    original_spectral_mode_flags = tensor_elements_payloads_module._spectral_mode_flags
+
+    def counting_spectral_mode_flags(
+        record: _TensorRecord,
+        *,
+        config: TensorElementsConfig,
+    ) -> tuple[bool, bool]:
+        calls["count"] += 1
+        return original_spectral_mode_flags(record, config=config)
+
+    monkeypatch.setattr(
+        tensor_elements_payloads_module,
+        "_spectral_mode_flags",
+        counting_spectral_mode_flags,
+    )
+
+    fig, ax = show_tensor_elements(tensors, show=False, show_controls=True)
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    controller.set_group("diagnostic", redraw=False)
+    calls_after_first_tensor = calls["count"]
+    controller.set_mode("sign", redraw=False)
+    controller.set_tensor_index(1, redraw=False)
+    calls_after_second_tensor = calls["count"]
+    controller.set_group("basic", redraw=False)
+    controller.set_tensor_index(0, redraw=False)
+    controller.set_group("diagnostic", redraw=False)
+
+    assert_rendered_figure(fig, ax)
+    assert calls_after_first_tensor > 0
+    assert calls_after_second_tensor > calls_after_first_tensor
+    assert calls["count"] == calls_after_second_tensor
+
+
 def test_show_tensor_elements_rejects_multi_tensor_with_explicit_ax() -> None:
     tensors = [
         DummyTensorNetworkNode(
@@ -1370,6 +1494,53 @@ def test_show_tensor_elements_data_mode_uses_magnitude_for_complex_topk() -> Non
     assert_rendered_figure(fig, ax)
     assert "mean|x|" in text_blob
     assert "row=0, col=1" in text_blob
+
+
+def test_build_topk_lines_preserves_tie_order_and_relegates_nan() -> None:
+    record = _TensorRecord(
+        array=np.array([[3.0, -3.0, np.nan], [2.0, -1.0, 0.0]], dtype=float),
+        axis_names=("row", "col"),
+        engine="numpy",
+        name="TopKNaN",
+    )
+
+    lines = _build_topk_lines(record, count=4)
+    text_blob = "\n".join(lines)
+
+    assert lines[0] == "top 4 by magnitude:"
+    assert "1. |x|=3, value=3, at (row=0, col=0)" in text_blob
+    assert "2. |x|=3, value=-3, at (row=0, col=1)" in text_blob
+    assert "3. |x|=2, value=2, at (row=1, col=0)" in text_blob
+    assert "4. |x|=1, value=-1, at (row=1, col=1)" in text_blob
+    assert "row=0, col=2" not in text_blob
+
+
+def test_build_topk_lines_uses_partial_selection_for_large_tensor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = _TensorRecord(
+        array=np.arange(1024, dtype=float).reshape(32, 32),
+        axis_names=("row", "col"),
+        engine="numpy",
+        name="TopKLarge",
+    )
+    calls = {"count": 0}
+    original_argpartition = tensor_elements_data_module.np.argpartition
+
+    def counting_argpartition(
+        values: np.ndarray[Any, Any],
+        kth: int | np.ndarray[Any, Any],
+        axis: int = -1,
+    ) -> np.ndarray[Any, Any]:
+        calls["count"] += 1
+        return np.asarray(original_argpartition(values, kth, axis=axis))
+
+    monkeypatch.setattr(tensor_elements_data_module.np, "argpartition", counting_argpartition)
+
+    lines = _build_topk_lines(record, count=8)
+
+    assert len(lines) == 9
+    assert calls["count"] == 1
 
 
 def test_show_tensor_elements_data_mode_excludes_spectral_analysis_details() -> None:
