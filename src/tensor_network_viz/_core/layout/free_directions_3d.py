@@ -77,6 +77,12 @@ class _LayerInfo3D:
     layer_count: int
 
 
+@dataclass(frozen=True)
+class _ChainCandidateContext3D:
+    frame: _LocalFrame3D
+    interior_node_ids: frozenset[int]
+
+
 def _direction_angle_conflicts_3d(
     direction: np.ndarray,
     other_direction: np.ndarray,
@@ -368,14 +374,34 @@ def _chain_candidates_3d(
     frame: _LocalFrame3D,
     *,
     node_id: int,
+    interior_node_ids: frozenset[int] | None = None,
 ) -> Iterator[np.ndarray]:
-    chain_order = [chain_id for chain_id in component.chain_order if chain_id in component.node_ids]
-    is_interior = node_id in chain_order[1:-1]
+    if interior_node_ids is None:
+        chain_order = [
+            chain_id for chain_id in component.chain_order if chain_id in component.node_ids
+        ]
+        interior_node_ids = frozenset(chain_order[1:-1])
+    is_interior = node_id in interior_node_ids
     skip = frozenset({_RIGHT_LOCAL_3D, _LEFT_LOCAL_3D}) if is_interior else frozenset()
     return _world_candidates_from_local_order_3d(
         frame,
         _CUBE_LOCAL_ORDER_3D,
         skip_local_directions=skip,
+    )
+
+
+def _chain_candidate_context_3d(
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> _ChainCandidateContext3D:
+    axis, lateral, normal = _component_orthogonal_basis(component, positions)
+    frame = _orthonormal_frame_3d(front=normal, right_hint=axis, up_hint=lateral)
+    chain_order = tuple(
+        chain_id for chain_id in component.chain_order if chain_id in component.node_ids
+    )
+    return _ChainCandidateContext3D(
+        frame=frame,
+        interior_node_ids=frozenset(chain_order[1:-1]),
     )
 
 
@@ -496,13 +522,23 @@ def _node_candidate_directions_3d(
     positions: NodePositions,
     *,
     node_id: int,
+    chain_context: _ChainCandidateContext3D | None = None,
 ) -> Iterator[np.ndarray]:
-    axis, lateral, normal = _component_orthogonal_basis(component, positions)
     if component.structure_kind == "chain":
-        frame = _orthonormal_frame_3d(front=normal, right_hint=axis, up_hint=lateral)
-        return _chain_candidates_3d(component, frame, node_id=node_id)
+        resolved_chain_context = (
+            chain_context
+            if chain_context is not None
+            else _chain_candidate_context_3d(component, positions)
+        )
+        return _chain_candidates_3d(
+            component,
+            resolved_chain_context.frame,
+            node_id=node_id,
+            interior_node_ids=resolved_chain_context.interior_node_ids,
+        )
     if component.structure_kind == "grid3d" and component.grid3d_mapping is not None:
         return _grid3d_candidates_3d(component, positions, node_id=node_id)
+    axis, lateral, normal = _component_orthogonal_basis(component, positions)
     return _surface_or_stepped_candidates_3d(
         component,
         positions,
@@ -648,6 +684,7 @@ def _compute_free_directions_3d(
     rng = np.random.default_rng()
 
     for component in layout_components:
+        chain_context: _ChainCandidateContext3D | None = None
         for node_id in _component_node_order_3d(component):
             if node_id not in graph.nodes or node_id not in positions:
                 continue
@@ -673,10 +710,13 @@ def _compute_free_directions_3d(
                 if named_direction is not None
             }
 
+            if component.structure_kind == "chain" and chain_context is None:
+                chain_context = _chain_candidate_context_3d(component, positions)
             deterministic_candidates = _node_candidate_directions_3d(
                 component,
                 positions,
                 node_id=node_id,
+                chain_context=chain_context,
             )
             random_candidates: tuple[np.ndarray, ...] | None = None
             tried_direction_keys: set[tuple[float, float, float]] = set()

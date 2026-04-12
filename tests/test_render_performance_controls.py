@@ -9,6 +9,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 from tensor_network_viz import PlotConfig
 from tensor_network_viz._core.draw.fonts_and_scale import _draw_scale_params
@@ -21,6 +22,7 @@ from tensor_network_viz._core.graph import (
     _make_node,
 )
 from tensor_network_viz._core.renderer import _plot_graph, _resolve_positions
+from tensor_network_viz._matplotlib_state import get_scene
 
 
 def _chain_graph(n_nodes: int) -> _GraphData:
@@ -257,3 +259,20 @@ def test_2d_plotter_collections_disable_autolim(monkeypatch) -> None:
 
     assert autolim_values
     assert all(value is False for value in autolim_values)
+
+
+def test_3d_plotter_batches_edges_without_losing_scene_geometry() -> None:
+    fig, ax = _plot_graph(
+        _chain_graph(48),
+        dimensions=3,
+        config=PlotConfig(tensor_label_refinement="never"),
+        renderer_name="test_3d_edge_batching",
+    )
+    try:
+        scene = get_scene(ax)
+        assert scene is not None
+        assert len(scene.edge_geometry) == 47
+        assert len(scene.edge_artists) == 1
+        assert isinstance(scene.edge_artists[0], Line3DCollection)
+    finally:
+        plt.close(fig)
