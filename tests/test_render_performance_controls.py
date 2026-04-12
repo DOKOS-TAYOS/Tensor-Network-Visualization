@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -22,6 +23,10 @@ from tensor_network_viz._core.graph import (
     _make_node,
 )
 from tensor_network_viz._core.renderer import _plot_graph, _resolve_positions
+from tensor_network_viz._interactive_scene import (
+    _ensure_edge_label_artists,
+    _ensure_tensor_label_artists,
+)
 from tensor_network_viz._matplotlib_state import get_scene
 
 
@@ -117,6 +122,110 @@ def test_never_tensor_label_refinement_skips_refine_even_below_threshold(monkeyp
     )
 
     assert calls == []
+
+
+def test_small_label_toggle_keeps_exact_text_metrics(monkeypatch) -> None:
+    import tensor_network_viz._core.draw.fonts_and_scale as font_metrics
+
+    def fail_fast_width(text: str, *, fontsize_pt: float) -> float:
+        raise AssertionError(f"small label toggles should keep exact metrics for {text!r}")
+
+    monkeypatch.setattr(font_metrics, "_textpath_width_pts_fast", fail_fast_width)
+
+    fig, ax = _plot_graph(
+        _chain_graph(4),
+        dimensions=2,
+        config=PlotConfig(tensor_label_refinement="never"),
+        show_tensor_labels=False,
+        show_index_labels=False,
+        renderer_name="test_small_label_toggle_exact_metrics",
+    )
+    try:
+        scene = get_scene(ax)
+        assert scene is not None
+
+        _ensure_tensor_label_artists(scene)
+        _ensure_edge_label_artists(scene)
+
+        assert len(scene.tensor_label_artists) == 4
+        assert len(scene.edge_label_artists) == 6
+    finally:
+        plt.close(fig)
+
+
+def test_large_label_toggle_uses_fast_text_metrics(monkeypatch) -> None:
+    import tensor_network_viz._core.draw.fonts_and_scale as font_metrics
+
+    def fail_exact_width(text: str, fontsize_pt_key: float) -> float:
+        raise AssertionError(
+            f"large label toggles should avoid exact metrics for {text!r} at {fontsize_pt_key!r} pt"
+        )
+
+    monkeypatch.setattr(font_metrics, "_textpath_width_pts_cached", fail_exact_width)
+
+    fig, ax = _plot_graph(
+        _chain_graph(800),
+        dimensions=2,
+        config=PlotConfig(tensor_label_refinement="never"),
+        show_tensor_labels=False,
+        show_index_labels=False,
+        renderer_name="test_large_label_toggle_fast_metrics",
+    )
+    try:
+        scene = get_scene(ax)
+        assert scene is not None
+
+        started = time.perf_counter()
+        _ensure_tensor_label_artists(scene)
+        tensor_toggle = time.perf_counter() - started
+
+        started = time.perf_counter()
+        _ensure_edge_label_artists(scene)
+        edge_toggle = time.perf_counter() - started
+
+        assert len(scene.tensor_label_artists) == 800
+        assert len(scene.edge_label_artists) == 1598
+        assert tensor_toggle < 4.0, f"Tensor labels toggle took {tensor_toggle:.4f}s"
+        assert edge_toggle < 6.0, f"Edge labels toggle took {edge_toggle:.4f}s"
+    finally:
+        plt.close(fig)
+
+
+def test_explicit_label_fontsizes_skip_dynamic_text_metrics(monkeypatch) -> None:
+    import tensor_network_viz._core.draw.fonts_and_scale as font_metrics
+
+    def fail_exact_width(text: str, fontsize_pt_key: float) -> float:
+        raise AssertionError(f"explicit label fonts should skip exact metrics for {text!r}")
+
+    def fail_fast_width(text: str, *, fontsize_pt: float) -> float:
+        raise AssertionError(f"explicit label fonts should skip fast metrics for {text!r}")
+
+    monkeypatch.setattr(font_metrics, "_textpath_width_pts_cached", fail_exact_width)
+    monkeypatch.setattr(font_metrics, "_textpath_width_pts_fast", fail_fast_width)
+
+    fig, ax = _plot_graph(
+        _chain_graph(800),
+        dimensions=2,
+        config=PlotConfig(
+            tensor_label_fontsize=9.0,
+            edge_label_fontsize=8.0,
+            tensor_label_refinement="never",
+        ),
+        show_tensor_labels=False,
+        show_index_labels=False,
+        renderer_name="test_explicit_label_fontsizes_skip_metrics",
+    )
+    try:
+        scene = get_scene(ax)
+        assert scene is not None
+
+        _ensure_tensor_label_artists(scene)
+        _ensure_edge_label_artists(scene)
+
+        assert len(scene.tensor_label_artists) == 800
+        assert len(scene.edge_label_artists) == 1598
+    finally:
+        plt.close(fig)
 
 
 def test_resolve_positions_reuses_cached_layout_for_same_key(monkeypatch) -> None:

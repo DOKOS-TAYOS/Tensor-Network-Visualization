@@ -28,11 +28,15 @@ _TEXT_REF_HEIGHT_POINTS: float = 9.5
 
 
 @functools.lru_cache(maxsize=1024)
-def _textpath_diagonal_points_ref10(text: str) -> float:
+def _textpath_diagonal_points_ref10(text: str, *, fast_metrics: bool = False) -> float:
     """Diagonal of TextPath at ref fontsize=10pt in points (path units × calibration factor)."""
     if not text.strip():
         return 0.0
-    width_points = _textpath_width_pts(text, fontsize_pt=10.0)
+    width_points = _textpath_width_pts(
+        text,
+        fontsize_pt=10.0,
+        fast_metrics=fast_metrics,
+    )
     return float(
         math.hypot(float(width_points), _TEXT_REF_HEIGHT_POINTS) * _TEXT_RENDER_DIAGONAL_FACTOR
     )
@@ -44,12 +48,13 @@ def _tensor_label_fontsize_to_fit(
     cap_pt: float,
     pixel_radius: float,
     fig: Figure,
+    fast_text_metrics: bool = False,
 ) -> float:
     """First-pass font size from TextPath; refined in `_refit_tensor_labels_to_disks`."""
     if not text.strip():
         return float(max(3.0, cap_pt))
     ref = 10.0
-    diag_pts = _textpath_diagonal_points_ref10(text)
+    diag_pts = _textpath_diagonal_points_ref10(text, fast_metrics=fast_text_metrics)
     if diag_pts <= 1e-12:
         return float(max(3.0, cap_pt))
     diag_px_ref = diag_pts * float(fig.dpi) / 72.0
@@ -77,13 +82,17 @@ def _tensor_label_fontsize_for_render(
     pixel_radius: float,
     fig: Figure,
     dimensions: Literal[2, 3],
+    fast_text_metrics: bool = False,
 ) -> float:
+    if config.tensor_label_fontsize is not None:
+        return float(max(3.0, float(config.tensor_label_fontsize)))
     cap_pt = _resolved_tensor_label_font_cap_pt(config=config, p=p)
     fontsize = _tensor_label_fontsize_to_fit(
         text=text,
         cap_pt=cap_pt,
         pixel_radius=pixel_radius,
         fig=fig,
+        fast_text_metrics=fast_text_metrics,
     )
     if dimensions == 3 and config.tensor_label_fontsize is None:
         cap_tensor = float(p.font_tensor_label_max) * _LABEL_FONT_3D_SCALE
@@ -184,6 +193,7 @@ def _draw_labels(
                 pixel_radius=float(r_px),
                 fig=fig,
                 dimensions=dimensions,
+                fast_text_metrics=bool(p.fast_text_metrics),
             )
             if tensor_label_zorder_by_node is None:
                 z_lbl = float(_ZORDER_TENSOR_NAME)

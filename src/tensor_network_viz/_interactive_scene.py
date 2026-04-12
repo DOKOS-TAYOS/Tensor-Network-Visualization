@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, cast
 
 import numpy as np
@@ -24,7 +25,10 @@ from ._core.draw.dangling_self_edges import (
     _draw_dangling_edge_labels,
     _draw_self_loop_edge_labels,
 )
-from ._core.draw.fonts_and_scale import _register_2d_zoom_font_scaling
+from ._core.draw.fonts_and_scale import (
+    _FAST_TEXT_METRICS_LABEL_THRESHOLD,
+    _register_2d_zoom_font_scaling,
+)
 from ._core.draw.hover import _RenderHoverState
 from ._core.draw.label_descriptors import (
     _AnyLabelDescriptor,
@@ -36,6 +40,7 @@ from ._core.draw.labels_misc import (
     _contraction_hover_label_text,
     _dangling_hover_label_text,
     _edge_index_text_kwargs,
+    _estimate_drawn_label_count,
     _self_loop_hover_label_text,
 )
 from ._core.draw.plotter import (
@@ -297,6 +302,30 @@ def _refresh_2d_zoom_scaling(scene: _InteractiveSceneState) -> None:
         _register_2d_zoom_font_scaling(cast(Axes, scene.ax))
 
 
+def _scene_tensor_label_fast_text_metrics(scene: _InteractiveSceneState) -> bool:
+    if scene.config.tensor_label_fontsize is not None:
+        return False
+    if scene.params.fast_text_metrics:
+        return True
+    label_count = sum(
+        1 for node_id in scene.visible_node_ids if not scene.graph.nodes[node_id].is_virtual
+    )
+    return label_count >= _FAST_TEXT_METRICS_LABEL_THRESHOLD
+
+
+def _scene_edge_label_fast_text_metrics(scene: _InteractiveSceneState) -> bool:
+    if scene.config.edge_label_fontsize is not None:
+        return False
+    if scene.params.fast_text_metrics:
+        return True
+    label_count = _estimate_drawn_label_count(
+        scene.graph,
+        show_tensor_labels=False,
+        show_index_labels=True,
+    )
+    return label_count >= _FAST_TEXT_METRICS_LABEL_THRESHOLD
+
+
 def _resolve_bond_label_descriptor(
     scene: _InteractiveSceneState,
     descriptor: _DeferredBondLabelDescriptor,
@@ -310,6 +339,7 @@ def _resolve_bond_label_descriptor(
         is_physical=descriptor.is_physical,
         peer_captions_for_width=descriptor.peer_captions_for_width,
         preferred_fontsize_pt=scene.config.edge_label_fontsize,
+        fast_text_metrics=_scene_edge_label_fast_text_metrics(scene),
     )
     text_kwargs = _edge_index_text_kwargs(
         scene.config,
@@ -360,6 +390,7 @@ def _resolve_self_loop_label_descriptor(
         is_physical=False,
         peer_captions_for_width=descriptor.peer_captions_for_width,
         preferred_fontsize_pt=scene.config.edge_label_fontsize,
+        fast_text_metrics=_scene_edge_label_fast_text_metrics(scene),
     )
     world_perp = descriptor.offset_direction if scene.dimensions == 3 else None
     offset = (
@@ -443,6 +474,7 @@ def _plot_label_descriptors(
                 pixel_radius=float(pixel_radius),
                 fig=scene.ax.figure,
                 dimensions=scene.dimensions,
+                fast_text_metrics=_scene_tensor_label_fast_text_metrics(scene),
             )
             kwargs["fontsize"] = float(fontsize)
         scene.plotter.plot_text(
@@ -488,6 +520,7 @@ def _build_tensor_label_descriptors(
             pixel_radius=float(pixel_radius),
             fig=scene.ax.figure,
             dimensions=scene.dimensions,
+            fast_text_metrics=_scene_tensor_label_fast_text_metrics(scene),
         )
         descriptors.append(
             _TextLabelDescriptor(
@@ -515,6 +548,10 @@ def _build_edge_label_descriptors(
         return cast(tuple[_TextLabelDescriptor, ...], tuple(scene.edge_label_descriptors))
     descriptors: list[_TextLabelDescriptor] = []
     zorder_label = _last_edge_label_zorder(scene)
+    edge_params = replace(
+        scene.params,
+        fast_text_metrics=_scene_edge_label_fast_text_metrics(scene),
+    )
     for entry in scene.edge_geometry:
         edge = entry.edge
         if edge.kind == "contraction":
@@ -529,7 +566,7 @@ def _build_edge_label_descriptors(
                 right_id=right_id,
                 show_index_labels=True,
                 config=scene.config,
-                p=scene.params,
+                p=edge_params,
                 dimensions=scene.dimensions,
                 ax=scene.ax,
                 scale=scene.scale,
@@ -547,7 +584,7 @@ def _build_edge_label_descriptors(
                 show_index_labels=True,
                 config=scene.config,
                 dimensions=scene.dimensions,
-                p=scene.params,
+                p=edge_params,
                 ax=scene.ax,
                 scale=scene.scale,
                 zorder_label=zorder_label,
@@ -565,7 +602,7 @@ def _build_edge_label_descriptors(
                 show_index_labels=True,
                 config=scene.config,
                 dimensions=scene.dimensions,
-                p=scene.params,
+                p=edge_params,
                 ax=scene.ax,
                 scale=scene.scale,
                 zorder_label=zorder_label,

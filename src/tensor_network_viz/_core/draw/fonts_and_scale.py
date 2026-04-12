@@ -28,6 +28,7 @@ def _figure_size_sqrt_ratio(fig: Figure) -> float:
 
 
 _TEXTPATH_WIDTH_CACHE_MAX: int = 8192
+_FAST_TEXT_METRICS_LABEL_THRESHOLD: int = 256
 
 
 @functools.lru_cache(maxsize=_TEXTPATH_WIDTH_CACHE_MAX)
@@ -40,8 +41,38 @@ def _textpath_width_pts_cached(text: str, fontsize_pt_key: float) -> float:
     return float(tp.get_extents().width)
 
 
-def _textpath_width_pts(text: str, *, fontsize_pt: float) -> float:
+@functools.lru_cache(maxsize=_TEXTPATH_WIDTH_CACHE_MAX)
+def _textpath_width_pts_fast_cached(text: str, fontsize_pt_key: float) -> float:
+    """Fast TextPath width approximation from raw vertices.
+
+    ``TextPath.get_extents()`` walks Bezier extrema and becomes expensive for many unique labels.
+    The vertex span is slightly less exact, but avoids that path for dense interactive views.
+    """
+    if not text.strip():
+        return 0.0
+    fp = FontProperties(size=float(fontsize_pt_key))
+    tp = TextPath((0.0, 0.0), text, prop=fp)
+    vertices = np.asarray(tp.vertices, dtype=float)
+    if vertices.size == 0:
+        return 0.0
+    return float(vertices[:, 0].max() - vertices[:, 0].min())
+
+
+def _textpath_width_pts_fast(text: str, *, fontsize_pt: float) -> float:
+    """Fast horizontal span of *text* at *fontsize_pt* for dense label views."""
+    key = round(float(fontsize_pt), 6)
+    return float(_textpath_width_pts_fast_cached(text, key))
+
+
+def _textpath_width_pts(
+    text: str,
+    *,
+    fontsize_pt: float,
+    fast_metrics: bool = False,
+) -> float:
     """Horizontal advance of *text* from Matplotlib TextPath at *fontsize_pt* (points)."""
+    if fast_metrics:
+        return _textpath_width_pts_fast(text, fontsize_pt=fontsize_pt)
     key = round(float(fontsize_pt), 6)
     return float(_textpath_width_pts_cached(text, key))
 
@@ -86,6 +117,7 @@ class _DrawScaleParams:
     label_offset: float
     ellipse_w: float
     ellipse_h: float
+    fast_text_metrics: bool = False
 
 
 def _draw_scale_params(
@@ -96,11 +128,18 @@ def _draw_scale_params(
     is_3d: bool,
     font_figure_scale: float = 1.0,
     label_slots: int = 1,
+    fast_text_metrics: bool | None = None,
 ) -> _DrawScaleParams:
     """Compute scale-dependent drawing parameters from config."""
     fs = font_figure_scale
     tensor_fs = _figure_base_size_scale(fig)
-    bbox_pad = _index_label_bbox_pad(max(1, label_slots))
+    resolved_label_slots = max(1, int(label_slots))
+    bbox_pad = _index_label_bbox_pad(resolved_label_slots)
+    use_fast_text_metrics = (
+        resolved_label_slots >= _FAST_TEXT_METRICS_LABEL_THRESHOLD
+        if fast_text_metrics is None
+        else bool(fast_text_metrics)
+    )
     r = (
         config.node_radius if config.node_radius is not None else PlotConfig.DEFAULT_NODE_RADIUS
     ) * scale
@@ -128,6 +167,7 @@ def _draw_scale_params(
         label_offset=0.08 * scale * float(np.clip(0.82 + 0.22 * fs, 0.75, 1.2)),
         ellipse_w=0.16 * scale,
         ellipse_h=0.12 * scale,
+        fast_text_metrics=use_fast_text_metrics,
     )
 
 
@@ -176,9 +216,12 @@ __all__ = [
     "_figure_base_size_scale",
     "_figure_relative_font_scale",
     "_figure_size_sqrt_ratio",
+    "_FAST_TEXT_METRICS_LABEL_THRESHOLD",
     "_index_label_bbox_pad",
     "_on_2d_limits_changed",
     "_register_2d_zoom_font_scaling",
     "_textpath_width_pts",
     "_textpath_width_pts_cached",
+    "_textpath_width_pts_fast",
+    "_textpath_width_pts_fast_cached",
 ]

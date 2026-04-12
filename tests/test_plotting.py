@@ -17,6 +17,7 @@ from matplotlib.backend_bases import CloseEvent, MouseButton, MouseEvent
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgba
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 import tensor_network_viz._core.renderer as core_renderer_module
 import tensor_network_viz._interaction.controller as interaction_controller_module
@@ -79,6 +80,10 @@ from tensor_network_viz.tensornetwork import (
 from tensor_network_viz.tensornetwork.graph import (
     _build_graph as _build_tensornetwork_graph,
 )
+
+
+def _line3d_collections(ax: Any) -> list[Line3DCollection]:
+    return [collection for collection in ax.collections if isinstance(collection, Line3DCollection)]
 
 
 class DummyEdge:
@@ -967,7 +972,7 @@ def test_show_tensor_network_reuses_cached_axes_without_creating_empty_overlays(
     assert cached_3d_ax is not None
     after_first_switch_count = len(fig.axes)
     assert after_first_switch_count == initial_axes_count + 1
-    assert len(cached_3d_ax.lines) >= 1
+    assert _line3d_collections(cached_3d_ax)
 
     controls.set_view("2d")
 
@@ -979,7 +984,7 @@ def test_show_tensor_network_reuses_cached_axes_without_creating_empty_overlays(
 
     assert len(fig.axes) == after_first_switch_count
     assert getattr(fig, "_tensor_network_viz_active_axes", None) is cached_3d_ax
-    assert len(cached_3d_ax.lines) >= 1
+    assert _line3d_collections(cached_3d_ax)
 
 
 def test_show_tensor_network_reuses_tensor_and_edge_label_artists_when_toggled() -> None:
@@ -2848,7 +2853,7 @@ def test_plot_tensorkrowch_network_3d_returns_3d_axes() -> None:
 
     assert_rendered_figure(fig, ax)
     assert ax.name == "3d"
-    assert len(ax.lines) == 1
+    assert len(_line3d_collections(ax)) == 1
     assert len(ax.collections) >= 1
 
 
@@ -2907,7 +2912,7 @@ def test_plot_tensorkrowch_network_3d_draws_nodes_above_dangling_edges() -> None
         config=PlotConfig(show_nodes=True),
     )
 
-    line_zorders = [float(line.get_zorder()) for line in ax.lines]
+    line_zorders = [float(collection.get_zorder()) for collection in _line3d_collections(ax)]
     node_zorders = [
         float(collection.get_zorder())
         for collection in ax.collections
@@ -2928,7 +2933,7 @@ def test_plot_tensornetwork_network_3d_returns_3d_axes() -> None:
 
     assert_rendered_figure(fig, ax)
     assert ax.name == "3d"
-    assert len(ax.lines) == 1
+    assert len(_line3d_collections(ax)) == 1
 
 
 def test_plot_tensorkrowch_network_3d_rejects_2d_axis() -> None:

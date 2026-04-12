@@ -50,7 +50,7 @@ def test_tensor_label_diagonal_estimate_avoids_exact_textpath(
     monkeypatch.setattr(
         tensors,
         "_textpath_width_pts",
-        lambda text, *, fontsize_pt: 12.0 if text else 0.0,
+        lambda text, *, fontsize_pt, fast_metrics=False: 12.0 if text else 0.0,
         raising=False,
     )
 

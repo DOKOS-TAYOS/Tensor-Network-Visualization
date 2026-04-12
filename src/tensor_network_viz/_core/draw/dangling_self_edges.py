@@ -169,6 +169,7 @@ def _draw_dangling_edge_labels(
         dimensions=dimensions,
         is_physical=True,
         preferred_fontsize_pt=config.edge_label_fontsize,
+        fast_text_metrics=bool(p.fast_text_metrics),
     )
     text_kwargs = _edge_index_text_kwargs(
         config,
@@ -392,6 +393,7 @@ def _draw_self_loop_edge_labels(
             is_physical=False,
             peer_captions_for_width=peer_width,
             preferred_fontsize_pt=config.edge_label_fontsize,
+            fast_text_metrics=bool(p.fast_text_metrics),
         )
         text_kwargs_a = {
             **_edge_index_text_kwargs(
@@ -446,6 +448,7 @@ def _draw_self_loop_edge_labels(
             is_physical=False,
             peer_captions_for_width=peer_width,
             preferred_fontsize_pt=config.edge_label_fontsize,
+            fast_text_metrics=bool(p.fast_text_metrics),
         )
         text_kwargs_b = {
             **_edge_index_text_kwargs(

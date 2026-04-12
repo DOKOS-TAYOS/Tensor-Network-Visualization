@@ -22,6 +22,7 @@ from .constants import (
 )
 from .edges import _draw_edges, _draw_edges_2d_layered
 from .fonts_and_scale import (
+    _FAST_TEXT_METRICS_LABEL_THRESHOLD,
     _draw_scale_params,
     _DrawScaleParams,
     _figure_relative_font_scale,
@@ -278,6 +279,11 @@ def _prepare_render_context(
         show_index_labels=show_index_labels,
     )
     font_figure_scale = _figure_relative_font_scale(ax.figure, label_slots)
+    metric_label_slots = _estimate_drawn_label_count(
+        graph,
+        show_tensor_labels=bool(show_tensor_labels or config.hover_labels),
+        show_index_labels=show_index_labels,
+    )
     params = _draw_scale_params(
         config,
         scale,
@@ -285,6 +291,7 @@ def _prepare_render_context(
         is_3d=dimensions == 3,
         font_figure_scale=font_figure_scale,
         label_slots=max(1, label_slots),
+        fast_text_metrics=metric_label_slots >= _FAST_TEXT_METRICS_LABEL_THRESHOLD,
     )
     hover_edge_targets: list[tuple[np.ndarray, str]] | None = None
     tensor_hover_by_node: dict[int, tuple[str, float]] | None = None

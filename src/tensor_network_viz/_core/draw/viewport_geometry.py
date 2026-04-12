@@ -639,6 +639,7 @@ def _edge_index_fontsize_for_bond(
     is_physical: bool = False,
     peer_captions_for_width: tuple[str, ...] | None = None,
     preferred_fontsize_pt: float | None = None,
+    fast_text_metrics: bool = False,
 ) -> float:
     """Font size from **this** bond's on-screen length × span fraction.
 
@@ -664,15 +665,25 @@ def _edge_index_fontsize_for_bond(
                 continue
             w_ref = max(
                 w_ref,
-                _textpath_width_pts(peer_show, fontsize_pt=10.0)
+                _textpath_width_pts(
+                    peer_show,
+                    fontsize_pt=10.0,
+                    fast_metrics=fast_text_metrics,
+                )
                 * float(_EDGE_INDEX_LABEL_WIDTH_CALIB),
             )
         if w_ref < 1e-12:
-            w_ref = _textpath_width_pts(show, fontsize_pt=10.0) * float(
-                _EDGE_INDEX_LABEL_WIDTH_CALIB
-            )
+            w_ref = _textpath_width_pts(
+                show,
+                fontsize_pt=10.0,
+                fast_metrics=fast_text_metrics,
+            ) * float(_EDGE_INDEX_LABEL_WIDTH_CALIB)
     else:
-        w_ref = _textpath_width_pts(show, fontsize_pt=10.0) * float(_EDGE_INDEX_LABEL_WIDTH_CALIB)
+        w_ref = _textpath_width_pts(
+            show,
+            fontsize_pt=10.0,
+            fast_metrics=fast_text_metrics,
+        ) * float(_EDGE_INDEX_LABEL_WIDTH_CALIB)
     if w_ref < 1e-12 or target_px < 1e-12:
         return 1.0
     fs = 10.0 * target_px * 72.0 / (dpi * w_ref)
