@@ -22,6 +22,13 @@ class _RenderedEdgeGeometry:
     polyline: np.ndarray
 
 
+@dataclass(frozen=True)
+class _FocusSceneFeedback:
+    """Optional interactive feedback metadata derived from the active focus selection."""
+
+    disconnected_endpoints: tuple[str, str] | None = None
+
+
 @dataclass
 class _InteractiveSceneState:
     ax: Any
@@ -50,10 +57,12 @@ class _InteractiveSceneState:
     edge_label_descriptors: tuple[_AnyLabelDescriptor, ...] | None = None
     tensor_hover_payload: dict[int, tuple[str, float]] | None = None
     edge_hover_payload: tuple[tuple[np.ndarray, str], ...] | None = None
+    focus_feedback: _FocusSceneFeedback | None = None
     contraction_controls: Any = None
 
 
 __all__ = [
+    "_FocusSceneFeedback",
     "_InteractiveSceneState",
     "_RenderedEdgeGeometry",
     "_AnyLabelDescriptor",

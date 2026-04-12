@@ -100,6 +100,19 @@ def _build_chain_graph(
     return _GraphData(nodes=nodes, edges=tuple(edges))
 
 
+def _build_disconnected_singletons_graph(count: int) -> _GraphData:
+    nodes = {node_id: _make_node(f"S{node_id}", ("phys",)) for node_id in range(count)}
+    edges = tuple(
+        _make_dangling_edge(
+            _EdgeEndpoint(node_id, 0, "phys"),
+            name=f"phys_{node_id}",
+            label=None,
+        )
+        for node_id in range(count)
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
 def test_graph_edge_degree_counts_all_edge_kinds() -> None:
     graph = _build_chain_graph(length=3)
     assert _graph_edge_degree(graph, 0) == 1
@@ -445,6 +458,55 @@ def test_resolve_draw_scale_heuristic_when_no_contraction_edges() -> None:
     s = _resolve_draw_scale(graph, positions)
     lo, hi = 0.35, 1.85
     assert lo <= s <= hi
+
+
+@pytest.mark.parametrize(
+    ("component_count", "expected_columns", "expected_rows"),
+    [
+        (3, 2, 2),
+        (4, 2, 2),
+        (5, 3, 2),
+    ],
+)
+def test_compute_layout_disconnected_singletons_2d_uses_compact_grid_packing(
+    component_count: int,
+    expected_columns: int,
+    expected_rows: int,
+) -> None:
+    graph = _build_disconnected_singletons_graph(component_count)
+
+    positions = _compute_layout(graph, dimensions=2, seed=0, iterations=1)
+    coords = np.stack([positions[node_id] for node_id in sorted(graph.nodes)])
+    unique_x = {round(float(value), 6) for value in coords[:, 0]}
+    unique_y = {round(float(value), 6) for value in coords[:, 1]}
+
+    assert len(unique_x) == expected_columns
+    assert len(unique_y) == expected_rows
+
+
+@pytest.mark.parametrize(
+    ("component_count", "expected_columns", "expected_rows"),
+    [
+        (4, 2, 2),
+        (5, 3, 2),
+    ],
+)
+def test_compute_layout_disconnected_singletons_3d_uses_compact_grid_packing(
+    component_count: int,
+    expected_columns: int,
+    expected_rows: int,
+) -> None:
+    graph = _build_disconnected_singletons_graph(component_count)
+
+    positions = _compute_layout(graph, dimensions=3, seed=0, iterations=1)
+    coords = np.stack([positions[node_id] for node_id in sorted(graph.nodes)])
+    unique_x = {round(float(value), 6) for value in coords[:, 0]}
+    unique_y = {round(float(value), 6) for value in coords[:, 1]}
+    unique_z = {round(float(value), 6) for value in coords[:, 2]}
+
+    assert len(unique_x) == expected_columns
+    assert len(unique_y) == expected_rows
+    assert len(unique_z) == 1
 
 
 def _build_3d_grid_graph(lx: int, ly: int, lz: int) -> _GraphData:

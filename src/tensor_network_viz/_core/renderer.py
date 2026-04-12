@@ -22,7 +22,8 @@ from ..config import PlotConfig
 from .contractions import _ContractionGroups, _group_contractions, _iter_contractions
 from .draw.constants import _CURVE_NEAR_PAIR_REF, _CURVE_OFFSET_FACTOR
 from .draw.graph_pipeline import _draw_graph
-from .focus import filter_graph_for_focus
+from .draw.scene_state import _FocusSceneFeedback
+from .focus import _resolve_graph_for_focus
 from .graph import _GraphData
 from .graph_cache import _get_or_build_graph
 from .layout import (
@@ -509,7 +510,7 @@ def _plot_graph(
         dimensions=dimensions,
         seed=seed,
     )
-    draw_graph = filter_graph_for_focus(graph, style.focus)
+    draw_graph, focus_selection = _resolve_graph_for_focus(graph, style.focus)
     draw_positions = {
         node_id: geometry.positions[node_id]
         for node_id in draw_graph.nodes
@@ -523,6 +524,11 @@ def _plot_graph(
     draw_contraction_groups = (
         geometry.contraction_groups if draw_graph is graph else _group_contractions(draw_graph)
     )
+    focus_feedback = None
+    if focus_selection is not None and focus_selection.disconnected_endpoints is not None:
+        focus_feedback = _FocusSceneFeedback(
+            disconnected_endpoints=focus_selection.disconnected_endpoints
+        )
     _draw_graph(
         ax=resolved_ax,
         graph=draw_graph,
@@ -539,6 +545,7 @@ def _plot_graph(
         contraction_controls_build_ui=contraction_controls_build_ui,
         register_contraction_controls_on_figure=register_contraction_controls_on_figure,
         build_scene_state=build_scene_state,
+        focus_feedback=focus_feedback,
     )
     if created_figure:
         reserved_bottom = get_reserved_bottom(fig)

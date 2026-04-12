@@ -16,6 +16,7 @@ from .render_prep import (
 
 if TYPE_CHECKING:
     from ..._interaction.scheme import _ContractionSchemeBundle
+    from .scene_state import _FocusSceneFeedback
 
 
 def _refresh_contraction_hover(
@@ -159,6 +160,7 @@ def _draw_graph(
     contraction_controls_build_ui: bool = True,
     register_contraction_controls_on_figure: bool = True,
     build_scene_state: bool = True,
+    focus_feedback: _FocusSceneFeedback | None = None,
 ) -> None:
     context = _prepare_render_context(
         ax=ax,
@@ -244,6 +246,7 @@ def _draw_graph(
             scale=scale,
             hover_state=hover_state,
             tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
+            focus_feedback=focus_feedback,
         )
         scene.contraction_controls = controls
         set_scene(ax, scene)

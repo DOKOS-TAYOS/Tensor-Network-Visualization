@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import weakref
 from collections import defaultdict
 from collections.abc import Iterable
@@ -49,6 +50,19 @@ _layout_components_by_id: dict[int, tuple[_LayoutComponent, ...]] = {}
 
 _LAYER_NODE_DIAMETER_EDGE_FRACTION: float = 0.6
 _LAYER_NODE_OVERLAP_FALLBACK: float = 0.18
+_PACKED_COMPONENT_MIN_SPAN: float = 0.8
+
+
+@dataclass(frozen=True)
+class _PackedComponentRecord:
+    """Cached geometry for packing one already-laid-out connected component."""
+
+    node_ids: tuple[int, ...]
+    coords: np.ndarray
+    center_2d: np.ndarray
+    tail_mean: np.ndarray
+    width: float
+    height: float
 
 
 def _analyze_layout_components_cached(graph: _GraphData) -> tuple[_LayoutComponent, ...]:
@@ -233,10 +247,21 @@ def _pack_component_positions(
     *,
     dimensions: int,
 ) -> NodePositions:
-    """Pack already-laid-out components along the x-axis with a stable gap."""
+    """Pack already-laid-out components in a compact grid, preserving per-component depth."""
     if len(component_positions) == 1:
         return component_positions[0]
 
+    if dimensions >= 2:
+        return _pack_component_positions_grid(component_positions, dimensions=dimensions)
+    return _pack_component_positions_linear(component_positions, dimensions=dimensions)
+
+
+def _pack_component_positions_linear(
+    component_positions: list[NodePositions],
+    *,
+    dimensions: int,
+) -> NodePositions:
+    """Pack components along the x-axis, keeping non-x dimensions centered."""
     packed: NodePositions = {}
     cursor_x = 0.0
     for positions in component_positions:
@@ -254,6 +279,88 @@ def _pack_component_positions(
             packed[node_id] = packed_coords[index].copy()
 
         cursor_x += max(max_x - min_x, 0.8) + _COMPONENT_GAP
+
+    return packed
+
+
+def _pack_component_record(
+    positions: NodePositions,
+    *,
+    dimensions: int,
+) -> _PackedComponentRecord:
+    """Precompute the geometry data needed for compact grid packing."""
+    node_ids = tuple(sorted(positions))
+    coords = np.array([positions[node_id] for node_id in node_ids], dtype=float)
+    min_coords = coords.min(axis=0)
+    max_coords = coords.max(axis=0)
+    center_2d = 0.5 * (min_coords[:2] + max_coords[:2])
+    tail_mean = np.zeros(max(dimensions - 2, 0), dtype=float)
+    if dimensions > 2:
+        tail_mean = coords[:, 2:dimensions].mean(axis=0)
+    width = max(float(max_coords[0] - min_coords[0]), _PACKED_COMPONENT_MIN_SPAN)
+    height = max(float(max_coords[1] - min_coords[1]), _PACKED_COMPONENT_MIN_SPAN)
+    return _PackedComponentRecord(
+        node_ids=node_ids,
+        coords=coords,
+        center_2d=np.asarray(center_2d, dtype=float),
+        tail_mean=np.asarray(tail_mean, dtype=float),
+        width=width,
+        height=height,
+    )
+
+
+def _pack_component_positions_grid(
+    component_positions: list[NodePositions],
+    *,
+    dimensions: int,
+) -> NodePositions:
+    """Pack components in a compact row-major grid on X/Y, keeping higher dims centered."""
+    records = [
+        _pack_component_record(positions, dimensions=dimensions)
+        for positions in component_positions
+    ]
+    column_count = int(math.ceil(math.sqrt(len(records))))
+    row_count = int(math.ceil(len(records) / max(column_count, 1)))
+
+    column_widths = [0.0] * column_count
+    row_heights = [0.0] * row_count
+    for index, record in enumerate(records):
+        row_index = index // column_count
+        column_index = index % column_count
+        column_widths[column_index] = max(column_widths[column_index], record.width)
+        row_heights[row_index] = max(row_heights[row_index], record.height)
+
+    column_starts: list[float] = []
+    cursor_x = 0.0
+    for width in column_widths:
+        column_starts.append(cursor_x)
+        cursor_x += width + _COMPONENT_GAP
+
+    row_starts: list[float] = []
+    cursor_y = 0.0
+    for height in row_heights:
+        row_starts.append(cursor_y)
+        cursor_y += height + _COMPONENT_GAP
+
+    packed: NodePositions = {}
+    for index, record in enumerate(records):
+        row_index = index // column_count
+        column_index = index % column_count
+        cell_center = np.array(
+            [
+                column_starts[column_index] + 0.5 * column_widths[column_index],
+                -(row_starts[row_index] + 0.5 * row_heights[row_index]),
+            ],
+            dtype=float,
+        )
+        shift = np.zeros(dimensions, dtype=float)
+        shift[:2] = cell_center - record.center_2d
+        if dimensions > 2:
+            shift[2:dimensions] = -record.tail_mean
+        packed_coords = record.coords.copy()
+        packed_coords[:, :dimensions] += shift
+        for coord_index, node_id in enumerate(record.node_ids):
+            packed[node_id] = packed_coords[coord_index].copy()
 
     return packed
 

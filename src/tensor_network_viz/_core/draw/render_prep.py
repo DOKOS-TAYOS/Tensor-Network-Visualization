@@ -35,7 +35,7 @@ from .hover import (
 )
 from .labels_misc import _estimate_drawn_label_count
 from .plotter import _make_plotter, _node_edge_degrees, _PlotAdapter
-from .scene_state import _InteractiveSceneState, _RenderedEdgeGeometry
+from .scene_state import _FocusSceneFeedback, _InteractiveSceneState, _RenderedEdgeGeometry
 from .tensors import (
     _draw_labels,
     _draw_nodes,
@@ -548,6 +548,7 @@ def _build_interactive_scene_state(
     scale: float,
     hover_state: _RenderHoverState,
     tensor_disk_radius_px_3d: float | None,
+    focus_feedback: _FocusSceneFeedback | None = None,
 ) -> _InteractiveSceneState:
     initial_bundle = context.plotter.get_node_artist_bundle()
     edge_artists = list(context.plotter.get_edge_artists())
@@ -574,6 +575,7 @@ def _build_interactive_scene_state(
         tensor_disk_radius_px_3d=tensor_disk_radius_px_3d,
         edge_artists=edge_artists,
         diagnostic_artists=list(context.diagnostic_artists),
+        focus_feedback=focus_feedback,
     )
 
 

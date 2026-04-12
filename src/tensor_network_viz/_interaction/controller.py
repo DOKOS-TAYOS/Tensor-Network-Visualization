@@ -8,6 +8,7 @@ import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.collections import PatchCollection, PathCollection
 from matplotlib.figure import Figure
+from matplotlib.text import Text
 from matplotlib.widgets import Button, CheckButtons
 from mpl_toolkits.mplot3d import proj3d
 from mpl_toolkits.mplot3d.axes3d import Axes3D
@@ -221,6 +222,7 @@ class _InteractiveTensorFigureController:
         self.figure: Figure | None = None
         self._controls_panel: _InteractiveControlsPanel | None = None
         self._tensor_inspector: _LinkedTensorInspectorController | None = None
+        self._focus_status_text: Text | None = None
         self._figure_close_cid: int | None = None
         self._button_press_cid: int | None = None
         self._initialized: bool = False
@@ -465,6 +467,46 @@ class _InteractiveTensorFigureController:
             on_focus_cleared=self.clear_focus,
         )
 
+    def _ensure_focus_status_text(self) -> Text:
+        assert self.figure is not None
+        if self._focus_status_text is None:
+            self._focus_status_text = self.figure.text(
+                0.5,
+                0.985,
+                "",
+                ha="center",
+                va="top",
+                fontsize=9.0,
+                color="#991B1B",
+                visible=False,
+                bbox={
+                    "facecolor": "#FEF2F2",
+                    "edgecolor": "#FCA5A5",
+                    "boxstyle": "round,pad=0.25",
+                    "alpha": 0.96,
+                },
+            )
+        return self._focus_status_text
+
+    def _focus_status_message(self, scene: _InteractiveSceneState) -> str | None:
+        feedback = scene.focus_feedback
+        if feedback is None or feedback.disconnected_endpoints is None:
+            return None
+        start_name, end_name = feedback.disconnected_endpoints
+        return f"No path exists between {start_name} and {end_name}; showing both endpoints."
+
+    def _sync_focus_status(self, scene: _InteractiveSceneState) -> None:
+        if self.figure is None:
+            return
+        status_text = self._ensure_focus_status_text()
+        message = self._focus_status_message(scene)
+        if message is None:
+            status_text.set_text("")
+            status_text.set_visible(False)
+            return
+        status_text.set_text(message)
+        status_text.set_visible(True)
+
     def _sync_checkbuttons(self) -> None:
         if self._controls_panel is None:
             return
@@ -605,6 +647,7 @@ class _InteractiveTensorFigureController:
                 resolved.tensor_inspector,
                 reveal=reveal_inspector,
             )
+        self._sync_focus_status(scene)
         _bring_scene_label_artists_to_front(scene)
         _apply_scene_hover_state(scene, hover_on=resolved.hover)
         self._active_state = resolved

@@ -752,6 +752,35 @@ def test_filter_graph_for_path_focus_keeps_cut_bonds_as_dangling_stubs() -> None
     )
 
 
+def test_filter_graph_for_disconnected_path_focus_keeps_both_endpoints_with_cut_stubs() -> None:
+    left_a = DummyTensorKrowchNode("A", ["left", "ax"])
+    right_a = DummyTensorKrowchNode("x", ["ax", "right"])
+    left_b = DummyTensorKrowchNode("B", ["left", "by"])
+    right_b = DummyTensorKrowchNode("y", ["by", "right"])
+    connect(left_a, 1, right_a, 0, name="AX")
+    connect(left_b, 1, right_b, 0, name="BY")
+
+    graph = _build_tensorkrowch_graph(DummyNetwork(nodes=[left_a, right_a, left_b, right_b]))
+    focused = filter_graph_for_focus(
+        graph,
+        TensorNetworkFocus(kind="path", endpoints=("A", "B")),
+    )
+
+    focused_names = {node.name for node in focused.nodes.values() if not node.is_virtual}
+    focused_id_a = next(node_id for node_id, node in focused.nodes.items() if node.name == "A")
+    focused_id_b = next(node_id for node_id, node in focused.nodes.items() if node.name == "B")
+
+    assert focused_names == {"A", "B"}
+    assert any(
+        edge.kind == "dangling" and edge.node_ids == (focused_id_a,) and edge.label == "ax"
+        for edge in focused.edges
+    )
+    assert any(
+        edge.kind == "dangling" and edge.node_ids == (focused_id_b,) and edge.label == "by"
+        for edge in focused.edges
+    )
+
+
 def test_filter_graph_for_neighborhood_focus_keeps_cut_bonds_as_dangling_stubs() -> None:
     nodes = [
         DummyTensorKrowchNode("A", ["right"]),
@@ -812,6 +841,30 @@ def test_show_tensor_network_path_focus_keeps_cut_bond_labels_as_stubs() -> None
     assert labels.count("bd") == 1
     assert labels.count("ab") == 2
     assert labels.count("bc") == 2
+
+
+def test_show_tensor_network_disconnected_path_focus_renders_both_endpoints() -> None:
+    trace = [
+        pair_tensor("A", "x", "r0", "ab,b->a"),
+        pair_tensor("B", "y", "r1", "cd,d->c"),
+    ]
+
+    fig, ax = show_tensor_network(
+        trace,
+        engine="einsum",
+        config=PlotConfig(
+            focus=TensorNetworkFocus(kind="path", endpoints=("A", "B")),
+        ),
+        show=False,
+    )
+
+    scene = get_scene(ax)
+
+    assert scene is not None
+    assert {scene.graph.nodes[node_id].name for node_id in scene.visible_node_ids} == {"A", "B"}
+    assert scene.focus_feedback is not None
+    assert scene.focus_feedback.disconnected_endpoints == ("A", "B")
+    assert_rendered_figure(fig, ax)
 
 
 def test_show_tensor_network_builds_3d_view_lazily_once(

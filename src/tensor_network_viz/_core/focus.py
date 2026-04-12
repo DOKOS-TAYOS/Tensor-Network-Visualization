@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from ..config import TensorNetworkFocus
 from .graph import (
@@ -13,6 +13,14 @@ from .graph import (
     _GraphData,
     _make_dangling_edge,
 )
+
+
+@dataclass(frozen=True)
+class _FocusSelectionResult:
+    """Resolved focus selection plus optional disconnected-endpoint metadata."""
+
+    selected_tensor_ids: set[int]
+    disconnected_endpoints: tuple[str, str] | None = None
 
 
 def _physical_name_index(
@@ -103,7 +111,7 @@ def _shortest_path_selection(
     *,
     start_id: int,
     end_id: int,
-) -> set[int]:
+) -> set[int] | None:
     """Return the tensor ids on the physical shortest path between two tensors."""
     if int(start_id) == int(end_id):
         return {int(start_id)}
@@ -120,7 +128,7 @@ def _shortest_path_selection(
             parents[neighbor] = node_id
             queue.append(neighbor)
     if int(end_id) not in parents:
-        raise ValueError("No tensor path exists between the requested focus endpoints.")
+        return None
     path_ids: set[int] = set()
     current_id: int | None = int(end_id)
     while current_id is not None:
@@ -129,23 +137,46 @@ def _shortest_path_selection(
     return path_ids
 
 
-def focus_selected_tensor_ids(
+def _resolve_focus_selection(
     graph: _GraphData,
     focus: TensorNetworkFocus | None,
-) -> set[int] | None:
-    """Resolve the focused physical tensor ids, or ``None`` when no focus applies."""
+) -> _FocusSelectionResult | None:
+    """Resolve focused tensor ids and any disconnected-endpoint fallback metadata."""
     if focus is None:
         return None
     if focus.kind == "neighborhood":
         if focus.center is None:
             return None
         center_id = _resolve_focus_name(graph, focus.center)
-        return _neighborhood_selection(graph, center_id=center_id, radius=int(focus.radius))
+        return _FocusSelectionResult(
+            selected_tensor_ids=_neighborhood_selection(
+                graph,
+                center_id=center_id,
+                radius=int(focus.radius),
+            )
+        )
     if focus.endpoints is None:
         return None
     start_id = _resolve_focus_name(graph, focus.endpoints[0])
     end_id = _resolve_focus_name(graph, focus.endpoints[1])
-    return _shortest_path_selection(graph, start_id=start_id, end_id=end_id)
+    selected_tensor_ids = _shortest_path_selection(graph, start_id=start_id, end_id=end_id)
+    if selected_tensor_ids is None:
+        return _FocusSelectionResult(
+            selected_tensor_ids={start_id, end_id},
+            disconnected_endpoints=(focus.endpoints[0], focus.endpoints[1]),
+        )
+    return _FocusSelectionResult(selected_tensor_ids=selected_tensor_ids)
+
+
+def focus_selected_tensor_ids(
+    graph: _GraphData,
+    focus: TensorNetworkFocus | None,
+) -> set[int] | None:
+    """Resolve the focused physical tensor ids, or ``None`` when no focus applies."""
+    selection = _resolve_focus_selection(graph, focus)
+    if selection is None:
+        return None
+    return selection.selected_tensor_ids
 
 
 def _focused_virtual_hubs(graph: _GraphData, selected_tensor_ids: set[int]) -> set[int]:
@@ -179,16 +210,13 @@ def _cut_edge_stub(edge: _EdgeData, endpoint: _EdgeEndpoint) -> _EdgeData:
     return replace(stub, bond_dimension=edge.bond_dimension)
 
 
-def filter_graph_for_focus(
+def _filter_graph_for_selected_tensors(
     graph: _GraphData,
-    focus: TensorNetworkFocus | None,
+    selected_tensor_ids: set[int],
+    *,
+    preserve_cut_bonds: bool,
 ) -> _GraphData:
-    """Return a focused graph while preserving the original node ids and coordinates."""
-    selected_tensor_ids = focus_selected_tensor_ids(graph, focus)
-    if not selected_tensor_ids:
-        return graph
-
-    preserve_cut_bonds = focus is not None
+    """Return the graph filtered to the selected tensor ids."""
     active_hub_ids = _focused_virtual_hubs(graph, selected_tensor_ids)
     kept_edges = []
     for edge in graph.edges:
@@ -260,6 +288,33 @@ def filter_graph_for_focus(
         contraction_steps=kept_steps,
         contraction_step_metrics=kept_metrics,
     )
+
+
+def _resolve_graph_for_focus(
+    graph: _GraphData,
+    focus: TensorNetworkFocus | None,
+) -> tuple[_GraphData, _FocusSelectionResult | None]:
+    """Return the focused graph together with the resolved focus selection metadata."""
+    selection = _resolve_focus_selection(graph, focus)
+    if selection is None or not selection.selected_tensor_ids:
+        return graph, selection
+    return (
+        _filter_graph_for_selected_tensors(
+            graph,
+            selection.selected_tensor_ids,
+            preserve_cut_bonds=focus is not None,
+        ),
+        selection,
+    )
+
+
+def filter_graph_for_focus(
+    graph: _GraphData,
+    focus: TensorNetworkFocus | None,
+) -> _GraphData:
+    """Return a focused graph while preserving the original node ids and coordinates."""
+    focused_graph, _selection = _resolve_graph_for_focus(graph, focus)
+    return focused_graph
 
 
 __all__ = [

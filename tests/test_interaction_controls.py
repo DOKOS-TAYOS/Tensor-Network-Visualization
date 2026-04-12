@@ -15,6 +15,7 @@ from tensor_network_viz import (
     TensorNetworkDiagnosticsConfig,
     TensorNetworkFocus,
     einsum,
+    pair_tensor,
     show_tensor_network,
 )
 from tensor_network_viz._interaction.controls import (
@@ -38,6 +39,13 @@ def _einsum_trace() -> EinsumTrace:
     r1 = einsum("ac,cd->ad", r0, right, trace=trace, backend="numpy")
     trace._test_keepalive = [left, mid, right, r0, r1]  # type: ignore[attr-defined]
     return trace
+
+
+def _disconnected_einsum_trace() -> list[object]:
+    return [
+        pair_tensor("A", "x", "r0", "ab,b->a"),
+        pair_tensor("B", "y", "r1", "cd,d->c"),
+    ]
 
 
 def _dispatch_button_event_at_data(
@@ -633,5 +641,45 @@ def test_show_tensor_network_focus_controls_drive_click_selection_and_clear() ->
         "B",
         "C",
     }
+
+    plt.close(fig)
+
+
+def test_show_tensor_network_path_focus_handles_disconnected_clicks_with_feedback() -> None:
+    fig, ax = show_tensor_network(_disconnected_einsum_trace(), engine="einsum", show=False)
+    controls = fig._tensor_network_viz_interactive_controls  # type: ignore[attr-defined]
+    panel = controls._controls_panel
+
+    assert panel is not None
+    assert panel.focus_mode_button is not None
+
+    _click_button(panel.focus_mode_button)
+    _click_button(panel.focus_mode_button)
+    assert controls.focus_mode == "path"
+
+    scene = controls.current_scene
+    node_id_a = next(node_id for node_id, node in scene.graph.nodes.items() if node.name == "A")
+    node_id_b = next(node_id for node_id, node in scene.graph.nodes.items() if node.name == "B")
+    position_a = np.asarray(scene.positions[node_id_a], dtype=float)
+    position_b = np.asarray(scene.positions[node_id_b], dtype=float)
+
+    _dispatch_button_event_at_data(ax, x=float(position_a[0]), y=float(position_a[1]))
+    _dispatch_button_event_at_data(ax, x=float(position_b[0]), y=float(position_b[1]))
+
+    assert {
+        controls.current_scene.graph.nodes[node_id].name
+        for node_id in controls.current_scene.visible_node_ids
+    } == {
+        "A",
+        "B",
+    }
+    assert controls.current_scene.focus_feedback is not None
+    assert controls.current_scene.focus_feedback.disconnected_endpoints == ("A", "B")
+    assert controls._focus_status_text is not None
+    assert controls._focus_status_text.get_visible() is True
+    assert "No path exists between A and B" in controls._focus_status_text.get_text()
+
+    _click_button(panel.focus_clear_button)
+    assert controls._focus_status_text.get_visible() is False
 
     plt.close(fig)
