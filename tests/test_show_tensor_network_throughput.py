@@ -168,6 +168,7 @@ def test_switch_to_3d_limits_exact_segment_distance_checks(
         original = getattr(directions_3d, "_segment_segment_min_distance_sq_3d", None)
 
         if original is not None:
+
             def counting_distance(
                 start_a: np.ndarray,
                 end_a: np.ndarray,

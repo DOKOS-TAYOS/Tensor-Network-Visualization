@@ -859,9 +859,7 @@ def test_cost_hover_shrinks_text_before_enabling_hover() -> None:
         fig.canvas.draw()
 
         assert viewer._cost_text_artist.get_text() == full_text
-        assert float(viewer._cost_text_artist.get_fontsize()) == pytest.approx(
-            base_fontsize * 0.8
-        )
+        assert float(viewer._cost_text_artist.get_fontsize()) == pytest.approx(base_fontsize * 0.8)
         assert viewer._cost_panel_hover_text is None
     finally:
         matplotlib.pyplot.close(fig)

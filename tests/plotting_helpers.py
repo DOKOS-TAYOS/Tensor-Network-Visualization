@@ -71,8 +71,7 @@ def path_collection_point_count(ax: Any) -> int:
 
 def _collection_uses_triangle_marker(collection: PathCollection) -> bool:
     return any(
-        np.asarray(path.vertices, dtype=float).shape[0] == 4
-        for path in collection.get_paths()
+        np.asarray(path.vertices, dtype=float).shape[0] == 4 for path in collection.get_paths()
     )
 
 

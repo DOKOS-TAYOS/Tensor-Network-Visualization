@@ -589,8 +589,7 @@ def _sorted_node_pair(left_id: int, right_id: int) -> tuple[int, int]:
 
 def _node_edge_set(nx_graph: nx.Graph) -> set[tuple[int, int]]:
     return {
-        _sorted_node_pair(int(left_id), int(right_id))
-        for left_id, right_id in nx_graph.edges()
+        _sorted_node_pair(int(left_id), int(right_id)) for left_id, right_id in nx_graph.edges()
     }
 
 
@@ -712,9 +711,7 @@ def _detect_coordinate_tube(
                 ]
                 periodic_coord = list(coord)
                 periodic_coord[periodic_axis] = next_periodic_value
-                expected_edges.add(
-                    _sorted_node_pair(node_id, node_by_coord[tuple(periodic_coord)])
-                )
+                expected_edges.add(_sorted_node_pair(node_id, node_by_coord[tuple(periodic_coord)]))
 
                 next_axial_idx = axial_index[axial_value] + 1
                 if next_axial_idx < len(axial_values):

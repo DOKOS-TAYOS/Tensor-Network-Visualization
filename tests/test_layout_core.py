@@ -8,8 +8,8 @@ import pytest
 from tensor_network_viz import PlotConfig
 from tensor_network_viz._core._draw_common import _graph_edge_degree
 from tensor_network_viz._core.graph import (
-    _EdgeEndpoint,
     _EdgeData,
+    _EdgeEndpoint,
     _GraphData,
     _make_contraction_edge,
     _make_dangling_edge,
