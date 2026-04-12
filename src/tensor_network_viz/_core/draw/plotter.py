@@ -330,6 +330,8 @@ def _make_plotter(
 
     class _3DPlotter:
         def __init__(self, hover_edges: list[tuple[np.ndarray, str]] | None) -> None:
+            if hasattr(ax, "computed_zorder"):
+                ax.computed_zorder = False
             self._hover_edge_targets = hover_edges
             self._edge_artists: list[Artist] = []
             self._node_artist_bundle: _NodeArtistBundle | None = None
@@ -451,7 +453,9 @@ def _make_plotter(
                 edgecolors=[config.node_edge_color_degree_one],
                 linewidths=_VIRTUAL_HUB_MARKER_LINEWIDTH_PT,
                 depthshade=False,
+                zorder=zorder,
             )
+            coll.set_zorder(zorder)
             if hasattr(coll, "set_sort_zpos"):
                 coll.set_sort_zpos(zorder)
 

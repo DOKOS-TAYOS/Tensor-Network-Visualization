@@ -272,7 +272,7 @@ def test_compute_axis_directions_chain_2d_allows_opposite_free_axes_on_same_node
     assert np.allclose(picked[1], np.array([0.0, -1.0], dtype=float), atol=1e-6)
 
 
-def test_compute_axis_directions_2d_forces_named_dangling_axes_even_when_repeated() -> None:
+def test_compute_axis_directions_2d_named_dangling_axes_fall_back_when_repeated() -> None:
     graph = _GraphData(
         nodes={
             0: _make_node("A", ("right", "right")),
@@ -287,7 +287,12 @@ def test_compute_axis_directions_2d_forces_named_dangling_axes_even_when_repeate
     directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=1.0)
 
     assert np.allclose(directions[(0, 0)], np.array([1.0, 0.0], dtype=float), atol=1e-6)
-    assert np.allclose(directions[(0, 1)], np.array([1.0, 0.0], dtype=float), atol=1e-6)
+    assert not np.allclose(directions[(0, 1)], np.array([1.0, 0.0], dtype=float), atol=1e-6)
+    assert not _direction_angle_conflicts_2d(
+        directions[(0, 1)],
+        directions[(0, 0)],
+        treat_opposite_as_conflict=False,
+    )
 
 
 def test_compute_axis_directions_2d_only_forces_named_dangling_axes() -> None:
@@ -2221,7 +2226,7 @@ def test_compute_axis_directions_3d_supports_xp_alias_for_free_axes() -> None:
     assert np.allclose(directions[(0, 1)], np.array([1.0, 0.0, 0.0]), atol=1e-6)
 
 
-def test_compute_axis_directions_3d_forces_named_dangling_axes_even_when_repeated() -> None:
+def test_compute_axis_directions_3d_named_dangling_axes_fall_back_when_repeated() -> None:
     graph = _GraphData(
         nodes={
             0: _make_node("A", ("front", "front")),
@@ -2236,7 +2241,8 @@ def test_compute_axis_directions_3d_forces_named_dangling_axes_even_when_repeate
     directions = _compute_axis_directions(graph, positions, dimensions=3, draw_scale=1.0)
 
     assert np.allclose(directions[(0, 0)], np.array([0.0, 1.0, 0.0], dtype=float), atol=1e-6)
-    assert np.allclose(directions[(0, 1)], np.array([0.0, 1.0, 0.0], dtype=float), atol=1e-6)
+    assert not np.allclose(directions[(0, 1)], np.array([0.0, 1.0, 0.0], dtype=float), atol=1e-6)
+    assert not _direction_angle_conflicts_3d(directions[(0, 1)], directions[(0, 0)])
 
 
 def test_compute_axis_directions_competing_free_axes_prefer_unused_orthogonal_directions() -> None:

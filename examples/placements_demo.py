@@ -68,6 +68,23 @@ def _base_network() -> Any:
     return qtn.TensorNetwork(_base_tensors())
 
 
+def _named_indices_tensors() -> list[Any]:
+    return [
+        _tensor("Prior", ("left", "latent_prev")),
+        _tensor("Transition", ("latent_prev", "latent_now", "up")),
+        _tensor("Emission", ("latent_now", "sensor_reading", "readout_latent", "front")),
+        _tensor("Calibrator", ("sensor_reading", "calibration_feature", "down")),
+        _tensor("Readout", ("readout_latent", "calibration_feature", "class_score", "right")),
+        _tensor("Loss", ("class_score", "out")),
+    ]
+
+
+def _named_indices_network() -> Any:
+    import quimb.tensor as qtn
+
+    return qtn.TensorNetwork(_named_indices_tensors())
+
+
 def _tensor_by_tag(network: Any, tag: str) -> Any:
     for tensor in network.tensors:
         if tag in tensor.tags:
@@ -220,10 +237,11 @@ def _build_example(args: ExampleCliArgs, definition: ExampleDefinition) -> Built
         )
         scheme = _BASE_SCHEME
     elif definition.name == "named_indices":
-        network = _base_network()
-        subtitle = "Use descriptive shared-index names and static index labels."
+        network = _named_indices_network()
+        subtitle = "Use directional dangling-index names and static index labels."
         footer = (
-            "The labels come from the tensor index names, not from a separate drawing annotation."
+            "Names such as left, up, front, down, right, and out act as layout hints while "
+            "also remaining visible as labels."
         )
         scheme = None
     else:

@@ -216,7 +216,8 @@ provide.
 
 Dangling/free axis names can act as direction hints. Names such as `left`, `right`, `up`, `down`,
 `front`, `back`, `xp`, `xm`, `yp`, `ym`, `zp`, `zm`, `north`, `south`, `east`, `west`, `in`, and
-`out` are treated as hard directions for dangling indices.
+`out` are tried first for dangling indices. If the requested direction conflicts with existing
+geometry, the layout falls back to the normal candidate search for that edge.
 
 ## Labels, Hover, and Controls
 

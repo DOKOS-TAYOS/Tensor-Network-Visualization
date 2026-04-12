@@ -131,6 +131,7 @@ def test_plot_quimb_network_2d_draws_hypergraph_with_virtual_hub_marker() -> Non
 
 def test_plot_quimb_network_3d_draws_hypergraph() -> None:
     from matplotlib.colors import to_rgba
+    from mpl_toolkits.mplot3d.art3d import Path3DCollection, Poly3DCollection
 
     from plotting_helpers import path3d_collection_facecolors, path3d_triangle_marker_point_count
 
@@ -154,3 +155,17 @@ def test_plot_quimb_network_3d_draws_hypergraph() -> None:
     assert path3d_collection_facecolors(ax) == [
         tuple(float(value) for value in to_rgba(config.dangling_edge_color))
     ]
+    triangle_zorders = [
+        float(collection.get_zorder())
+        for collection in ax.collections
+        if isinstance(collection, Path3DCollection)
+        and any(len(path.vertices) == 4 for path in collection.get_paths())
+    ]
+    node_zorders = [
+        float(collection.get_zorder())
+        for collection in ax.collections
+        if isinstance(collection, Poly3DCollection)
+    ]
+    assert triangle_zorders
+    assert node_zorders
+    assert min(triangle_zorders) > max(node_zorders)

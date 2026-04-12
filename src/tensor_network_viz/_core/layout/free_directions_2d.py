@@ -20,7 +20,7 @@ from .direction_common import (
     _SEMIDIAGONAL_DIRECTIONS_2D,
     _behavior_direction_order_2d,
     _component_centroid,
-    _forced_dangling_direction_from_axis_name,
+    _direction_from_axis_name,
     _is_dangling_leg_axis,
     _sorted_direction_candidates,
     _used_axis_directions,
@@ -883,29 +883,17 @@ def _compute_free_directions_2d(
                 for axis_index in range(axis_count)
                 if (node_id, axis_index) not in directions
             ]
-            forced_directions = {
-                axis_index: _normalize_2d(forced_direction)
+            named_directions = {
+                axis_index: _normalize_2d(named_direction)
                 for axis_index in unassigned_axis_indices
-                for forced_direction in [
-                    _forced_dangling_direction_from_axis_name(
-                        graph,
-                        node_id=node_id,
-                        axis_index=axis_index,
-                        axis_name=(
-                            node.axes_names[axis_index]
-                            if axis_index < len(node.axes_names)
-                            else None
-                        ),
+                for named_direction in [
+                    _direction_from_axis_name(
+                        node.axes_names[axis_index] if axis_index < len(node.axes_names) else None,
                         dimensions=2,
                     )
                 ]
-                if forced_direction is not None
+                if named_direction is not None
             }
-            if forced_directions and len(forced_directions) == len(unassigned_axis_indices):
-                for axis_index in unassigned_axis_indices:
-                    directions[(node_id, axis_index)] = forced_directions[axis_index]
-                processed_node_ids.add(node_id)
-                continue
             outward_reference = _shared_virtual_hub_outward_reference_2d(
                 context,
                 node_id=node_id,
@@ -936,10 +924,6 @@ def _compute_free_directions_2d(
                 axis_key = (node_id, axis_index)
                 if axis_key in directions:
                     continue
-                forced_direction = forced_directions.get(axis_index)
-                if forced_direction is not None:
-                    directions[axis_key] = forced_direction
-                    continue
 
                 def is_valid_candidate(
                     candidate: np.ndarray,
@@ -959,6 +943,11 @@ def _compute_free_directions_2d(
                         processed_node_ids=processed_node_ids,
                         draw_scale=draw_scale,
                     )
+
+                named_direction = named_directions.get(axis_index)
+                if named_direction is not None and is_valid_candidate(named_direction):
+                    directions[axis_key] = named_direction
+                    continue
 
                 picked = _first_valid_candidate_2d(
                     candidates=deterministic_candidates,

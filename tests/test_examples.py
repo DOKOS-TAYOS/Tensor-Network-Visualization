@@ -481,6 +481,23 @@ def test_placements_manual_positions_3d_saves_without_coordinate_warnings() -> N
     assert image.shape[0] > 0
 
 
+def test_placements_named_indices_uses_directional_dangling_labels() -> None:
+    _require_quimb()
+    module = _load_example_module(
+        Path("examples/placements_demo.py"),
+        "placements_demo_named_indices_labels",
+    )
+
+    network = module._named_indices_network()
+    index_counts: dict[str, int] = {}
+    for tensor in network.tensors:
+        for index_name in tensor.inds:
+            index_counts[index_name] = index_counts.get(index_name, 0) + 1
+
+    dangling_index_names = {index_name for index_name, count in index_counts.items() if count == 1}
+    assert {"left", "up", "front", "down", "right", "out"} <= dangling_index_names
+
+
 def test_tensorkrowch_run_example_2d_calls_renderer_without_scope_patch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

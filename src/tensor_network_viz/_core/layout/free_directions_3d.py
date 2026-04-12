@@ -13,7 +13,6 @@ from ..layout_structure import _component_orthogonal_basis, _LayoutComponent
 from .direction_common import (
     _component_centroid,
     _direction_from_axis_name,
-    _forced_dangling_direction_from_axis_name,
     _normalize_direction,
     _sorted_direction_candidates,
 )
@@ -661,28 +660,17 @@ def _compute_free_directions_3d(
             if not unassigned_axis_indices:
                 continue
 
-            forced_directions = {
-                axis_index: _normalize_direction(forced_direction, dimensions=3)
+            named_directions = {
+                axis_index: _normalize_direction(named_direction, dimensions=3)
                 for axis_index in unassigned_axis_indices
-                for forced_direction in [
-                    _forced_dangling_direction_from_axis_name(
-                        graph,
-                        node_id=node_id,
-                        axis_index=axis_index,
-                        axis_name=(
-                            node.axes_names[axis_index]
-                            if axis_index < len(node.axes_names)
-                            else None
-                        ),
+                for named_direction in [
+                    _direction_from_axis_name(
+                        node.axes_names[axis_index] if axis_index < len(node.axes_names) else None,
                         dimensions=3,
                     )
                 ]
-                if forced_direction is not None
+                if named_direction is not None
             }
-            if forced_directions and len(forced_directions) == len(unassigned_axis_indices):
-                for axis_index in unassigned_axis_indices:
-                    directions[(node_id, axis_index)] = forced_directions[axis_index]
-                continue
 
             deterministic_candidates = _node_candidate_directions_3d(
                 component,
@@ -699,17 +687,8 @@ def _compute_free_directions_3d(
                 if axis_key in directions:
                     continue
 
-                forced_direction = forced_directions.get(axis_index)
-                if forced_direction is not None:
-                    directions[axis_key] = forced_direction
-                    continue
-
-                axis_name = (
-                    node.axes_names[axis_index] if axis_index < len(node.axes_names) else None
-                )
-                named_direction = _direction_from_axis_name(axis_name, dimensions=3)
+                named_direction = named_directions.get(axis_index)
                 if named_direction is not None:
-                    named_direction = _normalize_direction(named_direction, dimensions=3)
                     named_key = _direction_key_3d(named_direction)
                     if named_key not in tried_direction_keys:
                         tried_direction_keys.add(named_key)

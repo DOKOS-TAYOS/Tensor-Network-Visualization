@@ -84,7 +84,9 @@ bond/stub geometry. Random fallback directions are generated only if all
 deterministic candidates fail.
 
 Directional axis names such as `left`, `right`, `up`, `down`, `xp`, `ym`,
-`north`, and `south` can force or strongly guide a free axis direction.
+`north`, and `south` are tried first for free axes. If that direction conflicts
+with existing geometry, the algorithm keeps searching through the usual
+candidate directions.
 
 ## Free Edges in 3D
 

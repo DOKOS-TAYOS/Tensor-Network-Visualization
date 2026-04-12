@@ -105,7 +105,8 @@ def show_tensor_network(
 
         For dangling/free indices, axis names such as ``left``, ``right``, ``up``,
         ``down``, ``front``, ``back``, ``xp/xm/yp/ym/zp/zm``, ``north/south/east/west``,
-        and ``in/out`` are treated as hard directional hints.
+        and ``in/out`` are tried first as directional hints, then fall back to the
+        regular candidate search if they conflict with existing geometry.
 
     Returns:
         Tuple of (Figure, Axes) for further customization.

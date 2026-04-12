@@ -407,7 +407,7 @@ def _draw_edges_nodes_and_labels(
             visible_node_ids=visible_order,
             node_degrees=node_degrees,
         )
-        virtual_marker_zorder = float(_ZORDER_NODE_DISK) + 0.5
+        virtual_marker_zorder = float(_ZORDER_NODE_DISK) + 1.0
 
     _draw_virtual_hub_markers(
         plotter=context.plotter,
