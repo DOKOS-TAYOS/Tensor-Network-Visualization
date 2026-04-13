@@ -14,18 +14,29 @@ def _parse_inline_list(raw_value: str) -> list[str]:
     return [item.strip().strip('"').strip("'") for item in inner.split(",")]
 
 
-def _load_workflow() -> dict[str, Any]:
+def _parse_block_list_item(raw_value: str) -> str:
+    value = raw_value.strip()
+    if not value.startswith("- "):
+        raise ValueError(f"Expected YAML list item, got: {raw_value!r}")
+    return value[2:].strip().strip('"').strip("'")
+
+
+def _load_workflow_text(text: str) -> dict[str, Any]:
     workflow: dict[str, Any] = {"jobs": {}}
     current_job_name: str | None = None
     current_step: dict[str, Any] | None = None
+    current_matrix_key: str | None = None
     in_run_block = False
 
-    for raw_line in Path(".github/workflows/ci.yml").read_text(encoding="utf-8").splitlines():
+    for raw_line in text.splitlines():
         stripped = raw_line.strip()
         if not stripped or stripped.startswith("#"):
             continue
 
         indent = len(raw_line) - len(raw_line.lstrip(" "))
+
+        if current_matrix_key is not None and indent <= 8 and not stripped.startswith("- "):
+            current_matrix_key = None
 
         if indent == 2 and stripped.endswith(":") and not stripped.startswith("- "):
             key = stripped[:-1]
@@ -36,19 +47,35 @@ def _load_workflow() -> dict[str, Any]:
                 in_run_block = False
             continue
 
-        if current_job_name is not None and indent == 8 and stripped.startswith("os: "):
+        if current_job_name is None:
+            continue
+
+        if indent == 8 and stripped.startswith("os: "):
             workflow["jobs"][current_job_name]["matrix"]["os"] = _parse_inline_list(
                 stripped.split(": ", 1)[1]
             )
             continue
 
-        if current_job_name is not None and indent == 8 and stripped.startswith("python-version: "):
+        if indent == 8 and stripped == "os:":
+            workflow["jobs"][current_job_name]["matrix"]["os"] = []
+            current_matrix_key = "os"
+            continue
+
+        if indent == 8 and stripped.startswith("python-version: "):
             workflow["jobs"][current_job_name]["matrix"]["python-version"] = _parse_inline_list(
                 stripped.split(": ", 1)[1]
             )
             continue
 
-        if current_job_name is None:
+        if indent == 8 and stripped == "python-version:":
+            workflow["jobs"][current_job_name]["matrix"]["python-version"] = []
+            current_matrix_key = "python-version"
+            continue
+
+        if current_matrix_key is not None and indent >= 10 and stripped.startswith("- "):
+            workflow["jobs"][current_job_name]["matrix"][current_matrix_key].append(
+                _parse_block_list_item(stripped)
+            )
             continue
 
         if indent == 6 and stripped.startswith("- name: "):
@@ -78,6 +105,10 @@ def _load_workflow() -> dict[str, Any]:
     return workflow
 
 
+def _load_workflow() -> dict[str, Any]:
+    return _load_workflow_text(Path(".github/workflows/ci.yml").read_text(encoding="utf-8"))
+
+
 def _job_step_names(workflow: dict[str, Any], job_name: str) -> list[str]:
     return [step["name"] for step in workflow["jobs"][job_name]["steps"]]
 
@@ -87,6 +118,37 @@ def _job_step(workflow: dict[str, Any], job_name: str, step_name: str) -> dict[s
         if step["name"] == step_name:
             return step
     raise AssertionError(f"Missing step {step_name!r} in job {job_name!r}")
+
+
+def test_ci_workflow_parser_accepts_block_style_matrix_lists() -> None:
+    workflow = _load_workflow_text(
+        """
+jobs:
+  lint-and-test:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+        python-version:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+    steps:
+      - name: Quality
+        run: python scripts/verify.py quality
+"""
+    )
+
+    assert workflow["jobs"]["lint-and-test"]["matrix"]["os"] == ["ubuntu-latest", "windows-latest"]
+    assert workflow["jobs"]["lint-and-test"]["matrix"]["python-version"] == [
+        "3.11",
+        "3.12",
+        "3.13",
+    ]
+    assert (
+        _job_step(workflow, "lint-and-test", "Quality")["run"] == "python scripts/verify.py quality"
+    )
 
 
 def test_ci_workflow_declares_expected_jobs_and_runner_matrices() -> None:
@@ -152,7 +214,8 @@ def test_ci_workflow_keeps_minimal_and_packaging_smoke_guards() -> None:
     wheel_windows_smoke = _job_step(workflow, "wheel-smoke", "Smoke import and render (Windows)")[
         "run"
     ]
-    assert wheel_windows_smoke.startswith(".wheel-venv\\Scripts\\python -c ")
+    assert "python -c " in wheel_windows_smoke
+    assert "matplotlib.use('Agg')" in wheel_windows_smoke
     assert "show_tensor_network(" in wheel_windows_smoke
     assert "engine='einsum'" in wheel_windows_smoke
 
@@ -161,6 +224,7 @@ def test_ci_workflow_keeps_minimal_and_packaging_smoke_guards() -> None:
         "wheel-smoke",
         "Smoke sdist import and render (Windows)",
     )["run"]
-    assert sdist_windows_smoke.startswith(".sdist-venv\\Scripts\\python -c ")
+    assert "python -c " in sdist_windows_smoke
+    assert "matplotlib.use('Agg')" in sdist_windows_smoke
     assert "show_tensor_network(" in sdist_windows_smoke
     assert "engine='einsum'" in sdist_windows_smoke

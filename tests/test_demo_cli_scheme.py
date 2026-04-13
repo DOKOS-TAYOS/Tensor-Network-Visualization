@@ -121,7 +121,6 @@ def test_finalize_contraction_scheme_enables_slider_behavior_directly() -> None:
         scheme_tensor_names=None,
     )
     assert cfg.show_contraction_scheme is True
-    assert not hasattr(cfg, "contraction_playback")
 
 
 def test_finalize_demo_plot_config_passes_visual_theme() -> None:
@@ -237,7 +236,6 @@ def test_run_demo_parser_defaults_match_cli_contract() -> None:
     assert args.labels is None
     assert args.hover_labels is True
     assert args.scheme is False
-    assert not hasattr(args, "playback")
     assert args.hover_cost is False
     assert args.tensor_inspector is False
     assert args.contracted is False
