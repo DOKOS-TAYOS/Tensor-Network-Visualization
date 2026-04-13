@@ -217,6 +217,17 @@ fig.savefig("tenpy_mps.png", bbox_inches="tight")
 Use `make_tenpy_tensor_network(...)` when you already have named TeNPy `npc.Array` tensors and want
 to provide the bond metadata explicitly.
 
+For momentum-style chains, the repository demo keeps a lightweight compatibility fallback:
+
+```bash
+python examples/run_demo.py tenpy excitation --view 2d --no-show
+```
+
+Direct `MomentumMPS` objects work when your installed TeNPy release is compatible with the NumPy
+version in your environment. Some TeNPy releases still construct `MomentumMPS` through
+`numpy.find_common_type`, which NumPy 2 removed. If that combination fails, use the `excitation`
+demo above or pin a NumPy release compatible with your TeNPy build.
+
 ## `einsum`
 
 NumPy-backed traces work with the base package. Install the `einsum` extra when you need PyTorch:

@@ -191,6 +191,12 @@ Install the `quimb` extra and pass `engine="quimb"` if auto-detection is ambiguo
 If native object extraction is not enough for your case, build an explicit network with
 `make_tenpy_tensor_network(...)`.
 
+If direct `MomentumMPS` construction fails on newer NumPy releases, your installed TeNPy build may
+still depend on `numpy.find_common_type`, which NumPy 2 removed. In that case:
+
+- use the repository fallback demo `python examples/run_demo.py tenpy excitation --view 2d`,
+- or pin a NumPy version compatible with your TeNPy release until upstream support lands.
+
 ### `einsum`
 
 NumPy-backed traces work with base dependencies. PyTorch-backed traces need:

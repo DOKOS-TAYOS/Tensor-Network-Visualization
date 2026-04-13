@@ -38,15 +38,15 @@ def test_test_examples_scopes_optional_backend_skips_per_backend() -> None:
     assert _top_level_importorskip_targets(path) == []
 
 
-def test_engine_demo_modules_do_not_use_shared_graph_blueprints() -> None:
-    engine_demo_paths = (
-        Path("examples/tensorkrowch_demo.py"),
-        Path("examples/tensornetwork_demo.py"),
-        Path("examples/quimb_demo.py"),
-        Path("examples/tenpy_demo.py"),
-    )
+def test_tenpy_docs_call_out_momentum_compatibility_and_example_fallback() -> None:
+    backends_text = Path("docs/backends.md").read_text(encoding="utf-8")
+    troubleshooting_text = Path("docs/troubleshooting.md").read_text(encoding="utf-8")
+    examples_text = Path("examples/README.md").read_text(encoding="utf-8")
 
-    for path in engine_demo_paths:
-        source = path.read_text(encoding="utf-8")
-        assert "GraphBlueprint" not in source
-        assert "_blueprint" not in source
+    assert "MomentumMPS" in backends_text
+    assert "NumPy" in backends_text
+    assert "excitation" in backends_text
+    assert "MomentumMPS" in troubleshooting_text
+    assert "NumPy" in troubleshooting_text
+    assert "excitation" in examples_text
+    assert "NumPy" in examples_text

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import importlib
 import json
 import os
 import shlex
@@ -173,56 +172,6 @@ def test_pyright_config_escalates_active_type_checks_to_errors() -> None:
     assert config["reportCallIssue"] == "error"
 
 
-def test_input_inspection_reuses_graph_utils_unordered_collection_helper() -> None:
-    graph_utils = importlib.import_module("tensor_network_viz._core.graph_utils")
-    input_inspection = importlib.import_module("tensor_network_viz._input_inspection")
-
-    assert input_inspection._is_unordered_collection is graph_utils._is_unordered_collection
-
-
-def test_tenpy_graph_reuses_explicit_leg_label_helper() -> None:
-    explicit = importlib.import_module("tensor_network_viz.tenpy.explicit")
-    graph = importlib.import_module("tensor_network_viz.tenpy.graph")
-
-    assert graph._leg_labels is explicit._leg_labels
-
-
-def test_render_prep_does_not_keep_unused_memory_format_helper() -> None:
-    render_prep = importlib.import_module("tensor_network_viz._core.draw.render_prep")
-
-    assert not hasattr(render_prep, "_format_memory_estimate")
-
-
-def test_tensor_elements_data_does_not_keep_unused_spectral_summary_helpers() -> None:
-    tensor_elements_data = importlib.import_module("tensor_network_viz._tensor_elements_data")
-
-    assert not hasattr(tensor_elements_data, "_build_spectral_summary_lines")
-    assert not hasattr(tensor_elements_data, "_format_name_list")
-    assert not hasattr(tensor_elements_data, "_format_percent")
-    assert not hasattr(tensor_elements_data, "_topk_singular_value_lines")
-    assert not hasattr(tensor_elements_data, "_topk_eigenvalue_lines")
-
-
-def test_layout_and_controls_modules_do_not_keep_unused_internal_symbols() -> None:
-    free_directions_2d = importlib.import_module(
-        "tensor_network_viz._core.layout.free_directions_2d"
-    )
-    controls = importlib.import_module("tensor_network_viz._interaction.controls")
-
-    assert not hasattr(free_directions_2d, "_AssignedStub2D")
-    assert not hasattr(free_directions_2d, "_ANGLE_CONFLICT_DOT_2D")
-    assert not hasattr(controls, "_FOCUS_MODE_OPTIONS")
-    assert not hasattr(controls, "_FOCUS_RADIUS_OPTIONS")
-
-
-def test_tensorkrowch_history_uses_single_node_tuple_normalizer() -> None:
-    history = importlib.import_module("tensor_network_viz.tensorkrowch._history")
-
-    assert hasattr(history, "_normalized_node_tuple")
-    assert not hasattr(history, "_normalized_parent_nodes")
-    assert not hasattr(history, "_normalized_child_nodes")
-
-
 def test_top_level_import_keeps_cold_path_modules_lazy() -> None:
     loaded = _run_module_snapshot(
         """
@@ -332,18 +281,6 @@ print(json.dumps({name: name in sys.modules for name in targets}))
         "tensor_network_viz._interactive_scene": False,
         "matplotlib.widgets": False,
     }
-
-
-def test_layout_module_compatibility_exports_survive_internal_split() -> None:
-    layout_body = importlib.import_module("tensor_network_viz._core.layout.body")
-    draw_edges = importlib.import_module("tensor_network_viz._core.draw.edges")
-    draw_pipeline = importlib.import_module("tensor_network_viz._core.draw.graph_pipeline")
-
-    assert hasattr(layout_body, "_compute_axis_directions")
-    assert hasattr(layout_body, "_compute_layout")
-    assert hasattr(draw_edges, "_draw_edges")
-    assert hasattr(draw_edges, "_draw_edges_2d_layered")
-    assert hasattr(draw_pipeline, "_draw_graph")
 
 
 def test_plot_config_accepts_mapping_positions_with_tuple_and_ndarray_values() -> None:

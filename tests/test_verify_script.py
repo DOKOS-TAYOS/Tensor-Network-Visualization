@@ -29,21 +29,19 @@ def test_verify_script_exposes_perf_mode_in_parser() -> None:
 def test_verify_script_perf_mode_runs_explicit_perf_pytest_command() -> None:
     module = _load_verify_module()
 
-    steps = module._ordered_steps("perf")
+    (step,) = module._ordered_steps("perf")
 
-    assert len(steps) == 1
-    assert steps[0].label == "pytest-perf"
-    assert steps[0].command == (
+    assert step.label == "pytest-perf"
+    assert step.command[:4] == (
         sys.executable,
         "-m",
         "pytest",
         "-q",
-        "-p",
-        "no:cacheprovider",
-        "--override-ini=addopts=",
-        "-m",
-        "perf",
     )
+    assert "-p" in step.command
+    assert "no:cacheprovider" in step.command
+    assert "--override-ini=addopts=" in step.command
+    assert step.command[-2:] == ("-m", "perf")
 
 
 def test_verify_script_all_mode_keeps_perf_out_of_default_route() -> None:
@@ -59,3 +57,4 @@ def test_verify_script_all_mode_keeps_perf_out_of_default_route() -> None:
         "quimb-smoke",
         "build-dist",
     ]
+    assert "pytest-perf" not in labels

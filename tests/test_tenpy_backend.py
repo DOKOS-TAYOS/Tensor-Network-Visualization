@@ -21,6 +21,10 @@ from tensor_network_viz.tenpy.graph import _build_graph as _build_tenpy_graph
 tenpy = pytest.importorskip("tenpy")
 
 pytestmark = pytest.mark.filterwarnings("ignore:unit_cell_width.*:UserWarning")
+_MOMENTUM_MPS_COMPATIBILITY_SKIP_REASON = (
+    "MomentumMPS requires a TeNPy release compatible with the installed NumPy; "
+    "use the tenpy excitation demo fallback or pin a compatible NumPy version."
+)
 
 
 def _build_finite_mps(length: int = 3):
@@ -241,7 +245,7 @@ def test_build_tenpy_graph_real_momentum_mps_if_constructible() -> None:
         mom = MomentumMPS(Xs, u, 0.0)
     except AttributeError as exc:
         if "find_common_type" in str(exc):
-            pytest.skip("MomentumMPS incompatible with installed NumPy (find_common_type removed).")
+            pytest.skip(_MOMENTUM_MPS_COMPATIBILITY_SKIP_REASON)
         raise
     graph = _build_tenpy_graph(mom)
     assert [node.name for node in graph.nodes.values()] == ["X0", "X1"]

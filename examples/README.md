@@ -154,6 +154,9 @@ examples with `--n-sites 6`, where contraction history recovery is safe enough f
 `mps`, `mpo`, `imps`, `impo`, `purification`, `uniform`, `excitation`, `chain`, `hub`,
 `hyper`
 
+If direct `MomentumMPS` construction is unavailable with your installed NumPy version, use
+`excitation` as the momentum-style fallback demo.
+
 ### `einsum`
 
 `mps`, `mpo`, `peps`, `disconnected`, `ellipsis`, `batch`, `trace`, `ternary`, `unary`,

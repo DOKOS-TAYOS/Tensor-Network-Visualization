@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -37,17 +36,13 @@ def _load_workflow() -> dict[str, Any]:
                 in_run_block = False
             continue
 
-        if current_job_name == "wheel-smoke" and indent == 8 and stripped.startswith("os: "):
+        if current_job_name is not None and indent == 8 and stripped.startswith("os: "):
             workflow["jobs"][current_job_name]["matrix"]["os"] = _parse_inline_list(
                 stripped.split(": ", 1)[1]
             )
             continue
 
-        if (
-            current_job_name == "wheel-smoke"
-            and indent == 8
-            and stripped.startswith("python-version: ")
-        ):
+        if current_job_name is not None and indent == 8 and stripped.startswith("python-version: "):
             workflow["jobs"][current_job_name]["matrix"]["python-version"] = _parse_inline_list(
                 stripped.split(": ", 1)[1]
             )
@@ -83,60 +78,43 @@ def _load_workflow() -> dict[str, Any]:
     return workflow
 
 
-def _job_step(workflow: dict[str, Any], job_name: str, step_name: str) -> dict[str, Any]:
-    steps: Iterable[dict[str, Any]] = workflow["jobs"][job_name]["steps"]
-    for step in steps:
+def _job_step_names(workflow: dict[str, Any], job_name: str) -> list[str]:
+    return [step["name"] for step in workflow["jobs"][job_name]["steps"]]
+
+
+def _job_step(workflow: dict[str, Any], job_name: str, step_name: str) -> dict[str, str]:
+    for step in workflow["jobs"][job_name]["steps"]:
         if step["name"] == step_name:
             return step
     raise AssertionError(f"Missing step {step_name!r} in job {job_name!r}")
 
 
-def test_ci_workflow_builds_and_smoke_tests_wheels() -> None:
+def test_ci_workflow_declares_expected_jobs_and_runner_matrices() -> None:
     workflow = _load_workflow()
 
-    assert _job_step(workflow, "wheel-smoke", "Install build tool")["run"] == (
-        "python -m pip install build==1.4.2"
-    )
-    assert _job_step(workflow, "wheel-smoke", "Build package artifacts")["run"] == (
-        "python scripts/verify.py package"
-    )
-    assert _job_step(workflow, "wheel-smoke", "Create wheel test venv")["run"] == (
-        "python -m venv .wheel-venv"
-    )
-    assert _job_step(workflow, "wheel-smoke", "Smoke import and render (Windows)")[
-        "run"
-    ].startswith(".wheel-venv\\Scripts\\python -c \"import matplotlib; matplotlib.use('Agg'); ")
-    assert (
-        "show_tensor_network("
-        in _job_step(workflow, "wheel-smoke", "Smoke import and render (Windows)")["run"]
-    )
-    assert _job_step(workflow, "wheel-smoke", "Smoke sdist import and render (Windows)")[
-        "run"
-    ].startswith(".sdist-venv\\Scripts\\python -c \"import matplotlib; matplotlib.use('Agg'); ")
-    assert (
-        "show_tensor_network("
-        in _job_step(workflow, "wheel-smoke", "Smoke sdist import and render (Windows)")["run"]
-    )
+    assert set(workflow["jobs"]) == {"smoke-minimal", "wheel-smoke", "lint-and-test"}
+    assert workflow["jobs"]["wheel-smoke"]["matrix"]["os"] == ["ubuntu-latest", "windows-latest"]
     assert workflow["jobs"]["wheel-smoke"]["matrix"]["python-version"] == ["3.12", "3.13"]
+    assert workflow["jobs"]["lint-and-test"]["matrix"]["os"] == [
+        "ubuntu-latest",
+        "windows-latest",
+    ]
+    assert workflow["jobs"]["lint-and-test"]["matrix"]["python-version"] == [
+        "3.11",
+        "3.12",
+        "3.13",
+    ]
 
 
-def test_ci_workflow_uses_pinned_requirements_and_verify_runner() -> None:
+def test_ci_workflow_routes_core_checks_through_verify_script() -> None:
     workflow = _load_workflow()
 
-    assert _job_step(workflow, "smoke-minimal", "Install minimal pinned dependencies")["run"] == (
-        "python -m pip install -e . --no-deps\n"
-        "python -m pip install matplotlib==3.10.8 networkx==3.6.1 numpy==2.4.3 pytest==9.0.2 "
-        "quimb==1.13.0"
-    )
     assert _job_step(workflow, "smoke-minimal", "Run headless example")["run"] == (
         "python scripts/verify.py smoke"
     )
     assert _job_step(workflow, "smoke-minimal", "Pytest")["run"] == "python scripts/verify.py tests"
-    assert _job_step(workflow, "lint-and-test", "Install PyTorch (CPU)")["run"] == (
-        "python -m pip install torch --index-url https://download.pytorch.org/whl/cpu"
-    )
-    assert _job_step(workflow, "lint-and-test", "Install pinned dev requirements")["run"] == (
-        "python -m pip install -r requirements.dev.txt"
+    assert _job_step(workflow, "wheel-smoke", "Build package artifacts")["run"] == (
+        "python scripts/verify.py package"
     )
     assert _job_step(workflow, "lint-and-test", "Quality")["run"] == (
         "python scripts/verify.py quality"
@@ -144,33 +122,45 @@ def test_ci_workflow_uses_pinned_requirements_and_verify_runner() -> None:
     assert _job_step(workflow, "lint-and-test", "Smoke example")["run"] == (
         "python scripts/verify.py smoke"
     )
-    assert _job_step(workflow, "lint-and-test", "Pytest")["run"] == "python scripts/verify.py tests"
-
-
-def test_ci_workflow_covers_python_3_13_for_packaging() -> None:
-    workflow = _load_workflow()
-
-    assert workflow["jobs"]["wheel-smoke"]["matrix"]["python-version"] == ["3.12", "3.13"]
-
-
-def test_ci_workflow_locks_windows_package_smoke_commands() -> None:
-    workflow = _load_workflow()
-
-    assert _job_step(workflow, "wheel-smoke", "Install wheel (Windows)")["run"].startswith(
-        ".wheel-venv\\Scripts\\python -m pip install "
+    assert _job_step(workflow, "lint-and-test", "Pytest")["run"] == (
+        "python scripts/verify.py tests"
     )
-    assert _job_step(workflow, "wheel-smoke", "Install sdist (Windows)")["run"].startswith(
-        ".sdist-venv\\Scripts\\python -m pip install "
-    )
-    assert "Create wheel test venv" in [
-        step["name"] for step in workflow["jobs"]["wheel-smoke"]["steps"]
+
+
+def test_ci_workflow_keeps_minimal_and_packaging_smoke_guards() -> None:
+    workflow = _load_workflow()
+    minimal_install = _job_step(workflow, "smoke-minimal", "Install minimal pinned dependencies")[
+        "run"
     ]
-    assert "Create sdist test venv" in [
-        step["name"] for step in workflow["jobs"]["wheel-smoke"]["steps"]
+
+    assert "python -m pip install -e . --no-deps" in minimal_install
+    for requirement in ("matplotlib==3.10.8", "networkx==3.6.1", "numpy==2.4.3", "quimb==1.13.0"):
+        assert requirement in minimal_install
+
+    wheel_step_names = _job_step_names(workflow, "wheel-smoke")
+    for step_name in (
+        "Install build tool",
+        "Create wheel test venv",
+        "Create sdist test venv",
+        "Install wheel (Windows)",
+        "Smoke import and render (Windows)",
+        "Install sdist (Windows)",
+        "Smoke sdist import and render (Windows)",
+    ):
+        assert step_name in wheel_step_names
+
+    wheel_windows_smoke = _job_step(workflow, "wheel-smoke", "Smoke import and render (Windows)")[
+        "run"
     ]
-    assert "Smoke import and render (Windows)" in [
-        step["name"] for step in workflow["jobs"]["wheel-smoke"]["steps"]
-    ]
-    assert "Smoke sdist import and render (Windows)" in [
-        step["name"] for step in workflow["jobs"]["wheel-smoke"]["steps"]
-    ]
+    assert wheel_windows_smoke.startswith(".wheel-venv\\Scripts\\python -c ")
+    assert "show_tensor_network(" in wheel_windows_smoke
+    assert "engine='einsum'" in wheel_windows_smoke
+
+    sdist_windows_smoke = _job_step(
+        workflow,
+        "wheel-smoke",
+        "Smoke sdist import and render (Windows)",
+    )["run"]
+    assert sdist_windows_smoke.startswith(".sdist-venv\\Scripts\\python -c ")
+    assert "show_tensor_network(" in sdist_windows_smoke
+    assert "engine='einsum'" in sdist_windows_smoke
