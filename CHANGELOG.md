@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.3] — 2026-04-13
+
 ### Changed
 
 - **Refactoring:** Internal refactors for clearer structure and maintainability.
@@ -197,6 +199,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[1.6.3]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.4...v1.6.0
