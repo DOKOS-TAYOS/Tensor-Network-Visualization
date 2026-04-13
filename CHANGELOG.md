@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Refactoring:** Internal refactors for clearer structure and maintainability.
+- **Performance:** Improved efficiency across hot paths in visualization and layout.
+- **2D geometry:** More reliable determination of two-dimensional geometry in the layout pipeline.
+
+### Fixed
+
+- **Stability:** Minor bug fixes across controls and layout handling.
+
 ## [1.6.2] — 2026-04-13
 
 ### Changed
