@@ -217,18 +217,44 @@ tnv.show_tensor_elements(
     show=False,
     show_controls=False,
 )
-targets = [
-    "tensor_network_viz._tensor_elements_controller",
-    "matplotlib.widgets",
-]
-print(json.dumps({name: name in sys.modules for name in targets}))
+print(
+    json.dumps(
+        {
+            "tensor_network_viz._tensor_elements_controller": (
+                "tensor_network_viz._tensor_elements_controller" in sys.modules
+            ),
+        }
+    )
+)
 """
     )
 
-    assert loaded == {
-        "tensor_network_viz._tensor_elements_controller": False,
-        "matplotlib.widgets": False,
-    }
+    assert loaded["tensor_network_viz._tensor_elements_controller"] is False
+
+
+def test_static_tensor_elements_preserves_preimported_widgets_module_identity() -> None:
+    loaded = _run_module_snapshot(
+        """
+import json
+
+import matplotlib
+matplotlib.use("Agg")
+import numpy as np
+from matplotlib.widgets import Slider as SliderBefore
+import tensor_network_viz as tnv
+
+tnv.show_tensor_elements(
+    np.arange(6.0).reshape(2, 3),
+    show=False,
+    show_controls=False,
+)
+from matplotlib.widgets import Slider as SliderAfter
+
+print(json.dumps({"same_slider": SliderBefore is SliderAfter}))
+"""
+    )
+
+    assert loaded == {"same_slider": True}
 
 
 def test_static_tensor_network_cold_path_skips_interaction_modules() -> None:
@@ -265,22 +291,67 @@ left.edges[1] = edge
 right.edges[0] = edge
 
 tnv.show_tensor_network([left, right], show=False, show_controls=False)
-targets = [
-    "tensor_network_viz.contraction_viewer",
-    "tensor_network_viz._interaction.scheme",
-    "tensor_network_viz._interactive_scene",
-    "matplotlib.widgets",
-]
-print(json.dumps({name: name in sys.modules for name in targets}))
+print(
+    json.dumps(
+        {
+            "tensor_network_viz.contraction_viewer": "tensor_network_viz.contraction_viewer"
+            in sys.modules,
+            "tensor_network_viz._interaction.scheme": "tensor_network_viz._interaction.scheme"
+            in sys.modules,
+            "tensor_network_viz._interactive_scene": "tensor_network_viz._interactive_scene"
+            in sys.modules,
+        }
+    )
+)
 """
     )
 
-    assert loaded == {
-        "tensor_network_viz.contraction_viewer": False,
-        "tensor_network_viz._interaction.scheme": False,
-        "tensor_network_viz._interactive_scene": False,
-        "matplotlib.widgets": False,
-    }
+    assert loaded["tensor_network_viz.contraction_viewer"] is False
+    assert loaded["tensor_network_viz._interaction.scheme"] is False
+    assert loaded["tensor_network_viz._interactive_scene"] is False
+
+
+def test_static_tensor_network_preserves_preimported_widgets_module_identity() -> None:
+    loaded = _run_module_snapshot(
+        """
+import json
+
+import matplotlib
+matplotlib.use("Agg")
+import numpy as np
+from matplotlib.widgets import Slider as SliderBefore
+import tensor_network_viz as tnv
+
+class Edge:
+    def __init__(self, name):
+        self.name = name
+        self.node1 = None
+        self.node2 = None
+
+class Node:
+    def __init__(self, name, axis_names):
+        self.name = name
+        self.axis_names = list(axis_names)
+        self.tensor = np.ones((2, 2), dtype=float)
+        self.shape = self.tensor.shape
+        self.edges = [None] * len(self.axis_names)
+
+left = Node("L", ("a", "b"))
+right = Node("R", ("b", "c"))
+edge = Edge("bond")
+edge.node1 = left
+edge.node2 = right
+left.edges[1] = edge
+right.edges[0] = edge
+
+tnv.show_tensor_network([left, right], show=False, show_controls=False)
+from matplotlib.widgets import Slider as SliderAfter
+
+print(json.dumps({"same_slider": SliderBefore is SliderAfter}))
+"""
+    )
+
+    assert loaded == {"same_slider": True}
 
 
 def test_plot_config_accepts_mapping_positions_with_tuple_and_ndarray_values() -> None:

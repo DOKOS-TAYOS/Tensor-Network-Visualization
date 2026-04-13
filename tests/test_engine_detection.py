@@ -10,9 +10,16 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 
-from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network
+from tensor_network_viz import (
+    PlotConfig,
+    TenPyTensorNetwork,
+    make_tenpy_tensor_network,
+    pair_tensor,
+    show_tensor_network,
+)
 from tensor_network_viz._input_inspection import (
     _grid_positions_for_network_input,
     _prepare_network_input,
@@ -60,6 +67,20 @@ class DummyQuimbTensor:
 class DummyQuimbNetwork:
     def __init__(self, *, tensors: Iterable[DummyQuimbTensor]) -> None:
         self.tensors = tensors
+
+
+class DummyTenPyTensor:
+    def __init__(
+        self, array: np.ndarray[Any, np.dtype[np.float64]], labels: tuple[str, ...]
+    ) -> None:
+        self._array = array
+        self._labels = labels
+
+    def to_ndarray(self) -> np.ndarray[Any, np.dtype[np.float64]]:
+        return self._array
+
+    def get_leg_labels(self) -> tuple[str, ...]:
+        return self._labels
 
 
 def connect(
@@ -124,6 +145,32 @@ def test_show_tensor_network_autodetects_einsum_engine() -> None:
     trace = [pair_tensor("A", "x", "r0", "ab,b->a")]
 
     fig, ax = show_tensor_network(trace, show=False, show_controls=False)
+
+    assert fig is ax.figure
+    assert ax.name != "3d"
+
+
+def test_show_tensor_network_autodetects_tenpy_subclass_network() -> None:
+    class DerivedTenPyTensorNetwork(TenPyTensorNetwork):
+        pass
+
+    base = make_tenpy_tensor_network(
+        [
+            (
+                "A",
+                DummyTenPyTensor(
+                    np.array([[1.0, 2.0], [3.0, 4.0]], dtype=float),
+                    ("left", "right"),
+                ),
+            )
+        ],
+        [],
+    )
+    network = DerivedTenPyTensorNetwork(nodes=base.nodes, bonds=base.bonds)
+
+    assert _detect_engine(network) == "tenpy"
+
+    fig, ax = show_tensor_network(network, show=False, show_controls=False)
 
     assert fig is ax.figure
     assert ax.name != "3d"

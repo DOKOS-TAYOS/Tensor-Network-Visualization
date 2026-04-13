@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from typing import Any, TypeAlias, cast
 
 import matplotlib.pyplot as plt
@@ -10,6 +9,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
+from ._import_state import _preserve_sys_module_entry
 from ._input_inspection import (
     _default_view_for_network_input,
     _detect_network_engine_with_input,
@@ -173,27 +173,25 @@ def show_tensor_network(
         dimensions = 2 if resolved_view == "2d" else 3
         style = _merge_grid_positions_into_config(style, network_input, dimensions=dimensions)
         static_style = style
-        if resolved_view == "2d":
-            fig, ax_out = plot_2d(
-                network_input,
-                ax=cast(Axes, ax) if ax is not None else None,
-                config=static_style,
-                _build_contraction_controls=False,
-                _build_scene_state=False,
-            )
-        elif resolved_view == "3d":
-            fig, ax_out = plot_3d(
-                network_input,
-                ax=ax,
-                config=static_style,
-                _build_contraction_controls=False,
-                _build_scene_state=False,
-            )
-        else:
-            raise AxisConfigurationError(f"Unsupported tensor network view: {resolved_view}")
-        # Static renders do not use interactive widgets, even if Matplotlib imported them as a
-        # side effect while creating figures and axes.
-        sys.modules.pop("matplotlib.widgets", None)
+        with _preserve_sys_module_entry("matplotlib.widgets"):
+            if resolved_view == "2d":
+                fig, ax_out = plot_2d(
+                    network_input,
+                    ax=cast(Axes, ax) if ax is not None else None,
+                    config=static_style,
+                    _build_contraction_controls=False,
+                    _build_scene_state=False,
+                )
+            elif resolved_view == "3d":
+                fig, ax_out = plot_3d(
+                    network_input,
+                    ax=ax,
+                    config=static_style,
+                    _build_contraction_controls=False,
+                    _build_scene_state=False,
+                )
+            else:
+                raise AxisConfigurationError(f"Unsupported tensor network view: {resolved_view}")
     else:
         from .interactive_viewer import show_tensor_network_interactive
 

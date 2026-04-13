@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +10,7 @@ import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
+from ._import_state import _preserve_sys_module_entry
 from ._logging import package_logger
 from ._matplotlib_state import set_tensor_elements_controls
 from ._tensor_elements_rendering import (
@@ -140,43 +140,41 @@ def _show_static_tensor_records(
     show: bool,
 ) -> tuple[Figure, Axes]:
     _validate_tensor_elements_axis(records=records, ax=ax, show_controls=False)
-    if ax is None:
-        figure, main_ax = _build_internal_axis(config=config)
-    else:
-        figure, main_ax = _build_single_external_axis(ax)
+    with _preserve_sys_module_entry("matplotlib.widgets"):
+        if ax is None:
+            figure, main_ax = _build_internal_axis(config=config)
+        else:
+            figure, main_ax = _build_single_external_axis(ax)
 
-    set_tensor_elements_controls(figure, None)
-    panel = _RenderedTensorPanel(
-        base_position=main_ax.get_position().bounds,
-        main_ax=main_ax,
-    )
-    current_record = records[0]
-    resolved_mode, payload = _prepare_mode_payload(
-        current_record,
-        config=config,
-        mode=_initial_mode_for_record(current_record, config=config),
-    )
-    if isinstance(payload, _HeatmapPayload):
-        payload = _finalize_static_heatmap_payload(
-            records,
+        set_tensor_elements_controls(figure, None)
+        panel = _RenderedTensorPanel(
+            base_position=main_ax.get_position().bounds,
+            main_ax=main_ax,
+        )
+        current_record = records[0]
+        resolved_mode, payload = _prepare_mode_payload(
+            current_record,
             config=config,
-            mode=resolved_mode,
+            mode=_initial_mode_for_record(current_record, config=config),
+        )
+        if isinstance(payload, _HeatmapPayload):
+            payload = _finalize_static_heatmap_payload(
+                records,
+                config=config,
+                mode=resolved_mode,
+                payload=payload,
+            )
+        _render_panel(
+            panel,
+            config=config,
+            record=current_record,
             payload=payload,
         )
-    _render_panel(
-        panel,
-        config=config,
-        record=current_record,
-        payload=payload,
-    )
-    # Matplotlib may load widgets as a side effect of figure/axes imports even though the
-    # static tensor-elements path never instantiates any widget.
-    sys.modules.pop("matplotlib.widgets", None)
-    if show:
-        from .viewer import _show_figure
+        if show:
+            from .viewer import _show_figure
 
-        _show_figure(figure)
-    return figure, main_ax
+            _show_figure(figure)
+        return figure, main_ax
 
 
 def _show_tensor_records(

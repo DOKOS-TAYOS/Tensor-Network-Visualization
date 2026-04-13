@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from functools import cache
 from itertools import tee
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +12,8 @@ import numpy as np
 from ._engine_specs import EngineName
 from ._input_inspection import (
     _detect_tensor_engine_with_input,
+    _is_einsum_trace,
+    _is_explicit_tenpy_network,
     _is_tenpy_tensor,
     _is_unordered_collection,
 )
@@ -45,38 +48,21 @@ def parse_einsum_equation(
     return _parse_einsum_equation(equation, operand_shapes)
 
 
-def _has_exact_runtime_type(value: Any, *, module: str, qualname: str) -> bool:
-    value_type = type(value)
-    return value_type.__module__ == module and value_type.__qualname__ == qualname
+@cache
+def _pair_tensor_type() -> type[Any]:
+    from .einsum_module._trace_types import pair_tensor
 
-
-def _is_einsum_trace_object(value: Any) -> bool:
-    return _has_exact_runtime_type(
-        value,
-        module="tensor_network_viz.einsum_module.trace",
-        qualname="EinsumTrace",
-    )
+    return pair_tensor
 
 
 def _is_einsum_pair_step(value: Any) -> bool:
-    return _has_exact_runtime_type(
-        value,
-        module="tensor_network_viz.einsum_module._trace_types",
-        qualname="pair_tensor",
-    )
-
-
-def _is_explicit_tenpy_network(value: Any) -> bool:
-    return _has_exact_runtime_type(
-        value,
-        module="tensor_network_viz.tenpy.explicit",
-        qualname="TenPyTensorNetwork",
-    )
+    return isinstance(value, _pair_tensor_type())
 
 
 def _looks_like_backend_tensor_input(value: Any) -> bool:
     return (
-        _is_einsum_trace_object(value)
+        _is_einsum_trace(value)
+        or _is_explicit_tenpy_network(value)
         or _is_tenpy_tensor(value)
         or hasattr(value, "tensors")
         or hasattr(value, "leaf_nodes")
@@ -383,9 +369,9 @@ def _extract_tenpy_records(data: Any) -> list[_TensorRecord]:
 
 
 def _extract_einsum_records(data: Any) -> list[_TensorRecord]:
-    if not _is_einsum_trace_object(data):
+    if not _is_einsum_trace(data):
         raise TypeError(
-            "show_tensor_elements only supports EinsumTrace objects with live tensor values. "
+            "show_tensor_elements only supports EinsumTrace instances with live tensor values. "
             "Manual pair_tensor/einsum_trace_step iterables describe contractions but do not carry "
             "tensor values."
         )
@@ -444,8 +430,8 @@ def _axis_names_for_einsum_step(step: pair_tensor | einsum_trace_step) -> tuple[
 
 
 def _extract_einsum_playback_step_records(data: Any) -> tuple[_PlaybackStepRecord, ...]:
-    if not _is_einsum_trace_object(data):
-        raise TypeError("Playback tensor inspection only supports real EinsumTrace objects.")
+    if not _is_einsum_trace(data):
+        raise TypeError("Playback tensor inspection only supports EinsumTrace instances.")
 
     state = data._state
     state._sweep_dead_records()
@@ -517,7 +503,7 @@ def _extract_tensorkrowch_playback_step_records(
 
 def _extract_playback_step_records(data: Any) -> tuple[_PlaybackStepRecord, ...] | None:
     """Recover playback result tensors when the input carries contraction history."""
-    if _is_einsum_trace_object(data):
+    if _is_einsum_trace(data):
         return _extract_einsum_playback_step_records(data)
 
     try:

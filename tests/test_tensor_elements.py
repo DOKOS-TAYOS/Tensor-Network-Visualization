@@ -23,9 +23,11 @@ import tensor_network_viz._tensor_elements_payloads as tensor_elements_payloads_
 from plotting_helpers import assert_rendered_figure
 from tensor_network_viz import (
     EinsumTrace,
+    TenPyTensorNetwork,
     TensorAnalysisConfig,
     TensorElementsConfig,
     einsum,
+    make_tenpy_tensor_network,
     pair_tensor,
     show_tensor_elements,
 )
@@ -100,6 +102,20 @@ class DummyQuimbTensor:
 class DummyQuimbNetwork:
     def __init__(self, tensors: Iterable[DummyQuimbTensor]) -> None:
         self.tensors = tensors
+
+
+class DummyTenPyTensor:
+    def __init__(
+        self, array: np.ndarray[Any, np.dtype[np.float64]], labels: tuple[str, ...]
+    ) -> None:
+        self._array = array
+        self._labels = labels
+
+    def to_ndarray(self) -> np.ndarray[Any, np.dtype[np.float64]]:
+        return self._array
+
+    def get_leg_labels(self) -> tuple[str, ...]:
+        return self._labels
 
 
 def _line_ydata_as_float(ax: Axes) -> np.ndarray[Any, np.dtype[np.float64]]:
@@ -268,6 +284,57 @@ def test_show_tensor_elements_supports_direct_numpy_array_input() -> None:
     assert "tensor" in ax.get_title().lower()
 
 
+def test_show_tensor_elements_accepts_einsum_trace_subclass() -> None:
+    class DerivedEinsumTrace(EinsumTrace):
+        pass
+
+    trace = DerivedEinsumTrace()
+    left = np.arange(6, dtype=float).reshape(2, 3)
+    right = np.arange(12, dtype=float).reshape(3, 4)
+
+    trace.bind("Left", left)
+    trace.bind("Right", right)
+    result = einsum("ab,bc->ac", left, right, trace=trace, backend="numpy")
+    trace._test_keepalive = [left, right, result]  # type: ignore[attr-defined]
+
+    fig, ax = show_tensor_elements(trace, show=False, show_controls=False)
+
+    assert_rendered_figure(fig, ax)
+    assert ax.get_title()
+
+
+def test_show_tensor_elements_accepts_tenpy_network_subclass() -> None:
+    class DerivedTenPyTensorNetwork(TenPyTensorNetwork):
+        pass
+
+    base = make_tenpy_tensor_network(
+        [
+            (
+                "A",
+                DummyTenPyTensor(
+                    np.array([[1.0, 2.0], [3.0, 4.0]], dtype=float),
+                    ("left", "right"),
+                ),
+            )
+        ],
+        [],
+    )
+    network = DerivedTenPyTensorNetwork(nodes=base.nodes, bonds=base.bonds)
+
+    fig, ax = show_tensor_elements(network, show=False, show_controls=False)
+    assert_rendered_figure(fig, ax)
+    assert ax.get_title()
+
+    fig, ax = show_tensor_elements(
+        network,
+        show=False,
+        show_controls=False,
+        engine="tenpy",
+    )
+    assert_rendered_figure(fig, ax)
+    assert ax.get_title()
+
+
 def test_show_tensor_elements_slice_mode_renders_requested_plane() -> None:
     tensor = DummyTensorNetworkNode(
         np.arange(24, dtype=float).reshape(2, 3, 4),
@@ -365,6 +432,27 @@ def test_extract_einsum_playback_step_records_follow_trace_order_and_output_axes
     assert step_records[1].record.axis_names == ("a", "d")
     assert tuple(step_records[0].record.array.shape) == (2, 4)
     assert tuple(step_records[1].record.array.shape) == (2, 2)
+
+
+def test_extract_playback_step_records_accepts_einsum_trace_subclass() -> None:
+    class DerivedEinsumTrace(EinsumTrace):
+        pass
+
+    trace = DerivedEinsumTrace()
+    left = np.arange(6, dtype=float).reshape(2, 3)
+    right = np.arange(12, dtype=float).reshape(3, 4)
+
+    trace.bind("Left", left)
+    trace.bind("Right", right)
+    result = einsum("ab,bc->ac", left, right, trace=trace, backend="numpy")
+    trace._test_keepalive = [left, right, result]  # type: ignore[attr-defined]
+
+    step_records = _extract_playback_step_records(trace)
+
+    assert step_records is not None
+    assert [step.result_name for step in step_records] == ["r0"]
+    assert step_records[0].record is not None
+    assert step_records[0].record.axis_names == ("a", "c")
 
 
 def test_extract_einsum_playback_step_records_marks_missing_intermediate_tensors() -> None:

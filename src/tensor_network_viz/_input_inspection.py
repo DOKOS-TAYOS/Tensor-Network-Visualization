@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import replace
+from functools import cache
 from itertools import tee
 from typing import Any
 
@@ -322,33 +323,37 @@ def _is_tenpy_tensor(value: Any) -> bool:
     )
 
 
-def _has_exact_runtime_type(value: Any, *, module: str, qualname: str) -> bool:
-    value_type = type(value)
-    return value_type.__module__ == module and value_type.__qualname__ == qualname
+@cache
+def _einsum_trace_type() -> type[Any]:
+    from .einsum_module.trace import EinsumTrace
+
+    return EinsumTrace
+
+
+@cache
+def _einsum_trace_entry_types() -> tuple[type[Any], type[Any]]:
+    from .einsum_module._trace_types import einsum_trace_step, pair_tensor
+
+    return pair_tensor, einsum_trace_step
+
+
+@cache
+def _explicit_tenpy_network_type() -> type[Any]:
+    from .tenpy.explicit import TenPyTensorNetwork
+
+    return TenPyTensorNetwork
 
 
 def _is_einsum_trace(value: Any) -> bool:
-    return _has_exact_runtime_type(
-        value,
-        module="tensor_network_viz.einsum_module.trace",
-        qualname="EinsumTrace",
-    )
+    return isinstance(value, _einsum_trace_type())
 
 
 def _is_einsum_trace_entry(value: Any) -> bool:
-    value_type = type(value)
-    return (
-        value_type.__module__ == "tensor_network_viz.einsum_module._trace_types"
-        and value_type.__qualname__ in {"pair_tensor", "einsum_trace_step"}
-    )
+    return isinstance(value, _einsum_trace_entry_types())
 
 
 def _is_explicit_tenpy_network(value: Any) -> bool:
-    return _has_exact_runtime_type(
-        value,
-        module="tensor_network_viz.tenpy.explicit",
-        qualname="TenPyTensorNetwork",
-    )
+    return isinstance(value, _explicit_tenpy_network_type())
 
 
 def _is_tenpy_like(value: Any, *, include_tensor: bool = False) -> bool:
