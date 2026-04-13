@@ -88,6 +88,7 @@ def test_auto_save_path_uses_engine_and_example() -> None:
 
 def _demo_args(
     *,
+    labels_nodes: bool | None = None,
     theme: str = "default",
     scheme: bool = False,
     hover_cost: bool = False,
@@ -95,7 +96,7 @@ def _demo_args(
     contracted: bool = False,
 ) -> argparse.Namespace:
     return argparse.Namespace(
-        labels_nodes=True,
+        labels_nodes=labels_nodes,
         labels_edges=False,
         labels=None,
         hover_labels=True,
@@ -132,6 +133,16 @@ def test_finalize_demo_plot_config_passes_visual_theme() -> None:
 
     assert cfg.theme == "paper"
     assert cfg.node_color == "#FFFFFF"
+
+
+def test_finalize_demo_plot_config_keeps_auto_tensor_label_default_unresolved() -> None:
+    cfg = finalize_demo_plot_config(
+        _demo_args(labels_nodes=None),
+        engine="einsum",
+        scheme_tensor_names=None,
+    )
+
+    assert cfg.show_tensor_labels is None
 
 
 def test_finalize_contraction_cost_hover_auto_enables_scheme() -> None:
@@ -231,7 +242,7 @@ def test_run_demo_parser_defaults_match_cli_contract() -> None:
     assert args.example == "mps"
     assert args.view == "2d"
     assert args.theme == "default"
-    assert args.labels_nodes is True
+    assert args.labels_nodes is None
     assert args.labels_edges is False
     assert args.labels is None
     assert args.hover_labels is True

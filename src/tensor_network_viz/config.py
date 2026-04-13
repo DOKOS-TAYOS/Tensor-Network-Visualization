@@ -222,8 +222,10 @@ class PlotConfig:
 
     Attributes:
         show_nodes: Whether to draw tensor nodes with their full geometry. If ``False``,
-            use compact fixed-size markers instead.
-        show_tensor_labels: Whether to draw static tensor names on nodes.
+            use compact fixed-size markers instead. ``None`` enables the automatic mode:
+            draw nodes only when the visible non-virtual tensor count is below 60.
+        show_tensor_labels: Whether to draw static tensor names on nodes. ``None`` uses
+            that same automatic visible-tensor threshold.
         show_index_labels: Whether to draw static index labels on edges.
         hover_labels: Whether to enable hover tooltips for tensor names and edge labels.
             This is independent from the static label toggles.
@@ -282,8 +284,8 @@ class PlotConfig:
     DEFAULT_CONTRACTION_SCHEME_LINEWIDTH: ClassVar[float] = 0.12
     DEFAULT_LAYOUT_ITERATIONS: ClassVar[int] = 220
 
-    show_nodes: bool = True
-    show_tensor_labels: bool = False
+    show_nodes: bool | None = None
+    show_tensor_labels: bool | None = None
     show_index_labels: bool = False
     hover_labels: bool = True
     show_contraction_scheme: bool = False

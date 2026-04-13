@@ -57,6 +57,7 @@ python examples/run_demo.py tensornetwork weird --view 3d
 python examples/run_demo.py themes overview --view 2d
 python examples/run_demo.py placements manual_scheme --view 2d
 python examples/run_demo.py geometry disconnected_irregular --view 2d
+python examples/run_demo.py geometry decorated_sparse_grid2d --view 2d
 ```
 
 ## Standalone Tensor Inspection
@@ -121,7 +122,7 @@ examples with `--n-sites 6`, where contraction history recovery is safe enough f
 | --- | --- |
 | `--view {2d,3d}` | Initial view. |
 | `--theme {default,paper,colorblind,dark,midnight,forest,slate}` | Visual theme preset. Use `paper` for clean exports, `colorblind` for accessible colors, `dark` or `midnight` for dark canvases, and `forest` or `slate` for softer light palettes. |
-| `--labels-nodes` | Show tensor labels. |
+| `--labels-nodes` | Show tensor labels. By default this stays in auto mode and turns on below 60 visible tensors. |
 | `--labels-edges` | Show index labels. |
 | `--labels` | Override both label flags at once. |
 | `--hover-labels` | Enable hover tooltips. |
@@ -172,13 +173,14 @@ If direct `MomentumMPS` construction is unavailable with your installed NumPy ve
 
 ### `geometry`
 
-`partial_grid2d`, `upper_triangle2d`, `partial_grid3d`, `upper_pyramid3d`,
-`random_irregular`, `circular_ring`, `circular_chords`, `tubular_grid`,
-`disconnected_irregular`
+`partial_grid2d`, `decorated_sparse_grid2d`, `upper_triangle2d`, `partial_grid3d`,
+`upper_pyramid3d`, `random_irregular`, `circular_ring`, `circular_chords`,
+`tubular_grid`, `disconnected_irregular`
 
 Uso de layout en estas demos: todas se pasan como listas planas de tensores para comprobar
-la deteccion automatica. Las parciales prueban grids con huecos, `circular_ring` y
-`circular_chords` prueban estructuras circulares, `tubular_grid` prueba una grid envuelta en
+la deteccion automatica. Las parciales prueban grids con huecos, `decorated_sparse_grid2d`
+añade hojas observadas alrededor de una sparse grid 2D con huecos triangulares, `circular_ring`
+y `circular_chords` prueban estructuras circulares, `tubular_grid` prueba una grid envuelta en
 una direccion, y `random_irregular` y `disconnected_irregular` siguen usando layout automatico.
 
 ## Batch Rendering

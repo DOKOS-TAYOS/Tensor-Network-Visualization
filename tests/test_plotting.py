@@ -350,14 +350,134 @@ def connect(
     return edge
 
 
+def _build_dummy_chain_network(length: int) -> DummyNetwork:
+    nodes: list[DummyTensorKrowchNode] = []
+    for index in range(length):
+        axes_names: list[str] = []
+        if index > 0:
+            axes_names.append("left")
+        if index < length - 1:
+            axes_names.append("right")
+        nodes.append(DummyTensorKrowchNode(f"N{index}", axes_names))
+    for index in range(length - 1):
+        connect(
+            nodes[index],
+            nodes[index].axes_names.index("right"),
+            nodes[index + 1],
+            nodes[index + 1].axes_names.index("left"),
+            name=f"bond_{index}",
+        )
+    return DummyNetwork(nodes=nodes)
+
+
 @pytest.fixture(autouse=True)
 def close_figures():
     yield
     plt.close("all")
 
 
-def test_plot_config_show_nodes_defaults_to_true() -> None:
-    assert PlotConfig().show_nodes is True
+def test_plot_config_show_nodes_defaults_to_none() -> None:
+    assert PlotConfig().show_nodes is None
+
+
+def test_show_tensor_network_auto_small_defaults_enable_nodes_and_tensor_labels() -> None:
+    fig, ax = show_tensor_network(
+        _build_dummy_chain_network(3),
+        engine="tensorkrowch",
+        config=PlotConfig(show_nodes=None, show_tensor_labels=None),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    scene = get_scene(ax)
+
+    assert controls is not None
+    assert scene is not None
+    assert controls.nodes_on is True
+    assert controls.tensor_labels_on is True
+    assert scene.active_node_mode == "normal"
+    assert scene.tensor_label_artists
+    assert all(artist.get_visible() for artist in scene.tensor_label_artists)
+
+
+def test_show_tensor_network_auto_large_defaults_disable_nodes_and_tensor_labels() -> None:
+    fig, ax = show_tensor_network(
+        _build_dummy_chain_network(80),
+        engine="tensorkrowch",
+        config=PlotConfig(show_nodes=None, show_tensor_labels=None),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    scene = get_scene(ax)
+
+    assert controls is not None
+    assert scene is not None
+    assert controls.nodes_on is False
+    assert controls.tensor_labels_on is False
+    assert scene.active_node_mode == "compact"
+    assert scene.tensor_label_artists == []
+
+
+def test_show_tensor_network_explicit_overrides_beat_auto_defaults() -> None:
+    large_fig, large_ax = show_tensor_network(
+        _build_dummy_chain_network(80),
+        engine="tensorkrowch",
+        config=PlotConfig(show_nodes=True, show_tensor_labels=True),
+        show=False,
+    )
+    large_controls = getattr(large_fig, "_tensor_network_viz_interactive_controls", None)
+    large_scene = get_scene(large_ax)
+
+    assert large_controls is not None
+    assert large_scene is not None
+    assert large_controls.nodes_on is True
+    assert large_controls.tensor_labels_on is True
+    assert large_scene.active_node_mode == "normal"
+    assert large_scene.tensor_label_artists
+
+    small_fig, small_ax = show_tensor_network(
+        _build_dummy_chain_network(3),
+        engine="tensorkrowch",
+        config=PlotConfig(show_nodes=False, show_tensor_labels=False),
+        show=False,
+    )
+    small_controls = getattr(small_fig, "_tensor_network_viz_interactive_controls", None)
+    small_scene = get_scene(small_ax)
+
+    assert small_controls is not None
+    assert small_scene is not None
+    assert small_controls.nodes_on is False
+    assert small_controls.tensor_labels_on is False
+    assert small_scene.active_node_mode == "compact"
+    assert small_scene.tensor_label_artists == []
+
+
+def test_show_tensor_network_auto_defaults_stay_fixed_after_focus_rerender() -> None:
+    fig, ax = show_tensor_network(
+        _build_dummy_chain_network(80),
+        engine="tensorkrowch",
+        config=PlotConfig(show_nodes=None, show_tensor_labels=None),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    scene = get_scene(ax)
+
+    assert controls is not None
+    assert scene is not None
+    assert controls.nodes_on is False
+    assert controls.tensor_labels_on is False
+
+    controls.set_focus_mode("neighborhood")
+    assert controls.select_focus_node("N40") is True
+
+    focused_scene = controls.current_scene
+    assert len(focused_scene.visible_node_ids) < 60
+    assert controls.nodes_on is False
+    assert controls.tensor_labels_on is False
+    assert focused_scene.active_node_mode == "compact"
+    assert focused_scene.tensor_label_artists == []
 
 
 def test_build_tensorkrowch_graph_disconnected_components() -> None:
@@ -583,7 +703,7 @@ def test_plot_tensornetwork_network_2d_hover_labels_skips_static_label_artists()
 
     fig, ax = plot_tensornetwork_network_2d(
         {left, right},
-        config=PlotConfig(figsize=(4, 3), hover_labels=True),
+        config=PlotConfig(figsize=(4, 3), hover_labels=True, show_tensor_labels=False),
     )
     try:
         gids = {t.get_gid() for t in ax.texts if t.get_gid()}
@@ -602,7 +722,7 @@ def test_plot_tensornetwork_network_3d_hover_labels_skips_static_label_artists()
 
     fig, ax = plot_tensornetwork_network_3d(
         {left, right},
-        config=PlotConfig(figsize=(4, 3), hover_labels=True),
+        config=PlotConfig(figsize=(4, 3), hover_labels=True, show_tensor_labels=False),
     )
     try:
         gids = {t.get_gid() for t in ax.texts if t.get_gid()}
@@ -689,7 +809,7 @@ def test_show_tensor_network_default_interactive_controls_start_in_2d() -> None:
     assert ax.name != "3d"
     assert controls.current_view == "2d"
     assert controls.hover_on is True
-    assert controls.tensor_labels_on is False
+    assert controls.tensor_labels_on is True
     assert controls.edge_labels_on is False
     assert controls._view_toggle_ax is not None and controls._view_toggle_ax in fig.axes
     assert controls._view_toggle_button is not None
@@ -713,6 +833,7 @@ def test_show_tensor_network_interactive_controls_include_nodes_toggle() -> None
     fig, _ax = show_tensor_network(
         DummyNetwork(nodes=[left, right]),
         engine="tensorkrowch",
+        config=PlotConfig(show_tensor_labels=False),
         show=False,
     )
 
@@ -890,6 +1011,7 @@ def test_show_tensor_network_builds_3d_view_lazily_once(
     fig, _ax = show_tensor_network(
         DummyNetwork(nodes=[left, right]),
         engine="tensorkrowch",
+        config=PlotConfig(show_tensor_labels=False),
         show=False,
     )
 
@@ -945,6 +1067,7 @@ def test_show_tensor_network_view_toggle_button_switches_between_2d_and_3d() -> 
     fig, _ax = show_tensor_network(
         DummyNetwork(nodes=[left, right]),
         engine="tensorkrowch",
+        config=PlotConfig(show_tensor_labels=False),
         show=False,
     )
 
@@ -2613,6 +2736,7 @@ def test_show_tensor_network_defers_label_descriptors_until_menu_toggle(
     fig, _ax = show_tensor_network(
         DummyNetwork(nodes=[left, right]),
         engine="tensorkrowch",
+        config=PlotConfig(show_tensor_labels=False),
         show=False,
     )
 

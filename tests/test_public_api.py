@@ -35,8 +35,8 @@ pytestmark = pytest.mark.filterwarnings("ignore:unit_cell_width.*:UserWarning")
 def test_plot_config_has_expected_defaults() -> None:
     config = PlotConfig()
     assert config.figsize == (8, 6)
-    assert config.show_nodes is True
-    assert config.show_tensor_labels is False
+    assert config.show_nodes is None
+    assert config.show_tensor_labels is None
     assert config.show_index_labels is False
     assert config.show_contraction_scheme is False
     assert config.contraction_scheme_cost_hover is False

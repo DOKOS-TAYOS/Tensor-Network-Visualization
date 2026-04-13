@@ -133,6 +133,7 @@ def test_run_demo_registry_declares_expected_example_sets() -> None:
     assert set(module.available_examples("geometry")) == {
         "circular_chords",
         "circular_ring",
+        "decorated_sparse_grid2d",
         "disconnected_irregular",
         "partial_grid2d",
         "partial_grid3d",
@@ -294,6 +295,7 @@ def test_einsum_ellipsis_saves_figure_without_showing() -> None:
         ("themes", "overview", "2d"),
         ("placements", "manual_scheme", "2d"),
         ("placements", "grid3d", "3d"),
+        ("geometry", "decorated_sparse_grid2d", "2d"),
         ("geometry", "upper_triangle2d", "2d"),
         ("geometry", "partial_grid3d", "3d"),
         ("geometry", "disconnected_irregular", "2d"),
@@ -437,10 +439,12 @@ def test_commands_doc_lists_copy_paste_demo_commands() -> None:
 
     assert "python examples/run_demo.py themes overview" in text
     assert "python examples/run_demo.py placements manual_scheme" in text
+    assert "python examples/run_demo.py geometry decorated_sparse_grid2d" in text
     assert "python examples/run_demo.py geometry disconnected_irregular" in text
     assert "python examples/run_demo.py quimb hyper" in text
     assert "python examples/run_demo.py geometry partial_grid3d --view 2d" in text
     assert "python examples/run_demo.py geometry upper_pyramid3d --view 2d" in text
+    assert "decorated_sparse_grid2d" in examples_text
     assert "partial_grid2d" in examples_text
     assert "partial_grid3d" in examples_text
     assert "listas planas" in examples_text
@@ -772,6 +776,22 @@ def test_run_all_examples_placements_group_includes_input_shapes() -> None:
 
     assert ("examples/run_demo.py", "placements", "manual_scheme", "--view", "2d") in argvs
     assert ("examples/run_demo.py", "placements", "grid2d", "--view", "2d") in argvs
+
+
+def test_geometry_decorated_sparse_grid2d_uses_flat_tensor_list() -> None:
+    _require_quimb()
+    module = _load_example_module(
+        Path("examples/geometry_demo.py"),
+        "geometry_demo_decorated_sparse_grid2d",
+    )
+
+    network = module._decorated_sparse_grid2d()
+
+    assert isinstance(network, list)
+    assert network
+    assert all(not isinstance(tensor, list) for tensor in network)
+    assert any("leaf_left" in str(tensor.tags) for tensor in network)
+    assert any("leaf_right" in str(tensor.tags) for tensor in network)
 
 
 def test_run_all_examples_all_group_contains_more_commands_than_default() -> None:

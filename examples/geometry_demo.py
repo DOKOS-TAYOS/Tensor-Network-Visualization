@@ -30,6 +30,9 @@ Coord3D: TypeAlias = tuple[int, int, int]
 
 TAGLINES: dict[str, str] = {
     "partial_grid2d": "A 2D grid with holes and an uneven boundary.",
+    "decorated_sparse_grid2d": (
+        "A sparse 2D grid with triangular holes and observed boundary leaves."
+    ),
     "upper_triangle2d": "Only the upper-triangular part of a regular 2D grid.",
     "partial_grid3d": "A 3D lattice with missing cells across several layers.",
     "upper_pyramid3d": "A stacked 3D pyramid with fewer nodes on each upper layer.",
@@ -150,6 +153,88 @@ def _partial_grid2d() -> list[Any]:
         if (i + 2 * j) % 7 != 0 and not (i in {0, rows - 1} and j in {0, cols - 1})
     }
     return _flatten_tensor_grid(_grid_tensors_2d(active, rows=rows, cols=cols, prefix="PG"))
+
+
+def _decorated_sparse_grid2d_active() -> set[Coord2D]:
+    return {
+        (0, 1),
+        (1, 0),
+        (1, 1),
+        (1, 2),
+        (2, 0),
+        (2, 1),
+        (2, 2),
+        (2, 3),
+        (3, 0),
+        (3, 1),
+        (3, 2),
+        (3, 3),
+        (3, 4),
+        (4, 0),
+        (4, 1),
+        (4, 2),
+        (4, 3),
+        (5, 0),
+        (5, 1),
+        (5, 2),
+        (5, 3),
+        (6, 0),
+        (6, 1),
+        (6, 2),
+        (6, 3),
+        (7, 0),
+        (7, 1),
+        (7, 2),
+        (7, 3),
+        (8, 0),
+        (8, 1),
+        (8, 2),
+    }
+
+
+def _decorated_sparse_grid2d() -> list[Any]:
+    active = _decorated_sparse_grid2d_active()
+    prefix = "DSG"
+    axes_by_tensor: dict[str, list[str]] = {
+        f"{prefix}_{row}_{col}": [] for row, col in sorted(active)
+    }
+    tensors: list[Any] = []
+
+    for row, col in sorted(active):
+        tensor_name = f"{prefix}_{row}_{col}"
+        for dr, dc, label in ((1, 0, "down"), (0, 1, "right")):
+            neighbor = (row + dr, col + dc)
+            if neighbor not in active:
+                continue
+            neighbor_name = f"{prefix}_{neighbor[0]}_{neighbor[1]}"
+            index_name = f"grid_{prefix}_{row}_{col}_{label}"
+            axes_by_tensor[tensor_name].append(index_name)
+            axes_by_tensor[neighbor_name].append(index_name)
+
+        if (row, col - 1) not in active:
+            bond_name = f"grid_{prefix}_leaf_left_{row}_{col}"
+            axes_by_tensor[tensor_name].append(bond_name)
+            tensors.append(
+                _tensor(
+                    f"{prefix}_leaf_left_{row}_{col}",
+                    (bond_name, f"obs_{prefix}_left_{row}_{col}"),
+                )
+            )
+        if (row, col + 1) not in active:
+            bond_name = f"grid_{prefix}_leaf_right_{row}_{col}"
+            axes_by_tensor[tensor_name].append(bond_name)
+            tensors.append(
+                _tensor(
+                    f"{prefix}_leaf_right_{row}_{col}",
+                    (bond_name, f"obs_{prefix}_right_{row}_{col}"),
+                )
+            )
+
+    tensors.extend(
+        _tensor(tensor_name, tuple(axes_by_tensor[tensor_name]))
+        for tensor_name in sorted(axes_by_tensor)
+    )
+    return tensors
 
 
 def _upper_triangle2d() -> list[Any]:
@@ -276,6 +361,8 @@ def _disconnected_irregular() -> Any:
 def _build_example(args: ExampleCliArgs, definition: ExampleDefinition) -> BuiltExample:
     if definition.name == "partial_grid2d":
         network: Any = _partial_grid2d()
+    elif definition.name == "decorated_sparse_grid2d":
+        network = _decorated_sparse_grid2d()
     elif definition.name == "upper_triangle2d":
         network = _upper_triangle2d()
     elif definition.name == "partial_grid3d":
@@ -306,6 +393,15 @@ def _build_example(args: ExampleCliArgs, definition: ExampleDefinition) -> Built
 
 EXAMPLES: tuple[ExampleDefinition, ...] = (
     ExampleDefinition("partial_grid2d", (), frozenset(), True, False, False, _build_example),
+    ExampleDefinition(
+        "decorated_sparse_grid2d",
+        (),
+        frozenset(),
+        True,
+        False,
+        False,
+        _build_example,
+    ),
     ExampleDefinition("upper_triangle2d", (), frozenset(), True, False, False, _build_example),
     ExampleDefinition("partial_grid3d", (), frozenset(), True, False, False, _build_example),
     ExampleDefinition("upper_pyramid3d", (), frozenset(), True, False, False, _build_example),

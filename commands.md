@@ -87,6 +87,7 @@ python examples/run_demo.py placements named_indices
 
 ```bash
 python examples/run_demo.py geometry partial_grid2d
+python examples/run_demo.py geometry decorated_sparse_grid2d
 python examples/run_demo.py geometry upper_triangle2d
 python examples/run_demo.py geometry partial_grid3d --view 2d
 python examples/run_demo.py geometry partial_grid3d --view 3d

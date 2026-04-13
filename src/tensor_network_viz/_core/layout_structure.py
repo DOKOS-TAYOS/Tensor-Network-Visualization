@@ -122,9 +122,22 @@ def _analyze_layout_components(graph: _GraphData) -> tuple[_LayoutComponent, ...
                 untrimmed_classification
             )
         else:
-            structure_kind, chain_order, grid_mapping, grid3d_mapping, tree_root = (
-                _classify_anchor_graph(anchor_graph, graph)
+            decorated_grid = _detect_sparse_grid_2d_after_visible_leaf_peeling(
+                untrimmed_anchor_graph,
+                graph,
             )
+            if decorated_grid is not None:
+                anchor_graph, grid_mapping, trimmed_leaf_parents = decorated_grid
+                structure_kind, chain_order, grid3d_mapping, tree_root = (
+                    "grid",
+                    (),
+                    None,
+                    None,
+                )
+            else:
+                structure_kind, chain_order, grid_mapping, grid3d_mapping, tree_root = (
+                    _classify_anchor_graph(anchor_graph, graph)
+                )
         components.append(
             _LayoutComponent(
                 node_ids=tuple(sorted(component_node_ids)),
@@ -258,6 +271,85 @@ def _trim_visible_leaf_nodes(
     trimmed_graph.remove_nodes_from([node_id for node_id, _ in leaf_parents])
     leaf_parents.sort()
     return trimmed_graph, tuple(leaf_parents)
+
+
+def _detect_grid_mapping_2d(
+    nx_graph: nx.Graph,
+    graph: _GraphData,
+) -> dict[int, tuple[int, int]] | None:
+    if nx_graph.number_of_nodes() <= 3 or not nx.is_connected(nx_graph):
+        return None
+    coordinate_mapping = _detect_coordinate_grid_2d(nx_graph, graph)
+    if coordinate_mapping is not None:
+        return coordinate_mapping
+    exact_mapping = _detect_grid(nx_graph)
+    if exact_mapping is not None:
+        return exact_mapping
+    return _detect_sparse_grid_2d(nx_graph)
+
+
+def _detect_sparse_grid_2d_after_visible_leaf_peeling(
+    anchor_graph: nx.Graph,
+    graph: _GraphData,
+) -> tuple[nx.Graph, dict[int, tuple[int, int]], tuple[tuple[int, int], ...]] | None:
+    """Recover a sparse 2D grid core from a visible graph decorated with leaf tensors."""
+    if anchor_graph.number_of_nodes() <= 3 or not nx.is_connected(anchor_graph):
+        return None
+    if nx.is_tree(anchor_graph):
+        return None
+
+    peeled_graph = anchor_graph.copy()
+    reattachable_leaf_parents: list[tuple[int, int]] = []
+    decorated_leaf_detected = False
+    while peeled_graph.number_of_nodes() > 3:
+        current_layer = sorted(
+            int(node_id) for node_id, degree in peeled_graph.degree() if int(degree) <= 1
+        )
+        if not current_layer or len(current_layer) >= peeled_graph.number_of_nodes():
+            return None
+
+        current_pairs: list[tuple[int, int]] = []
+        for node_id in current_layer:
+            neighbors = [int(neighbor_id) for neighbor_id in peeled_graph.neighbors(node_id)]
+            if len(neighbors) != 1:
+                continue
+            current_pairs.append((node_id, neighbors[0]))
+        if not current_pairs:
+            return None
+
+        decorated_current_pairs = [
+            (node_id, parent_id)
+            for node_id, parent_id in current_pairs
+            if int(graph.nodes[node_id].degree) > 1
+        ]
+        if not decorated_leaf_detected:
+            if not decorated_current_pairs:
+                return None
+            decorated_leaf_detected = True
+
+        peeled_graph.remove_nodes_from(node_id for node_id, _ in current_pairs)
+
+        if peeled_graph.number_of_nodes() <= 3:
+            reattachable_leaf_parents.extend(decorated_current_pairs)
+            continue
+        if not nx.is_connected(peeled_graph):
+            reattachable_leaf_parents.extend(decorated_current_pairs)
+            continue
+        if peeled_graph.number_of_edges() < peeled_graph.number_of_nodes():
+            reattachable_leaf_parents.extend(decorated_current_pairs)
+            continue
+
+        grid_mapping = _detect_grid_mapping_2d(peeled_graph, graph)
+        if grid_mapping is None:
+            reattachable_leaf_parents.extend(decorated_current_pairs)
+            continue
+        trimmed_leaf_parents = (
+            tuple(sorted(reattachable_leaf_parents))
+            if reattachable_leaf_parents
+            else tuple(sorted(decorated_current_pairs or current_pairs))
+        )
+        return peeled_graph.copy(), grid_mapping, trimmed_leaf_parents
+    return None
 
 
 def _sorted_connected_components(nx_graph: nx.Graph) -> list[tuple[int, ...]]:

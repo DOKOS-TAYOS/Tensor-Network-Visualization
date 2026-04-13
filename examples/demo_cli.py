@@ -11,6 +11,7 @@ from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from tensor_network_viz import PlotConfig, show_tensor_network
+from tensor_network_viz._auto_display import AUTO_VISIBLE_TENSOR_THRESHOLD
 from tensor_network_viz.config import EngineName, PlotTheme, ViewName
 
 RenderedAxes: TypeAlias = Axes | Axes3D
@@ -26,7 +27,7 @@ class ExampleCliArgs:
     engine: str
     example: str
     view: ViewName
-    labels_nodes: bool
+    labels_nodes: bool | None
     labels_edges: bool
     labels: bool | None
     hover_labels: bool
@@ -138,8 +139,11 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
     add_bool_flag(
         parser,
         name="labels-nodes",
-        default=True,
-        help_text="Draw static tensor-name labels (default: true).",
+        default=None,
+        help_text=(
+            "Draw static tensor-name labels (default: auto; enabled below "
+            f"{AUTO_VISIBLE_TENSOR_THRESHOLD} visible tensors)."
+        ),
     )
     add_bool_flag(
         parser,
@@ -251,7 +255,7 @@ def namespace_to_cli_args(namespace: argparse.Namespace) -> ExampleCliArgs:
         example=str(namespace.example),
         view=namespace.view,
         theme=namespace.theme,
-        labels_nodes=bool(namespace.labels_nodes),
+        labels_nodes=cast(bool | None, namespace.labels_nodes),
         labels_edges=bool(namespace.labels_edges),
         labels=namespace.labels,
         hover_labels=bool(namespace.hover_labels),
@@ -355,7 +359,7 @@ def finalize_demo_plot_config(
     engine: str,
     scheme_tensor_names: SchemeByName | None,
 ) -> PlotConfig:
-    labels_nodes = bool(getattr(args, "labels_nodes", True))
+    labels_nodes = cast(bool | None, getattr(args, "labels_nodes", None))
     labels_edges = bool(getattr(args, "labels_edges", False))
     labels_override = getattr(args, "labels", None)
     if labels_override is not None:

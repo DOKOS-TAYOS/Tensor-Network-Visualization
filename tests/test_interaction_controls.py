@@ -310,6 +310,10 @@ def test_show_tensor_network_diagnostics_overlay_enriches_scene_payloads() -> No
     )
     assert scene.tensor_hover_payload is not None
     assert not any(
+        "shape:" in payload[0].lower() for payload in scene.tensor_hover_payload.values()
+    )
+    assert any("(2, 3)" in payload[0] for payload in scene.tensor_hover_payload.values())
+    assert not any(
         "dtype:" in payload[0].lower() for payload in scene.tensor_hover_payload.values()
     )
     assert any("memory:" in payload[0].lower() for payload in scene.tensor_hover_payload.values())

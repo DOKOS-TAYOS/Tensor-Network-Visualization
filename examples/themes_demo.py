@@ -143,7 +143,6 @@ def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
             ax=ax,
             config=PlotConfig(
                 theme=theme,
-                show_tensor_labels=True,
                 show_index_labels=True,
                 hover_labels=False,
                 tensor_label_fontsize=9,

@@ -943,6 +943,79 @@ def _build_topological_sparse_grid_with_tails_graph_2d(
     return _GraphData(nodes=nodes, edges=edges)
 
 
+def _build_topological_sparse_grid_with_observed_leaf_tensors_graph_2d(
+    active: set[tuple[int, int]],
+    *,
+    prefix: str = "OBS",
+) -> _GraphData:
+    node_id_by_coord = {coord: index for index, coord in enumerate(sorted(active))}
+    axes_by_node: dict[int, list[str]] = {node_id: [] for node_id in node_id_by_coord.values()}
+    edge_specs: list[tuple[int, int, str]] = []
+
+    for row, col in sorted(active):
+        node_id = node_id_by_coord[(row, col)]
+        for dr, dc, label in ((1, 0, "down"), (0, 1, "right")):
+            neighbor = (row + dr, col + dc)
+            if neighbor not in node_id_by_coord:
+                continue
+            other_id = node_id_by_coord[neighbor]
+            edge_name = f"grid_{prefix}_{row}_{col}_{label}"
+            axes_by_node[node_id].append(edge_name)
+            axes_by_node[other_id].append(edge_name)
+            edge_specs.append((node_id, other_id, edge_name))
+
+    next_node_id = len(node_id_by_coord)
+    leaf_node_ids: list[int] = []
+    for row, col in sorted(active):
+        if (row, col - 1) not in active:
+            leaf_id = next_node_id
+            next_node_id += 1
+            edge_name = f"leaf_left_{prefix}_{row}_{col}"
+            axes_by_node[node_id_by_coord[(row, col)]].append(edge_name)
+            axes_by_node[leaf_id] = [edge_name, f"obs_left_{prefix}_{row}_{col}"]
+            edge_specs.append((node_id_by_coord[(row, col)], leaf_id, edge_name))
+            leaf_node_ids.append(leaf_id)
+        if (row, col + 1) not in active:
+            leaf_id = next_node_id
+            next_node_id += 1
+            edge_name = f"leaf_right_{prefix}_{row}_{col}"
+            axes_by_node[node_id_by_coord[(row, col)]].append(edge_name)
+            axes_by_node[leaf_id] = [edge_name, f"obs_right_{prefix}_{row}_{col}"]
+            edge_specs.append((node_id_by_coord[(row, col)], leaf_id, edge_name))
+            leaf_node_ids.append(leaf_id)
+
+    nodes = {
+        node_id: _make_node(f"{prefix}{node_id}", tuple(axes_by_node[node_id]))
+        for node_id in sorted(axes_by_node)
+    }
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+    edges = [
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][edge_name], edge_name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][edge_name], edge_name),
+            name=edge_name,
+            label=None,
+        )
+        for left_id, right_id, edge_name in edge_specs
+    ]
+    edges.extend(
+        _make_dangling_edge(
+            _EdgeEndpoint(
+                leaf_id,
+                axis_lookup[leaf_id][nodes[leaf_id].axes_names[1]],
+                nodes[leaf_id].axes_names[1],
+            ),
+            name=nodes[leaf_id].axes_names[1],
+            label=None,
+        )
+        for leaf_id in leaf_node_ids
+    )
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
 def _build_coord_graph_3d(
     active: set[tuple[int, int, int]],
     *,
@@ -2364,6 +2437,63 @@ def test_coarsened_planar_layout_recovers_sparse_grid_core_before_force_fallback
             continue
         delta = positions[left_id][:2] - positions[right_id][:2]
         assert np.isclose(delta[0], 0.0, atol=1e-9) ^ np.isclose(delta[1], 0.0, atol=1e-9)
+
+
+def test_compute_layout_topological_sparse_grid_with_observed_leaf_tensors_recovers_grid_core() -> (
+    None
+):
+    active = {
+        (0, 1),
+        (1, 0),
+        (1, 1),
+        (1, 2),
+        (2, 0),
+        (2, 1),
+        (2, 2),
+        (2, 3),
+        (3, 0),
+        (3, 1),
+        (3, 2),
+        (3, 3),
+        (3, 4),
+        (4, 0),
+        (4, 1),
+        (4, 2),
+        (4, 3),
+        (5, 0),
+        (5, 1),
+        (5, 2),
+        (5, 3),
+        (6, 0),
+        (6, 1),
+        (6, 2),
+        (6, 3),
+        (7, 0),
+        (7, 1),
+        (7, 2),
+        (7, 3),
+        (8, 0),
+        (8, 1),
+        (8, 2),
+    }
+    graph = _build_topological_sparse_grid_with_observed_leaf_tensors_graph_2d(
+        active,
+        prefix="FIG",
+    )
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    component = _analyze_layout_components_cached(graph)[0]
+
+    assert component.structure_kind == "grid"
+    assert component.grid_mapping is not None
+    assert component.trimmed_leaf_parents
+    assert len(component.anchor_node_ids) < len(component.node_ids)
+    assert len(component.grid_mapping) == len(component.anchor_node_ids)
+    assert _node_edge_set(component.anchor_graph) == _expected_grid_edges_from_coords(
+        component.grid_mapping,
+        dimensions=2,
+    )
+    assert np.all(np.isfinite(np.stack([positions[node_id] for node_id in sorted(graph.nodes)])))
 
 
 def test_compute_layout_sparse_grid_3d_recovers_coordinate_holes() -> None:

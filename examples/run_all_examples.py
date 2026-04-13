@@ -115,6 +115,12 @@ def _geometry_commands(view: Literal["2d", "3d"]) -> tuple[ExampleCommand, ...]:
         _command("geometry", "partial_grid2d", view, slug=f"geometry_partial_grid2d_{view}"),
         _command(
             "geometry",
+            "decorated_sparse_grid2d",
+            view,
+            slug=f"geometry_decorated_sparse_grid2d_{view}",
+        ),
+        _command(
+            "geometry",
             "upper_triangle2d",
             view,
             slug=f"geometry_upper_triangle2d_{view}",

@@ -13,6 +13,7 @@ from matplotlib.widgets import Button, CheckButtons
 from mpl_toolkits.mplot3d import proj3d
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
+from .._auto_display import resolve_auto_display_config
 from .._core.draw.scene_state import _InteractiveSceneState
 from .._core.draw.tensors import _tensor_disk_radius_px
 from .._input_inspection import _merge_grid_positions_into_config
@@ -345,6 +346,7 @@ class _InteractiveTensorFigureController:
         self.figure = figure
         if scene is None:
             return figure, ax
+        self._resolve_auto_initial_state(scene)
         self._build_controls(scene)
         self._apply_scene_state(scene)
         self._initialized = True
@@ -361,6 +363,18 @@ class _InteractiveTensorFigureController:
     def _set_requested_state(self, **changes: bool) -> None:
         self._desired_state = replace(self._desired_state, **changes)
         self._active_state = replace(self._active_state, **changes)
+
+    def _resolve_auto_initial_state(self, scene: _InteractiveSceneState) -> None:
+        resolved_config = resolve_auto_display_config(
+            self.config,
+            visible_tensor_count=len(scene.visible_node_ids),
+        )
+        resolved_state = feature_state_from_config(
+            resolved_config,
+            tensor_inspector_available=self.tensor_inspector_available,
+        )
+        self._desired_state = resolved_state
+        self._active_state = resolved_state
 
     def _base_config(self) -> PlotConfig:
         diagnostics = self.config.diagnostics or TensorNetworkDiagnosticsConfig()

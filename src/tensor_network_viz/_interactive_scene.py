@@ -105,7 +105,7 @@ def _node_hover_text(scene: _InteractiveSceneState, node_id: int, base_text: str
     node = scene.graph.nodes[node_id]
     extra_lines: list[str] = []
     if node.shape is not None:
-        extra_lines.append(f"shape: {node.shape}")
+        extra_lines.append(str(node.shape))
     if node.element_count is not None:
         extra_lines.append(f"elements: {node.element_count}")
     memory_text = _format_memory_estimate(node.estimated_nbytes)

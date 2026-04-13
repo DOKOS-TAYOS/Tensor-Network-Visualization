@@ -15,6 +15,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
+from .._auto_display import count_visible_tensors, resolve_auto_display_config
 from .._logging import package_logger
 from .._matplotlib_state import get_reserved_bottom
 from .._typing import PositionMapping, root_figure
@@ -157,8 +158,7 @@ def _resolve_flag(value: bool | None, default: bool) -> bool:
 
 
 def _count_visible_nodes(graph: _GraphData) -> int:
-    visible_nodes = sum(1 for node in graph.nodes.values() if not node.is_virtual)
-    return visible_nodes or len(graph.nodes)
+    return count_visible_tensors(graph)
 
 
 _SCALE_SINGLE_NODE: float = 1.2
@@ -511,6 +511,10 @@ def _plot_graph(
         seed=seed,
     )
     draw_graph, focus_selection = _resolve_graph_for_focus(graph, style.focus)
+    resolved_style = resolve_auto_display_config(
+        style,
+        visible_tensor_count=count_visible_tensors(draw_graph),
+    )
     draw_positions = {
         node_id: geometry.positions[node_id]
         for node_id in draw_graph.nodes
@@ -534,9 +538,9 @@ def _plot_graph(
         graph=draw_graph,
         positions=draw_positions,
         directions=draw_directions,
-        show_tensor_labels=_resolve_flag(show_tensor_labels, style.show_tensor_labels),
-        show_index_labels=_resolve_flag(show_index_labels, style.show_index_labels),
-        config=style,
+        show_tensor_labels=_resolve_flag(show_tensor_labels, resolved_style.show_tensor_labels),
+        show_index_labels=_resolve_flag(show_index_labels, resolved_style.show_index_labels),
+        config=resolved_style,
         dimensions=dimensions,
         scale=geometry.scale,
         contraction_groups=draw_contraction_groups,
