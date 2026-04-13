@@ -187,10 +187,8 @@ def _resolved_diagnostics_config(config: PlotConfig) -> TensorNetworkDiagnostics
 
 
 def _node_overlay_text(context: _RenderPrepContext, node_id: int) -> str:
-    node = context.graph.nodes[node_id]
-    if node.shape is None:
-        return ""
-    return str(node.shape)
+    _ = context, node_id
+    return ""
 
 
 def _edge_overlay_text(entry: _RenderedEdgeGeometry) -> str:

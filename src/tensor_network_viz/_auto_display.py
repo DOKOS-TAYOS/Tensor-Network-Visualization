@@ -7,7 +7,7 @@ from dataclasses import replace
 from ._core.graph import _GraphData
 from .config import PlotConfig
 
-AUTO_VISIBLE_TENSOR_THRESHOLD: int = 60
+AUTO_VISIBLE_TENSOR_THRESHOLD: int = 25
 
 
 def count_visible_tensors(graph: _GraphData) -> int:

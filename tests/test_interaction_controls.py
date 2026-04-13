@@ -292,7 +292,7 @@ def test_show_tensor_network_diagnostics_overlay_enriches_scene_payloads() -> No
     assert scene is not None
     assert scene.diagnostic_artists
     diagnostic_texts = [artist.get_text() for artist in scene.diagnostic_artists]
-    assert any(text.startswith("(") for text in diagnostic_texts)
+    assert not any(text.startswith("(") for text in diagnostic_texts)
     assert any(text.isdigit() for text in diagnostic_texts)
     assert all("shape=" not in text.lower() for text in diagnostic_texts)
     assert all("chi=" not in text.lower() for text in diagnostic_texts)

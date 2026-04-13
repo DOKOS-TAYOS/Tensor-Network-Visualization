@@ -473,7 +473,7 @@ def test_show_tensor_network_auto_defaults_stay_fixed_after_focus_rerender() -> 
     assert controls.select_focus_node("N40") is True
 
     focused_scene = controls.current_scene
-    assert len(focused_scene.visible_node_ids) < 60
+    assert len(focused_scene.visible_node_ids) < 25
     assert controls.nodes_on is False
     assert controls.tensor_labels_on is False
     assert focused_scene.active_node_mode == "compact"

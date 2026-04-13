@@ -223,7 +223,7 @@ class PlotConfig:
     Attributes:
         show_nodes: Whether to draw tensor nodes with their full geometry. If ``False``,
             use compact fixed-size markers instead. ``None`` enables the automatic mode:
-            draw nodes only when the visible non-virtual tensor count is below 60.
+            draw nodes only when the visible non-virtual tensor count is below 25.
         show_tensor_labels: Whether to draw static tensor names on nodes. ``None`` uses
             that same automatic visible-tensor threshold.
         show_index_labels: Whether to draw static index labels on edges.

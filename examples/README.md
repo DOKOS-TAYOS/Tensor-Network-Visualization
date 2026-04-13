@@ -122,7 +122,7 @@ examples with `--n-sites 6`, where contraction history recovery is safe enough f
 | --- | --- |
 | `--view {2d,3d}` | Initial view. |
 | `--theme {default,paper,colorblind,dark,midnight,forest,slate}` | Visual theme preset. Use `paper` for clean exports, `colorblind` for accessible colors, `dark` or `midnight` for dark canvases, and `forest` or `slate` for softer light palettes. |
-| `--labels-nodes` | Show tensor labels. By default this stays in auto mode and turns on below 60 visible tensors. |
+| `--labels-nodes` | Show tensor labels. By default this stays in auto mode and turns on below 25 visible tensors. |
 | `--labels-edges` | Show index labels. |
 | `--labels` | Override both label flags at once. |
 | `--hover-labels` | Enable hover tooltips. |

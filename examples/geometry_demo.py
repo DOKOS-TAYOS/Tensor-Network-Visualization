@@ -417,16 +417,6 @@ def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
     built = definition.builder(args, definition)
     config = finalize_demo_plot_config(args, engine="quimb", scheme_tensor_names=None)
     config = replace(config, tensor_label_fontsize=7.0, layout_iterations=360)
-    if definition.name == "decorated_sparse_grid2d":
-        config = replace(
-            config,
-            show_nodes=True,
-            show_tensor_labels=False,
-            node_color="#8CA2B0",
-            node_edge_color="#111827",
-            node_color_degree_one="#D86A76",
-            node_edge_color_degree_one="#111827",
-        )
     fig, _ax = show_tensor_network(
         built.network,
         engine="quimb",
