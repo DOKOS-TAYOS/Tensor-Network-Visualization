@@ -75,6 +75,10 @@ Then put the widget backend in the first plotting cell:
 %matplotlib widget
 ```
 
+This is the backend that keeps the embedded controls interactive inside the notebook. Use it when
+you want inline hover labels, the 2D/3D selector, or contraction playback controls from
+`show_tensor_network(..., show_controls=True)`.
+
 After that, use the same API as in a script:
 
 ```python
@@ -85,6 +89,27 @@ fig, ax = show_tensor_network(
     config=PlotConfig(show_tensor_labels=True, hover_labels=True),
 )
 ```
+
+The same rule applies to backend-specific notebook examples. For example, a manual `pair_tensor(...)`
+trace for `einsum` playback stays interactive in the notebook once `%matplotlib widget` is active:
+
+```python
+from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network
+
+manual_trace = [
+    pair_tensor("A0", "x0", "r0", "pa,p->a"),
+    pair_tensor("r0", "A1", "out", "a,apb->pb"),
+]
+
+fig, ax = show_tensor_network(
+    manual_trace,
+    engine="einsum",
+    config=PlotConfig(show_contraction_scheme=True),
+)
+```
+
+This manual trace is enough for structure and playback. If you also want tensor-value inspection
+with `show_tensor_elements(...)`, use an `EinsumTrace` that still holds the bound arrays.
 
 If a notebook displays the same figure twice, prefer this pattern:
 

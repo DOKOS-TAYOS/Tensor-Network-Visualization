@@ -3,6 +3,17 @@
 This page collects copy-paste examples for each supported backend. Install the corresponding extra
 first; see [installation.md](installation.md) for setup commands.
 
+If you are working in a notebook and want the embedded Matplotlib controls to stay interactive,
+install the `jupyter` extra and enable:
+
+```python
+%pip install "tensor-network-visualization[jupyter]"
+%matplotlib widget
+```
+
+If you just installed the extra in the current kernel, restart the kernel once first. The same
+backend examples below can then be used unchanged inside the notebook.
+
 ## Contents
 
 - [Base Dependency Example](#base-dependency-example)
@@ -261,7 +272,34 @@ fig, ax = show_tensor_network(
 )
 ```
 
-Tensor inspection from the same trace:
+Manual step list with `pair_tensor(...)`:
+
+```python
+from tensor_network_viz import PlotConfig, pair_tensor, show_tensor_network
+
+manual_trace = [
+    pair_tensor("A0", "x0", "r0", "pa,p->a"),
+    pair_tensor("r0", "A1", "r1", "a,apb->pb"),
+    pair_tensor("r1", "x1", "out", "pb,p->b"),
+]
+
+fig, ax = show_tensor_network(
+    manual_trace,
+    engine="einsum",
+    config=PlotConfig(
+        show_tensor_labels=True,
+        show_contraction_scheme=True,
+        contraction_scheme_cost_hover=True,
+    ),
+)
+```
+
+Use this form when you want to describe a known binary contraction order explicitly without routing
+the contraction through `EinsumTrace`. A manual `pair_tensor(...)` trace drives the graph and the
+playback order, but it does not carry live tensor values, so tensor-value inspection still needs an
+`EinsumTrace` with bound arrays. For unary or n-ary manual steps, use `einsum_trace_step(...)`.
+
+Tensor inspection from the `EinsumTrace` example above:
 
 ```python
 from tensor_network_viz import TensorElementsConfig, show_tensor_elements

@@ -515,6 +515,7 @@ def _plot_graph(
         style,
         visible_tensor_count=count_visible_tensors(draw_graph),
     )
+    assert resolved_style.show_tensor_labels is not None
     draw_positions = {
         node_id: geometry.positions[node_id]
         for node_id in draw_graph.nodes

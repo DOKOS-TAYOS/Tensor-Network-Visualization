@@ -8,7 +8,6 @@ from typing import Literal, TypeAlias
 
 import numpy as np
 
-from ._tensor_elements_models import _SpectralAnalysis
 from ._tensor_elements_data import (
     NumericArray,
     _analysis_config_from_resolved,
@@ -26,6 +25,7 @@ from ._tensor_elements_data import (
     _summary_metric_array,
     _TensorRecord,
 )
+from ._tensor_elements_models import _SpectralAnalysis
 from .tensor_elements_config import TensorElementsConfig, TensorElementsMode
 
 TensorElementsGroup: TypeAlias = Literal["basic", "complex", "diagnostic", "analysis"]

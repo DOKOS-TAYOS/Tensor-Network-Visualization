@@ -500,25 +500,50 @@ def _linear_scheme_steps(n_sites: int) -> tuple[tuple[str, ...], ...]:
 
 
 def _build_linear_einsum_trace(n_sites: int) -> tuple[Any, tuple[tuple[str, ...], ...]]:
-    import torch
-
     from tensor_network_viz import EinsumTrace, einsum
+
+    try:
+        import torch
+    except ModuleNotFoundError:
+        torch = None  # type: ignore[assignment]
+    numpy: Any | None = None
+    if torch is None:
+        import numpy as np
+
+        numpy = np
 
     if n_sites < 1:
         raise ValueError("n_sites must be >= 1.")
     trace = EinsumTrace()
     bond_dims = [2 + (index % 3) for index in range(max(n_sites - 1, 1))]
+    backend = "numpy" if torch is None else "torch"
 
     def _tensor(name: str, shape: tuple[int, ...]) -> Any:
         array = _demo_array(name=name, shape=shape, complex_values=False)
+        if torch is None:
+            return array
         return torch.tensor(array, dtype=torch.float32)
+
+    def _scalar_out(reference: Any) -> Any | None:
+        if numpy is None:
+            return None
+        return numpy.empty((), dtype=getattr(reference, "dtype", numpy.float64))
+
+    def _einsum_with_trace(
+        expression: str,
+        *operands: Any,
+        out: Any | None = None,
+    ) -> Any:
+        if out is None:
+            return einsum(expression, *operands, trace=trace, backend=backend)
+        return einsum(expression, *operands, trace=trace, backend=backend, out=out)
 
     if n_sites == 1:
         tensor = _tensor("A0", (2,))
         vector = _tensor("x0", (2,))
         trace.bind("A0", tensor)
         trace.bind("x0", vector)
-        result = einsum("p,p->", tensor, vector, trace=trace, backend="torch")
+        result = _einsum_with_trace("p,p->", tensor, vector, out=_scalar_out(tensor))
         trace._bench_keepalive = [tensor, vector, result]  # type: ignore[attr-defined]
         return trace, (("A0", "x0"),)
 
@@ -527,7 +552,7 @@ def _build_linear_einsum_trace(n_sites: int) -> tuple[Any, tuple[tuple[str, ...]
     trace.bind("A0", first_tensor)
     trace.bind("x0", first_vector)
     keepalive: list[Any] = [first_tensor, first_vector]
-    current = einsum("pa,p->a", first_tensor, first_vector, trace=trace, backend="torch")
+    current = _einsum_with_trace("pa,p->a", first_tensor, first_vector)
     keepalive.append(current)
 
     for index in range(1, n_sites - 1):
@@ -539,7 +564,7 @@ def _build_linear_einsum_trace(n_sites: int) -> tuple[Any, tuple[tuple[str, ...]
         trace.bind(f"A{index}", tensor)
         trace.bind(f"x{index}", vector)
         keepalive.extend((tensor, vector))
-        current = einsum("a,apb,p->b", current, tensor, vector, trace=trace, backend="torch")
+        current = _einsum_with_trace("a,apb,p->b", current, tensor, vector)
         keepalive.append(current)
 
     last_tensor = _tensor(f"A{n_sites - 1}", (bond_dims[n_sites - 2], 2))
@@ -547,7 +572,13 @@ def _build_linear_einsum_trace(n_sites: int) -> tuple[Any, tuple[tuple[str, ...]
     trace.bind(f"A{n_sites - 1}", last_tensor)
     trace.bind(f"x{n_sites - 1}", last_vector)
     keepalive.extend((last_tensor, last_vector))
-    result = einsum("a,ap,p->", current, last_tensor, last_vector, trace=trace, backend="torch")
+    result = _einsum_with_trace(
+        "a,ap,p->",
+        current,
+        last_tensor,
+        last_vector,
+        out=_scalar_out(current),
+    )
     keepalive.append(result)
     trace._bench_keepalive = keepalive  # type: ignore[attr-defined]
     return trace, _linear_scheme_steps(n_sites)

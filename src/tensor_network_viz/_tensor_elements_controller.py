@@ -12,8 +12,8 @@ from matplotlib.widgets import CheckButtons, RadioButtons, Slider
 from . import _tensor_elements_data as _tensor_elements_data_module
 from . import _tensor_elements_payloads as _tensor_elements_payloads_module
 from ._matplotlib_state import set_tensor_elements_controls
-from ._tensor_elements_models import _SpectralAnalysis
 from ._tensor_elements_data import _analysis_config_from_resolved, _resolve_tensor_analysis
+from ._tensor_elements_models import _SpectralAnalysis
 from ._tensor_elements_rendering import (
     _compute_outlier_mask,
     _derive_color_limits,

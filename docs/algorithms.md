@@ -4,6 +4,12 @@ This page describes the internal layout rules used to place tensor nodes and fre
 edges. The wording is intentionally practical: it explains the choices the code
 makes, not every implementation detail.
 
+All supported inputs, including `einsum` traces built from `EinsumTrace`,
+`pair_tensor(...)`, or `einsum_trace_step(...)`, are normalized into the same
+internal graph model before layout starts. Manual contraction steps affect
+playback metadata and labeling, but they do not switch the layout into a
+different placement algorithm by themselves.
+
 ## Node Placement in 2D
 
 The renderer first converts the input network into an internal graph. Contraction

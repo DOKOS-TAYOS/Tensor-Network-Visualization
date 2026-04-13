@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import builtins
 import importlib.util
 import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
 
+import matplotlib.pyplot as plt
 import pytest
 
 
@@ -150,6 +152,41 @@ def test_bench_user_workflows_runs_agg_worker_smoke_for_tensor_network() -> None
     assert result.wall_ms >= 0.0
     assert result.peak_rss_mb >= result.rss_before_mb
     assert result.approximate_gui is True
+
+
+def test_bench_user_workflows_builds_linear_einsum_trace_without_torch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_bench_module()
+
+    original_import = builtins.__import__
+
+    def _fake_import(
+        name: str,
+        globals: dict[str, object] | None = None,
+        locals: dict[str, object] | None = None,
+        fromlist: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> object:
+        if name == "torch":
+            raise ModuleNotFoundError("No module named 'torch'")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+    trace, scheme_steps = module._build_linear_einsum_trace(3)
+
+    from tensor_network_viz import show_tensor_network
+
+    fig, _ax = show_tensor_network(trace, engine="einsum", show=False)
+    plt.close(fig)
+
+    assert len(list(trace)) == 3
+    assert scheme_steps == (
+        ("A0", "x0"),
+        ("A0", "x0", "A1", "x1"),
+        ("A0", "x0", "A1", "x1", "A2", "x2"),
+    )
 
 
 def test_bench_user_workflows_runs_tkagg_worker_smoke_when_available() -> None:
