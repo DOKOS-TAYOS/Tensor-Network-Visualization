@@ -50,7 +50,9 @@ from tensor_network_viz import (
 )
 from tensor_network_viz._contraction_viewer_ui import _PLAYBACK_SLIDER_BOUNDS
 from tensor_network_viz._core import _draw_common
+from tensor_network_viz._core.draw.label_descriptors import _TextLabelDescriptor
 from tensor_network_viz._core.draw.labels_misc import _edge_index_text_kwargs
+from tensor_network_viz._core.draw.scene_state import _InteractiveSceneState
 from tensor_network_viz._core.focus import filter_graph_for_focus
 from tensor_network_viz._core.graph import (
     _EdgeEndpoint,
@@ -2585,13 +2587,17 @@ def test_show_tensor_network_defers_label_descriptors_until_menu_toggle(
     original_build_tensor = interactive_scene_module._build_tensor_label_descriptors
     original_build_edge = interactive_scene_module._build_edge_label_descriptors
 
-    def counting_build_tensor(*args: object, **kwargs: object) -> object:
+    def counting_build_tensor(
+        scene: _InteractiveSceneState,
+    ) -> tuple[_TextLabelDescriptor, ...]:
         calls["tensor"] += 1
-        return original_build_tensor(*args, **kwargs)
+        return original_build_tensor(scene)
 
-    def counting_build_edge(*args: object, **kwargs: object) -> object:
+    def counting_build_edge(
+        scene: _InteractiveSceneState,
+    ) -> tuple[_TextLabelDescriptor, ...]:
         calls["edge"] += 1
-        return original_build_edge(*args, **kwargs)
+        return original_build_edge(scene)
 
     monkeypatch.setattr(
         interactive_scene_module,

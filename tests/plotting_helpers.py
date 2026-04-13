@@ -10,7 +10,7 @@ from matplotlib import image as mpimg
 from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection, PatchCollection, PathCollection
 from matplotlib.figure import Figure
-from mpl_toolkits.mplot3d.art3d import Path3DCollection, Poly3DCollection
+from mpl_toolkits.mplot3d.art3d import Line3DCollection, Path3DCollection, Poly3DCollection
 
 
 def line_collection_segment_count(ax: Any) -> int:
@@ -109,6 +109,17 @@ def point_collection_facecolors(ax: Any) -> list[tuple[float, ...]]:
 def poly3d_node_collection_count(ax: Any) -> int:
     """Count 3D polygon collections, used by octahedron nodes."""
     return sum(1 for c in ax.collections if isinstance(c, Poly3DCollection))
+
+
+def line3d_collection_segment_count(ax: Any) -> int:
+    """Count 3D segments stored in batched line collections."""
+    n = 0
+    for c in ax.collections:
+        if isinstance(c, Line3DCollection):
+            segments = getattr(c, "_segments3d", None)
+            if segments is not None:
+                n += len(segments)
+    return n
 
 
 def path3d_collection_point_count(ax: Any) -> int:

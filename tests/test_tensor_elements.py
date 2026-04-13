@@ -18,6 +18,7 @@ from matplotlib.axes import Axes
 from matplotlib.backend_bases import MouseButton, MouseEvent
 
 import tensor_network_viz._tensor_elements_data as tensor_elements_data_module
+import tensor_network_viz._tensor_elements_inputs as tensor_elements_inputs_module
 import tensor_network_viz._tensor_elements_payloads as tensor_elements_payloads_module
 from plotting_helpers import assert_rendered_figure
 from tensor_network_viz import (
@@ -405,7 +406,7 @@ def test_extract_einsum_playback_step_records_surfaces_unexpected_parse_errors(
         raise RuntimeError("unexpected equation parser failure")
 
     monkeypatch.setattr(
-        tensor_elements_data_module,
+        tensor_elements_inputs_module,
         "parse_einsum_equation",
         _raise_unexpected_error,
     )

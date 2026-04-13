@@ -6,7 +6,8 @@ from typing import Any
 
 import numpy as np
 
-from ._tensor_elements_data import _build_topk_lines, _TensorRecord
+from ._tensor_elements_data import _build_topk_lines
+from ._tensor_elements_models import _TensorRecord
 from ._tensor_elements_support import _TextSummaryPayload
 from .tensor_comparison_config import TensorComparisonConfig, TensorComparisonMode
 

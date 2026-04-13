@@ -196,6 +196,7 @@ class _TensorElementsFigureController:
         array = np.asarray(record.array)
         row_axes = None if self._config.row_axes is None else tuple(self._config.row_axes)
         col_axes = None if self._config.col_axes is None else tuple(self._config.col_axes)
+        max_rows, max_cols = self._config.max_matrix_shape
         return (
             int(index),
             tuple(int(dimension) for dimension in array.shape),
@@ -203,7 +204,7 @@ class _TensorElementsFigureController:
             tuple(str(axis_name) for axis_name in record.axis_names),
             row_axes,
             col_axes,
-            tuple(int(dimension) for dimension in self._config.max_matrix_shape),
+            (int(max_rows), int(max_cols)),
         )
 
     def _mode_availability_cache_entry(self, index: int) -> _ModeAvailabilityCacheEntry:

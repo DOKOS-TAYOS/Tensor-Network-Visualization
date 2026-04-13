@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from plotting_helpers import line_collection_segment_count
+from plotting_helpers import line3d_collection_segment_count, line_collection_segment_count
 from tensor_network_viz import PlotConfig, einsum_trace_step, pair_tensor
 from tensor_network_viz._core.layout.body import _compute_axis_directions, _compute_layout
 from tensor_network_viz._core.layout.positions import (
@@ -437,4 +437,4 @@ def test_plot_einsum_network_3d_returns_3d_axes() -> None:
 
     assert fig is ax.figure
     assert ax.name == "3d"
-    assert len(ax.lines) >= 2
+    assert line3d_collection_segment_count(ax) >= 2

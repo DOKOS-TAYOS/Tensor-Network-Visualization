@@ -19,7 +19,7 @@ from ._tensor_comparison_support import (
     _comparison_text_payload,
 )
 from ._tensor_elements_controller import _TensorElementsFigureController
-from ._tensor_elements_data import _TensorRecord
+from ._tensor_elements_models import _TensorRecord
 from ._tensor_elements_rendering import _RenderedTensorPanel
 from ._tensor_elements_support import _extract_tensor_records, _prepare_mode_payload
 from ._typing import root_figure

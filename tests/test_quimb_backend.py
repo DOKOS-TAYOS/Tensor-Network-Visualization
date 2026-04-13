@@ -5,6 +5,7 @@ matplotlib.use("Agg")
 import numpy as np
 import pytest
 
+from plotting_helpers import line3d_collection_segment_count
 from tensor_network_viz import PlotConfig
 from tensor_network_viz.quimb import plot_quimb_network_2d, plot_quimb_network_3d
 from tensor_network_viz.quimb.graph import _build_graph as _build_quimb_graph
@@ -96,7 +97,7 @@ def test_plot_quimb_network_3d_returns_3d_axes() -> None:
 
     assert fig is ax.figure
     assert ax.name == "3d"
-    assert len(ax.lines) == 1
+    assert line3d_collection_segment_count(ax) == 1
 
 
 def test_plot_quimb_network_2d_draws_hypergraph_with_virtual_hub_marker() -> None:
@@ -150,7 +151,7 @@ def test_plot_quimb_network_3d_draws_hypergraph() -> None:
     assert ax.name == "3d"
     assert labels == {"A", "B", "C", "bond"}
     assert sum(1 for t in ax.texts if t.get_text() == "bond") == 6
-    assert len(ax.lines) == 3
+    assert line3d_collection_segment_count(ax) == 3
     assert path3d_triangle_marker_point_count(ax) == 1
     assert path3d_collection_facecolors(ax) == [
         tuple(float(value) for value in to_rgba(config.dangling_edge_color))

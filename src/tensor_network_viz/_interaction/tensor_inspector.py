@@ -21,8 +21,7 @@ from .._tensor_elements_controller import (
     _TensorElementsControlsLayout,
     _TensorElementsFigureController,
 )
-from .._tensor_elements_data import _PlaybackStepRecord
-from .._tensor_elements_support import _TensorRecord
+from .._tensor_elements_models import _PlaybackStepRecord, _TensorRecord
 from .._ui_utils import _style_control_tray_axes
 from .._widgets import _SafeButton
 from ..config import EngineName

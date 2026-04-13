@@ -51,6 +51,7 @@ from tensor_network_viz._core.layout_structure import (
     _classify_anchor_graph,
     _coordinate_axis_lengths,
     _expected_grid_edges_from_coords,
+    _LayoutComponent,
     _node_edge_set,
 )
 from tensor_network_viz._core.renderer import (
@@ -1984,9 +1985,12 @@ def test_compute_axis_directions_large_chain_3d_reuses_component_basis(
     original = free_directions_3d._component_orthogonal_basis
     calls: list[int] = []
 
-    def counting_component_orthogonal_basis(*args: object, **kwargs: object) -> object:
+    def counting_component_orthogonal_basis(
+        component: _LayoutComponent,
+        positions: dict[int, np.ndarray],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         calls.append(1)
-        return original(*args, **kwargs)
+        return original(component, positions)
 
     monkeypatch.setattr(
         free_directions_3d,

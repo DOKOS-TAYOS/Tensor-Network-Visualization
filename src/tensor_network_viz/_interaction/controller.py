@@ -32,11 +32,9 @@ from .._matplotlib_state import (
     set_interactive_controls,
 )
 from .._registry import _get_plotters
-from .._tensor_elements_data import (
-    _extract_playback_step_records,
-    _PlaybackStepRecord,
-)
-from .._tensor_elements_support import _extract_tensor_records, _TensorRecord
+from .._tensor_elements_inputs import _extract_playback_step_records
+from .._tensor_elements_models import _PlaybackStepRecord, _TensorRecord
+from .._tensor_elements_support import _extract_tensor_records
 from ..config import (
     EngineName,
     FocusRadius,

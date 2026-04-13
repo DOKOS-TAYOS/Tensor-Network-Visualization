@@ -7,6 +7,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import pytest
 
+from plotting_helpers import line3d_collection_segment_count
 from tensor_network_viz import PlotConfig
 from tensor_network_viz._core.curves import _require_self_endpoints
 from tensor_network_viz._core.graph import _require_contraction_endpoints
@@ -162,7 +163,7 @@ def test_plot_tenpy_network_3d_returns_3d_axes() -> None:
 
     assert fig is ax.figure
     assert ax.name == "3d"
-    assert len(ax.lines) >= 1
+    assert line3d_collection_segment_count(ax) >= 1
 
 
 def test_plot_tenpy_network_3d_draws_infinite_mpo() -> None:
@@ -170,7 +171,7 @@ def test_plot_tenpy_network_3d_draws_infinite_mpo() -> None:
 
     assert fig is ax.figure
     assert ax.name == "3d"
-    assert len(ax.lines) == 9
+    assert line3d_collection_segment_count(ax) == 9
 
 
 def test_plot_tenpy_network_3d_rejects_2d_axis() -> None:

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from ._tensor_elements_data import (
-    NumericArray,
     _build_stats,
     _downsample_matrix,
-    _extract_tensor_records,
     _matrixize_tensor,
-    _MatrixMetadata,
     _resolve_matrix_axes,
     _spectral_analysis_for_record,
+)
+from ._tensor_elements_inputs import _extract_tensor_records
+from ._tensor_elements_models import (
+    NumericArray,
+    _MatrixMetadata,
     _SpectralAnalysis,
     _TensorRecord,
     _TensorStats,
