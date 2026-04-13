@@ -157,38 +157,16 @@ def _partial_grid2d() -> list[Any]:
 
 def _decorated_sparse_grid2d_active() -> set[Coord2D]:
     return {
-        (0, 1),
+        (0, 0),
         (1, 0),
         (1, 1),
-        (1, 2),
         (2, 0),
         (2, 1),
         (2, 2),
-        (2, 3),
-        (3, 0),
         (3, 1),
         (3, 2),
-        (3, 3),
-        (3, 4),
-        (4, 0),
-        (4, 1),
         (4, 2),
         (4, 3),
-        (5, 0),
-        (5, 1),
-        (5, 2),
-        (5, 3),
-        (6, 0),
-        (6, 1),
-        (6, 2),
-        (6, 3),
-        (7, 0),
-        (7, 1),
-        (7, 2),
-        (7, 3),
-        (8, 0),
-        (8, 1),
-        (8, 2),
     }
 
 
@@ -199,6 +177,12 @@ def _decorated_sparse_grid2d() -> list[Any]:
         f"{prefix}_{row}_{col}": [] for row, col in sorted(active)
     }
     tensors: list[Any] = []
+    leaf_specs: tuple[tuple[str, Coord2D, str], ...] = (
+        ("top", (0, 0), "up"),
+        ("right", (1, 1), "right"),
+        ("right", (2, 2), "right"),
+        ("right", (3, 2), "right"),
+    )
 
     for row, col in sorted(active):
         tensor_name = f"{prefix}_{row}_{col}"
@@ -211,24 +195,16 @@ def _decorated_sparse_grid2d() -> list[Any]:
             axes_by_tensor[tensor_name].append(index_name)
             axes_by_tensor[neighbor_name].append(index_name)
 
-        if (row, col - 1) not in active:
-            bond_name = f"grid_{prefix}_leaf_left_{row}_{col}"
-            axes_by_tensor[tensor_name].append(bond_name)
-            tensors.append(
-                _tensor(
-                    f"{prefix}_leaf_left_{row}_{col}",
-                    (bond_name, f"obs_{prefix}_left_{row}_{col}"),
-                )
+    for side, (row, col), direction in leaf_specs:
+        tensor_name = f"{prefix}_{row}_{col}"
+        bond_name = f"grid_{prefix}_leaf_{side}_{row}_{col}"
+        axes_by_tensor[tensor_name].append(bond_name)
+        tensors.append(
+            _tensor(
+                f"{prefix}_leaf_{side}_{row}_{col}",
+                (bond_name, f"obs_{prefix}_{direction}_{row}_{col}"),
             )
-        if (row, col + 1) not in active:
-            bond_name = f"grid_{prefix}_leaf_right_{row}_{col}"
-            axes_by_tensor[tensor_name].append(bond_name)
-            tensors.append(
-                _tensor(
-                    f"{prefix}_leaf_right_{row}_{col}",
-                    (bond_name, f"obs_{prefix}_right_{row}_{col}"),
-                )
-            )
+        )
 
     tensors.extend(
         _tensor(tensor_name, tuple(axes_by_tensor[tensor_name]))
@@ -432,6 +408,15 @@ def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
     built = definition.builder(args, definition)
     config = finalize_demo_plot_config(args, engine="quimb", scheme_tensor_names=None)
     config = replace(config, tensor_label_fontsize=7.0, layout_iterations=360)
+    if definition.name == "decorated_sparse_grid2d":
+        config = replace(
+            config,
+            show_tensor_labels=False,
+            node_color="#8CA2B0",
+            node_edge_color="#111827",
+            node_color_degree_one="#D86A76",
+            node_edge_color_degree_one="#111827",
+        )
     fig, _ax = show_tensor_network(
         built.network,
         engine="quimb",

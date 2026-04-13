@@ -790,7 +790,7 @@ def test_geometry_decorated_sparse_grid2d_uses_flat_tensor_list() -> None:
     assert isinstance(network, list)
     assert network
     assert all(not isinstance(tensor, list) for tensor in network)
-    assert any("leaf_left" in str(tensor.tags) for tensor in network)
+    assert any("leaf_top" in str(tensor.tags) for tensor in network)
     assert any("leaf_right" in str(tensor.tags) for tensor in network)
 
 
