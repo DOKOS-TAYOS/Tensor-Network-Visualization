@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] — 2026-04-13
+
+### Changed
+
+- **Core engine:** Major refactor of the core engine with extensive debugging and stabilization.
+- **Documentation:** Substantial documentation improvements across guides, API reference, installation, troubleshooting, and examples.
+- **2D structure detection:** Improved detection and handling of two-dimensional tensor-network structures.
+
 ## [1.6.1] — 2026-04-12
 
 ### Added
@@ -179,6 +187,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[1.6.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.4...v1.6.0
 [1.5.4]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.5.3...v1.5.4
