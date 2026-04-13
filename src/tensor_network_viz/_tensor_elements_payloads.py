@@ -8,6 +8,7 @@ from typing import Literal, TypeAlias
 
 import numpy as np
 
+from ._tensor_elements_models import _SpectralAnalysis
 from ._tensor_elements_data import (
     NumericArray,
     _analysis_config_from_resolved,
@@ -504,12 +505,25 @@ def _build_singular_values_payload(
     record: _TensorRecord,
     config: TensorElementsConfig,
 ) -> _SeriesPayload:
+    analysis = _spectral_analysis_for_record(record, config=config)
+    return _build_singular_values_payload_from_analysis(
+        record,
+        config,
+        analysis=analysis,
+    )
+
+
+def _build_singular_values_payload_from_analysis(
+    record: _TensorRecord,
+    config: TensorElementsConfig,
+    *,
+    analysis: _SpectralAnalysis,
+) -> _SeriesPayload:
     """Build the line-plot payload for the singular-value spectrum.
 
     Raises:
         ValueError: If the tensor cannot produce a finite singular-value analysis.
     """
-    analysis = _spectral_analysis_for_record(record, config=config)
     if analysis.issue is not None or analysis.singular_values is None:
         raise ValueError(
             f"Mode 'singular_values' is not available for tensor {record.name!r}. "
@@ -558,12 +572,27 @@ def _build_eigen_component_payload(
     *,
     component: Literal["real", "imag"],
 ) -> _SeriesPayload:
+    analysis = _spectral_analysis_for_record(record, config=config)
+    return _build_eigen_component_payload_from_analysis(
+        record,
+        config,
+        component=component,
+        analysis=analysis,
+    )
+
+
+def _build_eigen_component_payload_from_analysis(
+    record: _TensorRecord,
+    config: TensorElementsConfig,
+    *,
+    component: Literal["real", "imag"],
+    analysis: _SpectralAnalysis,
+) -> _SeriesPayload:
     """Build the real or imaginary eigenvalue payload for one tensor.
 
     Raises:
         ValueError: If the tensor does not expose a finite square analysis matrix.
     """
-    analysis = _spectral_analysis_for_record(record, config=config)
     mode_name = f"eigen_{component}"
     if analysis.issue is not None:
         raise ValueError(
@@ -593,6 +622,34 @@ def _build_eigen_component_payload(
         xlabel="index",
         y_values=np.asarray(y_values, dtype=float),
         ylabel=ylabel,
+    )
+
+
+def _build_spectral_payload_from_analysis(
+    record: _TensorRecord,
+    config: TensorElementsConfig,
+    *,
+    mode: Literal["singular_values", "eigen_real", "eigen_imag"],
+    analysis: _SpectralAnalysis,
+) -> _SeriesPayload:
+    if mode == "singular_values":
+        return _build_singular_values_payload_from_analysis(
+            record,
+            config,
+            analysis=analysis,
+        )
+    if mode == "eigen_real":
+        return _build_eigen_component_payload_from_analysis(
+            record,
+            config,
+            component="real",
+            analysis=analysis,
+        )
+    return _build_eigen_component_payload_from_analysis(
+        record,
+        config,
+        component="imag",
+        analysis=analysis,
     )
 
 

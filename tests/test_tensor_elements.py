@@ -931,6 +931,111 @@ def test_show_tensor_elements_reuses_spectral_mode_flags_for_seen_tensors(
     assert calls["count"] == calls_after_second_tensor
 
 
+def test_show_tensor_elements_reuses_cached_spectral_analysis_across_modes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(16, dtype=float).reshape(4, 4),
+        name="SpectralModes",
+        axis_names=("row", "col"),
+    )
+    calls = {"count": 0}
+    original_spectral_analysis = tensor_elements_data_module._spectral_analysis_for_record
+
+    def counting_spectral_analysis(
+        record: _TensorRecord,
+        *,
+        config: TensorElementsConfig,
+    ) -> Any:
+        calls["count"] += 1
+        return original_spectral_analysis(record, config=config)
+
+    monkeypatch.setattr(
+        tensor_elements_data_module,
+        "_spectral_analysis_for_record",
+        counting_spectral_analysis,
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="elements"),
+        show=False,
+        show_controls=True,
+    )
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    controller.set_group("diagnostic", redraw=False)
+    controller.set_mode("singular_values", redraw=False)
+    controller.set_mode("eigen_real", redraw=False)
+    controller.set_mode("eigen_imag", redraw=False)
+    controller.set_mode("singular_values", redraw=False)
+
+    assert_rendered_figure(fig, ax)
+    assert calls["count"] == 1
+
+
+def test_show_tensor_elements_reuses_cached_spectral_analysis_for_revisited_tensors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tensors = [
+        DummyTensorNetworkNode(
+            np.arange(16, dtype=float).reshape(4, 4),
+            name="Spectral0",
+            axis_names=("row", "col"),
+        ),
+        DummyTensorNetworkNode(
+            (np.arange(16, dtype=float).reshape(4, 4) + 100.0),
+            name="Spectral1",
+            axis_names=("row", "col"),
+        ),
+    ]
+    calls = {"count": 0}
+    original_spectral_analysis = tensor_elements_data_module._spectral_analysis_for_record
+
+    def counting_spectral_analysis(
+        record: _TensorRecord,
+        *,
+        config: TensorElementsConfig,
+    ) -> Any:
+        calls["count"] += 1
+        return original_spectral_analysis(record, config=config)
+
+    monkeypatch.setattr(
+        tensor_elements_data_module,
+        "_spectral_analysis_for_record",
+        counting_spectral_analysis,
+    )
+
+    fig, ax = show_tensor_elements(
+        tensors,
+        config=TensorElementsConfig(mode="elements"),
+        show=False,
+        show_controls=True,
+    )
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    controller.set_group("diagnostic", redraw=False)
+    controller.set_mode("singular_values", redraw=False)
+    assert calls["count"] == 1
+
+    controller.set_mode("eigen_real", redraw=False)
+    assert calls["count"] == 1
+
+    controller.set_tensor_index(1, redraw=False)
+    assert calls["count"] == 2
+
+    controller.set_mode("eigen_imag", redraw=False)
+    assert calls["count"] == 2
+
+    controller.set_tensor_index(0, redraw=False)
+    assert calls["count"] == 2
+
+    controller.set_mode("singular_values", redraw=False)
+
+    assert_rendered_figure(fig, ax)
+    assert calls["count"] == 2
+
+
 def test_show_tensor_elements_rejects_multi_tensor_with_explicit_ax() -> None:
     tensors = [
         DummyTensorNetworkNode(

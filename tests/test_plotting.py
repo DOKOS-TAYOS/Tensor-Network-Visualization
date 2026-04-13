@@ -22,6 +22,7 @@ from mpl_toolkits.mplot3d.art3d import Line3DCollection
 import tensor_network_viz._core.renderer as core_renderer_module
 import tensor_network_viz._interaction.controller as interaction_controller_module
 import tensor_network_viz._interaction.tensor_inspector as tensor_inspector_module
+import tensor_network_viz._tensor_elements_data as tensor_elements_data_module
 import tensor_network_viz.tensorkrowch.graph as tk_graph_module
 import tensor_network_viz.tensorkrowch.renderer as tk_renderer_module
 import tensor_network_viz.tensornetwork.graph as tn_graph_module
@@ -1929,11 +1930,17 @@ def test_show_tn_reenabling_tensor_inspector_reveals_auxiliary_window(
 ) -> None:
     trace = _build_einsum_trace_for_inspector()
     revealed: list[matplotlib.figure.Figure] = []
+    visibility_changes: list[tuple[matplotlib.figure.Figure, bool]] = []
 
     monkeypatch.setattr(
         tensor_inspector_module,
         "_reveal_auxiliary_figure",
         lambda figure: revealed.append(figure),
+    )
+    monkeypatch.setattr(
+        tensor_inspector_module,
+        "_set_auxiliary_figure_visibility",
+        lambda figure, visible: visibility_changes.append((figure, visible)) or True,
     )
 
     fig, _ax = show_tensor_network(
@@ -1954,15 +1961,109 @@ def test_show_tn_reenabling_tensor_inspector_reveals_auxiliary_window(
     inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
     assert inspector is not None
     assert inspector._figure is not None
-    assert revealed == [inspector._figure]
+    first_figure = inspector._figure
+    assert revealed == [first_figure]
 
     _click_checkbutton(controls._checkbuttons, inspector_index)
+    assert inspector._figure is first_figure
+    assert visibility_changes == [(first_figure, False)]
+
+    _click_checkbutton(controls._checkbuttons, inspector_index)
+
+    assert inspector._figure is first_figure
+    assert revealed == [first_figure, first_figure]
+
+
+def test_tensor_inspector_preserves_state_across_disable_enable_when_hidden(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = _build_einsum_trace_for_inspector()
+    visibility_changes: list[tuple[matplotlib.figure.Figure, bool]] = []
+
+    monkeypatch.setattr(
+        tensor_inspector_module,
+        "_set_auxiliary_figure_visibility",
+        lambda figure, visible: visibility_changes.append((figure, visible)) or True,
+    )
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=False),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    inspector_index = _checkbutton_index(controls._checkbuttons, "Tensor inspector")
+    _click_checkbutton(controls._checkbuttons, inspector_index)
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    first_figure = inspector._figure
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+
+    inspector_controls.set_mode("singular_values", redraw=False)
+    inspector.capture_reference()
+    inspector.set_compare_mode("reference")
+    assert inspector.select_node("Left") is True
+
+    _click_checkbutton(controls._checkbuttons, inspector_index)
+    assert inspector._figure is first_figure
+    assert visibility_changes == [(first_figure, False)]
+
+    _click_checkbutton(controls._checkbuttons, inspector_index)
+
+    assert inspector._figure is first_figure
+    assert inspector._elements_controller is inspector_controls
+    assert inspector._elements_controller.selected_mode == "singular_values"
+    assert inspector._captured_reference_record is not None
+    assert inspector._compare_mode == "reference"
+    assert inspector._selected_node_name == "Left"
+
+
+def test_tensor_inspector_disable_falls_back_to_close_when_hide_is_unsupported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    monkeypatch.setattr(
+        tensor_inspector_module,
+        "_set_auxiliary_figure_visibility",
+        lambda _figure, _visible: False,
+    )
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=False),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+    inspector_index = _checkbutton_index(controls._checkbuttons, "Tensor inspector")
+    _click_checkbutton(controls._checkbuttons, inspector_index)
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    first_figure = inspector._figure
+
+    _click_checkbutton(controls._checkbuttons, inspector_index)
+
     assert inspector._figure is None
 
     _click_checkbutton(controls._checkbuttons, inspector_index)
 
     assert inspector._figure is not None
-    assert revealed == [revealed[0], inspector._figure]
+    assert inspector._figure is not first_figure
 
 
 def test_non_playback_tensorkrowch_inputs_hide_tensor_inspector_checkbox() -> None:
@@ -2528,6 +2629,60 @@ def test_show_tensor_network_einsum_tensor_inspector_tracks_playback_and_view_sw
     assert viewer_3d is not None
     viewer_3d.set_step(1)
     assert "r0" in inspector_controls._panel.main_ax.get_title()
+
+
+def test_tensor_inspector_reuses_cached_spectral_analysis_for_seen_step_records(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = _build_einsum_trace_for_inspector()
+    calls = {"count": 0}
+    original_spectral_analysis = tensor_elements_data_module._spectral_analysis_for_record
+
+    def counting_spectral_analysis(
+        record: _TensorRecord,
+        *,
+        config: TensorElementsConfig,
+    ) -> Any:
+        calls["count"] += 1
+        return original_spectral_analysis(record, config=config)
+
+    monkeypatch.setattr(
+        tensor_elements_data_module,
+        "_spectral_analysis_for_record",
+        counting_spectral_analysis,
+    )
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(contraction_tensor_inspector=True),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+    assert inspector is not None
+    assert inspector._figure is not None
+    inspector_controls = getattr(
+        inspector._figure,
+        "_tensor_network_viz_tensor_elements_controls",
+        None,
+    )
+    assert inspector_controls is not None
+    viewer = controls.current_scene.contraction_controls._viewer
+    assert viewer is not None
+
+    inspector_controls.set_mode("singular_values", redraw=False)
+    assert calls["count"] == 1
+
+    viewer.set_step(1)
+    assert calls["count"] == 2
+
+    viewer.set_step(2)
+    assert calls["count"] == 2
+
+    viewer.set_step(1)
+    assert calls["count"] == 2
 
 
 def test_show_tensor_network_manual_close_of_tensor_inspector_clears_toggle_state() -> None:

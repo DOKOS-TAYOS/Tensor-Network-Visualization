@@ -9,8 +9,10 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.widgets import CheckButtons, RadioButtons, Slider
 
+from . import _tensor_elements_data as _tensor_elements_data_module
 from . import _tensor_elements_payloads as _tensor_elements_payloads_module
 from ._matplotlib_state import set_tensor_elements_controls
+from ._tensor_elements_models import _SpectralAnalysis
 from ._tensor_elements_data import _analysis_config_from_resolved, _resolve_tensor_analysis
 from ._tensor_elements_rendering import (
     _compute_outlier_mask,
@@ -75,6 +77,15 @@ _SPECTRAL_MODES: Final[frozenset[str]] = frozenset({"singular_values", "eigen_re
 
 _AxisSelectorTuple = tuple[int | str, ...]
 _ModeAvailabilityCacheKey = tuple[
+    int,
+    tuple[int, ...],
+    str,
+    tuple[str, ...],
+    _AxisSelectorTuple | None,
+    _AxisSelectorTuple | None,
+    tuple[int, int],
+]
+_SpectralAnalysisCacheKey = tuple[
     int,
     tuple[int, ...],
     str,
@@ -150,6 +161,7 @@ class _TensorElementsFigureController:
         self._mode_availability_cache: dict[
             _ModeAvailabilityCacheKey, _ModeAvailabilityCacheEntry
         ] = {}
+        self._spectral_analysis_cache: dict[_SpectralAnalysisCacheKey, _SpectralAnalysis] = {}
         self._shared_color_scale_cache: dict[str, tuple[float, float] | None] = {}
         self._analysis = config.analysis or TensorAnalysisConfig()
         self._tensor_index = 0
@@ -177,6 +189,7 @@ class _TensorElementsFigureController:
         self._group_callback_guard = False
         self._mode_callback_guard = False
         self._slider_callback_guard = False
+        self._showing_placeholder: bool = False
         self._initialize_selection()
 
     @property
@@ -186,10 +199,47 @@ class _TensorElementsFigureController:
     def _current_record(self) -> _TensorRecord:
         return self._records[self._tensor_index]
 
-    def _reset_payload_caches(self) -> None:
+    def _reset_render_caches(self) -> None:
         self._payload_cache.clear()
         self._mode_availability_cache.clear()
         self._shared_color_scale_cache.clear()
+
+    def _spectral_analysis_cache_key(
+        self,
+        record: _TensorRecord,
+        *,
+        config: TensorElementsConfig,
+    ) -> _SpectralAnalysisCacheKey:
+        array = np.asarray(record.array)
+        row_axes = None if config.row_axes is None else tuple(config.row_axes)
+        col_axes = None if config.col_axes is None else tuple(config.col_axes)
+        max_rows, max_cols = config.max_matrix_shape
+        return (
+            int(id(record.array)),
+            tuple(int(dimension) for dimension in array.shape),
+            str(array.dtype),
+            tuple(str(axis_name) for axis_name in record.axis_names),
+            row_axes,
+            col_axes,
+            (int(max_rows), int(max_cols)),
+        )
+
+    def _spectral_analysis_for_record(
+        self,
+        record: _TensorRecord,
+        *,
+        config: TensorElementsConfig,
+    ) -> _SpectralAnalysis:
+        key = self._spectral_analysis_cache_key(record, config=config)
+        cached = self._spectral_analysis_cache.get(key)
+        if cached is not None:
+            return cached
+        analysis = _tensor_elements_data_module._spectral_analysis_for_record(
+            record,
+            config=config,
+        )
+        self._spectral_analysis_cache[key] = analysis
+        return analysis
 
     def _mode_availability_cache_key(self, index: int) -> _ModeAvailabilityCacheKey:
         record = self._records[index]
@@ -315,6 +365,16 @@ class _TensorElementsFigureController:
                 self._config,
                 analysis=_analysis_config_from_resolved(resolved_analysis),
             )
+        if mode in _SPECTRAL_MODES:
+            analysis = self._spectral_analysis_for_record(record, config=active_config)
+            payload = _tensor_elements_payloads_module._build_spectral_payload_from_analysis(
+                record,
+                active_config,
+                mode=cast(Literal["singular_values", "eigen_real", "eigen_imag"], mode),
+                analysis=analysis,
+            )
+            cache_entry.payloads[mode] = payload
+            return mode, payload
         resolved_mode, payload = self._prepare_mode_payload(record, active_config, mode)
         cache_entry.payloads[resolved_mode] = payload
         return resolved_mode, payload
@@ -687,7 +747,7 @@ class _TensorElementsFigureController:
         self._analysis_controls_signature = signature
 
     def _clear_analysis_caches(self) -> None:
-        self._reset_payload_caches()
+        self._reset_render_caches()
 
     def _set_analysis(
         self,
@@ -763,6 +823,7 @@ class _TensorElementsFigureController:
             record=self._current_record(),
             payload=payload,
         )
+        self._showing_placeholder = False
         self._mode = resolved_mode
         self._sync_controls_after_render(rebuild_analysis_controls=rebuild_analysis_controls)
         self._maybe_redraw(redraw=redraw)
@@ -856,7 +917,7 @@ class _TensorElementsFigureController:
             raise ValueError("set_single_record is only supported for single-record controllers.")
         self._records = [record]
         self._tensor_index = 0
-        self._reset_payload_caches()
+        self._reset_render_caches()
         if self._allow_interactive_fallback:
             self._set_group_mode_for_index(
                 index=self._tensor_index,
@@ -877,6 +938,7 @@ class _TensorElementsFigureController:
         self._panel.main_ax.set_position(self._panel.base_position)
         self._panel.main_ax.axis("off")
         self._panel.main_ax.set_title(title)
+        self._showing_placeholder = True
         self._panel.main_ax.text(
             0.02,
             0.98,

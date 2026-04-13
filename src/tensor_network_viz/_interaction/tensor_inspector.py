@@ -163,6 +163,27 @@ def _reveal_auxiliary_figure(figure: Figure) -> None:
             flush_events()
 
 
+def _set_auxiliary_figure_visibility(figure: Figure, visible: bool) -> bool:
+    manager = getattr(figure.canvas, "manager", None)
+    window = getattr(manager, "window", None)
+    if window is None:
+        return False
+    method_names = (
+        ("deiconify", "wm_deiconify", "lift") if visible else ("withdraw", "wm_withdraw", "iconify")
+    )
+    for method_name in method_names:
+        method = getattr(window, method_name, None)
+        if not callable(method):
+            continue
+        with suppress(AttributeError, RuntimeError, TypeError, ValueError):
+            method()
+            update_idletasks = getattr(window, "update_idletasks", None)
+            if callable(update_idletasks):
+                update_idletasks()
+            return True
+    return False
+
+
 class _LinkedTensorInspectorController:
     def __init__(
         self,
@@ -182,6 +203,7 @@ class _LinkedTensorInspectorController:
         self._enabled: bool = False
         self._viewer: _StepPlaybackViewer | None = None
         self._figure: Figure | None = None
+        self._figure_hidden: bool = False
         self._elements_controller: _TensorElementsFigureController | None = None
         self._saved_mode: str | None = None
         self._selected_node_name: str | None = None
@@ -297,6 +319,9 @@ class _LinkedTensorInspectorController:
     def set_enabled(self, enabled: bool, *, reveal: bool = False) -> None:
         target = bool(enabled)
         if target == self._enabled:
+            if target and self._figure is not None and self._figure_hidden:
+                _set_auxiliary_figure_visibility(self._figure, True)
+                self._figure_hidden = False
             if target and reveal and self._figure is not None:
                 _reveal_auxiliary_figure(self._figure)
             if target:
@@ -305,9 +330,15 @@ class _LinkedTensorInspectorController:
         self._enabled = target
         package_logger.debug("Linked tensor inspector enabled=%s reveal=%s.", self._enabled, reveal)
         if not target:
+            if self._figure is not None and _set_auxiliary_figure_visibility(self._figure, False):
+                self._figure_hidden = True
+                return
             self._close_figure()
             return
         self._ensure_figure()
+        if self._figure is not None and self._figure_hidden:
+            _set_auxiliary_figure_visibility(self._figure, True)
+            self._figure_hidden = False
         if reveal and self._figure is not None:
             _reveal_auxiliary_figure(self._figure)
         self._sync_active_source()
@@ -331,11 +362,14 @@ class _LinkedTensorInspectorController:
         if self._figure is not None:
             return
         record = self._selected_node_record()
+        source_kind = "selected_node"
         if record is None:
             initial_step = int(self._viewer.current_step) if self._viewer is not None else 0
             record = self._record_for_step(initial_step)
+            source_kind = "playback_result"
         if record is None:
             record = self._placeholder_record()
+            source_kind = "placeholder"
         figure, _ax, controller = _show_tensor_records(
             [record],
             config=self._config,
@@ -345,6 +379,7 @@ class _LinkedTensorInspectorController:
             show=False,
         )
         self._figure = figure
+        self._figure_hidden = False
         self._elements_controller = controller
         package_logger.debug("Created linked tensor inspector figure.")
         if self._saved_mode is not None:
@@ -352,6 +387,11 @@ class _LinkedTensorInspectorController:
                 controller.set_mode(self._saved_mode, redraw=False)
         self._build_comparison_controls()
         self._close_cid = figure.canvas.mpl_connect("close_event", self._on_figure_closed)
+        if source_kind == "placeholder":
+            self._active_record = None
+        else:
+            self._active_record = record
+        self._active_source_kind = source_kind
 
     def _build_comparison_controls(self) -> None:
         if self._figure is None:
@@ -502,6 +542,19 @@ class _LinkedTensorInspectorController:
             return
         self._elements_controller.render_placeholder(text)
 
+    def _controller_shows_record(self, record: _TensorRecord) -> bool:
+        if self._elements_controller is None:
+            return False
+        if self._elements_controller._showing_placeholder:
+            return False
+        current_record = self._elements_controller._current_record()
+        return bool(
+            current_record.array is record.array
+            and current_record.axis_names == record.axis_names
+            and current_record.engine == record.engine
+            and current_record.name == record.name
+        )
+
     def _reference_record_for_active_source(
         self,
         current_record: _TensorRecord,
@@ -531,11 +584,13 @@ class _LinkedTensorInspectorController:
         self._active_source_kind = source_kind
         reference_record = self._reference_record_for_active_source(record, source_kind=source_kind)
         if self._compare_mode == "current" or reference_record is None:
-            self._elements_controller.set_single_record(record)
+            if not self._controller_shows_record(record):
+                self._elements_controller.set_single_record(record)
             self._saved_mode = str(self._elements_controller.selected_mode)
             return
         if self._compare_mode == "reference":
-            self._elements_controller.set_single_record(reference_record)
+            if not self._controller_shows_record(reference_record):
+                self._elements_controller.set_single_record(reference_record)
             self._saved_mode = str(self._elements_controller.selected_mode)
             return
         if record.array.shape != reference_record.array.shape:
@@ -616,6 +671,7 @@ class _LinkedTensorInspectorController:
             self._saved_mode = str(self._elements_controller.selected_mode)
         figure = self._figure
         if figure is None:
+            self._figure_hidden = False
             self._elements_controller = None
             self._close_cid = None
             self._button_hover_cid = None
@@ -629,6 +685,7 @@ class _LinkedTensorInspectorController:
             self._button_hover_text.remove()
         self._closing_programmatically = True
         self._figure = None
+        self._figure_hidden = False
         self._elements_controller = None
         self._close_cid = None
         self._button_hover_cid = None
@@ -650,6 +707,7 @@ class _LinkedTensorInspectorController:
         if self._button_hover_text is not None:
             self._button_hover_text.remove()
         self._figure = None
+        self._figure_hidden = False
         self._elements_controller = None
         self._close_cid = None
         self._button_hover_cid = None
