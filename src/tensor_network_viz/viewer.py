@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, TypeAlias, cast
-
-import matplotlib.pyplot as plt
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure
-from mpl_toolkits.mplot3d.axes3d import Axes3D
+import importlib
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 from ._import_state import _preserve_sys_module_entry
 from ._input_inspection import (
@@ -23,12 +19,38 @@ from ._typing import FigureLike, root_figure
 from .config import EngineName, PlotConfig, ViewName, _theme_background_colors
 from .exceptions import AxisConfigurationError
 
-RenderedAxes: TypeAlias = Axes | Axes3D
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
+    from mpl_toolkits.mplot3d.axes3d import Axes3D
+
+    RenderedAxes: TypeAlias = Axes | Axes3D
+else:
+    RenderedAxes: TypeAlias = Any
+
+
+class _LazyPyplotProxy:
+    @staticmethod
+    def _module() -> Any:
+        return importlib.import_module("matplotlib.pyplot")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._module(), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(self._module(), name, value)
+
+    def __delattr__(self, name: str) -> None:
+        delattr(self._module(), name)
+
+
+plt = _LazyPyplotProxy()
 
 
 def _show_figure(fig: FigureLike) -> None:
     """Show *fig* in a Jupyter kernel via IPython display, else ``plt.show()``."""
     display_figure = root_figure(fig)
+
     try:
         from IPython.core.getipython import get_ipython
         from IPython.display import display
@@ -163,7 +185,6 @@ def show_tensor_network(
     package_logger.debug(
         "Rendering tensor network with engine=%r resolved_view=%r.", resolved_engine, resolved_view
     )
-    plot_2d, plot_3d = _get_plotters(resolved_engine)
     if style.show_contraction_scheme and not show_controls:
         raise ValueError(
             "show_contraction_scheme=True requires show_controls=True because the contraction "
@@ -174,10 +195,11 @@ def show_tensor_network(
         style = _merge_grid_positions_into_config(style, network_input, dimensions=dimensions)
         static_style = style
         with _preserve_sys_module_entry("matplotlib.widgets"):
+            plot_2d, plot_3d = _get_plotters(resolved_engine)
             if resolved_view == "2d":
                 fig, ax_out = plot_2d(
                     network_input,
-                    ax=cast(Axes, ax) if ax is not None else None,
+                    ax=cast(Any, ax) if ax is not None else None,
                     config=static_style,
                     _build_contraction_controls=False,
                     _build_scene_state=False,

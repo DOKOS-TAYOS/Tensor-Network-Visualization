@@ -223,6 +223,8 @@ print(
             "tensor_network_viz._tensor_elements_controller": (
                 "tensor_network_viz._tensor_elements_controller" in sys.modules
             ),
+            "matplotlib.widgets": "matplotlib.widgets" in sys.modules,
+            "matplotlib_has_widgets_attr": hasattr(matplotlib, "widgets"),
         }
     )
 )
@@ -230,6 +232,8 @@ print(
     )
 
     assert loaded["tensor_network_viz._tensor_elements_controller"] is False
+    assert loaded["matplotlib.widgets"] is False
+    assert loaded["matplotlib_has_widgets_attr"] is False
 
 
 def test_static_tensor_elements_preserves_preimported_widgets_module_identity() -> None:
@@ -300,6 +304,8 @@ print(
             in sys.modules,
             "tensor_network_viz._interactive_scene": "tensor_network_viz._interactive_scene"
             in sys.modules,
+            "matplotlib.widgets": "matplotlib.widgets" in sys.modules,
+            "matplotlib_has_widgets_attr": hasattr(matplotlib, "widgets"),
         }
     )
 )
@@ -309,6 +315,8 @@ print(
     assert loaded["tensor_network_viz.contraction_viewer"] is False
     assert loaded["tensor_network_viz._interaction.scheme"] is False
     assert loaded["tensor_network_viz._interactive_scene"] is False
+    assert loaded["matplotlib.widgets"] is False
+    assert loaded["matplotlib_has_widgets_attr"] is False
 
 
 def test_static_tensor_network_preserves_preimported_widgets_module_identity() -> None:

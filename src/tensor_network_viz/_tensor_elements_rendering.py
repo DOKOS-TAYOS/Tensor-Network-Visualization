@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Final, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import numpy as np
 from matplotlib import patheffects
-from matplotlib.axes import Axes
 from matplotlib.colors import BoundaryNorm, ListedColormap
 from matplotlib.ticker import MaxNLocator
 
@@ -18,6 +17,9 @@ from ._tensor_elements_support import (
     _TextSummaryPayload,
 )
 from .tensor_elements_config import TensorElementsConfig
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
 
 _OUTLIER_EDGE_COLOR: Final[str] = "#F8FAFC"
 _OUTLIER_CONTRAST_COLOR: Final[str] = "#0F172A"

@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import importlib
-from typing import Any, Protocol, cast
-
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure
-from mpl_toolkits.mplot3d.axes3d import Axes3D
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from ._core.graph import _GraphData
 from ._engine_specs import ENGINE_GRAPH_BUILDER_MAP, ENGINE_MODULE_MAP
 from ._logging import package_logger
 from .config import EngineName, PlotConfig
 from .exceptions import UnsupportedEngineError, VisualizationTypeError
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
+    from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 
 class _Plot2D(Protocol):

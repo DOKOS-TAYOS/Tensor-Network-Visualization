@@ -5,21 +5,11 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure
 
 from ._import_state import _preserve_sys_module_entry
 from ._logging import package_logger
 from ._matplotlib_state import set_tensor_elements_controls
-from ._tensor_elements_rendering import (
-    _compute_outlier_mask,
-    _derive_color_limits,
-    _render_panel,
-    _RenderedTensorPanel,
-    _supports_dynamic_scaling,
-)
 from ._tensor_elements_support import (
     _extract_tensor_records,
     _HeatmapPayload,
@@ -32,6 +22,9 @@ from .exceptions import AxisConfigurationError
 from .tensor_elements_config import TensorElementsConfig
 
 if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
+
     from ._tensor_elements_controller import (
         _TensorElementsControlsLayout,
         _TensorElementsFigureController,
@@ -44,6 +37,8 @@ def _build_single_external_axis(ax: Axes) -> tuple[Figure, Axes]:
 
 
 def _build_internal_axis(*, config: TensorElementsConfig) -> tuple[Figure, Axes]:
+    import matplotlib.pyplot as plt
+
     figure, ax = plt.subplots(figsize=config.figsize)
     return root_figure(figure), ax
 
@@ -82,6 +77,8 @@ def _shared_color_limits_for_static_mode(
     mode: str,
     style_key: str,
 ) -> tuple[float, float] | None:
+    from ._tensor_elements_rendering import _derive_color_limits, _supports_dynamic_scaling
+
     matrices: list[np.ndarray[Any, Any]] = []
     for record in records:
         try:
@@ -107,6 +104,12 @@ def _finalize_static_heatmap_payload(
     mode: str,
     payload: _HeatmapPayload,
 ) -> _HeatmapPayload:
+    from ._tensor_elements_rendering import (
+        _compute_outlier_mask,
+        _derive_color_limits,
+        _supports_dynamic_scaling,
+    )
+
     color_limits: tuple[float, float] | None = None
     outlier_mask: np.ndarray[Any, Any] | None = None
     matrix = np.asarray(payload.matrix, dtype=float)
@@ -141,6 +144,8 @@ def _show_static_tensor_records(
 ) -> tuple[Figure, Axes]:
     _validate_tensor_elements_axis(records=records, ax=ax, show_controls=False)
     with _preserve_sys_module_entry("matplotlib.widgets"):
+        from ._tensor_elements_rendering import _render_panel, _RenderedTensorPanel
+
         if ax is None:
             figure, main_ax = _build_internal_axis(config=config)
         else:
@@ -190,6 +195,7 @@ def _show_tensor_records(
         _TensorElementsFigureController,
         _TensorPayloadCacheEntry,
     )
+    from ._tensor_elements_rendering import _RenderedTensorPanel
 
     _validate_tensor_elements_axis(records=records, ax=ax, show_controls=show_controls)
     initial_payload_cache: dict[int, _TensorPayloadCacheEntry] = {}
