@@ -61,19 +61,21 @@ Use [api.md](api.md) when you need exact signatures, configuration fields, and e
 
 ## Notebook Workflow
 
-Install the Jupyter extra:
+Use this notebook recipe when you want interactive Matplotlib widgets:
 
-```bash
-python -m pip install "tensor-network-visualization[jupyter]"
+```python
+%pip install "tensor-network-visualization[jupyter]"
 ```
 
-In the notebook, enable the widget backend before drawing interactive figures:
+If you just installed that extra in the current kernel, restart the kernel before plotting.
+
+Then put the widget backend in the first plotting cell:
 
 ```python
 %matplotlib widget
 ```
 
-Then use the same API as in a script:
+After that, use the same API as in a script:
 
 ```python
 from tensor_network_viz import PlotConfig, show_tensor_network
@@ -183,6 +185,10 @@ still read from the backend objects, so adjacent cells are not connected automat
 Use `None` for empty cells. In 3D, use `network[layer][row][col]`; 3D grid inputs default to
 `view="3d"` when `view` is omitted. Grid inputs are supported for TensorKrowch, TensorNetwork, and
 Quimb. They are rejected for TeNPy and `einsum`.
+
+Leading `None` values matter. If you want later rows to stay visually aligned under earlier
+columns, keep the missing cells explicitly at the start of the row. The library preserves the
+coordinates you gave in `list2d`; it does not auto-shift a row back into place.
 
 For TensorKrowch contraction playback, prefer passing the original TensorKrowch network object when
 you rely on automatic history recovery. A grid of TensorKrowch nodes fixes the layout, but it does

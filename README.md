@@ -105,10 +105,27 @@ fig.savefig("tensorkrowch-network.png", bbox_inches="tight")
 Use `show=False` when you want to save or customize the figure yourself. Use
 `show_controls=False` when you want a clean static figure with no embedded Matplotlib controls.
 
-In Jupyter, install `"tensor-network-visualization[jupyter]"`, run `%matplotlib widget` before
-plotting, then call `show_tensor_network` as usual (default `show_controls=True`) for interactive
-figures with embedded controls. See [Installation](docs/installation.md) and
-[User Guide](docs/guide.md) for details.
+In a notebook, use this exact recipe:
+
+```python
+%pip install "tensor-network-visualization[jupyter]"
+```
+
+If you just installed that extra in the current kernel, restart the kernel once. Then, in the
+first plotting cell:
+
+```python
+%matplotlib widget
+
+from tensor_network_viz import PlotConfig, show_tensor_network
+
+fig, ax = show_tensor_network(
+    network,
+    config=PlotConfig(show_tensor_labels=True, hover_labels=True),
+)
+```
+
+See [Installation](docs/installation.md) and [User Guide](docs/guide.md) for details.
 
 ## Documentation
 

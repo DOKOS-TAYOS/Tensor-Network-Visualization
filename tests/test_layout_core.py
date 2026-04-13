@@ -47,6 +47,12 @@ from tensor_network_viz._core.layout.generic_coarsening import (
 )
 from tensor_network_viz._core.layout.parameters import _LAYER_SPACING
 from tensor_network_viz._core.layout.positions import _promote_3d_layers
+from tensor_network_viz._core.layout_structure import (
+    _classify_anchor_graph,
+    _coordinate_axis_lengths,
+    _expected_grid_edges_from_coords,
+    _node_edge_set,
+)
 from tensor_network_viz._core.renderer import (
     _SHORTEST_EDGE_RADIUS_FRACTION,
     _resolve_draw_scale,
@@ -838,6 +844,102 @@ def _build_coord_graph_2d(
         for left_id, right_id, edge_name in edge_specs
     )
     return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
+def _build_topological_sparse_grid_graph_2d(
+    active: set[tuple[int, int]],
+    *,
+    prefix: str = "TG",
+) -> _GraphData:
+    node_id_by_coord = {coord: index for index, coord in enumerate(sorted(active))}
+    axes_by_node: dict[int, list[str]] = {node_id: [] for node_id in node_id_by_coord.values()}
+    edge_specs: list[tuple[int, int, str]] = []
+    for row, col in sorted(active):
+        node_id = node_id_by_coord[(row, col)]
+        for dr, dc, label in ((1, 0, "down"), (0, 1, "right")):
+            neighbor = (row + dr, col + dc)
+            if neighbor not in node_id_by_coord:
+                continue
+            other_id = node_id_by_coord[neighbor]
+            edge_name = f"grid_{prefix}_{row}_{col}_{label}"
+            axes_by_node[node_id].append(edge_name)
+            axes_by_node[other_id].append(edge_name)
+            edge_specs.append((node_id, other_id, edge_name))
+
+    nodes = {
+        node_id: _make_node(f"{prefix}{node_id}", tuple(axes_by_node[node_id]))
+        for node_id in node_id_by_coord.values()
+    }
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+    edges = tuple(
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][edge_name], edge_name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][edge_name], edge_name),
+            name=edge_name,
+            label=None,
+        )
+        for left_id, right_id, edge_name in edge_specs
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
+def _build_topological_sparse_grid_with_tails_graph_2d(
+    active: set[tuple[int, int]],
+    *,
+    attached_coords: tuple[tuple[int, int], ...],
+    tail_length: int,
+    prefix: str = "TT",
+) -> _GraphData:
+    node_id_by_coord = {coord: index for index, coord in enumerate(sorted(active))}
+    axes_by_node: dict[int, list[str]] = {node_id: [] for node_id in node_id_by_coord.values()}
+    edge_specs: list[tuple[int, int, str]] = []
+
+    for row, col in sorted(active):
+        node_id = node_id_by_coord[(row, col)]
+        for dr, dc, label in ((1, 0, "down"), (0, 1, "right")):
+            neighbor = (row + dr, col + dc)
+            if neighbor not in node_id_by_coord:
+                continue
+            other_id = node_id_by_coord[neighbor]
+            edge_name = f"grid_{prefix}_{row}_{col}_{label}"
+            axes_by_node[node_id].append(edge_name)
+            axes_by_node[other_id].append(edge_name)
+            edge_specs.append((node_id, other_id, edge_name))
+
+    next_node_id = len(node_id_by_coord)
+    for attach_index, coord in enumerate(attached_coords):
+        previous_id = node_id_by_coord[coord]
+        for step in range(tail_length):
+            current_id = next_node_id
+            next_node_id += 1
+            axes_by_node.setdefault(current_id, [])
+            edge_name = f"tail_{prefix}_{attach_index}_{step}"
+            axes_by_node[previous_id].append(edge_name)
+            axes_by_node[current_id].append(edge_name)
+            edge_specs.append((previous_id, current_id, edge_name))
+            previous_id = current_id
+
+    nodes = {
+        node_id: _make_node(f"{prefix}{node_id}", tuple(axes_by_node[node_id]))
+        for node_id in sorted(axes_by_node)
+    }
+    axis_lookup = {
+        node_id: {name: index for index, name in enumerate(node.axes_names)}
+        for node_id, node in nodes.items()
+    }
+    edges = tuple(
+        _make_contraction_edge(
+            _EdgeEndpoint(left_id, axis_lookup[left_id][edge_name], edge_name),
+            _EdgeEndpoint(right_id, axis_lookup[right_id][edge_name], edge_name),
+            name=edge_name,
+            label=None,
+        )
+        for left_id, right_id, edge_name in edge_specs
+    )
+    return _GraphData(nodes=nodes, edges=edges)
 
 
 def _build_coord_graph_3d(
@@ -2146,6 +2248,118 @@ def test_compute_layout_sparse_grid_2d_recovers_coordinate_holes() -> None:
     assert component.structure_kind == "grid"
     assert component.grid_mapping is not None
     assert set(component.grid_mapping.values()) == {(col, row) for row, col in active}
+
+
+def test_compute_layout_topological_sparse_grid_2d_recovers_partial_mesh_without_metadata() -> None:
+    active = {
+        (0, 0),
+        (0, 1),
+        (0, 2),
+        (0, 3),
+        (1, 1),
+        (1, 2),
+        (1, 3),
+        (2, 1),
+        (2, 2),
+        (2, 3),
+        (3, 2),
+        (3, 3),
+    }
+    graph = _build_topological_sparse_grid_graph_2d(active, prefix="STEP")
+
+    positions = _compute_layout(graph, dimensions=2, seed=0)
+    component = _analyze_layout_components_cached(graph)[0]
+
+    assert component.structure_kind == "grid"
+    assert component.grid_mapping is not None
+
+    assert len(component.grid_mapping) == component.anchor_graph.number_of_nodes()
+    assert len(set(component.grid_mapping.values())) == component.anchor_graph.number_of_nodes()
+    assert _node_edge_set(component.anchor_graph) == _expected_grid_edges_from_coords(
+        component.grid_mapping,
+        dimensions=2,
+    )
+    assert all(axis_length > 1 for axis_length in _coordinate_axis_lengths(component.grid_mapping))
+
+    for left_id, right_id in component.anchor_graph.edges():
+        left_col, left_row = component.grid_mapping[left_id]
+        right_col, right_row = component.grid_mapping[right_id]
+        assert abs(left_col - right_col) + abs(left_row - right_row) == 1
+
+    coords = np.stack([positions[node_id] for node_id in sorted(graph.nodes)])
+    assert np.all(np.isfinite(coords))
+    assert len({round(float(position[0]), 6) for position in positions.values()}) >= 4
+    assert len({round(float(position[1]), 6) for position in positions.values()}) >= 4
+
+
+def test_coarsened_planar_layout_recovers_sparse_grid_core_before_force_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tensor_network_viz._core.layout.generic_coarsening as generic_coarsening
+
+    active = {
+        (0, 0),
+        (0, 1),
+        (0, 2),
+        (0, 3),
+        (1, 1),
+        (1, 2),
+        (1, 3),
+        (2, 1),
+        (2, 2),
+        (2, 3),
+        (3, 2),
+        (3, 3),
+    }
+    graph = _build_topological_sparse_grid_with_tails_graph_2d(
+        active,
+        attached_coords=((0, 0), (3, 3)),
+        tail_length=2,
+        prefix="STEPTAIL",
+    )
+    component = _analyze_layout_components_cached(graph)[0]
+    component_coarsening_graph = generic_coarsening._coarsening_graph_from_nx(
+        component.contraction_graph,
+        tuple(sorted(component.node_ids)),
+    )
+    peeled = generic_coarsening._peel_degree_one_trees_from_coarsening(component_coarsening_graph)
+    core_graph = generic_coarsening._nx_graph_from_coarsening(
+        component_coarsening_graph,
+        peeled.core_node_ids,
+    )
+    structure_kind, _, grid_mapping, _, _ = _classify_anchor_graph(core_graph, graph)
+    core_node_ids = peeled.core_node_ids
+
+    def fail_force_layout(*args: object, **kwargs: object) -> dict[int, np.ndarray]:
+        raise AssertionError(
+            "sparse-grid coarsening should classify the reduced core before force fallback"
+        )
+
+    monkeypatch.setattr(
+        generic_coarsening,
+        "_compute_weighted_force_layout",
+        fail_force_layout,
+    )
+
+    positions = _compute_layout(graph, dimensions=2, seed=0, iterations=50)
+
+    assert component.structure_kind == "planar"
+    assert structure_kind == "grid"
+    assert grid_mapping is not None
+    assert sorted(_coordinate_axis_lengths(grid_mapping)) == [3, 4]
+    assert np.all(np.isfinite(np.stack([positions[node_id] for node_id in sorted(graph.nodes)])))
+    assert sorted(
+        (
+            len({round(float(positions[node_id][0]), 6) for node_id in core_node_ids}),
+            len({round(float(positions[node_id][1]), 6) for node_id in core_node_ids}),
+        )
+    ) == [3, 4]
+
+    for left_id, right_id in component.contraction_graph.edges():
+        if left_id not in core_node_ids or right_id not in core_node_ids:
+            continue
+        delta = positions[left_id][:2] - positions[right_id][:2]
+        assert np.isclose(delta[0], 0.0, atol=1e-9) ^ np.isclose(delta[1], 0.0, atol=1e-9)
 
 
 def test_compute_layout_sparse_grid_3d_recovers_coordinate_holes() -> None:

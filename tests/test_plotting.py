@@ -2828,6 +2828,28 @@ def test_show_tensor_network_static_nested_grid_2d_renders_with_holes() -> None:
     assert labels >= {"L", "R"}
 
 
+def test_show_tensor_network_nested_grid_2d_keeps_explicit_row_shift_without_auto_rectifying() -> (
+    None
+):
+    top = DummyTensorNetworkNode("Top", ["down"])
+    bottom = DummyTensorNetworkNode("Bottom", ["up"])
+    connect(top, 0, bottom, 0, name="bond")
+
+    fig, ax = show_tensor_network(
+        [[top], [None, bottom]],
+        config=PlotConfig(show_tensor_labels=True),
+        show=False,
+        show_controls=False,
+    )
+
+    label_positions = {text.get_text(): text.get_position() for text in ax.texts}
+
+    assert_rendered_figure(fig, ax)
+    assert set(label_positions) >= {"Top", "Bottom"}
+    assert float(label_positions["Top"][0]) < float(label_positions["Bottom"][0])
+    assert float(label_positions["Top"][1]) > float(label_positions["Bottom"][1])
+
+
 def test_show_tensor_network_nested_grid_3d_defaults_to_3d_view() -> None:
     left = DummyTensorNetworkNode("L", ["a", "b"])
     right = DummyTensorNetworkNode("R", ["b", "c"])

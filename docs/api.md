@@ -93,6 +93,8 @@ Important behavior:
   overrides only the node ids you pass.
 - A nested grid is a `list`/`tuple` layout of existing backend nodes or tensors. It is flattened for
   graph extraction; it does not add bonds between adjacent cells. Use `None` for empty cells.
+- Leading `None` entries are part of the layout. Keep them when you want later rows or columns to
+  stay visually aligned; nested grid inputs are not auto-rectified.
 - Grid inputs are supported for `"tensorkrowch"`, `"tensornetwork"`, and `"quimb"`. For
   TensorKrowch, a grid of nodes may not carry the original network's recovered contraction history;
   pass the network object plus explicit positions when automatic playback history matters.

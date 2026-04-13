@@ -85,13 +85,15 @@ python -m pip install "tensor-network-visualization[jupyter,quimb,einsum]"
 
 ## Jupyter Setup
 
-Install the Jupyter extra:
+In a notebook cell, install the Jupyter extra:
 
-```bash
-python -m pip install "tensor-network-visualization[jupyter]"
+```python
+%pip install "tensor-network-visualization[jupyter]"
 ```
 
-In a notebook, use the widget backend before creating interactive figures:
+If you just installed that extra in the current kernel, restart the kernel once.
+
+Then, in the first plotting cell, enable the widget backend before creating interactive figures:
 
 ```python
 %matplotlib widget
@@ -100,7 +102,12 @@ In a notebook, use the widget backend before creating interactive figures:
 Then call the normal API:
 
 ```python
-fig, ax = show_tensor_network(network, show=True)
+from tensor_network_viz import PlotConfig, show_tensor_network
+
+fig, ax = show_tensor_network(
+    network,
+    config=PlotConfig(show_tensor_labels=True, hover_labels=True),
+)
 ```
 
 For static notebook output, use:

@@ -58,20 +58,22 @@ fig
 
 ## Jupyter Controls Do Not Respond
 
-Install the Jupyter extra:
+In the notebook, make sure you used this install cell:
 
-```bash
-python -m pip install "tensor-network-visualization[jupyter]"
+```python
+%pip install "tensor-network-visualization[jupyter]"
 ```
 
-Then enable the widget backend before drawing:
+If you just ran that install in the current kernel, restart the kernel before plotting again.
+
+Then enable the widget backend in the first plotting cell:
 
 ```python
 %matplotlib widget
 ```
 
-If you already created figures before switching backend, restart the kernel and run the notebook
-again from the top.
+After that, call `show_tensor_network(...)` normally. If you already created figures before
+switching backend, restart the kernel and run the notebook again from the top.
 
 ## Hover Labels Do Not Work
 

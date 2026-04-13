@@ -107,7 +107,7 @@ def show_tensor_network(
             "tensor-network-visualization[jupyter]"`` and ``%matplotlib widget``
             for interactive figures). Otherwise ``plt.show()`` is used.
 
-    Note:
+    Notes:
         Repeated calls with the **same** ``network`` instance reuse the normalized
         graph structure for regular objects and for re-iterable builtin containers
         such as ``list``, ``tuple``, and ``dict``. One-shot iterators are rebuilt on
@@ -130,7 +130,7 @@ def show_tensor_network(
             ``show_controls=False``.
         VisualizationInputError: If a nested 2D/3D grid input is malformed or unsupported.
 
-    Example:
+    Examples:
         >>> config = PlotConfig(show_tensor_labels=True, hover_labels=True, figsize=(8, 6))
         >>> fig, ax = show_tensor_network(network, config=config)
     """

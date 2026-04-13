@@ -14,7 +14,7 @@ For each connected component, the layout code detects a simple structure when it
 can:
 
 - chains are placed on one straight line,
-- rectangular 2D grids use their grid coordinates,
+- rectangular 2D grids and validated sparse 2D partial grids use integer grid coordinates,
 - rectangular 3D grids are projected into 2D with a stable oblique depth offset,
 - trees use a layered tree layout,
 - planar graphs use NetworkX planar placement,
