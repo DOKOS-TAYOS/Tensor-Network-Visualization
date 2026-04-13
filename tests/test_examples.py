@@ -794,6 +794,21 @@ def test_geometry_decorated_sparse_grid2d_uses_flat_tensor_list() -> None:
     assert any("leaf_right" in str(tensor.tags) for tensor in network)
 
 
+def test_geometry_decorated_sparse_grid2d_has_expected_length_and_width() -> None:
+    module = _load_example_module(
+        Path("examples/geometry_demo.py"),
+        "geometry_demo_decorated_sparse_grid2d_shape",
+    )
+
+    active = module._decorated_sparse_grid2d_active()
+    row_widths: dict[int, int] = {}
+    for row, _col in active:
+        row_widths[row] = row_widths.get(row, 0) + 1
+
+    assert max(col for _row, col in active) + 1 == 15
+    assert max(row_widths.values()) == 5
+
+
 def test_run_all_examples_all_group_contains_more_commands_than_default() -> None:
     module = _load_example_module(Path("examples/run_all_examples.py"), "run_all_examples_all")
 

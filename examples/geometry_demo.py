@@ -155,19 +155,23 @@ def _partial_grid2d() -> list[Any]:
     return _flatten_tensor_grid(_grid_tensors_2d(active, rows=rows, cols=cols, prefix="PG"))
 
 
-def _decorated_sparse_grid2d_active() -> set[Coord2D]:
-    return {
-        (0, 0),
-        (1, 0),
-        (1, 1),
-        (2, 0),
-        (2, 1),
-        (2, 2),
-        (3, 1),
-        (3, 2),
-        (4, 2),
-        (4, 3),
-    }
+def _decorated_sparse_grid2d_active(
+    *,
+    length: int = 15,
+    thickness: int = 5,
+) -> set[Coord2D]:
+    if length < 3:
+        raise ValueError("length must be >= 3")
+    if thickness < 2:
+        raise ValueError("thickness must be >= 2")
+    if length < thickness:
+        raise ValueError("length must be >= thickness")
+
+    active: set[Coord2D] = set()
+    for diagonal_index in range(length):
+        for offset in range(thickness):
+            active.add((diagonal_index + offset, diagonal_index))
+    return active
 
 
 def _decorated_sparse_grid2d() -> list[Any]:
@@ -177,11 +181,16 @@ def _decorated_sparse_grid2d() -> list[Any]:
         f"{prefix}_{row}_{col}": [] for row, col in sorted(active)
     }
     tensors: list[Any] = []
+    rightmost_by_row = {
+        row: max(col for candidate_row, col in active if candidate_row == row)
+        for row, _col in active
+    }
+    right_leaf_rows = tuple(
+        row for row in sorted(rightmost_by_row) if row % 2 == 1 and row < max(rightmost_by_row)
+    )
     leaf_specs: tuple[tuple[str, Coord2D, str], ...] = (
         ("top", (0, 0), "up"),
-        ("right", (1, 1), "right"),
-        ("right", (2, 2), "right"),
-        ("right", (3, 2), "right"),
+        *(("right", (row, rightmost_by_row[row]), "right") for row in right_leaf_rows),
     )
 
     for row, col in sorted(active):
@@ -411,6 +420,7 @@ def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
     if definition.name == "decorated_sparse_grid2d":
         config = replace(
             config,
+            show_nodes=True,
             show_tensor_labels=False,
             node_color="#8CA2B0",
             node_edge_color="#111827",
