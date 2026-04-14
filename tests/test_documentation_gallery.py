@@ -13,6 +13,8 @@ _README_GALLERY_RAW_URLS: tuple[str, ...] = (
     "https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/mera_2d.png",
     "https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/tubular_grid_3d.png",
     "https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/network_controls.png",
+    "https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/tensor_elements_phase.png",
+    "https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/tensor_elements_controls.png",
 )
 
 _DOC_GALLERY_RELATIVE_PATHS: tuple[str, ...] = (
@@ -20,13 +22,16 @@ _DOC_GALLERY_RELATIVE_PATHS: tuple[str, ...] = (
     "../images/gallery/tensor_elements_phase.png",
     "../images/gallery/tubular_grid_3d.png",
     "../images/gallery/network_controls.png",
+    "../images/gallery/tensor_elements_controls.png",
 )
 
 _EXAMPLES_GALLERY_RELATIVE_PATHS: tuple[str, ...] = (
     "../images/gallery/cubic_peps_3d.png",
     "../images/gallery/mera_2d.png",
     "../images/gallery/tubular_grid_3d.png",
+    "../images/gallery/network_controls.png",
     "../images/gallery/tensor_elements_phase.png",
+    "../images/gallery/tensor_elements_controls.png",
 )
 
 
@@ -65,6 +70,7 @@ def test_generate_doc_images_script_declares_expected_outputs() -> None:
         Path("images/gallery/tubular_grid_3d.png"),
         Path("images/gallery/network_controls.png"),
         Path("images/gallery/tensor_elements_phase.png"),
+        Path("images/gallery/tensor_elements_controls.png"),
     )
 
     assert expected_paths == module.DOC_GALLERY_RELATIVE_PATHS

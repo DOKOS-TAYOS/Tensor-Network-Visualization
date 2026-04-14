@@ -64,16 +64,21 @@ python examples/run_demo.py geometry decorated_sparse_grid2d --view 2d
 
 These are a few representative outputs you can reproduce with the repository demos:
 
-| Cubic PEPS 3D | MERA 2D with labels | Tubular 3D | Tensor elements phase |
-| --- | --- | --- | --- |
-| ![Cubic PEPS 3D demo](../images/gallery/cubic_peps_3d.png) | ![MERA 2D demo](../images/gallery/mera_2d.png) | ![Tubular 3D demo](../images/gallery/tubular_grid_3d.png) | ![Tensor elements phase demo](../images/gallery/tensor_elements_phase.png) |
+| Cubic PEPS 3D | MERA 2D with labels | Tubular 3D |
+| --- | --- | --- |
+| ![Cubic PEPS 3D demo](../images/gallery/cubic_peps_3d.png) | ![MERA 2D demo](../images/gallery/mera_2d.png) | ![Tubular 3D demo](../images/gallery/tubular_grid_3d.png) |
+
+| MPS controls + index labels | Tensor elements phase | Tensor elements controls |
+| --- | --- | --- |
+| ![MPS controls demo](../images/gallery/network_controls.png) | ![Tensor elements phase demo](../images/gallery/tensor_elements_phase.png) | ![Tensor elements controls demo](../images/gallery/tensor_elements_controls.png) |
 
 Matching commands:
 
 ```bash
 python examples/run_demo.py tensorkrowch cubic_peps --view 3d
-python examples/run_demo.py tensorkrowch mera --view 2d --mera-log2 4
+python examples/run_demo.py tensorkrowch mera --view 2d --mera-log2 3
 python examples/run_demo.py geometry tubular_grid --view 3d
+python examples/run_demo.py tensorkrowch mps --view 2d --labels-edges
 python examples/tensor_elements_demo.py --demo structured
 ```
 

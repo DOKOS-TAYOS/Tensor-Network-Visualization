@@ -25,25 +25,35 @@ transparent PNGs; the controls example keeps its background so the menu stays re
   <img
     src="https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/cubic_peps_3d.png"
     alt="Cubic PEPS 3D tensor network visualization"
-    width="250"
+    width="230"
   >
   <img
     src="https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/mera_2d.png"
     alt="MERA 2D tensor network visualization with labels"
-    width="250"
+    width="230"
   >
   <img
     src="https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/tubular_grid_3d.png"
     alt="Tubular 3D tensor network visualization"
-    width="250"
+    width="230"
   >
 </p>
 
 <p align="center">
   <img
     src="https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/network_controls.png"
-    alt="Tensor-network controls for labels, nodes, hover, and 2D or 3D switching"
-    width="560"
+    alt="MPS with controls, tensor labels, and index labels"
+    width="230"
+  >
+  <img
+    src="https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/tensor_elements_phase.png"
+    alt="Tensor elements phase visualization"
+    width="230"
+  >
+  <img
+    src="https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/tensor_elements_controls.png"
+    alt="Tensor elements view with the full control menus"
+    width="230"
   >
 </p>
 

@@ -398,6 +398,10 @@ Example tensor-elements view:
 
 ![Tensor elements phase heatmap](../images/gallery/tensor_elements_phase.png)
 
+Example interactive tensor-elements panel:
+
+![Tensor elements controls](../images/gallery/tensor_elements_controls.png)
+
 ## Tensor Comparison
 
 Use `show_tensor_comparison(...)` when you have one current tensor and one reference tensor.

@@ -21,6 +21,7 @@ DOC_GALLERY_RELATIVE_PATHS: tuple[Path, ...] = (
     Path("images/gallery/tubular_grid_3d.png"),
     Path("images/gallery/network_controls.png"),
     Path("images/gallery/tensor_elements_phase.png"),
+    Path("images/gallery/tensor_elements_controls.png"),
 )
 
 
@@ -87,7 +88,7 @@ def _render_mera(output_root: Path) -> Path:
 
     from tensor_network_viz import PlotConfig, show_tensor_network
 
-    node_specs, bond_specs = tensorkrowch_demo._mera_specs(4)
+    node_specs, bond_specs = tensorkrowch_demo._mera_specs(3)
     network, _nodes = tensorkrowch_demo._build_tensorkrowch_network(node_specs, bond_specs)
     fig, _ax = show_tensor_network(
         network,
@@ -95,11 +96,13 @@ def _render_mera(output_root: Path) -> Path:
         view="2d",
         config=PlotConfig(
             theme="slate",
+            show_nodes=True,
             show_tensor_labels=True,
             hover_labels=False,
-            figsize=(10.5, 5.8),
-            layout_iterations=260,
-            tensor_label_fontsize=7.5,
+            figsize=(9.6, 5.4),
+            layout_iterations=220,
+            tensor_label_fontsize=8.2,
+            node_radius=0.09,
         ),
         show_controls=False,
         show=False,
@@ -146,10 +149,11 @@ def _render_network_controls(output_root: Path) -> Path:
         config=PlotConfig(
             theme="paper",
             show_tensor_labels=True,
-            show_index_labels=False,
+            show_index_labels=True,
             hover_labels=True,
-            figsize=(9.0, 6.8),
-            tensor_label_fontsize=9.0,
+            figsize=(9.4, 6.9),
+            tensor_label_fontsize=8.5,
+            edge_label_fontsize=8.5,
         ),
         show_controls=True,
         show=False,
@@ -181,6 +185,28 @@ def _render_tensor_elements_phase(output_root: Path) -> Path:
     return _save_figure(fig, output_root / DOC_GALLERY_RELATIVE_PATHS[4], transparent=True)
 
 
+def _render_tensor_elements_controls(output_root: Path) -> Path:
+    import tensor_elements_demo
+
+    from tensor_network_viz import TensorElementsConfig, show_tensor_elements
+
+    nodes = tensor_elements_demo.build_structured_network()
+    fig, _ax = show_tensor_elements(
+        nodes,
+        config=TensorElementsConfig(
+            mode="auto",
+            figsize=(9.0, 7.0),
+            max_matrix_shape=(384, 384),
+            shared_color_scale=True,
+            robust_percentiles=(1.0, 99.0),
+            topk_count=10,
+        ),
+        show_controls=True,
+        show=False,
+    )
+    return _save_figure(fig, output_root / DOC_GALLERY_RELATIVE_PATHS[5], transparent=False)
+
+
 def generate_doc_images(output_root: Path | None = None) -> tuple[Path, ...]:
     repo_root = _repo_root()
     _bootstrap_import_paths(repo_root)
@@ -191,6 +217,7 @@ def generate_doc_images(output_root: Path | None = None) -> tuple[Path, ...]:
         _render_tubular_grid(target_root),
         _render_network_controls(target_root),
         _render_tensor_elements_phase(target_root),
+        _render_tensor_elements_controls(target_root),
     )
 
 
