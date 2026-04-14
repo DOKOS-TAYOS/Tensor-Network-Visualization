@@ -18,24 +18,34 @@ PyTorch/NumPy `einsum` tensor networks.
 
 ## Gallery
 
-These are static exports produced with the library and the repository demos, so they match the
-kind of figures users can generate locally.
+These are exports generated with the library and the repository demos. The clean renders use
+transparent PNGs; the controls example keeps its background so the menu stays readable.
 
-### Cubic PEPS in 3D
+<p align="center">
+  <img
+    src="https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/cubic_peps_3d.png"
+    alt="Cubic PEPS 3D tensor network visualization"
+    width="250"
+  >
+  <img
+    src="https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/mera_2d.png"
+    alt="MERA 2D tensor network visualization with labels"
+    width="250"
+  >
+  <img
+    src="https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/tubular_grid_3d.png"
+    alt="Tubular 3D tensor network visualization"
+    width="250"
+  >
+</p>
 
-![Cubic PEPS 3D tensor network visualization](https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/cubic_peps_3d.png)
-
-### MERA in 2D
-
-![MERA 2D tensor network visualization](https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/mera_2d.png)
-
-### Tubular 3D Geometry
-
-![Tubular 3D tensor network visualization](https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/tubular_grid_3d.png)
-
-### Tensor Elements Phase Map
-
-![Tensor elements phase visualization](https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/tensor_elements_phase.png)
+<p align="center">
+  <img
+    src="https://raw.githubusercontent.com/DOKOS-TAYOS/Tensor-Network-Visualization/main/images/gallery/network_controls.png"
+    alt="Tensor-network controls for labels, nodes, hover, and 2D or 3D switching"
+    width="560"
+  >
+</p>
 
 ## Why This Exists
 

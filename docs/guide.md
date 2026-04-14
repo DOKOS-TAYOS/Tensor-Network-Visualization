@@ -284,6 +284,10 @@ The most common controls are:
 - 2D/3D view selector when no external axis fixes the view,
 - contraction playback when the network exposes or receives contraction steps.
 
+Example control layout for a small labeled network:
+
+![Tensor-network controls](../images/gallery/network_controls.png)
+
 For dense graphs, static labels can become noisy. A practical pattern is to export with tensor
 labels only, then keep index labels available through hover while exploring.
 
