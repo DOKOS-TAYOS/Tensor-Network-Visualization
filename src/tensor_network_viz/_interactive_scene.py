@@ -299,7 +299,7 @@ def _tensor_label_zorders(scene: _InteractiveSceneState) -> dict[int, float] | N
 
 def _refresh_2d_zoom_scaling(scene: _InteractiveSceneState) -> None:
     if scene.dimensions == 2:
-        _register_2d_zoom_font_scaling(cast(Axes, scene.ax))
+        _register_2d_zoom_font_scaling(cast(Axes, scene.ax), preserve_ref_span=True)
 
 
 def _scene_tensor_label_fast_text_metrics(scene: _InteractiveSceneState) -> bool:

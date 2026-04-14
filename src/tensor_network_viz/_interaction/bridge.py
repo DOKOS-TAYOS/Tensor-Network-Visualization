@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any, cast
 
 from matplotlib.artist import Artist
@@ -18,6 +19,7 @@ _CONTRACTION_VIEWER_ATTR = "_tensor_network_viz_contraction_viewer"
 _HOVER_ANN_ATTR = "_tensor_network_viz_hover_ann"
 _HOVER_CID_ATTR = "_tensor_network_viz_hover_cid"
 _INTERACTIVE_CONTROLS_ATTR = "_tensor_network_viz_interactive_controls"
+_HOME_VIEW_ATTR = "_tensor_network_viz_home_view"
 _NODE_ID_ATTR = "_tensor_network_viz_node_id"
 _RESERVED_BOTTOM_ATTR = "_tensor_network_viz_reserved_bottom"
 _SCENE_ATTR = "_tensor_network_viz_scene"
@@ -38,6 +40,15 @@ def get_reserved_bottom(fig: object, *, default: float = 0.02) -> float:
 
 def set_reserved_bottom(fig: object, bottom: float) -> None:
     setattr(fig, _RESERVED_BOTTOM_ATTR, float(bottom))
+
+
+def get_home_view(ax: object) -> dict[str, Any] | None:
+    raw = getattr(ax, _HOME_VIEW_ATTR, None)
+    return deepcopy(raw) if isinstance(raw, dict) else None
+
+
+def set_home_view(ax: object, view: dict[str, Any]) -> None:
+    setattr(ax, _HOME_VIEW_ATTR, deepcopy(view))
 
 
 def get_scene(ax: object) -> _InteractiveSceneState | None:
@@ -146,6 +157,7 @@ __all__ = [
     "clear_scene",
     "get_artist_node_id",
     "get_contraction_controls",
+    "get_home_view",
     "get_hover_annotation",
     "get_hover_cid",
     "get_reserved_bottom",
@@ -156,6 +168,7 @@ __all__ = [
     "set_artist_node_id",
     "set_contraction_controls",
     "set_contraction_viewer",
+    "set_home_view",
     "set_hover_annotation",
     "set_hover_cid",
     "set_interactive_controls",

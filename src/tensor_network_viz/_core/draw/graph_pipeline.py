@@ -236,7 +236,7 @@ def _draw_graph(
                 include_viewer=False,
             )
     if build_scene_state:
-        from ..._matplotlib_state import set_contraction_controls, set_scene
+        from ..._matplotlib_state import set_contraction_controls, set_home_view, set_scene
         from .render_prep import _build_interactive_scene_state
 
         scene = _build_interactive_scene_state(
@@ -250,6 +250,7 @@ def _draw_graph(
         )
         scene.contraction_controls = controls
         set_scene(ax, scene)
+        set_home_view(ax, ax._get_view())
         if controls is not None:
             set_contraction_controls(ax, controls)
             controls.bind_scene(scene)

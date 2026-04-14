@@ -13,7 +13,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from matplotlib.backend_bases import CloseEvent, MouseButton, MouseEvent
+from matplotlib.backend_bases import CloseEvent, MouseButton, MouseEvent, NavigationToolbar2
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgba
@@ -64,7 +64,7 @@ from tensor_network_viz._core.graph import (
 )
 from tensor_network_viz._core.renderer import _plot_graph
 from tensor_network_viz._interaction.tensor_inspector import _INSPECTOR_TENSOR_ELEMENTS_LAYOUT
-from tensor_network_viz._matplotlib_state import get_scene
+from tensor_network_viz._matplotlib_state import get_scene, get_zoom_font_state
 from tensor_network_viz._tensor_elements_support import _TensorRecord
 from tensor_network_viz.einsum_module.trace import pair_tensor
 from tensor_network_viz.tensor_elements import _show_tensor_records
@@ -150,6 +150,23 @@ class DummyNetwork:
             self.nodes = nodes
         if leaf_nodes is not None:
             self.leaf_nodes = leaf_nodes
+
+
+class _DummyNavigationToolbar(NavigationToolbar2):
+    def set_message(self, s: str) -> None:
+        _ = s
+
+    def draw_rubberband(self, *args: object) -> None:
+        _ = args
+
+    def remove_rubberband(self) -> None:
+        return
+
+    def save_figure(self, *args: object) -> None:
+        _ = args
+
+    def set_history_buttons(self) -> None:
+        return
 
 
 def _einsum_trace_with_three_tensors() -> EinsumTrace:
@@ -1202,6 +1219,156 @@ def test_show_tensor_network_reuses_tensor_and_edge_label_artists_when_toggled()
     assert edge_label_ids_before == tuple(
         id(text) for text in controls.current_scene.edge_label_artists
     )
+
+
+def test_show_tensor_network_2d_zoom_rescales_all_labels_after_auto_rerender() -> None:
+    fig, ax = show_tensor_network(
+        _einsum_trace_with_three_tensors(),
+        engine="einsum",
+        config=PlotConfig(
+            show_tensor_labels=True,
+            show_index_labels=True,
+            diagnostics=TensorNetworkDiagnosticsConfig(show_overlay=True),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    scene = controls.current_scene
+    labels = (
+        tuple(scene.tensor_label_artists)
+        + tuple(scene.edge_label_artists)
+        + tuple(scene.diagnostic_artists)
+    )
+    assert labels
+    sizes_before = tuple(float(label.get_fontsize()) for label in labels)
+
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    mid_x = (float(x0) + float(x1)) / 2.0
+    mid_y = (float(y0) + float(y1)) / 2.0
+    ax.set_xlim(mid_x - (float(x1) - float(x0)) / 4.0, mid_x + (float(x1) - float(x0)) / 4.0)
+    ax.set_ylim(mid_y - (float(y1) - float(y0)) / 4.0, mid_y + (float(y1) - float(y0)) / 4.0)
+
+    sizes_after = tuple(float(label.get_fontsize()) for label in labels)
+
+    assert any(after > before for before, after in zip(sizes_before, sizes_after, strict=True))
+
+
+def test_show_tensor_network_late_2d_labels_keep_original_zoom_reference() -> None:
+    fig_reference, _ax_reference = show_tensor_network(
+        _einsum_trace_with_three_tensors(),
+        engine="einsum",
+        config=PlotConfig(
+            show_nodes=True,
+            show_tensor_labels=True,
+            show_index_labels=True,
+        ),
+        show=False,
+    )
+    reference_controls = getattr(fig_reference, "_tensor_network_viz_interactive_controls", None)
+    assert reference_controls is not None
+    reference_scene = reference_controls.current_scene
+    expected_sizes = tuple(
+        float(label.get_fontsize())
+        for label in (
+            tuple(reference_scene.tensor_label_artists) + tuple(reference_scene.edge_label_artists)
+        )
+    )
+    assert expected_sizes
+
+    fig, ax = show_tensor_network(
+        _einsum_trace_with_three_tensors(),
+        engine="einsum",
+        config=PlotConfig(
+            show_nodes=True,
+            show_tensor_labels=False,
+            show_index_labels=False,
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    initial_state = get_zoom_font_state(ax)
+    assert initial_state is not None
+    initial_ref_span = float(initial_state["ref_span"])
+    initial_xlim = tuple(float(value) for value in ax.get_xlim())
+    initial_ylim = tuple(float(value) for value in ax.get_ylim())
+
+    mid_x = sum(initial_xlim) / 2.0
+    mid_y = sum(initial_ylim) / 2.0
+    half_zoomed_width = (initial_xlim[1] - initial_xlim[0]) / 4.0
+    half_zoomed_height = (initial_ylim[1] - initial_ylim[0]) / 4.0
+    ax.set_xlim(mid_x - half_zoomed_width, mid_x + half_zoomed_width)
+    ax.set_ylim(mid_y - half_zoomed_height, mid_y + half_zoomed_height)
+
+    controls.set_tensor_labels_enabled(True)
+    controls.set_edge_labels_enabled(True)
+
+    zoom_state = get_zoom_font_state(ax)
+    assert zoom_state is not None
+    assert float(zoom_state["ref_span"]) == pytest.approx(initial_ref_span)
+
+    ax.set_xlim(*initial_xlim)
+    ax.set_ylim(*initial_ylim)
+
+    scene = controls.current_scene
+    sizes_after_home = tuple(
+        float(label.get_fontsize())
+        for label in (tuple(scene.tensor_label_artists) + tuple(scene.edge_label_artists))
+    )
+
+    assert sizes_after_home == pytest.approx(expected_sizes)
+
+
+def test_show_tensor_network_toolbar_home_keeps_true_origin_after_scheme_axes_reset() -> None:
+    fig, ax = show_tensor_network(
+        _einsum_trace_with_three_tensors(),
+        engine="einsum",
+        config=PlotConfig(
+            contraction_scheme_by_name=(("A", "B"),),
+        ),
+        show=False,
+    )
+
+    controls = getattr(fig, "_tensor_network_viz_interactive_controls", None)
+    assert controls is not None
+    assert controls._checkbuttons is not None
+
+    toolbar = _DummyNavigationToolbar(fig.canvas)
+
+    @fig.add_axobserver
+    def _notify_axes_change(_figure: object) -> None:
+        toolbar.update()
+
+    controls._apply_scene_state(controls.current_scene)
+
+    initial_xlim = tuple(float(value) for value in ax.get_xlim())
+    initial_ylim = tuple(float(value) for value in ax.get_ylim())
+    mid_x = sum(initial_xlim) / 2.0
+    mid_y = sum(initial_ylim) / 2.0
+    zoom_one_half_width = (initial_xlim[1] - initial_xlim[0]) / 4.0
+    zoom_one_half_height = (initial_ylim[1] - initial_ylim[0]) / 4.0
+
+    ax.set_xlim(mid_x - zoom_one_half_width, mid_x + zoom_one_half_width)
+    ax.set_ylim(mid_y - zoom_one_half_height, mid_y + zoom_one_half_height)
+    toolbar.push_current()
+
+    scheme_index = _checkbutton_index(controls._checkbuttons, "Scheme")
+    _click_checkbutton(controls._checkbuttons, scheme_index)
+
+    zoom_two_half_width = zoom_one_half_width / 2.0
+    zoom_two_half_height = zoom_one_half_height / 2.0
+    ax.set_xlim(mid_x - zoom_two_half_width, mid_x + zoom_two_half_width)
+    ax.set_ylim(mid_y - zoom_two_half_height, mid_y + zoom_two_half_height)
+    toolbar.push_current()
+
+    toolbar.home()
+
+    assert tuple(float(value) for value in ax.get_xlim()) == pytest.approx(initial_xlim)
+    assert tuple(float(value) for value in ax.get_ylim()) == pytest.approx(initial_ylim)
 
 
 def test_show_tensor_network_offscreen_agg_skips_draw_idle_requests(

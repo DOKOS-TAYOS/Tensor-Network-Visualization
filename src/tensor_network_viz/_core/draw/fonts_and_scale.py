@@ -3,11 +3,13 @@ from __future__ import annotations
 import functools
 import math
 from dataclasses import dataclass
+from typing import Any, cast
 
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
+from matplotlib.text import Text
 from matplotlib.textpath import TextPath
 
 from ..._matplotlib_state import (
@@ -174,33 +176,118 @@ def _draw_scale_params(
 _ZOOM_FONT_CLAMP: tuple[float, float] = (0.28, 5.5)
 
 
+def _current_2d_span(ax: Axes) -> float:
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    return max(float(x1 - x0), float(y1 - y0), 1e-9)
+
+
+def _zoom_font_factor(*, ref_span: float, current_span: float) -> float:
+    lo, hi = _ZOOM_FONT_CLAMP
+    factor = float(ref_span) / max(float(current_span), 1e-9)
+    return float(np.clip(factor, lo, hi))
+
+
+def _text_font_sizes(ax: Axes) -> dict[Text, float]:
+    return {text: float(text.get_fontsize()) for text in ax.texts if isinstance(text, Text)}
+
+
+def _pruned_zoom_font_sizes(
+    sizes: dict[Any, float],
+    *,
+    current_texts: tuple[Text, ...],
+) -> dict[Text, float]:
+    current_ids = {id(text) for text in current_texts}
+    return {
+        text: float(base_fontsize)
+        for text, base_fontsize in sizes.items()
+        if isinstance(text, Text) and id(text) in current_ids and text.figure is not None
+    }
+
+
+def _resolve_zoom_font_state(
+    ax: Axes,
+    *,
+    preserve_ref_span: bool,
+) -> tuple[float, dict[Text, float]]:
+    current_span = _current_2d_span(ax)
+    current_texts = tuple(text for text in ax.texts if isinstance(text, Text))
+    current_sizes = _text_font_sizes(ax)
+    if not preserve_ref_span:
+        return current_span, current_sizes
+
+    existing_state = get_zoom_font_state(ax)
+    if existing_state is None:
+        return current_span, current_sizes
+
+    ref_span = float(existing_state["ref_span"])
+    existing_sizes = _pruned_zoom_font_sizes(
+        cast(dict[Any, float], existing_state["sizes"]),
+        current_texts=current_texts,
+    )
+    resolved_sizes: dict[Text, float] = {}
+    for text in current_texts:
+        base_fontsize = existing_sizes.get(text)
+        if base_fontsize is None:
+            base_fontsize = float(current_sizes[text])
+        resolved_sizes[text] = float(base_fontsize)
+    return ref_span, resolved_sizes
+
+
+def _zoom_callback_registered(ax: Axes, signal_name: str, cid: object) -> bool:
+    callbacks = getattr(ax.callbacks, "callbacks", None)
+    if not isinstance(callbacks, dict):
+        return False
+    signal_callbacks = callbacks.get(signal_name)
+    return isinstance(signal_callbacks, dict) and cid in signal_callbacks
+
+
+def _zoom_callbacks_connected(ax: Axes, cids: list[Any]) -> bool:
+    if len(cids) != 2:
+        return False
+    return _zoom_callback_registered(ax, "xlim_changed", cids[0]) and _zoom_callback_registered(
+        ax,
+        "ylim_changed",
+        cids[1],
+    )
+
+
+def _disconnect_zoom_callbacks(ax: Axes, cids: list[Any]) -> None:
+    for cid in cids:
+        try:
+            ax.callbacks.disconnect(cid)
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+
+
 def _on_2d_limits_changed(ax: Axes) -> None:
     state = get_zoom_font_state(ax)
     if state is None:
         return
-    x0, x1 = ax.get_xlim()
-    y0, y1 = ax.get_ylim()
-    span = max(float(x1 - x0), float(y1 - y0), 1e-9)
-    factor = float(state["ref_span"] / span)
-    lo, hi = _ZOOM_FONT_CLAMP
-    factor = float(np.clip(factor, lo, hi))
+    factor = _zoom_font_factor(
+        ref_span=float(state["ref_span"]),
+        current_span=_current_2d_span(ax),
+    )
     for text, base_fs in state["sizes"].items():
         if text.figure is None:
             continue
         text.set_fontsize(max(3.0, base_fs * factor))
 
 
-def _register_2d_zoom_font_scaling(ax: Axes) -> None:
-    x0, x1 = ax.get_xlim()
-    y0, y1 = ax.get_ylim()
-    ref_span = max(float(x1 - x0), float(y1 - y0), 1e-9)
-    sizes = {t: float(t.get_fontsize()) for t in ax.texts}
+def _register_2d_zoom_font_scaling(
+    ax: Axes,
+    *,
+    preserve_ref_span: bool = False,
+) -> None:
+    ref_span, sizes = _resolve_zoom_font_state(ax, preserve_ref_span=preserve_ref_span)
     set_zoom_font_state(ax, ref_span=ref_span, sizes=sizes)
 
     old_cids = get_zoom_cids(ax)
-    if old_cids:
+    if _zoom_callbacks_connected(ax, old_cids):
         _on_2d_limits_changed(ax)
         return
+    if old_cids:
+        _disconnect_zoom_callbacks(ax, old_cids)
 
     def _cb(_: object) -> None:
         _on_2d_limits_changed(ax)
@@ -208,6 +295,7 @@ def _register_2d_zoom_font_scaling(ax: Axes) -> None:
     cx = ax.callbacks.connect("xlim_changed", _cb)
     cy = ax.callbacks.connect("ylim_changed", _cb)
     set_zoom_cids(ax, [cx, cy])
+    _on_2d_limits_changed(ax)
 
 
 __all__ = [

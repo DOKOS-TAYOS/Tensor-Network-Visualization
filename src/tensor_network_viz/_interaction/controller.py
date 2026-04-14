@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import suppress
 from dataclasses import replace
 from typing import Any, Literal, cast
+from weakref import WeakKeyDictionary
 
 import numpy as np
 from matplotlib.axes import Axes
@@ -28,6 +29,7 @@ from .._interactive_scene import (
 )
 from .._logging import package_logger
 from .._matplotlib_state import (
+    get_home_view,
     request_canvas_redraw,
     set_active_axes,
     set_interactive_controls,
@@ -88,6 +90,69 @@ def _release_canvas_mouse_grabber(
     if callable(release_mouse):
         with suppress(AttributeError, RuntimeError, TypeError, ValueError):
             release_mouse(mouse_grabber)
+
+
+def _toolbar_current_entry(figure: Figure) -> WeakKeyDictionary[Any, tuple[Any, tuple[Any, Any]]]:
+    return WeakKeyDictionary(
+        {
+            ax: (
+                ax._get_view(),
+                (ax.get_position(True).frozen(), ax.get_position().frozen()),
+            )
+            for ax in figure.axes
+        }
+    )
+
+
+def _toolbar_home_entry(figure: Figure) -> WeakKeyDictionary[Any, tuple[Any, tuple[Any, Any]]]:
+    return WeakKeyDictionary(
+        {
+            ax: (
+                cast(Any, get_home_view(ax) or ax._get_view()),
+                (ax.get_position(True).frozen(), ax.get_position().frozen()),
+            )
+            for ax in figure.axes
+        }
+    )
+
+
+def _sync_toolbar_home_stack(figure: Figure | None) -> None:
+    if figure is None:
+        return
+    canvas = getattr(figure, "canvas", None)
+    toolbar = None if canvas is None else getattr(canvas, "toolbar", None)
+    if toolbar is None or not hasattr(toolbar, "_nav_stack"):
+        return
+
+    active_axes = getattr(figure, "_tensor_network_viz_active_axes", None)
+    if active_axes is None:
+        return
+    home_view = get_home_view(active_axes)
+    if home_view is None:
+        return
+
+    stack = toolbar._nav_stack
+    needs_repair = len(stack) == 0
+    if not needs_repair:
+        try:
+            first_entry = stack[0]
+            first_state = first_entry.get(active_axes)
+        except (IndexError, AttributeError, TypeError):
+            first_state = None
+        needs_repair = first_state is None or first_state[0] != home_view
+    if not needs_repair:
+        return
+
+    current_entry = _toolbar_current_entry(figure)
+    home_entry = _toolbar_home_entry(figure)
+    stack.clear()
+    stack.push(home_entry)
+    current_state = current_entry.get(active_axes)
+    if current_state is not None and current_state[0] != home_view:
+        stack.push(current_entry)
+    set_history_buttons = getattr(toolbar, "set_history_buttons", None)
+    if callable(set_history_buttons):
+        set_history_buttons()
 
 
 def _node_records_by_name(
@@ -352,6 +417,7 @@ class _InteractiveTensorFigureController:
         self._initialized = True
         set_interactive_controls(figure, self)
         set_active_axes(figure, ax)
+        _sync_toolbar_home_stack(figure)
         figure._tensor_network_viz_tensor_inspector = self._tensor_inspector  # type: ignore[attr-defined]
         self._figure_close_cid = figure.canvas.mpl_connect("close_event", self._on_figure_closed)
         self._button_press_cid = figure.canvas.mpl_connect(
@@ -551,6 +617,7 @@ class _InteractiveTensorFigureController:
             scene = self._rerender_cached_views()
             self._apply_scene_state(scene)
             set_active_axes(scene.ax.figure, scene.ax)
+            _sync_toolbar_home_stack(scene.ax.figure)
             return
         self._apply_scene_state(self.current_scene)
 
@@ -666,6 +733,7 @@ class _InteractiveTensorFigureController:
         self._sync_checkbuttons()
         if not self._external_ax:
             self._apply_interactive_figure_layout()
+        _sync_toolbar_home_stack(scene.ax.figure)
         request_canvas_redraw(scene.ax.figure)
 
     def set_view(self, view: ViewName) -> None:
@@ -686,6 +754,7 @@ class _InteractiveTensorFigureController:
         if scene is not None:
             self._apply_scene_state(scene)
         set_active_axes(fig, ax)
+        _sync_toolbar_home_stack(fig)
 
     def set_hover_enabled(self, enabled: bool) -> None:
         self.hover_on = enabled
@@ -728,6 +797,7 @@ class _InteractiveTensorFigureController:
             scene = self._rerender_cached_views()
             self._apply_scene_state(scene)
             set_active_axes(scene.ax.figure, scene.ax)
+            _sync_toolbar_home_stack(scene.ax.figure)
 
     def set_focus_radius(self, radius: int) -> None:
         resolved_radius = _coerce_focus_radius(radius)
@@ -749,6 +819,7 @@ class _InteractiveTensorFigureController:
             scene = self._rerender_cached_views()
             self._apply_scene_state(scene)
             set_active_axes(scene.ax.figure, scene.ax)
+            _sync_toolbar_home_stack(scene.ax.figure)
             return
         self._sync_checkbuttons()
 
@@ -763,6 +834,7 @@ class _InteractiveTensorFigureController:
         scene = self._rerender_cached_views()
         self._apply_scene_state(scene)
         set_active_axes(scene.ax.figure, scene.ax)
+        _sync_toolbar_home_stack(scene.ax.figure)
 
     def select_focus_node(self, node_name: str) -> bool:
         if not node_name or not self._focus_interaction_enabled or self._focus_mode == "off":
@@ -781,6 +853,7 @@ class _InteractiveTensorFigureController:
             scene = self._rerender_cached_views()
             self._apply_scene_state(scene)
             set_active_axes(scene.ax.figure, scene.ax)
+            _sync_toolbar_home_stack(scene.ax.figure)
             return True
 
         if self._focus_pending_start is None:
@@ -792,6 +865,7 @@ class _InteractiveTensorFigureController:
                 scene = self._rerender_cached_views()
                 self._apply_scene_state(scene)
                 set_active_axes(scene.ax.figure, scene.ax)
+                _sync_toolbar_home_stack(scene.ax.figure)
             return False
 
         next_focus = TensorNetworkFocus(
@@ -807,6 +881,7 @@ class _InteractiveTensorFigureController:
         scene = self._rerender_cached_views()
         self._apply_scene_state(scene)
         set_active_axes(scene.ax.figure, scene.ax)
+        _sync_toolbar_home_stack(scene.ax.figure)
         return True
 
 
