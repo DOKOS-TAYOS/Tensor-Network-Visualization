@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import sys
 import warnings
 from pathlib import Path
@@ -156,8 +157,15 @@ class _DummyNavigationToolbar(NavigationToolbar2):
     def set_message(self, s: str) -> None:
         _ = s
 
-    def draw_rubberband(self, *args: object) -> None:
-        _ = args
+    def draw_rubberband(
+        self,
+        event: object,
+        x0: object,
+        y0: object,
+        x1: object,
+        y1: object,
+    ) -> None:
+        _ = (event, x0, y0, x1, y1)
 
     def remove_rubberband(self) -> None:
         return
@@ -167,6 +175,18 @@ class _DummyNavigationToolbar(NavigationToolbar2):
 
     def set_history_buttons(self) -> None:
         return
+
+
+def test_dummy_navigation_toolbar_matches_matplotlib_signature() -> None:
+    dummy_signature = inspect.signature(_DummyNavigationToolbar.draw_rubberband)
+    base_signature = inspect.signature(NavigationToolbar2.draw_rubberband)
+    dummy_parameters = tuple(dummy_signature.parameters)
+    base_parameters = tuple(base_signature.parameters)
+    dummy_kinds = tuple(parameter.kind for parameter in dummy_signature.parameters.values())
+    base_kinds = tuple(parameter.kind for parameter in base_signature.parameters.values())
+
+    assert dummy_parameters == base_parameters
+    assert dummy_kinds == base_kinds
 
 
 def _einsum_trace_with_three_tensors() -> EinsumTrace:

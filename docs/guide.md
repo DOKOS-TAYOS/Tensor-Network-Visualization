@@ -146,6 +146,10 @@ Use this pattern for papers, reports, CI-generated images, and scripts that shou
 window. Use `theme="paper"` for clean exports, or `theme="colorblind"` when maximum color
 distinguishability matters.
 
+Example static export:
+
+![Tubular 3D tensor-network export](../images/gallery/tubular_grid_3d.png)
+
 Tensor inspection exports work the same way:
 
 ```python
@@ -189,6 +193,10 @@ By default, the library computes positions for the graph. You can influence layo
 show_tensor_network(network, view="2d")
 show_tensor_network(network, view="3d")
 ```
+
+Representative 3D result with a regular volumetric structure:
+
+![Cubic PEPS 3D visualization](../images/gallery/cubic_peps_3d.png)
 
 ### Pass Grid Inputs
 
@@ -381,6 +389,10 @@ config = TensorElementsConfig(
     highlight_outliers=True,
 )
 ```
+
+Example tensor-elements view:
+
+![Tensor elements phase heatmap](../images/gallery/tensor_elements_phase.png)
 
 ## Tensor Comparison
 

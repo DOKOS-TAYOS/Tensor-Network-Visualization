@@ -60,6 +60,22 @@ python examples/run_demo.py geometry disconnected_irregular --view 2d
 python examples/run_demo.py geometry decorated_sparse_grid2d --view 2d
 ```
 
+## Quick Gallery
+
+These are a few representative outputs you can reproduce with the repository demos:
+
+| Cubic PEPS 3D | MERA 2D | Tubular 3D |
+| --- | --- | --- |
+| ![Cubic PEPS 3D demo](../images/gallery/cubic_peps_3d.png) | ![MERA 2D demo](../images/gallery/mera_2d.png) | ![Tubular 3D demo](../images/gallery/tubular_grid_3d.png) |
+
+Matching commands:
+
+```bash
+python examples/run_demo.py tensorkrowch cubic_peps --view 3d
+python examples/run_demo.py tensorkrowch mera --view 2d --mera-log2 4
+python examples/run_demo.py geometry tubular_grid --view 3d
+```
+
 ## Standalone Tensor Inspection
 
 `tensor_elements_demo.py` only needs base dependencies.
@@ -75,6 +91,10 @@ Use the structured demo to inspect diagnostic-friendly tensors:
 - `Lattice`: useful for spectral views.
 - `SparseMask`: useful for `sparsity`.
 - `Specials`: useful for `nan_inf`.
+
+One example phase view from the structured tensor set:
+
+![Tensor elements phase demo](../images/gallery/tensor_elements_phase.png)
 
 ## Common Commands
 
