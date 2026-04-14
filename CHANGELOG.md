@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-04-14
+
+### Changed
+
+- **Documentation:** Documentation updated with figures for clearer guidance.
+- **Geometry:** Polished geometry handling and layout behavior.
+- **Notebooks:** Improved autodetection when running in Jupyter notebook environments.
+
+### Fixed
+
+- **Stability:** Recent fixes across visualization and supporting code paths.
+
 ## [1.6.3] — 2026-04-13
 
 ### Changed
@@ -199,6 +211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[2.0.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.3...v2.0.0
 [1.6.3]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.0...v1.6.1
