@@ -100,8 +100,8 @@ def format_contraction_step_panel_text(m: _ContractionStepMetrics) -> str:
     lines.append(
         _wrap_panel_line(
             "Naive operations: "
-            f"{_format_big_int(m.multiplicative_cost)} MACs "
-            f"(\u2248{_format_big_int(m.flop_mac)} FLOPs)"
+            f"{_format_big_int(m.multiplicative_cost)} MAC "
+            f"(\u2248{_format_big_int(m.flop_mac)} FLOP)"
         )
     )
     complexity = _complexity_line(m)

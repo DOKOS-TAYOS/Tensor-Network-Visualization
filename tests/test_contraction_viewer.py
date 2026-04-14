@@ -705,8 +705,8 @@ def test_cost_hover_truncates_overflow_and_shows_full_text_on_hover() -> None:
         [
             "Contraction: A_with_a_long_name x B_with_a_long_name -> C_with_a_long_name",
             "Equation: abcdefghijklmnopqrstuvwxyz,abcdefghijklmnopqrstuvwxyz->long_output",
-            "MACs: 123456789",
-            "FLOPs: 246913578",
+            "MAC: 123456789",
+            "FLOP: 246913578",
             "Peak tensor size: 987654321",
             long_hover_line,
         ]
@@ -801,7 +801,7 @@ def test_cost_hover_keeps_multiline_text_when_each_line_fits() -> None:
             "Contraction: ab,bc->ac (contracts: b)",
             "Index sizes: a=2, b=16, c=2",
             "Tensor shapes: MPS=[2, 16], MPO=[16, 2]",
-            "Naive operations: 64 MACs (approx 128 FLOPs)",
+            "Naive operations: 64 MAC (approx 128 FLOP)",
             "Complexity: O(N_a N_b N_c)",
         ]
     )
@@ -835,7 +835,7 @@ def test_cost_hover_shrinks_text_before_enabling_hover() -> None:
             "Contraction: ab,bc->ac",
             "Index sizes: a=2, b=16, c=2",
             "Tensor shapes: A=[2, 16], B=[16, 2]",
-            "Naive operations: 64 MACs",
+            "Naive operations: 64 MAC",
             "Complexity: O(N_a N_b N_c)",
             "Output labels: a, c",
             "Contracted labels: b",

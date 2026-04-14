@@ -121,7 +121,7 @@ def test_format_tooltip_contains_cost_lines() -> None:
     assert "Contraction: ij,jk->ik (contracts: j)" in t
     assert "Index sizes: i=2, j=3, k=4" in t
     assert "Tensor shapes: A=[2, 3], B=[3, 4]" in t
-    assert "Naive operations: 24 MACs (≈48 FLOPs)" in t
+    assert "Naive operations: 24 MAC (≈48 FLOP)" in t
     assert "Complexity: O(N_i N_j N_k)" in t
 
 
@@ -147,8 +147,8 @@ def test_format_tooltip_reports_flops_for_three_operands() -> None:
         operand_names=("A", "B", "C"),
     )
     t = format_contraction_step_tooltip(m)
-    assert "210 MACs" in t
-    assert "630 FLOPs" in t
+    assert "210 MAC" in t
+    assert "630 FLOP" in t
 
 
 def test_format_tooltip_wraps_long_lines_in_panel_text() -> None:
