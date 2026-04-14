@@ -19,3 +19,5 @@ dist/
 
 # Accidental monolith backups (not part of the package)
 *.monolith.bak
+
+tensorkrowch_introduction.ipynb

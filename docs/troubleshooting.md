@@ -41,8 +41,10 @@ python -m pip install "tensor-network-visualization[jupyter,quimb,einsum]"
 
 ## Jupyter Shows Duplicate Output
 
-If a notebook displays the same figure twice, create the figure without automatic display and then
-return the figure as the last cell value:
+Current notebook-managed Matplotlib backends avoid the usual duplicate output when you call
+`show_tensor_network(...)` directly. If you still see the same figure twice in an older notebook
+or after adding your own display logic, create the figure without automatic display and then return
+the figure as the last cell value:
 
 ```python
 fig, ax = show_tensor_network(network, show=False)

@@ -46,9 +46,29 @@ class _LazyPyplotProxy:
 
 plt = _LazyPyplotProxy()
 
+_NOTEBOOK_MANAGED_BACKEND_MARKERS: tuple[str, ...] = (
+    "matplotlib_inline",
+    "backend_inline",
+    "ipympl",
+    "backend_nbagg",
+    "nbagg",
+)
+
+
+def _is_notebook_managed_backend(fig: FigureLike) -> bool:
+    """Return True when Matplotlib output is managed inline by the notebook backend."""
+    try:
+        backend_name = str(plt.get_backend()).lower()
+    except Exception:
+        backend_name = ""
+    if any(marker in backend_name for marker in _NOTEBOOK_MANAGED_BACKEND_MARKERS):
+        return True
+    canvas_module = type(root_figure(fig).canvas).__module__.lower()
+    return "ipympl" in canvas_module or "backend_nbagg" in canvas_module
+
 
 def _show_figure(fig: FigureLike) -> None:
-    """Show *fig* in a Jupyter kernel via IPython display, else ``plt.show()``."""
+    """Show *fig* using the backend-native Matplotlib path when running in notebooks."""
     display_figure = root_figure(fig)
 
     try:
@@ -59,6 +79,9 @@ def _show_figure(fig: FigureLike) -> None:
         return
     ip = get_ipython()
     if ip is not None and getattr(ip, "kernel", None) is not None:
+        if _is_notebook_managed_backend(display_figure):
+            plt.show()
+            return
         display(display_figure)
         return
     plt.show()
@@ -124,10 +147,10 @@ def show_tensor_network(
         show_controls: If True, attach figure-level controls for view, hover,
             and label toggles when the renderer exposes the required scene
             cache. Set False for a static render without widgets.
-        show: If True, display the figure. In a Jupyter kernel this uses
-            ``IPython.display.display(fig)`` (use ``pip install
-            "tensor-network-visualization[jupyter]"`` and ``%matplotlib widget``
-            for interactive figures). Otherwise ``plt.show()`` is used.
+        show: If True, display the figure. Notebook-managed Matplotlib backends use
+            backend-native ``plt.show()`` to avoid duplicate output in Jupyter.
+            Other Jupyter kernels use ``IPython.display.display(fig)``. Outside
+            Jupyter, ``plt.show()`` is used.
 
     Notes:
         Repeated calls with the **same** ``network`` instance reuse the normalized

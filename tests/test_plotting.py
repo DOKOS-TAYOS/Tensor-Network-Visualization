@@ -3550,6 +3550,50 @@ def test_show_figure_uses_ipython_display_in_jupyter_kernel(
     plt.close(fig)
 
 
+@pytest.mark.parametrize(
+    ("backend_name",),
+    [
+        ("module://matplotlib_inline.backend_inline",),
+        ("module://ipympl.backend_nbagg",),
+        ("nbAgg",),
+    ],
+)
+def test_show_figure_uses_pyplot_show_for_notebook_managed_jupyter_backends(
+    monkeypatch: pytest.MonkeyPatch,
+    backend_name: str,
+) -> None:
+    pytest.importorskip("IPython")
+    fig, _ax = plt.subplots()
+    displayed: list[object] = []
+    shown = {"value": False}
+
+    class _FakeKernel:
+        pass
+
+    class _FakeIPython:
+        kernel = _FakeKernel()
+
+    def _fake_get_ipython() -> _FakeIPython:
+        return _FakeIPython()
+
+    def _fake_display(obj: object) -> None:
+        displayed.append(obj)
+
+    def _fake_show() -> None:
+        shown["value"] = True
+
+    monkeypatch.setattr("IPython.core.getipython.get_ipython", _fake_get_ipython)
+    monkeypatch.setattr("IPython.display.display", _fake_display)
+    monkeypatch.setattr(viewer_module.plt, "show", _fake_show)
+    monkeypatch.setattr(viewer_module.plt, "get_backend", lambda: backend_name)
+
+    viewer_module._show_figure(fig)
+
+    assert shown["value"] is True
+    assert displayed == []
+    plt.close(fig)
+
+
 def test_show_tensor_network_supports_tensornetwork_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

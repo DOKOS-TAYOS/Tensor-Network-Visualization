@@ -66,7 +66,7 @@ Main parameters:
 | `config` | A `PlotConfig` instance. |
 | `ax` | Existing Matplotlib axis. Passing an axis fixes the figure target. |
 | `show_controls` | Add embedded controls for view, labels, hover, and contraction playback when available. |
-| `show` | Display the figure immediately. In notebooks this uses IPython display; elsewhere it uses `plt.show()`. |
+| `show` | Display the figure immediately. Notebook-managed Matplotlib backends use `plt.show()` to avoid duplicate output; other notebook kernels use IPython display; elsewhere it uses `plt.show()`. |
 
 Example:
 

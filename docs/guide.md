@@ -111,7 +111,8 @@ fig, ax = show_tensor_network(
 This manual trace is enough for structure and playback. If you also want tensor-value inspection
 with `show_tensor_elements(...)`, use an `EinsumTrace` that still holds the bound arrays.
 
-If a notebook displays the same figure twice, prefer this pattern:
+Notebook-managed Matplotlib backends now avoid the common duplicate-output case by default. If you
+still want fully manual control over notebook output, prefer this pattern:
 
 ```python
 fig, ax = show_tensor_network(network, show=False)
