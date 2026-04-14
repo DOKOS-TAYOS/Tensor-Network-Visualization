@@ -174,16 +174,18 @@ def _build_context(
         node_id: np.asarray(position, dtype=float).reshape(-1)[:2]
         for node_id, position in positions.items()
     }
-    neighbor_ids_by_node: dict[int, set[int]] = {node_id: set() for node_id in graph.nodes}
-    for record in _iter_contractions(graph):
-        left_id, right_id = record.node_ids
-        if left_id == right_id:
-            continue
-        neighbor_ids_by_node[left_id].add(right_id)
-        neighbor_ids_by_node[right_id].add(left_id)
+    neighbor_ids_by_node: dict[int, set[int]] = {
+        int(node_id): set()
+        for component in layout_components
+        for node_id in component.geometry_node_ids
+    }
+    for component in layout_components:
+        for left_id, right_id in component.geometry_contraction_graph.edges():
+            neighbor_ids_by_node[int(left_id)].add(int(right_id))
+            neighbor_ids_by_node[int(right_id)].add(int(left_id))
 
     second_neighbor_ids_by_node: dict[int, tuple[int, ...]] = {}
-    for node_id in graph.nodes:
+    for node_id in neighbor_ids_by_node:
         second_neighbors: set[int] = set()
         for neighbor_id in neighbor_ids_by_node[node_id]:
             second_neighbors.update(neighbor_ids_by_node[neighbor_id])
@@ -214,16 +216,18 @@ def _build_context(
         if edge.kind == "dangling"
     )
     component_by_node = {
-        node_id: component for component in layout_components for node_id in component.node_ids
+        node_id: component
+        for component in layout_components
+        for node_id in component.geometry_node_ids
     }
     shared_virtual_hub_ids_by_node: dict[int, tuple[int, ...]] = {}
     shared_virtual_hub_center_by_node: dict[int, np.ndarray] = {}
     for component in layout_components:
         shared_virtual_groups: defaultdict[frozenset[int], list[int]] = defaultdict(list)
-        for node_id in component.virtual_node_ids:
+        for node_id in component.geometry_virtual_node_ids:
             visible_neighbor_ids = frozenset(
                 neighbor_id
-                for neighbor_id in component.contraction_graph.neighbors(node_id)
+                for neighbor_id in component.geometry_contraction_graph.neighbors(node_id)
                 if not graph.nodes[neighbor_id].is_virtual
             )
             if visible_neighbor_ids:
@@ -384,10 +388,10 @@ def _component_node_plans_2d(
 ) -> tuple[_NodeDirectionPlan2D, ...]:
     if component.structure_kind == "chain":
         ordered_node_ids = [
-            node_id for node_id in component.chain_order if node_id in component.node_ids
+            node_id for node_id in component.chain_order if node_id in component.geometry_node_ids
         ]
         remainder = sorted(
-            node_id for node_id in component.node_ids if node_id not in ordered_node_ids
+            node_id for node_id in component.geometry_node_ids if node_id not in ordered_node_ids
         )
         return tuple(
             _NodeDirectionPlan2D(node_id=node_id, behavior="north")
@@ -408,7 +412,7 @@ def _grid_node_plans_2d(
 ) -> tuple[_NodeDirectionPlan2D, ...]:
     remaining = {
         node_id: np.asarray(positions[node_id], dtype=float).reshape(-1)[:2]
-        for node_id in component.node_ids
+        for node_id in component.geometry_node_ids
         if node_id in positions
     }
     plans: list[_NodeDirectionPlan2D] = []
@@ -486,7 +490,7 @@ def _grid3d_node_plans_2d(
 ) -> tuple[_NodeDirectionPlan2D, ...]:
     remaining = {
         node_id: component.grid3d_mapping[node_id]
-        for node_id in component.node_ids
+        for node_id in component.geometry_node_ids
         if component.grid3d_mapping is not None and node_id in component.grid3d_mapping
     }
     plans: list[_NodeDirectionPlan2D] = []
@@ -623,19 +627,23 @@ def _grid3d_node_plans_2d(
 
 
 def _tree_node_plans_2d(component: _LayoutComponent) -> tuple[_NodeDirectionPlan2D, ...]:
-    root_id = component.tree_root if component.tree_root is not None else min(component.node_ids)
+    root_id = (
+        component.tree_root if component.tree_root is not None else min(component.geometry_node_ids)
+    )
     seen = {root_id}
     queue: deque[int] = deque([root_id])
     ordered: list[int] = []
     while queue:
         node_id = queue.popleft()
         ordered.append(node_id)
-        for neighbor_id in sorted(component.contraction_graph.neighbors(node_id)):
+        for neighbor_id in sorted(component.geometry_contraction_graph.neighbors(node_id)):
             if neighbor_id in seen:
                 continue
             seen.add(neighbor_id)
             queue.append(neighbor_id)
-    ordered.extend(sorted(node_id for node_id in component.node_ids if node_id not in seen))
+    ordered.extend(
+        sorted(node_id for node_id in component.geometry_node_ids if node_id not in seen)
+    )
     return tuple(_NodeDirectionPlan2D(node_id=node_id, behavior="south") for node_id in ordered)
 
 
@@ -650,7 +658,7 @@ def _irregular_node_plans_2d(
         return float(np.linalg.norm(point - centroid))
 
     ordered = sorted(
-        (node_id for node_id in component.node_ids if node_id in positions),
+        (node_id for node_id in component.geometry_node_ids if node_id in positions),
         key=lambda node_id: (
             -radial_distance(node_id),
             node_id,
@@ -723,9 +731,12 @@ def _candidate_conflicts_with_same_node_axes_2d(
 
 
 def _is_chain_fast_path_component_2d(component: _LayoutComponent) -> bool:
-    if component.structure_kind != "chain" or component.virtual_node_ids:
+    if component.structure_kind != "chain" or component.geometry_virtual_node_ids:
         return False
-    return all(component.contraction_graph.degree(node_id) <= 2 for node_id in component.node_ids)
+    return all(
+        component.geometry_contraction_graph.degree(node_id) <= 2
+        for node_id in component.geometry_node_ids
+    )
 
 
 def _try_compute_chain_free_directions_2d(
@@ -743,10 +754,14 @@ def _try_compute_chain_free_directions_2d(
     candidate_order = _behavior_direction_order_2d("north")
     for component in layout_components:
         ordered_node_ids = [
-            node_id for node_id in component.chain_order if node_id in component.node_ids
+            node_id for node_id in component.chain_order if node_id in component.geometry_node_ids
         ]
         ordered_node_ids.extend(
-            sorted(node_id for node_id in component.node_ids if node_id not in ordered_node_ids)
+            sorted(
+                node_id
+                for node_id in component.geometry_node_ids
+                if node_id not in ordered_node_ids
+            )
         )
         for node_id in ordered_node_ids:
             if node_id not in graph.nodes:

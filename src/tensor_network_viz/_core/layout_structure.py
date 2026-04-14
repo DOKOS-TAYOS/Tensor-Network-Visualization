@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import heapq
 import math
 import re
 from dataclasses import dataclass
@@ -58,10 +59,18 @@ class _LayoutComponent:
     node_ids: tuple[int, ...]
     visible_node_ids: tuple[int, ...]
     virtual_node_ids: tuple[int, ...]
+    geometry_node_ids: tuple[int, ...]
+    geometry_visible_node_ids: tuple[int, ...]
+    geometry_virtual_node_ids: tuple[int, ...]
     trimmed_leaf_parents: tuple[tuple[int, int], ...]
+    collapsed_contraction_leaf_parents: tuple[tuple[int, int], ...]
+    synthetic_dangling_degree_by_node: dict[int, int]
     contraction_graph: nx.Graph
+    geometry_contraction_graph: nx.Graph
     visible_graph: nx.Graph
+    geometry_visible_graph: nx.Graph
     proxy_visible_graph: nx.Graph
+    geometry_proxy_visible_graph: nx.Graph
     anchor_node_ids: tuple[int, ...]
     anchor_graph: nx.Graph
     structure_kind: StructureKind
@@ -87,9 +96,28 @@ def _analyze_layout_components(graph: _GraphData) -> tuple[_LayoutComponent, ...
             component_graph,
             component_node_ids=component_node_ids,
         )
+        (
+            geometry_component_graph,
+            collapsed_contraction_leaf_parents,
+            synthetic_dangling_degree_by_node,
+        ) = _collapse_geometric_contraction_leaves(graph, component_graph)
+        geometry_node_ids = tuple(
+            sorted(int(node_id) for node_id in geometry_component_graph.nodes)
+        )
+        geometry_visible_node_ids = tuple(
+            sorted(node_id for node_id in geometry_node_ids if not graph.nodes[node_id].is_virtual)
+        )
+        geometry_virtual_node_ids = tuple(
+            sorted(node_id for node_id in geometry_node_ids if graph.nodes[node_id].is_virtual)
+        )
+        geometry_visible_graph = _visible_graph_for_component(
+            graph,
+            geometry_component_graph,
+            component_node_ids=geometry_node_ids,
+        )
         trimmed_visible_graph, trimmed_leaf_parents = _trim_visible_leaf_nodes(
             graph,
-            visible_graph,
+            geometry_visible_graph,
         )
         proxy_visible_graph = _proxy_visible_graph_for_component(
             graph,
@@ -97,19 +125,25 @@ def _analyze_layout_components(graph: _GraphData) -> tuple[_LayoutComponent, ...
             component_node_ids=component_node_ids,
             visible_graph=visible_graph,
         )
+        geometry_proxy_visible_graph = _proxy_visible_graph_for_component(
+            graph,
+            geometry_component_graph,
+            component_node_ids=geometry_node_ids,
+            visible_graph=geometry_visible_graph,
+        )
         untrimmed_anchor_graph = _select_anchor_graph(
-            component_graph=component_graph,
-            visible_graph=visible_graph,
-            proxy_visible_graph=proxy_visible_graph,
+            component_graph=geometry_component_graph,
+            visible_graph=geometry_visible_graph,
+            proxy_visible_graph=geometry_proxy_visible_graph,
         )
         anchor_graph = _select_anchor_graph(
-            component_graph=component_graph,
+            component_graph=geometry_component_graph,
             visible_graph=(
                 trimmed_visible_graph
                 if trimmed_visible_graph.number_of_nodes() > 0
-                else visible_graph
+                else geometry_visible_graph
             ),
-            proxy_visible_graph=proxy_visible_graph,
+            proxy_visible_graph=geometry_proxy_visible_graph,
         )
         untrimmed_classification = _classify_untrimmed_structured_anchor_graph(
             untrimmed_anchor_graph,
@@ -143,10 +177,18 @@ def _analyze_layout_components(graph: _GraphData) -> tuple[_LayoutComponent, ...
                 node_ids=tuple(sorted(component_node_ids)),
                 visible_node_ids=visible_node_ids,
                 virtual_node_ids=virtual_node_ids,
+                geometry_node_ids=geometry_node_ids,
+                geometry_visible_node_ids=geometry_visible_node_ids,
+                geometry_virtual_node_ids=geometry_virtual_node_ids,
                 trimmed_leaf_parents=trimmed_leaf_parents,
+                collapsed_contraction_leaf_parents=collapsed_contraction_leaf_parents,
+                synthetic_dangling_degree_by_node=synthetic_dangling_degree_by_node,
                 contraction_graph=component_graph,
+                geometry_contraction_graph=geometry_component_graph,
                 visible_graph=visible_graph,
+                geometry_visible_graph=geometry_visible_graph,
                 proxy_visible_graph=proxy_visible_graph,
+                geometry_proxy_visible_graph=geometry_proxy_visible_graph,
                 anchor_node_ids=tuple(sorted(anchor_graph.nodes)),
                 anchor_graph=anchor_graph,
                 structure_kind=structure_kind,
@@ -251,6 +293,107 @@ def _largest_nontrivial_component(nx_graph: nx.Graph) -> tuple[int, ...] | None:
         return None
     nontrivial.sort(key=lambda node_ids: (-len(node_ids), node_ids[0]))
     return nontrivial[0]
+
+
+def _dangling_edge_counts_by_node(graph: _GraphData) -> dict[int, int]:
+    counts = {int(node_id): 0 for node_id in graph.nodes}
+    for edge in graph.edges:
+        if edge.kind != "dangling":
+            continue
+        endpoint = edge.endpoints[0]
+        counts[int(endpoint.node_id)] = counts.get(int(endpoint.node_id), 0) + 1
+    return counts
+
+
+def _is_closed_real_pair_component(
+    graph: _GraphData,
+    nx_graph: nx.Graph,
+    dangling_edge_counts_by_node: dict[int, int],
+) -> bool:
+    node_ids = tuple(sorted(int(node_id) for node_id in nx_graph.nodes))
+    return (
+        len(node_ids) == 2
+        and all(not graph.nodes[node_id].is_virtual for node_id in node_ids)
+        and all(dangling_edge_counts_by_node.get(node_id, 0) == 0 for node_id in node_ids)
+    )
+
+
+def _is_collapsible_geometric_leaf(
+    graph: _GraphData,
+    nx_graph: nx.Graph,
+    dangling_edge_counts_by_node: dict[int, int],
+    synthetic_dangling_degree_by_node: dict[int, int],
+    *,
+    node_id: int,
+) -> bool:
+    if node_id not in nx_graph:
+        return False
+    if graph.nodes[node_id].is_virtual:
+        return False
+    if dangling_edge_counts_by_node.get(node_id, 0) > 0:
+        return False
+    if synthetic_dangling_degree_by_node.get(node_id, 0) > 0:
+        return False
+    if int(nx_graph.degree(node_id)) != 1:
+        return False
+    parent_id = int(next(iter(nx_graph.neighbors(node_id))))
+    return not graph.nodes[parent_id].is_virtual
+
+
+def _collapse_geometric_contraction_leaves(
+    graph: _GraphData,
+    component_graph: nx.Graph,
+) -> tuple[nx.Graph, tuple[tuple[int, int], ...], dict[int, int]]:
+    geometry_graph = component_graph.copy()
+    dangling_edge_counts_by_node = _dangling_edge_counts_by_node(graph)
+    synthetic_dangling_degree_by_node = {int(node_id): 0 for node_id in geometry_graph.nodes}
+    if _is_closed_real_pair_component(graph, geometry_graph, dangling_edge_counts_by_node):
+        return geometry_graph, (), {}
+
+    collapsed_leaf_parents: list[tuple[int, int]] = []
+    queue = [
+        int(node_id)
+        for node_id in geometry_graph.nodes
+        if _is_collapsible_geometric_leaf(
+            graph,
+            geometry_graph,
+            dangling_edge_counts_by_node,
+            synthetic_dangling_degree_by_node,
+            node_id=int(node_id),
+        )
+    ]
+    heapq.heapify(queue)
+
+    while queue and geometry_graph.number_of_nodes() > 1:
+        node_id = int(heapq.heappop(queue))
+        if not _is_collapsible_geometric_leaf(
+            graph,
+            geometry_graph,
+            dangling_edge_counts_by_node,
+            synthetic_dangling_degree_by_node,
+            node_id=node_id,
+        ):
+            continue
+        parent_id = int(next(iter(geometry_graph.neighbors(node_id))))
+        weight = int(round(float(geometry_graph[node_id][parent_id].get("weight", 1.0))))
+        synthetic_dangling_degree_by_node[parent_id] = synthetic_dangling_degree_by_node.get(
+            parent_id, 0
+        ) + max(weight, 1)
+        collapsed_leaf_parents.append((node_id, parent_id))
+        geometry_graph.remove_node(node_id)
+        if parent_id in geometry_graph:
+            heapq.heappush(queue, parent_id)
+
+    nonzero_synthetic = {
+        int(node_id): int(count)
+        for node_id, count in synthetic_dangling_degree_by_node.items()
+        if int(count) > 0 and node_id in geometry_graph
+    }
+    return (
+        geometry_graph,
+        tuple(sorted(collapsed_leaf_parents)),
+        nonzero_synthetic,
+    )
 
 
 def _trim_visible_leaf_nodes(
@@ -908,9 +1051,9 @@ def _grid_degree_histogram(rows: int, cols: int) -> dict[int, int]:
 def _leaf_nodes(component: _LayoutComponent) -> tuple[int, ...]:
     return tuple(
         sorted(
-            node_id
-            for node_id in component.visible_graph.nodes
-            if component.visible_graph.degree(node_id) <= 1
+            int(node_id)
+            for node_id in component.geometry_visible_graph.nodes
+            if component.geometry_visible_graph.degree(node_id) <= 1
         )
     )
 

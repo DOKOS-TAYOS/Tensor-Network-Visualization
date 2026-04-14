@@ -42,8 +42,10 @@ from tensor_network_viz._core.layout.generic_coarsening import (
     _compress_degree_two_paths,
     _compute_coarsened_layout_2d,
     _distinct_neighbor_counts,
+    _expand_peeled_trees_2d,
     _ordered_initial_circle_node_ids,
     _peel_degree_one_trees,
+    _PeeledDegreeOneTrees,
 )
 from tensor_network_viz._core.layout.parameters import _LAYER_SPACING
 from tensor_network_viz._core.layout.positions import _promote_3d_layers
@@ -274,7 +276,7 @@ def test_pick_candidate_direction_3d_returns_last_tried_when_all_fail() -> None:
 
 
 def test_compute_axis_directions_chain_2d_allows_opposite_free_axes_on_same_node() -> None:
-    graph = _build_chain_graph(length=3, dangling_axis_counts={1: 2})
+    graph = _build_chain_graph(length=3, dangling_axis_counts={0: 1, 1: 2, 2: 1})
     positions = {
         0: np.array([0.0, 0.0], dtype=float),
         1: np.array([1.0, 0.0], dtype=float),
@@ -291,8 +293,8 @@ def test_compute_axis_directions_chain_2d_allows_opposite_free_axes_on_same_node
         np.asarray(directions[(1, axis_index)], dtype=float) for axis_index in free_axis_indices
     ]
 
-    assert np.allclose(picked[0], np.array([0.0, 1.0], dtype=float), atol=1e-6)
-    assert np.allclose(picked[1], np.array([0.0, -1.0], dtype=float), atol=1e-6)
+    assert np.allclose(picked[0], -picked[1], atol=1e-6)
+    assert np.allclose(np.abs(picked[0]), np.array([0.0, 1.0], dtype=float), atol=1e-6)
 
 
 def test_compute_axis_directions_2d_named_dangling_axes_fall_back_when_repeated() -> None:
@@ -348,7 +350,7 @@ def test_compute_axis_directions_chain_2d_skips_random_bucket_when_cardinals_wor
 ) -> None:
     import tensor_network_viz._core.layout.free_directions_2d as free_directions_2d
 
-    graph = _build_chain_graph(length=3, dangling_axis_counts={1: 1})
+    graph = _build_chain_graph(length=3, dangling_axis_counts={0: 1, 1: 1, 2: 1})
     positions = {
         0: np.array([0.0, 0.0], dtype=float),
         1: np.array([1.0, 0.0], dtype=float),
@@ -376,7 +378,11 @@ def test_compute_axis_directions_chain_2d_skips_random_bucket_when_cardinals_wor
 
     directions = _compute_axis_directions(graph, positions, dimensions=2, draw_scale=1.0)
 
-    assert np.allclose(directions[(1, 2)], np.array([0.0, 1.0], dtype=float), atol=1e-6)
+    assert np.allclose(
+        np.abs(directions[(1, 2)]),
+        np.array([0.0, 1.0], dtype=float),
+        atol=1e-6,
+    )
     assert calls == []
 
 
@@ -1395,6 +1401,56 @@ def _build_star_with_free_axes() -> _GraphData:
     return _GraphData(nodes=nodes, edges=tuple(edges))
 
 
+def _build_star_with_free_axes_and_leaf_phys() -> _GraphData:
+    nodes = {
+        0: _make_node("Center", ("left", "right", "up", "down", "f0", "f1", "f2", "f3")),
+        1: _make_node("L", ("bond", "phys_l")),
+        2: _make_node("R", ("bond", "phys_r")),
+        3: _make_node("U", ("bond", "phys_u")),
+        4: _make_node("D", ("bond", "phys_d")),
+    }
+    edges = [
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 0, "left"),
+            _EdgeEndpoint(1, 0, "bond"),
+            name="l",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 1, "right"),
+            _EdgeEndpoint(2, 0, "bond"),
+            name="r",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 2, "up"),
+            _EdgeEndpoint(3, 0, "bond"),
+            name="u",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 3, "down"),
+            _EdgeEndpoint(4, 0, "bond"),
+            name="d",
+            label=None,
+        ),
+        _make_dangling_edge(_EdgeEndpoint(1, 1, "phys_l"), name="phys_l", label=None),
+        _make_dangling_edge(_EdgeEndpoint(2, 1, "phys_r"), name="phys_r", label=None),
+        _make_dangling_edge(_EdgeEndpoint(3, 1, "phys_u"), name="phys_u", label=None),
+        _make_dangling_edge(_EdgeEndpoint(4, 1, "phys_d"), name="phys_d", label=None),
+    ]
+    for axis_index in range(4, 8):
+        axis_name = nodes[0].axes_names[axis_index]
+        edges.append(
+            _make_dangling_edge(
+                _EdgeEndpoint(0, axis_index, axis_name),
+                name=axis_name,
+                label=None,
+            )
+        )
+    return _GraphData(nodes=nodes, edges=tuple(edges))
+
+
 def _build_hypergraph_with_virtual_hub() -> _GraphData:
     nodes = {
         0: _make_node("A", ("h",)),
@@ -1574,6 +1630,98 @@ def _build_parallel_pair_graph() -> _GraphData:
             _EdgeEndpoint(0, 1, "ab1"),
             _EdgeEndpoint(1, 1, "ab1"),
             name="ab1",
+            label=None,
+        ),
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
+def _build_closed_pair_graph() -> _GraphData:
+    nodes = {
+        0: _make_node("A", ("ab",)),
+        1: _make_node("B", ("ab",)),
+    }
+    edges = (
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 0, "ab"),
+            _EdgeEndpoint(1, 0, "ab"),
+            name="ab",
+            label=None,
+        ),
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
+def _build_chain_with_closed_parallel_leaf_graph() -> _GraphData:
+    nodes = {
+        0: _make_node("L", ("c01", "phys_l")),
+        1: _make_node("C", ("c01", "c12", "p10", "p11")),
+        2: _make_node("R", ("c12", "phys_r")),
+        3: _make_node("Leaf", ("p10", "p11")),
+    }
+    edges = (
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 0, "c01"),
+            _EdgeEndpoint(1, 0, "c01"),
+            name="c01",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(1, 1, "c12"),
+            _EdgeEndpoint(2, 0, "c12"),
+            name="c12",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(1, 2, "p10"),
+            _EdgeEndpoint(3, 0, "p10"),
+            name="p10",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(1, 3, "p11"),
+            _EdgeEndpoint(3, 1, "p11"),
+            name="p11",
+            label=None,
+        ),
+        _make_dangling_edge(
+            _EdgeEndpoint(0, 1, "phys_l"),
+            name="phys_l",
+            label=None,
+        ),
+        _make_dangling_edge(
+            _EdgeEndpoint(2, 1, "phys_r"),
+            name="phys_r",
+            label=None,
+        ),
+    )
+    return _GraphData(nodes=nodes, edges=edges)
+
+
+def _build_closed_chain_for_recursive_collapse_graph() -> _GraphData:
+    nodes = {
+        0: _make_node("A", ("a01",)),
+        1: _make_node("B", ("a01", "a12")),
+        2: _make_node("C", ("a12", "a23")),
+        3: _make_node("D", ("a23",)),
+    }
+    edges = (
+        _make_contraction_edge(
+            _EdgeEndpoint(0, 0, "a01"),
+            _EdgeEndpoint(1, 0, "a01"),
+            name="a01",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(1, 1, "a12"),
+            _EdgeEndpoint(2, 0, "a12"),
+            name="a12",
+            label=None,
+        ),
+        _make_contraction_edge(
+            _EdgeEndpoint(2, 1, "a23"),
+            _EdgeEndpoint(3, 0, "a23"),
+            name="a23",
             label=None,
         ),
     )
@@ -2420,7 +2568,7 @@ def test_coarsened_planar_layout_recovers_sparse_grid_core_before_force_fallback
 
     positions = _compute_layout(graph, dimensions=2, seed=0, iterations=50)
 
-    assert component.structure_kind == "planar"
+    assert component.structure_kind == "grid"
     assert structure_kind == "grid"
     assert grid_mapping is not None
     assert sorted(_coordinate_axis_lengths(grid_mapping)) == [3, 4]
@@ -2887,13 +3035,14 @@ def test_compute_axis_directions_3d_named_dangling_axes_fall_back_when_repeated(
 
 
 def test_compute_axis_directions_competing_free_axes_prefer_unused_orthogonal_directions() -> None:
-    graph = _build_star_with_free_axes()
+    graph = _build_star_with_free_axes_and_leaf_phys()
 
     positions = _compute_layout(graph, dimensions=3, seed=0)
     directions = _compute_axis_directions(graph, positions, dimensions=3)
 
-    assert np.allclose(directions[(0, 4)], np.array([0.0, 1.0, 0.0]), atol=1e-6)
-    assert np.allclose(directions[(0, 5)], np.array([0.0, -1.0, 0.0]), atol=1e-6)
+    assert np.allclose(directions[(0, 4)], -directions[(0, 5)], atol=1e-6)
+    for bond_axis_index in range(4):
+        assert abs(float(np.dot(directions[(0, 4)], directions[(0, bond_axis_index)]))) < 1e-6
     for axis_index in range(6, 8):
         assert np.isclose(np.linalg.norm(directions[(0, axis_index)]), 1.0, atol=1e-6)
 
@@ -3223,6 +3372,39 @@ def test_generic_coarsening_counts_distinct_neighbors_for_parallel_edges() -> No
     assert counts == {0: 1, 1: 1}
 
 
+def test_component_analysis_collapses_closed_parallel_leaf_out_of_geometry() -> None:
+    graph = _build_chain_with_closed_parallel_leaf_graph()
+
+    component = _analyze_layout_components_cached(graph)[0]
+
+    assert component.structure_kind == "chain"
+    assert component.chain_order == (0, 1, 2)
+    assert component.geometry_node_ids == (0, 1, 2)
+    assert component.collapsed_contraction_leaf_parents == ((3, 1),)
+
+
+def test_component_analysis_recursively_collapses_closed_chain_endpoints() -> None:
+    graph = _build_closed_chain_for_recursive_collapse_graph()
+
+    component = _analyze_layout_components_cached(graph)[0]
+
+    assert component.structure_kind == "chain"
+    assert component.chain_order == (1, 2)
+    assert component.geometry_node_ids == (1, 2)
+    assert component.collapsed_contraction_leaf_parents == ((0, 1), (3, 2))
+
+
+def test_component_analysis_keeps_closed_pairs_in_geometry() -> None:
+    graph = _build_closed_pair_graph()
+
+    component = _analyze_layout_components_cached(graph)[0]
+
+    assert component.structure_kind == "chain"
+    assert component.chain_order == (0, 1)
+    assert component.geometry_node_ids == (0, 1)
+    assert component.collapsed_contraction_leaf_parents == ()
+
+
 def test_generic_coarsening_recursively_peels_degree_one_trees() -> None:
     graph = _build_cycle_with_recursive_tail_graph()
     component = _analyze_layout_components_cached(graph)[0]
@@ -3231,6 +3413,24 @@ def test_generic_coarsening_recursively_peels_degree_one_trees() -> None:
 
     assert peeled.core_node_ids == (0, 1, 2, 3)
     assert peeled.parent_by_removed_node == {5: 4, 4: 0}
+
+
+def test_expand_peeled_trees_2d_rotates_child_when_straight_outward_overlaps() -> None:
+    peeled = _PeeledDegreeOneTrees(
+        core_node_ids=(0, 1, 2),
+        parent_by_removed_node={3: 0},
+    )
+    positions = {
+        0: np.array([0.0, 0.0], dtype=float),
+        1: np.array([-1.0, 0.0], dtype=float),
+        2: np.array([1.0, 0.0], dtype=float),
+    }
+
+    _expand_peeled_trees_2d(peeled, positions)
+
+    assert 3 in positions
+    assert not np.allclose(positions[3], np.array([1.0, 0.0], dtype=float), atol=1e-9)
+    assert float(np.linalg.norm(positions[3] - positions[2])) > 0.2
 
 
 def test_coarsened_planar_without_degree_one_neighbors_skips_full_peel(
@@ -3399,7 +3599,7 @@ def test_promote_3d_layers_moves_overlapping_node_to_next_even_layer() -> None:
 
 
 def test_promote_3d_layers_uses_odd_layer_for_edge_crossing_without_node_overlap() -> None:
-    graph = _build_crossed_pair_graph()
+    graph = _with_one_dangling_phys_per_node(_build_crossed_pair_graph())
     component = _analyze_layout_components_cached(graph)[0]
     positions = {
         0: np.array([-1.0, -1.0, 0.0], dtype=float),
