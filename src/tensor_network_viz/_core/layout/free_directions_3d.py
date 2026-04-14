@@ -350,7 +350,7 @@ def _component_layer_info_3d(
 ) -> _LayerInfo3D:
     node_values = {
         node_id: float(np.dot(np.asarray(positions[node_id], dtype=float).reshape(-1)[:3], normal))
-        for node_id in component.node_ids
+        for node_id in component.geometry_node_ids
         if node_id in positions
     }
     if not node_values:
@@ -378,7 +378,9 @@ def _chain_candidates_3d(
 ) -> Iterator[np.ndarray]:
     if interior_node_ids is None:
         chain_order = [
-            chain_id for chain_id in component.chain_order if chain_id in component.node_ids
+            chain_id
+            for chain_id in component.chain_order
+            if chain_id in component.geometry_node_ids
         ]
         interior_node_ids = frozenset(chain_order[1:-1])
     is_interior = node_id in interior_node_ids
@@ -397,7 +399,7 @@ def _chain_candidate_context_3d(
     axis, lateral, normal = _component_orthogonal_basis(component, positions)
     frame = _orthonormal_frame_3d(front=normal, right_hint=axis, up_hint=lateral)
     chain_order = tuple(
-        chain_id for chain_id in component.chain_order if chain_id in component.node_ids
+        chain_id for chain_id in component.chain_order if chain_id in component.geometry_node_ids
     )
     return _ChainCandidateContext3D(
         frame=frame,
@@ -639,8 +641,12 @@ def _first_valid_candidate_3d(
 
 def _component_node_order_3d(component: _LayoutComponent) -> tuple[int, ...]:
     if component.structure_kind == "chain" and component.chain_order:
-        ordered = [node_id for node_id in component.chain_order if node_id in component.node_ids]
-        ordered.extend(sorted(node_id for node_id in component.node_ids if node_id not in ordered))
+        ordered = [
+            node_id for node_id in component.chain_order if node_id in component.geometry_node_ids
+        ]
+        ordered.extend(
+            sorted(node_id for node_id in component.geometry_node_ids if node_id not in ordered)
+        )
         return tuple(ordered)
     if component.structure_kind == "grid3d" and component.grid3d_mapping is not None:
         coords_by_node = component.grid3d_mapping
@@ -665,11 +671,11 @@ def _component_node_order_3d(component: _LayoutComponent) -> tuple[int, ...]:
 
         return tuple(
             sorted(
-                (node_id for node_id in component.node_ids if node_id in coords_by_node),
+                (node_id for node_id in component.geometry_node_ids if node_id in coords_by_node),
                 key=grid_priority,
             )
         )
-    return tuple(sorted(component.node_ids))
+    return tuple(sorted(component.geometry_node_ids))
 
 
 def _compute_free_directions_3d(

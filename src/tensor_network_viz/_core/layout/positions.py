@@ -154,6 +154,7 @@ def _compute_component_layout_2d(
 ) -> NodePositions:
     """Lay out one component in 2D, then restore virtual hubs and trimmed leaves."""
     node_ids = list(component.node_ids)
+    geometry_node_ids = list(component.geometry_node_ids)
     coarsened_positions = _compute_coarsened_layout_2d(
         graph,
         component,
@@ -166,12 +167,14 @@ def _compute_component_layout_2d(
         _spread_colocated_virtual_hubs_2d(component, positions)
         _nudge_singleton_attachment_virtual_hubs_2d(graph, component, positions)
         _offset_virtual_hubs_off_direct_tensor_chords_2d(graph, component, positions)
+        _place_trimmed_leaf_nodes_2d(graph, component, positions)
+        _place_collapsed_contraction_leaf_nodes_2d(graph, component, positions)
         return _center_positions(positions, node_ids=node_ids)
 
     trimmed_leaf_ids = {leaf_id for leaf_id, _ in component.trimmed_leaf_parents}
-    layout_node_ids = [node_id for node_id in node_ids if node_id not in trimmed_leaf_ids]
+    layout_node_ids = [node_id for node_id in geometry_node_ids if node_id not in trimmed_leaf_ids]
     if not layout_node_ids:
-        layout_node_ids = node_ids.copy()
+        layout_node_ids = geometry_node_ids.copy()
     fixed_positions = {
         node_id: np.asarray(position, dtype=float).copy()
         for node_id, position in _specialized_anchor_positions(component).items()
@@ -211,6 +214,7 @@ def _compute_component_layout_2d(
     _nudge_singleton_attachment_virtual_hubs_2d(graph, component, positions)
     _offset_virtual_hubs_off_direct_tensor_chords_2d(graph, component, positions)
     _place_trimmed_leaf_nodes_2d(graph, component, positions)
+    _place_collapsed_contraction_leaf_nodes_2d(graph, component, positions)
     return _center_positions(positions, node_ids=node_ids)
 
 
@@ -231,6 +235,7 @@ def _lift_component_layout_3d(
         positions.update(_layout_tube_3d(component.grid_mapping))
     should_promote_layers = _component_requires_3d_layer_promotion(component, positions)
     _place_trimmed_leaf_nodes_3d(component, positions)
+    _place_collapsed_contraction_leaf_nodes_3d(component, positions)
     if should_promote_layers:
         _promote_3d_layers(graph, component, positions)
     return positions
@@ -369,8 +374,12 @@ def _snap_virtual_nodes_to_barycenters(
     component: _LayoutComponent,
     positions: NodePositions,
 ) -> None:
-    for node_id in component.virtual_node_ids:
-        neighbors = sorted(component.contraction_graph.neighbors(node_id))
+    for node_id in component.geometry_virtual_node_ids:
+        neighbors = [
+            int(neighbor_id)
+            for neighbor_id in component.geometry_contraction_graph.neighbors(node_id)
+            if neighbor_id in positions
+        ]
         if not neighbors:
             continue
         positions[node_id] = np.mean(
@@ -385,8 +394,8 @@ def _spread_colocated_virtual_hubs_2d(
 ) -> None:
     """Separate virtual hubs that share the same visible neighbors."""
     groups: defaultdict[frozenset[int], list[int]] = defaultdict(list)
-    graph_nx = component.contraction_graph
-    for node_id in component.virtual_node_ids:
+    graph_nx = component.geometry_contraction_graph
+    for node_id in component.geometry_virtual_node_ids:
         groups[frozenset(graph_nx.neighbors(node_id))].append(node_id)
 
     spacing = float(_VIRTUAL_HUB_MIN_SEPARATION)
@@ -428,9 +437,9 @@ def _nudge_singleton_attachment_virtual_hubs_2d(
     positions: NodePositions,
 ) -> None:
     """Move singleton virtual hubs off their lone visible neighbor in 2D."""
-    contraction_graph = component.contraction_graph
+    contraction_graph = component.geometry_contraction_graph
     by_neighbors: defaultdict[frozenset[int], list[int]] = defaultdict(list)
-    for node_id in component.virtual_node_ids:
+    for node_id in component.geometry_virtual_node_ids:
         by_neighbors[frozenset(contraction_graph.neighbors(node_id))].append(node_id)
 
     distance = float(_VIRTUAL_HUB_MIN_SEPARATION)
@@ -450,7 +459,7 @@ def _nudge_singleton_attachment_virtual_hubs_2d(
 
         visible_ids = [
             visible_id
-            for visible_id in component.visible_node_ids
+            for visible_id in component.geometry_visible_node_ids
             if not graph.nodes[visible_id].is_virtual and visible_id in positions
         ]
         if len(visible_ids) <= 1:
@@ -490,9 +499,9 @@ def _offset_virtual_hubs_off_direct_tensor_chords_2d(
 ) -> None:
     """Nudge hyperedge hubs off the UV segment when U and V also have a direct bond."""
     direct_pairs = _tensor_tensor_contraction_pairs(graph)
-    contraction_graph = component.contraction_graph
+    contraction_graph = component.geometry_contraction_graph
     margin = float(_VIRTUAL_HUB_CHORD_CLEARANCE)
-    for node_id in component.virtual_node_ids:
+    for node_id in component.geometry_virtual_node_ids:
         neighbors = frozenset(contraction_graph.neighbors(node_id))
         if len(neighbors) != 2 or neighbors not in direct_pairs:
             continue
@@ -515,10 +524,38 @@ def _place_trimmed_leaf_nodes_2d(
     component: _LayoutComponent,
     positions: NodePositions,
 ) -> None:
-    if not component.trimmed_leaf_parents:
+    _place_leaf_nodes_2d(
+        graph,
+        component,
+        positions,
+        leaf_parents=component.trimmed_leaf_parents,
+    )
+
+
+def _place_collapsed_contraction_leaf_nodes_2d(
+    graph: _GraphData,
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> None:
+    _place_leaf_nodes_2d(
+        graph,
+        component,
+        positions,
+        leaf_parents=component.collapsed_contraction_leaf_parents,
+    )
+
+
+def _place_leaf_nodes_2d(
+    graph: _GraphData,
+    component: _LayoutComponent,
+    positions: NodePositions,
+    *,
+    leaf_parents: tuple[tuple[int, int], ...],
+) -> None:
+    if not leaf_parents:
         return
 
-    leaf_node_ids = {leaf_id for leaf_id, _ in component.trimmed_leaf_parents}
+    leaf_node_ids = {leaf_id for leaf_id, _ in leaf_parents}
     component_node_ids = frozenset(component.node_ids)
     core_segments = tuple(
         record
@@ -531,12 +568,15 @@ def _place_trimmed_leaf_nodes_2d(
         if record.node_ids[0] not in leaf_node_ids and record.node_ids[1] not in leaf_node_ids
     )
     assigned_targets: list[tuple[int, np.ndarray, np.ndarray, np.ndarray]] = []
-    for leaf_id, parent_id in component.trimmed_leaf_parents:
+    for leaf_id, parent_id in leaf_parents:
+        if parent_id not in positions:
+            continue
         positions[leaf_id] = _best_attachment_position_2d(
             component=component,
             origin=positions[parent_id],
             parent_id=parent_id,
             leaf_id=leaf_id,
+            leaf_node_ids=leaf_node_ids,
             assigned_targets=assigned_targets,
             core_segments=core_segments,
             positions=positions,
@@ -558,13 +598,35 @@ def _place_trimmed_leaf_nodes_3d(
     component: _LayoutComponent,
     positions: NodePositions,
 ) -> None:
-    if not component.trimmed_leaf_parents:
+    _place_leaf_nodes_3d(component, positions, leaf_parents=component.trimmed_leaf_parents)
+
+
+def _place_collapsed_contraction_leaf_nodes_3d(
+    component: _LayoutComponent,
+    positions: NodePositions,
+) -> None:
+    _place_leaf_nodes_3d(
+        component,
+        positions,
+        leaf_parents=component.collapsed_contraction_leaf_parents,
+    )
+
+
+def _place_leaf_nodes_3d(
+    component: _LayoutComponent,
+    positions: NodePositions,
+    *,
+    leaf_parents: tuple[tuple[int, int], ...],
+) -> None:
+    if not leaf_parents:
         return
 
     _, lateral, normal = _component_orthogonal_basis(component, positions)
     candidates = (normal, -normal, lateral, -lateral)
     assigned_targets: list[np.ndarray] = []
-    for leaf_id, parent_id in component.trimmed_leaf_parents:
+    for leaf_id, parent_id in leaf_parents:
+        if parent_id not in positions:
+            continue
         positions[leaf_id] = _best_attachment_position_3d(
             origin=positions[parent_id],
             candidates=candidates,
@@ -579,11 +641,13 @@ def _component_main_axis_2d(
 ) -> np.ndarray:
     anchor_node_ids = [
         node_id
-        for node_id in (component.anchor_node_ids or component.visible_node_ids)
+        for node_id in (component.anchor_node_ids or component.geometry_visible_node_ids)
         if node_id in positions
     ]
     if not anchor_node_ids:
-        anchor_node_ids = [node_id for node_id in component.node_ids if node_id in positions]
+        anchor_node_ids = [
+            node_id for node_id in component.geometry_node_ids if node_id in positions
+        ]
     chain_node_ids = [node_id for node_id in component.chain_order if node_id in positions]
     if component.structure_kind == "chain" and len(chain_node_ids) >= 2:
         start = positions[chain_node_ids[0]]
@@ -608,11 +672,11 @@ def _best_attachment_position_2d(
     origin: np.ndarray,
     parent_id: int,
     leaf_id: int,
+    leaf_node_ids: set[int],
     assigned_targets: list[tuple[int, np.ndarray, np.ndarray, np.ndarray]],
     core_segments: tuple[_BondSegment2D, ...],
     positions: NodePositions,
 ) -> np.ndarray:
-    leaf_node_ids = {node_id for node_id, _ in component.trimmed_leaf_parents}
     direction_options = _preferred_component_directions_2d(
         component,
         positions,
@@ -633,7 +697,7 @@ def _best_attachment_position_2d(
     fallback_directions = all_directions[len(preferred_directions) :]
     used_dirs: list[np.ndarray] = []
     for neighbor_id in component.contraction_graph.neighbors(parent_id):
-        if neighbor_id == leaf_id or neighbor_id in leaf_node_ids:
+        if neighbor_id == leaf_id or neighbor_id in leaf_node_ids or neighbor_id not in positions:
             continue
         delta = positions[neighbor_id][:2] - origin[:2]
         norm = np.linalg.norm(delta)
@@ -840,7 +904,7 @@ def _layering_node_order_3d(
     coords_2d = np.stack(
         [
             np.asarray(positions[node_id], dtype=float).reshape(-1)[:2]
-            for node_id in component.node_ids
+            for node_id in component.geometry_node_ids
         ],
         axis=0,
     )
@@ -860,7 +924,7 @@ def _layering_node_order_3d(
             int(node_id),
         )
 
-    return tuple(sorted(component.node_ids, key=priority))
+    return tuple(sorted(component.geometry_node_ids, key=priority))
 
 
 def _layer_node_overlap_clearance_2d(
@@ -868,7 +932,7 @@ def _layer_node_overlap_clearance_2d(
     positions: NodePositions,
 ) -> float:
     min_edge_length: float | None = None
-    for left_id, right_id in component.contraction_graph.edges():
+    for left_id, right_id in component.geometry_contraction_graph.edges():
         if left_id not in positions or right_id not in positions:
             continue
         delta = (
@@ -937,7 +1001,7 @@ def _layer_crosses_existing_edges(
 ) -> bool:
     candidate_edge_records = tuple(
         _make_layer_edge_record(node_id, neighbor_id, positions)
-        for neighbor_id in component.contraction_graph.neighbors(node_id)
+        for neighbor_id in component.geometry_contraction_graph.neighbors(node_id)
         if neighbor_id in layer_node_ids and neighbor_id != node_id
     )
     if not candidate_edge_records:
@@ -970,7 +1034,7 @@ def _component_has_crossing_contraction_edges_2d(
 ) -> bool:
     edge_records = tuple(
         _make_layer_edge_record(left_id, right_id, positions)
-        for left_id, right_id in component.contraction_graph.edges()
+        for left_id, right_id in component.geometry_contraction_graph.edges()
         if left_id in positions and right_id in positions and left_id != right_id
     )
 
@@ -1001,14 +1065,16 @@ def _component_requires_3d_layer_promotion(
 ) -> bool:
     if component.grid3d_mapping is not None or component.grid_mapping is not None:
         return False
-    if component.virtual_node_ids:
+    if component.geometry_virtual_node_ids:
         return True
     if component.structure_kind == "chain" and all(
-        component.contraction_graph.degree(node_id) <= 2 for node_id in component.node_ids
+        component.geometry_contraction_graph.degree(node_id) <= 2
+        for node_id in component.geometry_node_ids
     ):
         return False
     if any(
-        _node_overlaps_component(node_id, component, positions) for node_id in component.node_ids
+        _node_overlaps_component(node_id, component, positions)
+        for node_id in component.geometry_node_ids
     ):
         return True
     return _component_has_crossing_contraction_edges_2d(component, positions)
@@ -1019,7 +1085,7 @@ def _promote_3d_layers(
     component: _LayoutComponent,
     positions: NodePositions,
 ) -> None:
-    layer_indices = dict.fromkeys(component.node_ids, 0)
+    layer_indices = dict.fromkeys(component.geometry_node_ids, 0)
     placed_node_ids_by_layer: defaultdict[int, list[int]] = defaultdict(list)
     layer_edge_records_by_layer: defaultdict[int, list[_LayerEdgeRecord]] = defaultdict(list)
     overlap_clearance = _layer_node_overlap_clearance_2d(component, positions)
@@ -1049,7 +1115,7 @@ def _promote_3d_layers(
 
         layer_indices[node_id] = layer_index
         placed_node_ids_by_layer[layer_index].append(node_id)
-        for neighbor_id in component.contraction_graph.neighbors(node_id):
+        for neighbor_id in component.geometry_contraction_graph.neighbors(node_id):
             if neighbor_id not in placed_node_ids_by_layer[layer_index]:
                 continue
             if neighbor_id == node_id:
@@ -1076,7 +1142,7 @@ def _node_overlaps_component(
     positions: NodePositions,
 ) -> bool:
     point = positions[node_id][:2]
-    for other_id in component.node_ids:
+    for other_id in component.geometry_node_ids:
         if other_id == node_id:
             continue
         if np.linalg.norm(point - positions[other_id][:2]) < 0.18:

@@ -175,7 +175,7 @@ def test_compute_layout_einsum_mpo_2d_separates_up_and_down_vectors() -> None:
         assert float(np.dot(down - tensor, up - tensor)) < 0.0
 
 
-def test_compute_component_layout_2d_skips_trimmed_leaf_nodes_in_force_layout(
+def test_compute_component_layout_2d_skips_deferred_leaf_nodes_in_force_layout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     graph = _build_graph(_einsum_like_mpo_trace(4))
@@ -208,9 +208,11 @@ def test_compute_component_layout_2d_skips_trimmed_leaf_nodes_in_force_layout(
 
     _compute_component_layout_2d(graph, component, seed=0, iterations=1)
 
-    trimmed_leaf_ids = {leaf_id for leaf_id, _ in component.trimmed_leaf_parents}
-    assert trimmed_leaf_ids
-    assert trimmed_leaf_ids.isdisjoint(captured_node_ids)
+    deferred_leaf_ids = {leaf_id for leaf_id, _ in component.trimmed_leaf_parents} | {
+        leaf_id for leaf_id, _ in component.collapsed_contraction_leaf_parents
+    }
+    assert deferred_leaf_ids
+    assert deferred_leaf_ids.isdisjoint(captured_node_ids)
 
 
 @pytest.mark.parametrize(

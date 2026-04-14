@@ -31,6 +31,7 @@ _GENERIC_FORCE_MIN_ITERATIONS: int = 30
 _GENERIC_FORCE_MAX_ITERATIONS: int = 60
 _GENERIC_TREE_SPACING: float = 1.0
 _GENERIC_PATH_MIN_ARC_HEIGHT: float = 0.35
+_GENERIC_TREE_NODE_CLEARANCE: float = 0.35
 _COARSENED_INITIAL_STRUCTURE_KINDS: frozenset[str] = frozenset(("generic", "planar"))
 
 
@@ -608,8 +609,67 @@ def _expand_peeled_trees_2d(
                     base_direction + perpendicular * 0.55 * float(offset),
                     base_direction,
                 )
+            child_direction = _resolve_child_direction_with_overlap_avoidance(
+                positions,
+                parent_id=parent_id,
+                child_id=child_id,
+                child_direction=child_direction,
+            )
             positions[child_id] = parent_position + child_direction * _GENERIC_TREE_SPACING
             stack.append((child_id, child_direction))
+
+
+def _resolve_child_direction_with_overlap_avoidance(
+    positions: NodePositions,
+    *,
+    parent_id: int,
+    child_id: int,
+    child_direction: np.ndarray,
+) -> np.ndarray:
+    parent_position = np.asarray(positions[parent_id], dtype=float).reshape(-1)[:2]
+    base_direction = _normalize_direction_2d(child_direction, _stable_fallback_direction(child_id))
+    angle_sweep_degrees = (0.0, 18.0, -18.0, 36.0, -36.0, 54.0, -54.0, 72.0, -72.0, 90.0, -90.0)
+    for angle_degrees in angle_sweep_degrees:
+        candidate_direction = _rotate_direction(base_direction, angle_degrees=angle_degrees)
+        candidate_position = parent_position + candidate_direction * _GENERIC_TREE_SPACING
+        if _child_position_overlaps_existing_node(
+            positions,
+            parent_id=parent_id,
+            candidate_position=candidate_position,
+        ):
+            continue
+        return candidate_direction
+    return base_direction
+
+
+def _rotate_direction(direction: np.ndarray, *, angle_degrees: float) -> np.ndarray:
+    radians = math.radians(float(angle_degrees))
+    cos_theta = float(math.cos(radians))
+    sin_theta = float(math.sin(radians))
+    x_coord, y_coord = np.asarray(direction, dtype=float).reshape(-1)[:2]
+    return np.array(
+        [
+            (x_coord * cos_theta) - (y_coord * sin_theta),
+            (x_coord * sin_theta) + (y_coord * cos_theta),
+        ],
+        dtype=float,
+    )
+
+
+def _child_position_overlaps_existing_node(
+    positions: NodePositions,
+    *,
+    parent_id: int,
+    candidate_position: np.ndarray,
+) -> bool:
+    candidate_2d = np.asarray(candidate_position, dtype=float).reshape(-1)[:2]
+    for other_id, other_position in positions.items():
+        if other_id == parent_id:
+            continue
+        other_2d = np.asarray(other_position, dtype=float).reshape(-1)[:2]
+        if float(np.linalg.norm(candidate_2d - other_2d)) < _GENERIC_TREE_NODE_CLEARANCE:
+            return True
+    return False
 
 
 def _compute_coarsened_layout_2d(
@@ -621,11 +681,14 @@ def _compute_coarsened_layout_2d(
 ) -> NodePositions | None:
     if component.structure_kind not in _COARSENED_INITIAL_STRUCTURE_KINDS:
         return None
-    node_ids = tuple(sorted(int(node_id) for node_id in component.node_ids))
+    node_ids = tuple(sorted(int(node_id) for node_id in component.geometry_node_ids))
     if len(node_ids) <= 1:
         return {node_ids[0]: np.zeros(2, dtype=float)} if node_ids else {}
 
-    component_coarsening_graph = _coarsening_graph_from_nx(component.contraction_graph, node_ids)
+    component_coarsening_graph = _coarsening_graph_from_nx(
+        component.geometry_contraction_graph,
+        node_ids,
+    )
     if component.structure_kind == "planar" and not _has_degree_one_neighbor(
         component_coarsening_graph
     ):
