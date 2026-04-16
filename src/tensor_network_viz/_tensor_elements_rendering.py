@@ -24,11 +24,6 @@ if TYPE_CHECKING:
 _OUTLIER_EDGE_COLOR: Final[str] = "#F8FAFC"
 _OUTLIER_CONTRAST_COLOR: Final[str] = "#0F172A"
 _SOFT_GRID_COLOR: Final[str] = "#CBD5E1"
-_DATA_TEXT_BOX: Final[dict[str, Any]] = {
-    "boxstyle": "round,pad=0.45",
-    "facecolor": "#F8FAFC",
-    "edgecolor": "#CBD5E1",
-}
 _CONTINUOUS_STYLE_KEYS: Final[frozenset[str]] = frozenset(
     {
         "elements",
@@ -53,6 +48,14 @@ class _PanelLike(Protocol):
     base_position: tuple[float, float, float, float]
     main_ax: Axes
     colorbar: Any | None
+
+
+def _summary_text_box(config: TensorElementsConfig) -> dict[str, Any]:
+    return {
+        "boxstyle": "round,pad=0.45",
+        "facecolor": config.summary_facecolor,
+        "edgecolor": config.summary_edgecolor,
+    }
 
 
 def _supports_dynamic_scaling(style_key: str) -> bool:
@@ -145,6 +148,14 @@ def _style_continuous_colorbar(colorbar: Any) -> None:
     colorbar.outline.set_linewidth(0.6)
 
 
+def _apply_integer_ticks(ax: Axes, *, axis: str) -> None:
+    locator = MaxNLocator(integer=True)
+    if axis in {"x", "both"}:
+        ax.xaxis.set_major_locator(locator)
+    if axis in {"y", "both"}:
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+
 def _remove_colorbar(panel: _PanelLike) -> None:
     if panel.colorbar is None:
         return
@@ -154,6 +165,7 @@ def _remove_colorbar(panel: _PanelLike) -> None:
 
 def _heatmap_style_kwargs(
     *,
+    config: TensorElementsConfig,
     matrix: np.ndarray[Any, Any],
     style_key: str,
     color_limits: tuple[float, float] | None,
@@ -161,28 +173,28 @@ def _heatmap_style_kwargs(
     kwargs: dict[str, Any] = {
         "aspect": "auto",
         "interpolation": "nearest",
-        "cmap": "viridis",
+        "cmap": config.continuous_cmap,
     }
     if style_key == "phase":
-        kwargs["cmap"] = "twilight"
+        kwargs["cmap"] = config.phase_cmap
         kwargs["vmin"] = -np.pi
         kwargs["vmax"] = np.pi
     elif style_key == "sign":
-        cmap = ListedColormap(("#B91C1C", "#E2E8F0", "#0369A1"))
+        cmap = ListedColormap(config.sign_colors)
         kwargs["cmap"] = cmap
         kwargs["norm"] = BoundaryNorm((-1.5, -0.5, 0.5, 1.5), cmap.N)
     elif style_key == "sparsity":
-        cmap = ListedColormap(("#0F172A", "#F8FAFC"))
+        cmap = ListedColormap(config.sparsity_colors)
         kwargs["cmap"] = cmap
         kwargs["norm"] = BoundaryNorm((-0.5, 0.5, 1.5), cmap.N)
     elif style_key == "nan_inf":
-        cmap = ListedColormap(("#0F766E", "#D97706", "#7C3AED", "#B91C1C"))
+        cmap = ListedColormap(config.nan_inf_colors)
         kwargs["cmap"] = cmap
         kwargs["norm"] = BoundaryNorm((-0.5, 0.5, 1.5, 2.5, 3.5), cmap.N)
     elif style_key == "log_magnitude":
-        kwargs["cmap"] = "magma"
+        kwargs["cmap"] = config.log_magnitude_cmap
     elif style_key == "signed_value":
-        kwargs["cmap"] = "RdBu_r"
+        kwargs["cmap"] = config.diverging_cmap
         if color_limits is None:
             finite_values = matrix[np.isfinite(matrix)]
             bound = float(np.max(np.abs(finite_values))) if finite_values.size else 0.0
@@ -218,7 +230,7 @@ def _render_panel(
             fontsize=9.2,
             linespacing=1.35,
             transform=panel.main_ax.transAxes,
-            bbox=_DATA_TEXT_BOX,
+            bbox=_summary_text_box(config),
         )
         return
 
@@ -228,8 +240,8 @@ def _render_panel(
         panel.main_ax.hist(
             values,
             bins=int(config.histogram_bins),
-            color="#0369A1",
-            edgecolor="#0F172A",
+            color=config.histogram_color,
+            edgecolor=config.histogram_edge_color,
             alpha=0.85,
         )
         _apply_soft_axis_grid(panel.main_ax)
@@ -242,7 +254,7 @@ def _render_panel(
         panel.main_ax.plot(
             np.asarray(payload.x_values, dtype=float),
             np.asarray(payload.y_values, dtype=float),
-            color="#0369A1",
+            color=config.series_color,
             linewidth=1.8,
             marker="o",
             markersize=4.5,
@@ -255,13 +267,14 @@ def _render_panel(
                     overlay_x,
                     overlay_y,
                     s=40.0,
-                    color=payload.overlay_color or "#7F1D1D",
+                    color=payload.overlay_color or config.zero_marker_color,
                     zorder=3,
                 )
         panel.main_ax.set_xlabel(payload.xlabel)
         panel.main_ax.set_ylabel(payload.ylabel)
         panel.main_ax.set_yscale(payload.yscale)
         _apply_soft_axis_grid(panel.main_ax)
+        _apply_integer_ticks(panel.main_ax, axis="x")
         panel.main_ax.set_title(_panel_title(record, payload))
         return
 
@@ -272,6 +285,7 @@ def _render_panel(
     image = panel.main_ax.imshow(
         matrix,
         **_heatmap_style_kwargs(
+            config=config,
             matrix=matrix,
             style_key=style_key,
             color_limits=payload.color_limits,
@@ -279,6 +293,7 @@ def _render_panel(
     )
     panel.main_ax.set_ylabel(_axis_label_text("rows", metadata.row_names))
     panel.main_ax.set_xlabel(_axis_label_text("cols", metadata.col_names))
+    _apply_integer_ticks(panel.main_ax, axis="both")
     panel.main_ax.set_title(_panel_title(record, payload))
     if payload.outlier_mask is not None and np.any(payload.outlier_mask):
         y_coords, x_coords = np.nonzero(payload.outlier_mask)

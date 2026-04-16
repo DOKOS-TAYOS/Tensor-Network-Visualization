@@ -120,7 +120,7 @@ def test_run_demo_registry_declares_expected_example_sets() -> None:
         "trace",
         "unary",
     }
-    assert set(module.available_examples("themes")) == {"overview"}
+    assert set(module.available_examples("themes")) == {"overview", "tensor_elements"}
     assert set(module.available_examples("placements")) == {
         "grid2d",
         "grid3d",
@@ -438,6 +438,7 @@ def test_commands_doc_lists_copy_paste_demo_commands() -> None:
     examples_text = Path("examples/README.md").read_text(encoding="utf-8")
 
     assert "python examples/run_demo.py themes overview" in text
+    assert "python examples/run_demo.py themes tensor_elements" in text
     assert "python examples/run_demo.py placements manual_scheme" in text
     assert "python examples/run_demo.py geometry decorated_sparse_grid2d" in text
     assert "python examples/run_demo.py geometry disconnected_irregular" in text
@@ -665,13 +666,20 @@ def test_run_all_examples_engines_2d_matches_new_matrix() -> None:
     assert ("examples/run_demo.py", "einsum", "batch", "--view", "2d") in argvs
 
 
-def test_run_all_examples_themes_group_runs_overview() -> None:
+def test_run_all_examples_themes_group_runs_overview_and_tensor_elements() -> None:
     module = _load_example_module(Path("examples/run_all_examples.py"), "run_all_examples_themes")
 
     commands = module.select_example_commands(group="themes", views="2d")
     argvs = {command.argv for command in commands}
 
     assert ("examples/run_demo.py", "themes", "overview", "--view", "2d") in argvs
+    assert ("examples/run_demo.py", "themes", "tensor_elements", "--view", "2d") in argvs
+
+    commands_3d = module.select_example_commands(group="themes", views="3d")
+    argvs_3d = {command.argv for command in commands_3d}
+
+    assert ("examples/run_demo.py", "themes", "overview", "--view", "3d") in argvs_3d
+    assert ("examples/run_demo.py", "themes", "tensor_elements", "--view", "3d") not in argvs_3d
 
 
 def test_themes_demo_overview_titles_all_available_themes(
@@ -720,6 +728,169 @@ def test_themes_demo_overview_titles_all_available_themes(
     import matplotlib.pyplot as plt
 
     plt.close(fig)
+
+
+def test_themes_demo_tensor_elements_titles_all_available_themes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_example_module(Path("examples/themes_demo.py"), "themes_demo_tensor_elements")
+    monkeypatch.setattr("matplotlib.pyplot.show", lambda: None)
+
+    args = ExampleCliArgs(
+        engine="themes",
+        example="tensor_elements",
+        view="2d",
+        labels_nodes=True,
+        labels_edges=False,
+        labels=None,
+        hover_labels=True,
+        scheme=False,
+        hover_cost=False,
+        tensor_inspector=False,
+        contracted=False,
+        from_scratch=False,
+        from_list=False,
+        save=None,
+        no_show=False,
+        n_sites=6,
+        lx=3,
+        ly=4,
+        lz=3,
+        mera_log2=3,
+        tree_depth=4,
+        theme="default",
+    )
+
+    fig, _ = module.run_example(args)
+
+    assert [ax.get_title() for ax in fig.axes if ax.get_title()] == [
+        "default",
+        "grayscale",
+        "contrast",
+        "categorical",
+        "paper",
+        "colorblind",
+        "rainbow",
+        "spectral",
+    ]
+    fig.canvas.draw()
+    import matplotlib.pyplot as plt
+
+    plt.close(fig)
+
+
+def test_themes_demo_tensor_elements_default_panel_keeps_current_default_colormap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_example_module(
+        Path("examples/themes_demo.py"),
+        "themes_demo_tensor_elements_default",
+    )
+    monkeypatch.setattr("matplotlib.pyplot.show", lambda: None)
+
+    args = ExampleCliArgs(
+        engine="themes",
+        example="tensor_elements",
+        view="2d",
+        labels_nodes=True,
+        labels_edges=False,
+        labels=None,
+        hover_labels=True,
+        scheme=False,
+        hover_cost=False,
+        tensor_inspector=False,
+        contracted=False,
+        from_scratch=False,
+        from_list=False,
+        save=None,
+        no_show=False,
+        n_sites=6,
+        lx=3,
+        ly=4,
+        lz=3,
+        mera_log2=3,
+        tree_depth=4,
+        theme="default",
+    )
+
+    fig, _ = module.run_example(args)
+    default_axis = next(ax for ax in fig.axes if ax.get_title() == "default")
+
+    assert default_axis.images
+    assert default_axis.images[0].get_cmap().name == "viridis"
+    import matplotlib.pyplot as plt
+
+    plt.close(fig)
+
+
+def test_themes_demo_tensor_elements_key_presets_use_distinct_colormaps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_example_module(
+        Path("examples/themes_demo.py"),
+        "themes_demo_tensor_elements_distinct",
+    )
+    monkeypatch.setattr("matplotlib.pyplot.show", lambda: None)
+
+    args = ExampleCliArgs(
+        engine="themes",
+        example="tensor_elements",
+        view="2d",
+        labels_nodes=True,
+        labels_edges=False,
+        labels=None,
+        hover_labels=True,
+        scheme=False,
+        hover_cost=False,
+        tensor_inspector=False,
+        contracted=False,
+        from_scratch=False,
+        from_list=False,
+        save=None,
+        no_show=False,
+        n_sites=6,
+        lx=3,
+        ly=4,
+        lz=3,
+        mera_log2=3,
+        tree_depth=4,
+        theme="default",
+    )
+
+    fig, _ = module.run_example(args)
+    axis_by_title = {ax.get_title(): ax for ax in fig.axes if ax.get_title()}
+
+    assert axis_by_title["contrast"].images[0].get_cmap().name == "CMRmap"
+    assert axis_by_title["paper"].images[0].get_cmap().name == "inferno"
+    assert axis_by_title["colorblind"].images[0].get_cmap().name == "cividis"
+    import matplotlib.pyplot as plt
+
+    plt.close(fig)
+
+
+def test_themes_tensor_elements_demo_saves_figure_without_showing(tmp_path: Path) -> None:
+    module = _load_example_module(
+        Path("examples/run_demo.py"),
+        "run_demo_themes_tensor_elements",
+    )
+    output_path = tmp_path / "themes-tensor-elements-demo.png"
+
+    exit_code = module.main(
+        [
+            "themes",
+            "tensor_elements",
+            "--view",
+            "2d",
+            "--save",
+            str(output_path),
+            "--no-show",
+        ]
+    )
+
+    assert exit_code == 0
+    image = assert_readable_image(output_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > 0
 
 
 def test_run_all_examples_builds_headless_subprocess_command(tmp_path: Path) -> None:

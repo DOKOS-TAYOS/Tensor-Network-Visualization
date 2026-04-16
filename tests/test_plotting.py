@@ -2161,6 +2161,27 @@ def test_show_tn_reenabling_tensor_inspector_reveals_auxiliary_window(
     assert revealed == [first_figure, first_figure]
 
 
+def test_show_tensor_network_tensor_inspector_uses_public_tensor_elements_theme() -> None:
+    trace = _build_einsum_trace_for_inspector()
+
+    fig, _ax = show_tensor_network(
+        trace,
+        config=PlotConfig(
+            contraction_tensor_inspector=True,
+            tensor_inspector_config=TensorElementsConfig(theme="grayscale"),
+        ),
+        show=False,
+    )
+
+    inspector = getattr(fig, "_tensor_network_viz_tensor_inspector", None)
+
+    assert inspector is not None
+    assert inspector._config.theme == "grayscale"
+    assert inspector._config.continuous_cmap == "gray"
+    assert inspector._config.hover_facecolor == "#FFFFFF"
+    assert inspector._config.hover_edgecolor == "#111111"
+
+
 def test_tensor_inspector_preserves_state_across_disable_enable_when_hidden(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

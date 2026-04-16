@@ -156,6 +156,11 @@ Notes:
 - With several tensors, the figure uses a slider to keep one tensor active at a time.
 - An external `ax` is supported only when visualizing one tensor.
 - `mode="auto"` chooses a sensible default from the tensor dtype.
+- Interactive heatmaps show a compact hover with the element value on the first line and the full
+  tensor index tuple on the second line, even when `row_axes` or `col_axes` group several original
+  axes together.
+- Heatmaps and index-based line views use integer ticks for tensor-index axes, so the displayed
+  coordinates stay aligned with discrete tensor positions.
 
 ## Compare Two Tensors
 
@@ -274,6 +279,7 @@ Common fields:
 | `show_contraction_scheme` | Enable contraction playback controls. |
 | `contraction_scheme_cost_hover` | Show contraction-cost information during playback. |
 | `contraction_tensor_inspector` | Link playback steps to tensor inspection when tensors are available. |
+| `tensor_inspector_config` | Optional `TensorElementsConfig` used by the linked tensor inspector in `show_tensor_network(...)`. |
 | `diagnostics` | Optional `TensorNetworkDiagnosticsConfig`. |
 | `focus` | Optional `TensorNetworkFocus` for neighborhood/path views. Path focus uses the fewest tensor-to-tensor hops; n-way hubs are collapsed, and cost, memory, bond dimension, and layout distance are not part of the metric. |
 | `theme` | Visual preset: `default`, `paper`, or `colorblind`. Manual color and line-width overrides still win. |
@@ -308,6 +314,11 @@ Common fields:
 | `mode` | Initial mode: `auto`, `elements`, `magnitude`, `log_magnitude`, `distribution`, `data`, `real`, `imag`, `phase`, `sign`, `signed_value`, `sparsity`, `nan_inf`, `singular_values`, `eigen_real`, `eigen_imag`, `slice`, `reduce`, or `profiles`. |
 | `row_axes`, `col_axes` | Matrixization for rank greater than 2. |
 | `analysis` | Optional `TensorAnalysisConfig` for slice/reduce/profile modes. |
+| `theme` | Visual preset: `default`, `grayscale`, `contrast`, `categorical`, `paper`, `colorblind`, `rainbow`, or `spectral`. |
+| `continuous_cmap`, `log_magnitude_cmap`, `phase_cmap`, `diverging_cmap` | Override the continuous heatmap palettes. |
+| `sign_colors`, `sparsity_colors`, `nan_inf_colors` | Override discrete diagnostic palettes. |
+| `series_color`, `histogram_color`, `histogram_edge_color`, `zero_marker_color` | Override line, histogram, and marker colors. |
+| `hover_facecolor`, `hover_edgecolor`, `summary_facecolor`, `summary_edgecolor` | Override hover and summary box styling. |
 | `max_matrix_shape` | Downsampled heatmap size limit. |
 | `shared_color_scale` | Reuse compatible color scales across the tensor slider. |
 | `robust_percentiles` | Percentile-based color scaling. |
@@ -315,6 +326,10 @@ Common fields:
 | `zero_threshold` | Floor for zero-aware modes. |
 | `histogram_bins`, `histogram_max_samples` | Distribution mode controls. |
 | `topk_count` | Text summary count. |
+
+`TensorElementsConfig` also styles the linked tensor inspector opened from
+`show_tensor_network(..., config=PlotConfig(contraction_tensor_inspector=True, ...))` via
+`PlotConfig.tensor_inspector_config`.
 
 ### `TensorComparisonConfig`
 

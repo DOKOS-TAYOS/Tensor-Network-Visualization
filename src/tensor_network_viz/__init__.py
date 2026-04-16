@@ -48,7 +48,11 @@ if TYPE_CHECKING:
     from .tensor_comparison import show_tensor_comparison
     from .tensor_comparison_config import TensorComparisonConfig
     from .tensor_elements import show_tensor_elements
-    from .tensor_elements_config import TensorAnalysisConfig, TensorElementsConfig
+    from .tensor_elements_config import (
+        TensorAnalysisConfig,
+        TensorElementsConfig,
+        TensorElementsTheme,
+    )
     from .viewer import show_tensor_network
 else:
 
@@ -169,6 +173,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "TensorDataError": (".exceptions", "TensorDataError"),
     "TensorDataTypeError": (".exceptions", "TensorDataTypeError"),
     "TensorElementsConfig": (".tensor_elements_config", "TensorElementsConfig"),
+    "TensorElementsTheme": (".tensor_elements_config", "TensorElementsTheme"),
     "TensorNetworkDiagnosticsConfig": (".config", "TensorNetworkDiagnosticsConfig"),
     "TensorNetworkFocus": (".config", "TensorNetworkFocus"),
     "TensorNetworkLayoutSnapshot": (".snapshot", "TensorNetworkLayoutSnapshot"),
@@ -222,6 +227,7 @@ __all__ = [
     "TensorDataError",
     "TensorDataTypeError",
     "TensorElementsConfig",
+    "TensorElementsTheme",
     "TensorNetworkDiagnosticsConfig",
     "TensorNetworkFocus",
     "TensorNetworkLayoutSnapshot",

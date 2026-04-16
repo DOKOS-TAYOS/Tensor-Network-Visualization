@@ -55,6 +55,7 @@ Examples:
 python examples/run_demo.py quimb hyper --view 2d
 python examples/run_demo.py tensornetwork weird --view 3d
 python examples/run_demo.py themes overview --view 2d
+python examples/run_demo.py themes tensor_elements --view 2d
 python examples/run_demo.py placements manual_scheme --view 2d
 python examples/run_demo.py geometry disconnected_irregular --view 2d
 python examples/run_demo.py geometry decorated_sparse_grid2d --view 2d
@@ -110,6 +111,7 @@ Open an interactive figure:
 python examples/run_demo.py quimb hyper --view 2d
 python examples/run_demo.py tensornetwork weird --view 3d
 python examples/run_demo.py themes overview --view 2d
+python examples/run_demo.py themes tensor_elements --view 2d
 ```
 
 Save a clean static export:
@@ -191,7 +193,7 @@ If direct `MomentumMPS` construction is unavailable with your installed NumPy ve
 
 ### `themes`
 
-`overview`
+`overview`, `tensor_elements`
 
 ### `placements`
 

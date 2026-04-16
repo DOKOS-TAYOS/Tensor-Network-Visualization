@@ -204,7 +204,9 @@ python examples/run_demo.py <group> <demo>
 The gallery includes backend demos for TensorKrowch, TensorNetwork, Quimb, TeNPy, and `einsum`,
 plus three focused groups:
 
-- `themes overview`: compares `default`, `paper`, and `colorblind` visual modes.
+- `themes overview`: compares the `PlotConfig` visual presets for tensor-network figures.
+- `themes tensor_elements`: compares the `TensorElementsConfig` presets for `show_tensor_elements(...)`
+  and the linked tensor inspector.
 - `placements`: shows object, list, 2D grid, 3D grid, manual positions, manual schemes, and named
   index inputs.
 - `geometry`: renders larger irregular, incomplete, triangular, pyramidal, circular, and

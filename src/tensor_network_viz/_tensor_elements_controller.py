@@ -7,12 +7,17 @@ from typing import Any, Final, Literal, cast
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from matplotlib.text import Annotation
 from matplotlib.widgets import CheckButtons, RadioButtons, Slider
 
 from . import _tensor_elements_data as _tensor_elements_data_module
 from . import _tensor_elements_payloads as _tensor_elements_payloads_module
 from ._matplotlib_state import set_tensor_elements_controls
-from ._tensor_elements_data import _analysis_config_from_resolved, _resolve_tensor_analysis
+from ._tensor_elements_data import (
+    _analysis_config_from_resolved,
+    _format_scalar,
+    _resolve_tensor_analysis,
+)
 from ._tensor_elements_models import _SpectralAnalysis
 from ._tensor_elements_rendering import (
     _compute_outlier_mask,
@@ -66,11 +71,6 @@ _INTERACTIVE_CHECK_MARK_PROPS: Final[dict[str, float]] = {"s": 34.0, "linewidth"
 _INTERACTIVE_RADIO_PROPS: Final[dict[str, float]] = {"s": 38.0, "linewidth": 0.9}
 _ANALYSIS_SLIDER_LABEL_X: Final[float] = -0.05
 _SLIDER_ACTIVE_COLOR: Final[str] = "#0369A1"
-_PLACEHOLDER_TEXT_BOX: Final[dict[str, Any]] = {
-    "boxstyle": "round,pad=0.45",
-    "facecolor": "#F8FAFC",
-    "edgecolor": "#CBD5E1",
-}
 _AnalysisControlsSignature = tuple[object, ...]
 _COMPLEX_ONLY_MODES: Final[frozenset[str]] = frozenset({"imag", "phase"})
 _SPECTRAL_MODES: Final[frozenset[str]] = frozenset({"singular_values", "eigen_real", "eigen_imag"})
@@ -135,6 +135,64 @@ class _ModeAvailabilityCacheEntry:
     spectral_flags: tuple[bool, bool] | None = None
 
 
+def _axis_size_product(shape: tuple[int, ...], axes: tuple[int, ...]) -> int:
+    if not axes:
+        return 1
+    return int(np.prod([shape[index] for index in axes], dtype=int))
+
+
+def _display_index_to_source_flat_index(
+    display_index: int,
+    *,
+    original_length: int,
+    display_length: int,
+) -> int:
+    if original_length <= 1 or display_length <= 1:
+        return 0
+    clamped_index = int(np.clip(display_index, 0, display_length - 1))
+    if display_length >= original_length:
+        return int(np.clip(clamped_index, 0, original_length - 1))
+    edges = np.linspace(0, original_length, display_length + 1, dtype=int)
+    start = int(edges[clamped_index])
+    stop = int(max(edges[clamped_index + 1], start + 1))
+    return min((start + stop - 1) // 2, original_length - 1)
+
+
+def _expand_grouped_flat_index(
+    flat_index: int,
+    *,
+    original_shape: tuple[int, ...],
+    axes: tuple[int, ...],
+) -> tuple[int, ...]:
+    if not axes:
+        return ()
+    grouped_shape = tuple(int(original_shape[index]) for index in axes)
+    coordinates = np.unravel_index(int(flat_index), grouped_shape)
+    return tuple(int(value) for value in coordinates)
+
+
+def _format_tensor_index(indices: tuple[int, ...]) -> str:
+    if not indices:
+        return "()"
+    return f"({', '.join(str(index) for index in indices)})"
+
+
+def _heatmap_hover_box(config: TensorElementsConfig) -> dict[str, Any]:
+    return {
+        "boxstyle": "round,pad=0.18",
+        "facecolor": config.hover_facecolor,
+        "edgecolor": config.hover_edgecolor,
+    }
+
+
+def _summary_text_box(config: TensorElementsConfig) -> dict[str, Any]:
+    return {
+        "boxstyle": "round,pad=0.45",
+        "facecolor": config.summary_facecolor,
+        "edgecolor": config.summary_edgecolor,
+    }
+
+
 class _TensorElementsFigureController:
     def __init__(
         self,
@@ -190,6 +248,10 @@ class _TensorElementsFigureController:
         self._mode_callback_guard = False
         self._slider_callback_guard = False
         self._showing_placeholder: bool = False
+        self._current_heatmap_payload: _HeatmapPayload | None = None
+        self._heatmap_hover_annotation: Annotation | None = None
+        self._heatmap_hover_cid: int | None = None
+        self._last_hovered_cell: tuple[int, int] | None = None
         self._initialize_selection()
 
     @property
@@ -438,6 +500,124 @@ class _TensorElementsFigureController:
         self._sync_slider_label()
         self._render_current(redraw=False)
         set_tensor_elements_controls(self._figure, self)
+
+    def _install_heatmap_hover(self) -> None:
+        if self._heatmap_hover_cid is None:
+            self._heatmap_hover_cid = self._figure.canvas.mpl_connect(
+                "motion_notify_event",
+                self._on_heatmap_hover_motion,
+            )
+        if (
+            self._heatmap_hover_annotation is not None
+            and self._heatmap_hover_annotation.axes is self._panel.main_ax
+        ):
+            return
+        self._heatmap_hover_annotation = self._panel.main_ax.annotate(
+            "",
+            xy=(0.0, 0.0),
+            xytext=(6.0, 6.0),
+            textcoords="offset points",
+            ha="left",
+            va="bottom",
+            fontsize=8.5,
+            visible=False,
+            bbox=_heatmap_hover_box(self._config),
+        )
+
+    def _hide_heatmap_hover_annotation(self, *, redraw: bool) -> None:
+        self._last_hovered_cell = None
+        if (
+            self._heatmap_hover_annotation is None
+            or not self._heatmap_hover_annotation.get_visible()
+        ):
+            return
+        self._heatmap_hover_annotation.set_visible(False)
+        if redraw:
+            self._figure.canvas.draw_idle()
+
+    def _heatmap_cell_from_event(self, event: object) -> tuple[int, int] | None:
+        if self._current_heatmap_payload is None:
+            return None
+        if getattr(event, "inaxes", None) is not self._panel.main_ax:
+            return None
+        xdata = getattr(event, "xdata", None)
+        ydata = getattr(event, "ydata", None)
+        if xdata is None or ydata is None:
+            return None
+        matrix = np.asarray(self._current_heatmap_payload.matrix)
+        if matrix.ndim != 2:
+            return None
+        col_index = int(np.floor(float(xdata) + 0.5))
+        row_index = int(np.floor(float(ydata) + 0.5))
+        if row_index < 0 or row_index >= int(matrix.shape[0]):
+            return None
+        if col_index < 0 or col_index >= int(matrix.shape[1]):
+            return None
+        return row_index, col_index
+
+    def _tensor_index_for_heatmap_cell(
+        self,
+        *,
+        payload: _HeatmapPayload,
+        row_index: int,
+        col_index: int,
+    ) -> tuple[int, ...]:
+        metadata = payload.metadata
+        matrix = np.asarray(payload.matrix)
+        row_original_length = _axis_size_product(metadata.original_shape, metadata.row_axes)
+        col_original_length = _axis_size_product(metadata.original_shape, metadata.col_axes)
+        row_flat_index = _display_index_to_source_flat_index(
+            row_index,
+            original_length=row_original_length,
+            display_length=int(matrix.shape[0]),
+        )
+        col_flat_index = _display_index_to_source_flat_index(
+            col_index,
+            original_length=col_original_length,
+            display_length=int(matrix.shape[1]),
+        )
+        row_coordinates = _expand_grouped_flat_index(
+            row_flat_index,
+            original_shape=metadata.original_shape,
+            axes=metadata.row_axes,
+        )
+        col_coordinates = _expand_grouped_flat_index(
+            col_flat_index,
+            original_shape=metadata.original_shape,
+            axes=metadata.col_axes,
+        )
+        tensor_index = [0] * len(metadata.original_shape)
+        for axis, value in zip(metadata.row_axes, row_coordinates, strict=True):
+            tensor_index[int(axis)] = int(value)
+        for axis, value in zip(metadata.col_axes, col_coordinates, strict=True):
+            tensor_index[int(axis)] = int(value)
+        return tuple(tensor_index)
+
+    def _on_heatmap_hover_motion(self, event: object) -> None:
+        if self._heatmap_hover_annotation is None or self._current_heatmap_payload is None:
+            self._hide_heatmap_hover_annotation(redraw=False)
+            return
+        hovered_cell = self._heatmap_cell_from_event(event)
+        if hovered_cell is None:
+            self._hide_heatmap_hover_annotation(redraw=True)
+            return
+        if self._last_hovered_cell == hovered_cell and self._heatmap_hover_annotation.get_visible():
+            return
+        row_index, col_index = hovered_cell
+        matrix = np.asarray(self._current_heatmap_payload.matrix)
+        value = matrix[row_index, col_index]
+        tensor_index = _format_tensor_index(
+            self._tensor_index_for_heatmap_cell(
+                payload=self._current_heatmap_payload,
+                row_index=row_index,
+                col_index=col_index,
+            )
+        )
+        self._heatmap_hover_annotation.xy = (float(col_index), float(row_index))
+        self._heatmap_hover_annotation.set_text(f"{_format_scalar(value)}\n{tensor_index}")
+        self._heatmap_hover_annotation.set_visible(True)
+        self._last_hovered_cell = hovered_cell
+        self._figure.canvas.draw_idle()
 
     def _current_group_modes(self) -> tuple[str, ...]:
         if not self._allow_interactive_fallback:
@@ -817,12 +997,15 @@ class _TensorElementsFigureController:
 
     def _render_current(self, *, redraw: bool, rebuild_analysis_controls: bool = True) -> None:
         resolved_mode, payload = self._payload_for_current()
+        self._hide_heatmap_hover_annotation(redraw=False)
         _render_panel(
             self._panel,
             config=self._config,
             record=self._current_record(),
             payload=payload,
         )
+        self._install_heatmap_hover()
+        self._current_heatmap_payload = payload if isinstance(payload, _HeatmapPayload) else None
         self._showing_placeholder = False
         self._mode = resolved_mode
         self._sync_controls_after_render(rebuild_analysis_controls=rebuild_analysis_controls)
@@ -933,12 +1116,14 @@ class _TensorElementsFigureController:
         title: str = "Tensor inspector",
         redraw: bool = True,
     ) -> None:
+        self._hide_heatmap_hover_annotation(redraw=False)
         _remove_colorbar(self._panel)
         self._panel.main_ax.clear()
         self._panel.main_ax.set_position(self._panel.base_position)
         self._panel.main_ax.axis("off")
         self._panel.main_ax.set_title(title)
         self._showing_placeholder = True
+        self._current_heatmap_payload = None
         self._panel.main_ax.text(
             0.02,
             0.98,
@@ -949,7 +1134,7 @@ class _TensorElementsFigureController:
             fontsize=10.0,
             linespacing=1.35,
             transform=self._panel.main_ax.transAxes,
-            bbox=_PLACEHOLDER_TEXT_BOX,
+            bbox=_summary_text_box(self._config),
         )
         if redraw:
             self._figure.canvas.draw_idle()

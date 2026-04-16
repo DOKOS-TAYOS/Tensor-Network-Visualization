@@ -21,29 +21,53 @@ from demo_cli import (
 )
 from demo_tensors import build_demo_numpy_tensor
 
-from tensor_network_viz import PlotConfig, show_tensor_network
+from tensor_network_viz import (
+    PlotConfig,
+    TensorElementsConfig,
+    TensorElementsTheme,
+    show_tensor_elements,
+    show_tensor_network,
+)
 from tensor_network_viz.config import PlotTheme
 
 _THEMES: tuple[PlotTheme, ...] = cast(tuple[PlotTheme, ...], get_args(PlotTheme))
+_TENSOR_ELEMENTS_THEMES: tuple[TensorElementsTheme, ...] = cast(
+    tuple[TensorElementsTheme, ...],
+    get_args(TensorElementsTheme),
+)
 
 
-def _theme_grid() -> tuple[int, int]:
-    theme_count = len(_THEMES)
+def _theme_grid(theme_count: int) -> tuple[int, int]:
     columns = min(4, max(theme_count, 1))
     rows = math.ceil(theme_count / columns)
     return rows, columns
 
 
-def _theme_figure_size(view: str) -> tuple[float, float]:
-    rows, columns = _theme_grid()
+def _network_theme_figure_size(view: str) -> tuple[float, float]:
+    rows, columns = _theme_grid(len(_THEMES))
     width = max(11.0, 4.6 * columns)
     height = max(5.2, (4.2 if view == "2d" else 4.8) * rows)
+    return width, height
+
+
+def _tensor_elements_theme_figure_size() -> tuple[float, float]:
+    rows, columns = _theme_grid(len(_TENSOR_ELEMENTS_THEMES))
+    width = max(11.0, 4.7 * columns)
+    height = max(5.8, 4.6 * rows)
     return width, height
 
 
 def _theme_footer() -> str:
     theme_names = ", ".join(_THEMES[:-1])
     return f"Compare the available PlotConfig theme presets: {theme_names} and {_THEMES[-1]}."
+
+
+def _tensor_elements_theme_footer() -> str:
+    theme_names = ", ".join(_TENSOR_ELEMENTS_THEMES[:-1])
+    return (
+        "Compare the available TensorElementsConfig theme presets on one representative tensor: "
+        f"{theme_names} and {_TENSOR_ELEMENTS_THEMES[-1]}."
+    )
 
 
 def _dim_for_index(index_name: str) -> int:
@@ -97,6 +121,27 @@ def _build_example(args: ExampleCliArgs, definition: ExampleDefinition) -> Built
     )
 
 
+def _build_tensor_elements_example(
+    args: ExampleCliArgs,
+    definition: ExampleDefinition,
+) -> BuiltExample:
+    del args, definition
+    from tensor_elements_demo import build_structured_network
+
+    lattice = next(node for node in build_structured_network() if node.name == "Lattice")
+    return BuiltExample(
+        network=lattice,
+        plot_engine="quimb",
+        title="Tensor elements themes overview",
+        subtitle=(
+            "Signed-value heatmaps using the same tensor so the public inspector "
+            "themes can be compared directly."
+        ),
+        footer=_tensor_elements_theme_footer(),
+        scheme_steps_by_name=None,
+    )
+
+
 EXAMPLES: tuple[ExampleDefinition, ...] = (
     ExampleDefinition(
         name="overview",
@@ -107,6 +152,16 @@ EXAMPLES: tuple[ExampleDefinition, ...] = (
         supports_list=False,
         builder=_build_example,
         description="Compare the three PlotConfig visual themes on one representative network.",
+    ),
+    ExampleDefinition(
+        name="tensor_elements",
+        aliases=("tensor-elements",),
+        size_knobs=frozenset(),
+        supports_native_object=True,
+        supports_from_scratch=False,
+        supports_list=False,
+        builder=_build_tensor_elements_example,
+        description="Compare the show_tensor_elements theme presets on one representative tensor.",
     ),
 )
 
@@ -126,35 +181,60 @@ def run_example(args: ExampleCliArgs) -> tuple[Any, Path | None]:
     import matplotlib.pyplot as plt
 
     built = definition.builder(args, definition)
-    rows, columns = _theme_grid()
-    fig = plt.figure(figsize=_theme_figure_size(args.view))
-    for index, theme in enumerate(_THEMES, start=1):
-        ax = _subplot_for_view(
-            fig,
-            index=index,
-            view=args.view,
-            rows=rows,
-            columns=columns,
+    if definition.name == "tensor_elements":
+        rows, columns = _theme_grid(len(_TENSOR_ELEMENTS_THEMES))
+        fig = plt.figure(figsize=_tensor_elements_theme_figure_size())
+        for index, theme in enumerate(_TENSOR_ELEMENTS_THEMES, start=1):
+            ax = fig.add_subplot(rows, columns, index)
+            show_tensor_elements(
+                built.network,
+                config=TensorElementsConfig(
+                    theme=theme,
+                ),
+                ax=ax,
+                show_controls=False,
+                show=False,
+            )
+            ax.set_title(theme, fontsize=12, fontweight="semibold")
+        apply_demo_caption(fig, title=built.title, subtitle=built.subtitle, footer=built.footer)
+        fig.subplots_adjust(
+            left=0.04,
+            right=0.985,
+            bottom=0.11,
+            top=0.83,
+            wspace=0.34,
+            hspace=0.42,
         )
-        show_tensor_network(
-            built.network,
-            engine="quimb",
-            view=args.view,
-            ax=ax,
-            config=PlotConfig(
-                theme=theme,
-                show_index_labels=True,
-                hover_labels=False,
-                tensor_label_fontsize=9,
-                edge_label_fontsize=7,
-                layout_iterations=260,
-            ),
-            show_controls=False,
-            show=False,
-        )
-        ax.set_title(theme, fontsize=12, fontweight="semibold")
-    apply_demo_caption(fig, title=built.title, subtitle=built.subtitle, footer=built.footer)
-    fig.tight_layout(rect=(0.02, 0.08, 0.98, 0.9))
+    else:
+        rows, columns = _theme_grid(len(_THEMES))
+        fig = plt.figure(figsize=_network_theme_figure_size(args.view))
+        for index, theme in enumerate(_THEMES, start=1):
+            ax = _subplot_for_view(
+                fig,
+                index=index,
+                view=args.view,
+                rows=rows,
+                columns=columns,
+            )
+            show_tensor_network(
+                built.network,
+                engine="quimb",
+                view=args.view,
+                ax=ax,
+                config=PlotConfig(
+                    theme=theme,
+                    show_index_labels=True,
+                    hover_labels=False,
+                    tensor_label_fontsize=9,
+                    edge_label_fontsize=7,
+                    layout_iterations=260,
+                ),
+                show_controls=False,
+                show=False,
+            )
+            ax.set_title(theme, fontsize=12, fontweight="semibold")
+        apply_demo_caption(fig, title=built.title, subtitle=built.subtitle, footer=built.footer)
+        fig.tight_layout(rect=(0.02, 0.08, 0.98, 0.9))
     if args.save is not None:
         args.save.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(args.save, bbox_inches="tight")

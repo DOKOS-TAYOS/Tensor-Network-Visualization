@@ -5,7 +5,7 @@ import inspect
 import warnings
 from collections.abc import Iterable, Iterator
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 
 import matplotlib
 
@@ -137,6 +137,40 @@ def _click_radio_label(radio: object, label_index: int) -> None:
     radio_widget._clicked(event)
 
 
+def _dispatch_motion_event_at_data(
+    ax: Axes,
+    *,
+    x: float,
+    y: float,
+) -> MouseEvent:
+    ax.figure.canvas.draw()
+    x_display, y_display = ax.transData.transform((x, y))
+    event = MouseEvent(
+        "motion_notify_event",
+        ax.figure.canvas,
+        int(round(x_display)),
+        int(round(y_display)),
+    )
+    ax.figure.canvas.callbacks.process("motion_notify_event", event)
+    return event
+
+
+def _dispatch_motion_event_outside_figure(fig: matplotlib.figure.Figure) -> MouseEvent:
+    event = MouseEvent("motion_notify_event", fig.canvas, -10, -10)
+    fig.canvas.callbacks.process("motion_notify_event", event)
+    return event
+
+
+def _visible_axis_ticks(
+    ax: Axes, *, axis: Literal["x", "y"]
+) -> np.ndarray[Any, np.dtype[np.float64]]:
+    ticks = np.asarray(ax.get_xticks() if axis == "x" else ax.get_yticks(), dtype=float)
+    low, high = ax.get_xlim() if axis == "x" else ax.get_ylim()
+    lower = min(float(low), float(high))
+    upper = max(float(low), float(high))
+    return ticks[(ticks >= lower) & (ticks <= upper)]
+
+
 @pytest.fixture(autouse=True)
 def _close_figures() -> Iterator[None]:
     yield
@@ -150,6 +184,22 @@ def test_tensor_elements_config_has_expected_defaults() -> None:
     assert config.row_axes is None
     assert config.col_axes is None
     assert config.analysis is None
+    assert config.theme == "default"
+    assert config.continuous_cmap == "viridis"
+    assert config.log_magnitude_cmap == "magma"
+    assert config.phase_cmap == "twilight"
+    assert config.diverging_cmap == "RdBu_r"
+    assert config.sign_colors == ("#B91C1C", "#E2E8F0", "#0369A1")
+    assert config.sparsity_colors == ("#0F172A", "#F8FAFC")
+    assert config.nan_inf_colors == ("#0F766E", "#D97706", "#7C3AED", "#B91C1C")
+    assert config.series_color == "#0369A1"
+    assert config.histogram_color == "#0369A1"
+    assert config.histogram_edge_color == "#0F172A"
+    assert config.zero_marker_color == "#7F1D1D"
+    assert config.hover_facecolor == "#F8FAFC"
+    assert config.hover_edgecolor == "#CBD5E1"
+    assert config.summary_facecolor == "#F8FAFC"
+    assert config.summary_edgecolor == "#CBD5E1"
     assert config.figsize == (7.2, 6.4)
     assert config.max_matrix_shape == (256, 256)
     assert config.shared_color_scale is False
@@ -171,6 +221,22 @@ def test_tensor_elements_config_public_signature_orders_mode_before_detail() -> 
         "row_axes",
         "col_axes",
         "analysis",
+        "theme",
+        "continuous_cmap",
+        "log_magnitude_cmap",
+        "phase_cmap",
+        "diverging_cmap",
+        "sign_colors",
+        "sparsity_colors",
+        "nan_inf_colors",
+        "series_color",
+        "histogram_color",
+        "histogram_edge_color",
+        "zero_marker_color",
+        "hover_facecolor",
+        "hover_edgecolor",
+        "summary_facecolor",
+        "summary_edgecolor",
         "figsize",
         "max_matrix_shape",
         "shared_color_scale",
@@ -1411,6 +1477,30 @@ def test_show_tensor_elements_profiles_mode_uses_soft_grid() -> None:
     assert all(line.get_linestyle() == ":" for line in visible_gridlines)
 
 
+def test_show_tensor_elements_profiles_mode_uses_integer_index_ticks() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(24, dtype=float).reshape(2, 3, 4),
+        name="IntegerProfileTicks",
+        axis_names=("row", "mid", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(
+            mode="profiles",
+            analysis=TensorAnalysisConfig(profile_axis="mid", profile_method="norm"),
+        ),
+        show=False,
+        show_controls=False,
+    )
+    fig.canvas.draw()
+    x_ticks = _visible_axis_ticks(ax, axis="x")
+
+    assert_rendered_figure(fig, ax)
+    assert x_ticks.size > 0
+    assert np.allclose(x_ticks, np.round(x_ticks))
+
+
 def test_show_tensor_elements_singular_values_mode_switches_to_log_scale_for_wide_ranges() -> None:
     tensor = DummyTensorNetworkNode(
         np.diag(np.array([1_000_000.0, 1.0], dtype=float)),
@@ -1427,6 +1517,27 @@ def test_show_tensor_elements_singular_values_mode_switches_to_log_scale_for_wid
 
     assert_rendered_figure(fig, ax)
     assert ax.get_yscale() == "log"
+
+
+def test_show_tensor_elements_singular_values_mode_uses_integer_index_ticks() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.diag(np.array([8.0, 5.0, 3.0, 1.0], dtype=float)),
+        name="IntegerSpectrumTicks",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="singular_values"),
+        show=False,
+        show_controls=False,
+    )
+    fig.canvas.draw()
+    x_ticks = _visible_axis_ticks(ax, axis="x")
+
+    assert_rendered_figure(fig, ax)
+    assert x_ticks.size > 0
+    assert np.allclose(x_ticks, np.round(x_ticks))
 
 
 def test_show_tensor_elements_singular_values_mode_marks_zero_values_in_blood_red() -> None:
@@ -1858,6 +1969,223 @@ def test_show_tensor_elements_continuous_colorbar_uses_compact_ticks() -> None:
     assert_rendered_figure(fig, ax)
     assert len(colorbar_ax.get_yticks()) <= 5
     assert all("e+" not in label.lower() for label in ticklabels)
+
+
+@pytest.mark.parametrize(
+    ("theme", "expected_cmap"),
+    [
+        ("grayscale", "gray"),
+        ("rainbow", "gist_rainbow"),
+        ("spectral", "nipy_spectral"),
+    ],
+)
+def test_show_tensor_elements_theme_changes_continuous_heatmap_colormap(
+    theme: str,
+    expected_cmap: str,
+) -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(16, dtype=float).reshape(4, 4),
+        name="ThemeHeatmap",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="elements", theme=theme),  # type: ignore[arg-type]
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert ax.images[0].get_cmap().name == expected_cmap
+
+
+def test_show_tensor_elements_theme_changes_histogram_colors() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.linspace(0.0, 1.0, 12, dtype=float).reshape(3, 4),
+        name="ThemeHistogram",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="distribution", theme="grayscale"),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert ax.patches
+    first_patch = ax.patches[0]
+    assert matplotlib.colors.to_hex(first_patch.get_facecolor()).lower() == "#444444"
+    assert matplotlib.colors.to_hex(first_patch.get_edgecolor()).lower() == "#111111"
+
+
+def test_show_tensor_elements_theme_changes_series_color() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.diag(np.array([5.0, 3.0, 1.0], dtype=float)),
+        name="ThemeSeries",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="singular_values", theme="grayscale"),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert ax.lines
+    assert matplotlib.colors.to_hex(ax.lines[0].get_color()).lower() == "#111111"
+
+
+def test_show_tensor_elements_heatmap_axes_use_integer_ticks() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(70, dtype=float).reshape(7, 10),
+        name="IntegerHeatmapTicks",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="elements"),
+        show=False,
+        show_controls=False,
+    )
+    fig.canvas.draw()
+    x_ticks = _visible_axis_ticks(ax, axis="x")
+    y_ticks = _visible_axis_ticks(ax, axis="y")
+
+    assert_rendered_figure(fig, ax)
+    assert x_ticks.size > 0
+    assert y_ticks.size > 0
+    assert np.allclose(x_ticks, np.round(x_ticks))
+    assert np.allclose(y_ticks, np.round(y_ticks))
+
+
+def test_show_tensor_elements_heatmap_hover_shows_value_and_tensor_indices() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[1.0, 2.0, 3.0], [4.0, 7.0, 6.0]], dtype=float),
+        name="HoverValue",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="elements"),
+        show=False,
+        show_controls=True,
+    )
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _dispatch_motion_event_at_data(ax, x=1.0, y=1.0)
+
+    assert_rendered_figure(fig, ax)
+    assert controller._heatmap_hover_annotation is not None
+    assert controller._heatmap_hover_annotation.get_visible() is True
+    assert controller._heatmap_hover_annotation.get_text() == "7\n(1, 1)"
+    hover_patch = controller._heatmap_hover_annotation.get_bbox_patch()
+    assert hover_patch is not None
+    assert matplotlib.colors.to_hex(hover_patch.get_facecolor()).lower() == "#f8fafc"
+    assert matplotlib.colors.to_hex(hover_patch.get_edgecolor()).lower() == "#cbd5e1"
+
+
+def test_show_tensor_elements_theme_changes_hover_colors() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[1.0, 2.0], [3.0, 4.0]], dtype=float),
+        name="ThemeHover",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="elements", theme="grayscale"),
+        show=False,
+        show_controls=True,
+    )
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _dispatch_motion_event_at_data(ax, x=0.0, y=0.0)
+
+    assert_rendered_figure(fig, ax)
+    assert controller._heatmap_hover_annotation is not None
+    hover_patch = controller._heatmap_hover_annotation.get_bbox_patch()
+    assert hover_patch is not None
+    assert matplotlib.colors.to_hex(hover_patch.get_facecolor()).lower() == "#ffffff"
+    assert matplotlib.colors.to_hex(hover_patch.get_edgecolor()).lower() == "#111111"
+
+
+def test_show_tensor_elements_heatmap_hover_hides_when_pointer_leaves_axes() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.array([[1.0, 2.0], [3.0, 4.0]], dtype=float),
+        name="HoverHide",
+        axis_names=("row", "col"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(mode="elements"),
+        show=False,
+        show_controls=True,
+    )
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _dispatch_motion_event_at_data(ax, x=0.0, y=0.0)
+    _dispatch_motion_event_outside_figure(fig)
+
+    assert_rendered_figure(fig, ax)
+    assert controller._heatmap_hover_annotation is not None
+    assert controller._heatmap_hover_annotation.get_visible() is False
+
+
+def test_show_tensor_elements_heatmap_hover_uses_full_tensor_indices_for_grouped_axes() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(8, dtype=float).reshape(2, 2, 2),
+        name="GroupedHover",
+        axis_names=("i", "j", "k"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(
+            mode="elements",
+            row_axes=("i", "j"),
+            col_axes=("k",),
+        ),
+        show=False,
+        show_controls=True,
+    )
+    controller = fig._tensor_network_viz_tensor_elements_controls  # type: ignore[attr-defined]
+
+    _dispatch_motion_event_at_data(ax, x=1.0, y=2.0)
+
+    assert_rendered_figure(fig, ax)
+    assert controller._heatmap_hover_annotation is not None
+    assert controller._heatmap_hover_annotation.get_visible() is True
+    assert controller._heatmap_hover_annotation.get_text() == "5\n(1, 0, 1)"
+
+
+def test_show_tensor_elements_heatmap_does_not_draw_group_boundary_lines() -> None:
+    tensor = DummyTensorNetworkNode(
+        np.arange(12, dtype=float).reshape(3, 2, 2),
+        name="NoGroupedBoundaries",
+        axis_names=("i", "j", "k"),
+    )
+
+    fig, ax = show_tensor_elements(
+        tensor,
+        config=TensorElementsConfig(
+            mode="elements",
+            row_axes=("i", "j", "k"),
+            col_axes=(),
+        ),
+        show=False,
+        show_controls=False,
+    )
+
+    assert_rendered_figure(fig, ax)
+    assert not ax.lines
 
 
 def test_show_tensor_elements_phase_mode_labels_colorbar() -> None:

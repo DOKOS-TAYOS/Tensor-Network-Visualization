@@ -41,6 +41,7 @@ def test_plot_config_has_expected_defaults() -> None:
     assert config.show_contraction_scheme is False
     assert config.contraction_scheme_cost_hover is False
     assert config.contraction_tensor_inspector is False
+    assert config.tensor_inspector_config is None
     assert config.layout_iterations is None
     assert config.positions is None
     assert config.validate_positions is False
@@ -77,6 +78,22 @@ def test_plot_theme_is_public_type_alias() -> None:
     )
 
 
+def test_tensor_elements_theme_is_public_type_alias() -> None:
+    import tensor_network_viz as tnv
+
+    assert hasattr(tnv, "TensorElementsTheme")
+    assert tnv.TensorElementsTheme.__args__ == (
+        "default",
+        "grayscale",
+        "contrast",
+        "categorical",
+        "paper",
+        "colorblind",
+        "rainbow",
+        "spectral",
+    )
+
+
 def test_plot_config_public_signature_orders_modes_before_detail() -> None:
     signature = inspect.signature(PlotConfig)
 
@@ -88,6 +105,7 @@ def test_plot_config_public_signature_orders_modes_before_detail() -> None:
         "show_contraction_scheme",
         "contraction_scheme_cost_hover",
         "contraction_tensor_inspector",
+        "tensor_inspector_config",
         "diagnostics",
         "focus",
         "theme",
@@ -387,6 +405,146 @@ def test_tensor_elements_config_accepts_analysis_overrides() -> None:
         profile_axis="row",
         profile_method="mean",
     )
+
+
+def test_tensor_elements_config_rejects_unknown_theme() -> None:
+    with pytest.raises(ValueError, match="theme must be one of"):
+        TensorElementsConfig(theme="presentation")  # type: ignore[arg-type]
+
+
+def test_tensor_elements_config_grayscale_theme_applies_style_defaults() -> None:
+    config = TensorElementsConfig(theme="grayscale")
+
+    assert config.theme == "grayscale"
+    assert config.continuous_cmap == "gray"
+    assert config.log_magnitude_cmap == "Greys"
+    assert config.phase_cmap == "twilight_shifted"
+    assert config.diverging_cmap == "Greys"
+    assert config.series_color == "#111111"
+    assert config.histogram_color == "#444444"
+    assert config.histogram_edge_color == "#111111"
+    assert config.zero_marker_color == "#000000"
+    assert config.hover_facecolor == "#FFFFFF"
+    assert config.hover_edgecolor == "#111111"
+
+
+@pytest.mark.parametrize(
+    ("theme", "expected_continuous_cmap"),
+    [
+        ("contrast", "CMRmap"),
+        ("paper", "inferno"),
+        ("colorblind", "cividis"),
+    ],
+)
+def test_tensor_elements_key_presets_use_distinct_continuous_colormaps(
+    theme: str,
+    expected_continuous_cmap: str,
+) -> None:
+    config = TensorElementsConfig(theme=theme)  # type: ignore[arg-type]
+
+    assert config.continuous_cmap == expected_continuous_cmap
+
+
+@pytest.mark.parametrize(
+    ("theme", "expected"),
+    [
+        (
+            "contrast",
+            {
+                "continuous_cmap": "CMRmap",
+                "log_magnitude_cmap": "Greys",
+                "diverging_cmap": "RdGy",
+                "histogram_color": "#64748B",
+                "hover_facecolor": "#FFFFFF",
+            },
+        ),
+        (
+            "paper",
+            {
+                "continuous_cmap": "inferno",
+                "log_magnitude_cmap": "inferno",
+                "diverging_cmap": "coolwarm",
+                "histogram_color": "#0369A1",
+                "hover_facecolor": "#F8FAFC",
+            },
+        ),
+    ],
+)
+def test_tensor_elements_contrast_and_paper_swap_key_style_defaults(
+    theme: str,
+    expected: dict[str, str],
+) -> None:
+    config = TensorElementsConfig(theme=theme)  # type: ignore[arg-type]
+
+    assert config.continuous_cmap == expected["continuous_cmap"]
+    assert config.log_magnitude_cmap == expected["log_magnitude_cmap"]
+    assert config.diverging_cmap == expected["diverging_cmap"]
+    assert config.histogram_color == expected["histogram_color"]
+    assert config.hover_facecolor == expected["hover_facecolor"]
+
+
+@pytest.mark.parametrize(
+    ("theme", "expected"),
+    [
+        (
+            "colorblind",
+            {
+                "continuous_cmap": "cividis",
+                "log_magnitude_cmap": "cividis",
+                "diverging_cmap": "coolwarm",
+                "series_color": "#0072B2",
+                "histogram_color": "#56B4E9",
+            },
+        ),
+        (
+            "rainbow",
+            {
+                "continuous_cmap": "gist_rainbow",
+                "log_magnitude_cmap": "gist_rainbow",
+                "diverging_cmap": "gist_rainbow",
+                "series_color": "#FF00FF",
+                "histogram_color": "#00AEEF",
+            },
+        ),
+        (
+            "spectral",
+            {
+                "continuous_cmap": "nipy_spectral",
+                "log_magnitude_cmap": "nipy_spectral",
+                "diverging_cmap": "Spectral",
+                "series_color": "#7C3AED",
+                "histogram_color": "#0891B2",
+            },
+        ),
+    ],
+)
+def test_tensor_elements_config_new_themes_apply_style_defaults(
+    theme: str,
+    expected: dict[str, str],
+) -> None:
+    config = TensorElementsConfig(theme=theme)  # type: ignore[arg-type]
+
+    assert config.theme == theme
+    assert config.continuous_cmap == expected["continuous_cmap"]
+    assert config.log_magnitude_cmap == expected["log_magnitude_cmap"]
+    assert config.diverging_cmap == expected["diverging_cmap"]
+    assert config.series_color == expected["series_color"]
+    assert config.histogram_color == expected["histogram_color"]
+
+
+def test_tensor_elements_config_theme_preserves_manual_overrides() -> None:
+    config = TensorElementsConfig(
+        theme="grayscale",
+        continuous_cmap="cividis",
+        series_color="#ABCDEF",
+        hover_facecolor="#FDF6E3",
+    )
+
+    assert config.continuous_cmap == "cividis"
+    assert config.log_magnitude_cmap == "Greys"
+    assert config.series_color == "#ABCDEF"
+    assert config.hover_facecolor == "#FDF6E3"
+    assert config.hover_edgecolor == "#111111"
 
 
 def test_show_tensor_network_public_signature_is_config_centric() -> None:

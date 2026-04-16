@@ -298,6 +298,7 @@ class _InteractiveTensorFigureController:
                 ),
                 node_records_by_name=self._node_records_by_name,
                 placeholder_engine=engine,
+                inspector_config=config.tensor_inspector_config,
                 on_closed=self._on_tensor_inspector_closed,
             )
 

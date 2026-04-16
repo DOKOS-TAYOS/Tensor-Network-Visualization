@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar, Literal, TypeAlias
+from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias
 
 from ._engine_specs import EngineName
 from ._typing import PositionMapping
+
+if TYPE_CHECKING:
+    from .tensor_elements_config import TensorElementsConfig
 
 ViewName: TypeAlias = Literal["2d", "3d"]
 PlotTheme: TypeAlias = Literal[
@@ -234,6 +237,8 @@ class PlotConfig:
             together with the contraction slider.
         contraction_tensor_inspector: Whether to enable the linked tensor-inspector window
             when playback tensors are available.
+        tensor_inspector_config: Optional tensor-elements styling used by the linked tensor
+            inspector. When omitted, the inspector uses ``TensorElementsConfig()`` defaults.
         diagnostics: Optional diagnostics settings for shape / bond / memory overlays.
         focus: Optional subnetwork focus settings shared by snapshots and interactive views.
         theme: Visual theme preset. ``"default"`` uses the library defaults, ``"paper"`` uses
@@ -291,6 +296,7 @@ class PlotConfig:
     show_contraction_scheme: bool = False
     contraction_scheme_cost_hover: bool = False
     contraction_tensor_inspector: bool = False
+    tensor_inspector_config: TensorElementsConfig | None = None
     diagnostics: TensorNetworkDiagnosticsConfig | None = None
     focus: TensorNetworkFocus | None = None
     theme: PlotTheme = "default"

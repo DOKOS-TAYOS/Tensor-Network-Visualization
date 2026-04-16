@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] — 2026-04-16
+
+### Added
+
+- **Tensor inspector:** Hover feedback that shows the element value and the corresponding index values in the tensor.
+- **Color themes:** New color themes for plots and graphs.
+
+## [2.0.0] — 2026-04-15
+
+### Changed
+
+- **Refactor:** Large-scale refactor of the codebase and internal architecture.
+- **Performance:** Broad optimizations across visualization, layout, and interaction paths.
+
 ## [1.6.3] — 2026-04-13
 
 ### Changed
@@ -199,6 +213,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[2.0.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v2.0.0...v2.0.1
+[2.0.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.3...v2.0.0
 [1.6.3]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.0...v1.6.1

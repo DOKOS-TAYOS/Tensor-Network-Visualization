@@ -69,6 +69,8 @@ python examples/run_demo.py einsum implicit_out
 python examples/run_demo.py themes overview
 python examples/run_demo.py themes overview --view 3d
 python examples/run_demo.py themes overview --save .tmp/examples/themes_overview.png --no-show
+python examples/run_demo.py themes tensor_elements
+python examples/run_demo.py themes tensor_elements --save .tmp/examples/themes_tensor_elements.png --no-show
 ```
 
 ## Placements

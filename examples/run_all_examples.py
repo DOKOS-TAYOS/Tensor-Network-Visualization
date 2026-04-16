@@ -90,7 +90,17 @@ def _contraction_commands(view: Literal["2d", "3d"]) -> tuple[ExampleCommand, ..
 
 
 def _theme_commands(view: Literal["2d", "3d"]) -> tuple[ExampleCommand, ...]:
-    return (_command("themes", "overview", view, slug=f"themes_overview_{view}"),)
+    commands = [_command("themes", "overview", view, slug=f"themes_overview_{view}")]
+    if view == "2d":
+        commands.append(
+            _command(
+                "themes",
+                "tensor_elements",
+                view,
+                slug="themes_tensor_elements_2d",
+            )
+        )
+    return tuple(commands)
 
 
 def _placement_commands(view: Literal["2d", "3d"]) -> tuple[ExampleCommand, ...]:

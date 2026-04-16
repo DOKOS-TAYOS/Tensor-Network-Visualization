@@ -378,6 +378,14 @@ Useful modes:
 | `singular_values`, `eigen_real`, `eigen_imag` | Spectral views. |
 | `slice`, `reduce`, `profiles` | Analytical views for higher-rank tensors. |
 
+Interactive heatmaps now use a compact hover: the first line is the element value and the second
+line is the full tensor index tuple. When `row_axes` or `col_axes` group multiple tensor axes, the
+hover still shows the original tensor coordinates, not only the flattened matrix position.
+
+The heatmap axes and index-based line views also keep tensor-index ticks on integers, which makes
+the displayed coordinates easier to read when you move between `elements`, `profiles`, and
+spectral-style views.
+
 For rank greater than 2, choose row and column axes to control matrixization:
 
 ```python
@@ -391,6 +399,35 @@ config = TensorElementsConfig(
     mode="magnitude",
     robust_percentiles=(1.0, 99.0),
     highlight_outliers=True,
+)
+```
+
+For visual themes and manual overrides:
+
+```python
+config = TensorElementsConfig(
+    mode="elements",
+    theme="categorical",
+    continuous_cmap="cividis",  # manual override wins over the theme
+    hover_facecolor="#FFF7ED",
+)
+```
+
+Available inspector themes include `grayscale`, `contrast`, `categorical`, `paper`,
+`colorblind`, `rainbow`, and `spectral`.
+
+If you want to compare those presets visually, run the repository demo:
+
+```bash
+python examples/run_demo.py themes tensor_elements --view 2d
+```
+
+To style the linked tensor inspector inside `show_tensor_network(...)`:
+
+```python
+network_config = PlotConfig(
+    contraction_tensor_inspector=True,
+    tensor_inspector_config=TensorElementsConfig(theme="grayscale"),
 )
 ```
 

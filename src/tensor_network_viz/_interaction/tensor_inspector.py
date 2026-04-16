@@ -191,6 +191,7 @@ class _LinkedTensorInspectorController:
         step_records: tuple[_PlaybackStepRecord, ...] | None,
         node_records_by_name: dict[str, _TensorRecord] | None,
         placeholder_engine: EngineName,
+        inspector_config: TensorElementsConfig | None,
         on_closed: Callable[[], None],
     ) -> None:
         self._step_records = tuple(step_records or ())
@@ -199,7 +200,40 @@ class _LinkedTensorInspectorController:
         )
         self._placeholder_engine: EngineName = placeholder_engine
         self._on_closed = on_closed
-        self._config = TensorElementsConfig(figsize=_INSPECTOR_FIGSIZE)
+        base_config = TensorElementsConfig() if inspector_config is None else inspector_config
+        self._config = TensorElementsConfig(
+            mode=base_config.mode,
+            row_axes=base_config.row_axes,
+            col_axes=base_config.col_axes,
+            analysis=base_config.analysis,
+            theme=base_config.theme,
+            continuous_cmap=base_config.continuous_cmap,
+            log_magnitude_cmap=base_config.log_magnitude_cmap,
+            phase_cmap=base_config.phase_cmap,
+            diverging_cmap=base_config.diverging_cmap,
+            sign_colors=base_config.sign_colors,
+            sparsity_colors=base_config.sparsity_colors,
+            nan_inf_colors=base_config.nan_inf_colors,
+            series_color=base_config.series_color,
+            histogram_color=base_config.histogram_color,
+            histogram_edge_color=base_config.histogram_edge_color,
+            zero_marker_color=base_config.zero_marker_color,
+            hover_facecolor=base_config.hover_facecolor,
+            hover_edgecolor=base_config.hover_edgecolor,
+            summary_facecolor=base_config.summary_facecolor,
+            summary_edgecolor=base_config.summary_edgecolor,
+            figsize=_INSPECTOR_FIGSIZE,
+            max_matrix_shape=base_config.max_matrix_shape,
+            shared_color_scale=base_config.shared_color_scale,
+            robust_percentiles=base_config.robust_percentiles,
+            highlight_outliers=base_config.highlight_outliers,
+            outlier_zscore=base_config.outlier_zscore,
+            zero_threshold=base_config.zero_threshold,
+            log_magnitude_floor=base_config.log_magnitude_floor,
+            histogram_bins=base_config.histogram_bins,
+            histogram_max_samples=base_config.histogram_max_samples,
+            topk_count=base_config.topk_count,
+        )
         self._enabled: bool = False
         self._viewer: _StepPlaybackViewer | None = None
         self._figure: Figure | None = None
