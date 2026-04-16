@@ -20,7 +20,7 @@ def test_base_dependencies_are_declared_explicitly() -> None:
 
     dependencies = pyproject["project"]["dependencies"]
 
-    assert dependencies == ["matplotlib>=3.7", "networkx>=3.0", "numpy"]
+    assert dependencies == ["matplotlib>=3.7", "networkx>=3.0", "numpy>=2.0"]
 
 
 def test_project_uses_spdx_license_metadata() -> None:
@@ -38,6 +38,12 @@ def test_project_uses_spdx_license_metadata() -> None:
         "Issues": "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/issues",
     }
     assert not any(classifier.startswith("License ::") for classifier in project["classifiers"])
+    assert {
+        "Development Status :: 5 - Production/Stable",
+        "Intended Audience :: Science/Research",
+        "Operating System :: OS Independent",
+        "Typing :: Typed",
+    }.issubset(set(project["classifiers"]))
 
 
 def test_setuptools_metadata_points_at_src_and_pytyped_marker() -> None:

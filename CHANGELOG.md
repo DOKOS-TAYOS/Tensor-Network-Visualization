@@ -14,12 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor inspector:** Hover feedback that shows the element value and the corresponding index values in the tensor.
 - **Color themes:** New color themes for plots and graphs.
 
-## [2.0.0] — 2026-04-15
+## [2.0.0] — 2026-04-14
 
 ### Changed
 
-- **Refactor:** Large-scale refactor of the codebase and internal architecture.
-- **Performance:** Broad optimizations across visualization, layout, and interaction paths.
+- **Documentation:** Documentation updated with figures for clearer guidance.
+- **Geometry:** Polished geometry handling and layout behavior.
+- **Notebooks:** Improved autodetection when running in Jupyter notebook environments.
+
+### Fixed
+
+- **Stability:** Recent fixes across visualization and supporting code paths.
 
 ## [1.6.3] — 2026-04-13
 
