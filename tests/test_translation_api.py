@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -224,8 +224,16 @@ def test_translate_tensor_network_supports_quimb_source_to_tensornetwork_target(
     import quimb.tensor as qtn
 
     tensors = [
-        qtn.Tensor(np.arange(6, dtype=float).reshape(2, 3), inds=("a", "b"), tags={"L"}),
-        qtn.Tensor(np.arange(12, dtype=float).reshape(3, 4), inds=("b", "c"), tags={"R"}),
+        qtn.Tensor(
+            data=cast(Any, np.arange(6, dtype=float).reshape(2, 3)),
+            inds=("a", "b"),
+            tags={"L"},
+        ),
+        qtn.Tensor(
+            data=cast(Any, np.arange(12, dtype=float).reshape(3, 4)),
+            inds=("b", "c"),
+            tags={"R"},
+        ),
     ]
     network = qtn.TensorNetwork(tensors)
 
