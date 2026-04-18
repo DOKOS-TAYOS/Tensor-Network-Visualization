@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] — 2026-04-18
+
 ### Added
 
 - **Tensor-network translation:** New `translate_tensor_network(...)` API that exports supported source tensor networks into `tensornetwork`, `quimb`, `einsum`, and `tensorkrowch` Python code, preserving real values when available and falling back to compatible placeholders otherwise.
@@ -227,6 +229,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[2.0.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.3...v2.0.0
 [1.6.3]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.2...v1.6.3
