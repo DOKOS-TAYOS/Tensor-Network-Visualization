@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from importlib import import_module
+from os import PathLike
 from typing import TYPE_CHECKING, Any
 
 from . import _logging as _package_logging
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
         PlotTheme,
         TensorNetworkDiagnosticsConfig,
         TensorNetworkFocus,
+        TranslationTargetName,
         ViewName,
     )
     from .contraction_viewer import ContractionViewer2D, ContractionViewer3D
@@ -53,6 +55,7 @@ if TYPE_CHECKING:
         TensorElementsConfig,
         TensorElementsTheme,
     )
+    from .translation import translate_tensor_network
     from .viewer import show_tensor_network
 else:
 
@@ -152,6 +155,23 @@ else:
             show=show,
         )
 
+    def translate_tensor_network(
+        network: Any,
+        *,
+        engine: EngineName | None = None,
+        target_engine: TranslationTargetName,
+        path: str | PathLike[str] | None = None,
+    ) -> str:
+        """Lazily dispatch to :func:`tensor_network_viz.translation.translate_tensor_network`."""
+        from .translation import translate_tensor_network as _translate_tensor_network
+
+        return _translate_tensor_network(
+            network,
+            engine=engine,
+            target_engine=target_engine,
+            path=path,
+        )
+
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "AxisConfigurationError": (".exceptions", "AxisConfigurationError"),
@@ -167,6 +187,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "NormalizedTensorNode": (".snapshot", "NormalizedTensorNode"),
     "PlotConfig": (".config", "PlotConfig"),
     "PlotTheme": (".config", "PlotTheme"),
+    "TranslationTargetName": ("._engine_specs", "TranslationTargetName"),
     "TenPyTensorNetwork": (".tenpy.explicit", "TenPyTensorNetwork"),
     "TensorComparisonConfig": (".tensor_comparison_config", "TensorComparisonConfig"),
     "TensorAnalysisConfig": (".tensor_elements_config", "TensorAnalysisConfig"),
@@ -222,6 +243,7 @@ __all__ = [
     "NormalizedTensorNode",
     "PlotConfig",
     "PlotTheme",
+    "TranslationTargetName",
     "TensorComparisonConfig",
     "TensorAnalysisConfig",
     "TensorDataError",
@@ -248,6 +270,7 @@ __all__ = [
     "show_tensor_comparison",
     "show_tensor_elements",
     "show_tensor_network",
+    "translate_tensor_network",
 ]
 
 _ = _package_logging

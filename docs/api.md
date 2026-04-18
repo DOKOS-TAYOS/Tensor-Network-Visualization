@@ -21,8 +21,9 @@ The package exports these user-facing names from `tensor_network_viz.__all__`.
 
 | Area | Names |
 | --- | --- |
-| Rendering | `show_tensor_network`, `show_tensor_elements`, `show_tensor_comparison` |
+| Rendering | `show_tensor_network`, `show_tensor_elements`, `show_tensor_comparison`, `translate_tensor_network` |
 | Tensor-network config | `PlotConfig`, `TensorNetworkDiagnosticsConfig`, `TensorNetworkFocus`, `PlotTheme`, `EngineName`, `ViewName` |
+| Translation | `TranslationTargetName` |
 | Tensor inspection config | `TensorElementsConfig`, `TensorAnalysisConfig`, `TensorComparisonConfig` |
 | Normalized exports | `normalize_tensor_network`, `export_tensor_network_snapshot`, `NormalizedTensorGraph`, `NormalizedTensorNode`, `NormalizedTensorEdge`, `NormalizedTensorEndpoint`, `TensorNetworkSnapshot`, `TensorNetworkLayoutSnapshot`, `NormalizedContractionStepMetrics` |
 | `einsum` tracing | `EinsumTrace`, `einsum`, `einsum_trace_step`, `pair_tensor` |
@@ -98,6 +99,54 @@ Important behavior:
 - Grid inputs are supported for `"tensorkrowch"`, `"tensornetwork"`, and `"quimb"`. For
   TensorKrowch, a grid of nodes may not carry the original network's recovered contraction history;
   pass the network object plus explicit positions when automatic playback history matters.
+
+## Translate a Tensor Network
+
+Use `translate_tensor_network(...)` when you want Python code for another engine rather than a
+figure.
+
+```python
+from os import PathLike
+from typing import Any
+
+from tensor_network_viz import EngineName, TranslationTargetName
+
+
+def translate_tensor_network(
+    network: Any,
+    *,
+    engine: EngineName | None = None,
+    target_engine: TranslationTargetName,
+    path: str | PathLike[str] | None = None,
+) -> str: ...
+```
+
+Main parameters:
+
+| Parameter | Meaning |
+| --- | --- |
+| `network` | Same supported source inputs as `show_tensor_network(...)`. |
+| `engine` | Optional source backend override. |
+| `target_engine` | Translation target: `"tensorkrowch"`, `"tensornetwork"`, `"quimb"`, or `"einsum"`. |
+| `path` | Optional destination `.py` file. The function still returns the generated code string. |
+
+Example:
+
+```python
+from tensor_network_viz import translate_tensor_network
+
+code = translate_tensor_network(network, engine="quimb", target_engine="einsum")
+print(code)
+```
+
+Important behavior:
+
+- `tenpy` is currently supported as a source but not as a translation target.
+- `einsum` targets preserve traced contraction order when the source already exposes it; otherwise
+  the generated code falls back to one connectivity-based `einsum(...)`.
+- `tensorkrowch` targets reject disconnected graphs that would require an outer product.
+- generated files expose `build_tensor_network()` and `network` so you can execute them directly and
+  pass the result into `show_tensor_network(...)`.
 
 ## Inspect Tensor Values
 

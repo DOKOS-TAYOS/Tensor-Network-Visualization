@@ -61,6 +61,23 @@ python examples/run_demo.py geometry disconnected_irregular --view 2d
 python examples/run_demo.py geometry decorated_sparse_grid2d --view 2d
 ```
 
+## Translation Demo
+
+Use this when you want to inspect generated code rather than only the rendered figure.
+
+```bash
+python examples/translate_demo.py --source-engine tensornetwork --target-engine quimb --example mps --n-sites 5
+python examples/translate_demo.py --source-engine tensornetwork --target-engine quimb --example weird --save-figure tn_weird_to_quimb.png --no-show
+python examples/translate_demo.py --source-engine einsum --target-engine tensornetwork --example peps --lx 3 --ly 3 --save-code translated_network.py --save-figure peps_translation.png --no-show
+python examples/translate_demo.py --source-engine tensorkrowch --target-engine quimb --example disconnected --save-figure disconnected_translation.png --no-show
+```
+
+The demo can build deterministic `simple`, `mps`, `peps`, `weird`, and `disconnected` source
+examples, depending on the source engine. It translates them with
+`translate_tensor_network(...)`, executes the generated code, and can render the original and
+translated networks side by side. Use `--save-code` to keep the generated Python and
+`--save-figure` to export the comparison figure without opening a window.
+
 ## Quick Gallery
 
 These are a few representative outputs you can reproduce with the repository demos:

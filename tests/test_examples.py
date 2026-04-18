@@ -180,6 +180,72 @@ def test_run_demo_unknown_example_lists_valid_examples_for_engine(
     assert "peps" in captured.err
 
 
+def test_translate_demo_saves_complex_mps_code_without_showing(tmp_path: Path) -> None:
+    _require_tensornetwork()
+    _require_quimb()
+
+    module = _load_example_module(Path("examples/translate_demo.py"), "translate_demo")
+    output_path = tmp_path / "translated-demo.py"
+
+    assert (
+        module.main(
+            [
+                "--source-engine",
+                "tensornetwork",
+                "--target-engine",
+                "quimb",
+                "--example",
+                "mps",
+                "--n-sites",
+                "5",
+                "--save-code",
+                str(output_path),
+                "--no-show",
+            ]
+        )
+        == 0
+    )
+    assert output_path.exists()
+    assert "build_tensor_network" in output_path.read_text(encoding="utf-8")
+    assert "A4" in output_path.read_text(encoding="utf-8")
+
+
+def test_translate_demo_saves_side_by_side_peps_figure_without_showing(tmp_path: Path) -> None:
+    _require_torch()
+    _require_tensornetwork()
+
+    module = _load_example_module(Path("examples/translate_demo.py"), "translate_demo_peps")
+    output_path = tmp_path / "translated-peps.py"
+    figure_path = tmp_path / "translated-peps.png"
+
+    assert (
+        module.main(
+            [
+                "--source-engine",
+                "einsum",
+                "--target-engine",
+                "tensornetwork",
+                "--example",
+                "peps",
+                "--lx",
+                "3",
+                "--ly",
+                "3",
+                "--save-code",
+                str(output_path),
+                "--save-figure",
+                str(figure_path),
+                "--no-show",
+            ]
+        )
+        == 0
+    )
+    assert output_path.exists()
+    image = assert_readable_image(figure_path)
+    assert image.shape[0] > 0
+    assert image.shape[1] > image.shape[0]
+
+
 def test_run_demo_rejects_unsupported_from_list(capsys: pytest.CaptureFixture[str]) -> None:
     module = _load_example_module(Path("examples/run_demo.py"), "run_demo_from_list_error")
 

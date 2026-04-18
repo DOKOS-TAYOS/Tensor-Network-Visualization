@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal, TypeAlias
 
 EngineName: TypeAlias = Literal["tensorkrowch", "tensornetwork", "quimb", "tenpy", "einsum"]
+TranslationTargetName: TypeAlias = Literal["tensorkrowch", "tensornetwork", "quimb", "einsum"]
 
 ENGINE_MODULE_MAP: dict[EngineName, tuple[str, str, str]] = {
     "tensorkrowch": (

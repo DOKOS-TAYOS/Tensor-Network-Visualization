@@ -25,6 +25,7 @@ from tensor_network_viz import (
     pair_tensor,
     show_tensor_comparison,
     show_tensor_network,
+    translate_tensor_network,
 )
 from tensor_network_viz._core.renderer import _effective_layout_iterations
 from tensor_network_viz.config import EngineName
@@ -75,6 +76,18 @@ def test_plot_theme_is_public_type_alias() -> None:
         "midnight",
         "forest",
         "slate",
+    )
+
+
+def test_translation_target_name_is_public_type_alias() -> None:
+    import tensor_network_viz as tnv
+
+    assert hasattr(tnv, "TranslationTargetName")
+    assert tnv.TranslationTargetName.__args__ == (
+        "tensorkrowch",
+        "tensornetwork",
+        "quimb",
+        "einsum",
     )
 
 
@@ -136,6 +149,19 @@ def test_plot_config_public_signature_orders_modes_before_detail() -> None:
         "contraction_scheme_edge_alpha",
         "contraction_scheme_linewidth",
     )
+
+
+def test_translate_tensor_network_public_signature_is_small_and_explicit() -> None:
+    signature = inspect.signature(translate_tensor_network)
+
+    assert tuple(signature.parameters) == (
+        "network",
+        "engine",
+        "target_engine",
+        "path",
+    )
+    assert signature.parameters["engine"].default is None
+    assert signature.parameters["path"].default is None
 
 
 def test_effective_layout_iterations_respects_explicit_setting() -> None:
