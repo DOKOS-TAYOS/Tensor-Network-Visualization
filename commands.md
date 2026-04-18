@@ -103,6 +103,44 @@ python examples/run_demo.py geometry tubular_grid --view 3d
 python examples/run_demo.py geometry disconnected_irregular
 ```
 
+## Translation
+
+### TensorNetwork source
+
+```bash
+python examples/translate_demo.py --source-engine tensornetwork --target-engine quimb --example simple
+python examples/translate_demo.py --source-engine tensornetwork --target-engine quimb --example mps
+python examples/translate_demo.py --source-engine tensornetwork --target-engine quimb --example peps
+python examples/translate_demo.py --source-engine tensornetwork --target-engine quimb --example weird
+```
+
+### Quimb source
+
+```bash
+python examples/translate_demo.py --source-engine quimb --target-engine tensornetwork --example simple
+python examples/translate_demo.py --source-engine quimb --target-engine tensornetwork --example mps
+python examples/translate_demo.py --source-engine quimb --target-engine tensornetwork --example peps
+```
+
+### Einsum source
+
+```bash
+python examples/translate_demo.py --source-engine einsum --target-engine tensornetwork --example simple
+python examples/translate_demo.py --source-engine einsum --target-engine tensornetwork --example mps
+python examples/translate_demo.py --source-engine einsum --target-engine tensornetwork --example peps
+python examples/translate_demo.py --source-engine einsum --target-engine quimb --example disconnected
+```
+
+### TensorKrowch source
+
+```bash
+python examples/translate_demo.py --source-engine tensorkrowch --target-engine quimb --example simple
+python examples/translate_demo.py --source-engine tensorkrowch --target-engine quimb --example mps
+python examples/translate_demo.py --source-engine tensorkrowch --target-engine quimb --example peps
+python examples/translate_demo.py --source-engine tensorkrowch --target-engine quimb --example weird
+python examples/translate_demo.py --source-engine tensorkrowch --target-engine quimb --example disconnected
+```
+
 ## Batch Checks
 
 ```bash

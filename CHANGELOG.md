@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Tensor-network translation:** New `translate_tensor_network(...)` API that exports supported source tensor networks into `tensornetwork`, `quimb`, `einsum`, and `tensorkrowch` Python code, preserving real values when available and falling back to compatible placeholders otherwise.
+- **Translation demo:** New `examples/translate_demo.py` with deterministic `simple`, `mps`, `peps`, `weird`, and `disconnected` cases, optional `.py` export, and side-by-side rendering of the original and translated networks.
+
+### Changed
+
+- **Documentation:** Added copy-paste translation commands to `commands.md`, documented the API in `docs/api.md`, and expanded the examples guide with the new demo workflow.
+
 ## [2.0.1] — 2026-04-16
 
 ### Added

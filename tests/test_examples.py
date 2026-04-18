@@ -502,6 +502,72 @@ def test_tensornetwork_weird_saves_figure_without_showing() -> None:
 def test_commands_doc_lists_copy_paste_demo_commands() -> None:
     text = Path("commands.md").read_text(encoding="utf-8")
     examples_text = Path("examples/README.md").read_text(encoding="utf-8")
+    translation_commands = [
+        (
+            "python examples/translate_demo.py --source-engine tensornetwork "
+            "--target-engine quimb --example simple"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine tensornetwork "
+            "--target-engine quimb --example mps"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine tensornetwork "
+            "--target-engine quimb --example peps"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine tensornetwork "
+            "--target-engine quimb --example weird"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine quimb "
+            "--target-engine tensornetwork --example simple"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine quimb "
+            "--target-engine tensornetwork --example mps"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine quimb "
+            "--target-engine tensornetwork --example peps"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine einsum "
+            "--target-engine tensornetwork --example simple"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine einsum "
+            "--target-engine tensornetwork --example mps"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine einsum "
+            "--target-engine tensornetwork --example peps"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine einsum "
+            "--target-engine quimb --example disconnected"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine tensorkrowch "
+            "--target-engine quimb --example simple"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine tensorkrowch "
+            "--target-engine quimb --example mps"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine tensorkrowch "
+            "--target-engine quimb --example peps"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine tensorkrowch "
+            "--target-engine quimb --example weird"
+        ),
+        (
+            "python examples/translate_demo.py --source-engine tensorkrowch "
+            "--target-engine quimb --example disconnected"
+        ),
+    ]
 
     assert "python examples/run_demo.py themes overview" in text
     assert "python examples/run_demo.py themes tensor_elements" in text
@@ -511,6 +577,8 @@ def test_commands_doc_lists_copy_paste_demo_commands() -> None:
     assert "python examples/run_demo.py quimb hyper" in text
     assert "python examples/run_demo.py geometry partial_grid3d --view 2d" in text
     assert "python examples/run_demo.py geometry upper_pyramid3d --view 2d" in text
+    for command in translation_commands:
+        assert command in text
     assert "decorated_sparse_grid2d" in examples_text
     assert "partial_grid2d" in examples_text
     assert "partial_grid3d" in examples_text
