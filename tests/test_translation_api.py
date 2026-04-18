@@ -221,6 +221,7 @@ def test_translate_tensor_network_rejects_tensorkrowch_target_for_disconnected_o
 
 def test_translate_tensor_network_supports_quimb_source_to_tensornetwork_target() -> None:
     pytest.importorskip("quimb.tensor")
+    pytest.importorskip("tensornetwork")
     import quimb.tensor as qtn
 
     tensors = [
