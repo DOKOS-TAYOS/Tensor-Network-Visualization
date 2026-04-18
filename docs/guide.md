@@ -15,6 +15,7 @@ tensor values, comparing tensors, and saving backend-normalized graph data.
 - [Contraction Schemes](#contraction-schemes)
 - [Tensor Value Inspection](#tensor-value-inspection)
 - [Tensor Comparison](#tensor-comparison)
+- [Translate Between Backends](#translate-between-backends)
 - [Snapshots and External Tools](#snapshots-and-external-tools)
 - [Supported Inputs](#supported-inputs)
 - [Performance Tips](#performance-tips)
@@ -54,6 +55,7 @@ These flags are independent.
 | Draw the structure of a tensor network | `show_tensor_network(...)` |
 | Inspect values inside one or more tensors | `show_tensor_elements(...)` |
 | Compare one tensor against one reference tensor | `show_tensor_comparison(...)` |
+| Generate Python code for another supported backend | `translate_tensor_network(...)` |
 | Export backend-independent graph structure | `normalize_tensor_network(...)` |
 | Export graph structure plus resolved layout | `export_tensor_network_snapshot(...)` |
 
@@ -466,6 +468,39 @@ Start with:
 
 Both inputs must resolve to exactly one tensor, and their shapes must match for numeric comparison
 modes.
+
+## Translate Between Backends
+
+Use `translate_tensor_network(...)` when you want executable Python for another backend rather than
+only a Matplotlib figure.
+
+```python
+from tensor_network_viz import translate_tensor_network
+
+code = translate_tensor_network(
+    network,
+    engine="quimb",
+    target_engine="einsum",
+    path="translated_network.py",
+)
+print(code)
+```
+
+The generated file exposes `build_tensor_network()` and `network`, so you can run it directly or
+`exec(...)` it in memory and send the translated result back through `show_tensor_network(...)`.
+
+Useful details:
+
+- `tenpy` currently works as a source, but not as a translation target.
+- `einsum` targets preserve traced contraction order when the source already has it; otherwise the
+  export falls back to one connectivity-based `einsum(...)`.
+- `tensorkrowch` targets reject disconnected structures that would require an outer product.
+
+For an end-to-end comparison workflow, run the repository demo:
+
+```bash
+python examples/translate_demo.py --source-engine tensornetwork --target-engine quimb --example mps
+```
 
 ## Snapshots and External Tools
 

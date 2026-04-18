@@ -22,6 +22,7 @@ backend examples below can then be used unchanged inside the notebook.
 - [Quimb](#quimb)
 - [TeNPy](#tenpy)
 - [`einsum`](#einsum)
+- [Cross-Backend Translation](#cross-backend-translation)
 - [Where to Go Next](#where-to-go-next)
 
 ## Base Dependency Example
@@ -309,6 +310,41 @@ fig, ax = show_tensor_elements(
     engine="einsum",
     config=TensorElementsConfig(mode="magnitude"),
 )
+```
+
+## Cross-Backend Translation
+
+If you want code for another backend instead of drawing the current object directly, use
+`translate_tensor_network(...)`.
+
+```python
+from tensor_network_viz import translate_tensor_network
+
+code = translate_tensor_network(
+    network,
+    engine="quimb",
+    target_engine="tensornetwork",
+    path="translated_network.py",
+)
+print(code)
+```
+
+This is useful when you want to:
+
+- inspect the same structure in another engine,
+- generate a small reproducible script for a collaborator,
+- compare the original and translated networks with the repository demo.
+
+Current scope:
+
+- supported targets are `tensornetwork`, `quimb`, `einsum`, and `tensorkrowch`,
+- `tenpy` is currently source-only,
+- `tensorkrowch` exports reject disconnected structures that would need an outer product.
+
+For a ready-made end-to-end example, run:
+
+```bash
+python examples/translate_demo.py --source-engine quimb --target-engine tensornetwork --example mps
 ```
 
 ## Where to Go Next

@@ -18,8 +18,7 @@ PyTorch/NumPy `einsum` tensor networks.
 
 ## Gallery
 
-These are exports generated with the library and the repository demos. The clean renders use
-transparent PNGs; the controls example keeps its background so the menu stays readable.
+These are exports generated with the library and the repository demos.
 
 <p align="center">
   <img
@@ -69,9 +68,14 @@ The common entry points are:
 show_tensor_network(...)
 show_tensor_elements(...)
 show_tensor_comparison(...)
+translate_tensor_network(...)
 normalize_tensor_network(...)
 export_tensor_network_snapshot(...)
 ```
+
+If you want code for another backend rather than a figure, `translate_tensor_network(...)` can turn
+supported TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced `einsum` inputs into executable
+Python for `tensornetwork`, `quimb`, `einsum`, or `tensorkrowch`.
 
 ## Install
 
@@ -211,6 +215,15 @@ plus three focused groups:
   index inputs.
 - `geometry`: renders larger irregular, incomplete, triangular, pyramidal, circular, and
   disconnected networks.
+
+There is also a dedicated translation demo:
+
+```bash
+python examples/translate_demo.py --source-engine tensornetwork --target-engine quimb --example mps
+```
+
+It generates Python code for the translated tensor network and can render the original and
+translated versions side by side for comparison.
 
 For batch checks, use:
 

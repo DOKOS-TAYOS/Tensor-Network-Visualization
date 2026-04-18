@@ -50,3 +50,13 @@ def test_tenpy_docs_call_out_momentum_compatibility_and_example_fallback() -> No
     assert "NumPy" in troubleshooting_text
     assert "excitation" in examples_text
     assert "NumPy" in examples_text
+
+
+def test_translation_feature_is_documented_in_guide_and_backend_examples() -> None:
+    guide_text = Path("docs/guide.md").read_text(encoding="utf-8")
+    backends_text = Path("docs/backends.md").read_text(encoding="utf-8")
+
+    assert "translate_tensor_network(...)" in guide_text
+    assert "Generate Python code for another supported backend" in guide_text
+    assert "translate_tensor_network(...)" in backends_text
+    assert "python examples/translate_demo.py" in backends_text
