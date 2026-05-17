@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.3] — 2026-05-17
+
 ### Added
 
 - **Security checks:** Added Dependabot version-update configuration for Python and GitHub Actions, plus `pip-audit`, `bandit`, and `twine check --strict` verification routes for dependency, static-analysis, and PyPI-package checks.
@@ -240,6 +242,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI project URLs for documentation and this changelog.
 - README badges for CI, PyPI version, Python support, and license.
 
+[2.0.3]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/compare/v1.6.3...v2.0.0
