@@ -1,18 +1,18 @@
 -e .
 bandit==1.9.4
-build==1.4.2
+build==1.5.0
 ipython==9.12.0 ; python_version >= "3.12"
-ipython==9.10.1 ; python_version < "3.12"
-matplotlib==3.10.8
+ipython==9.13.0 ; python_version < "3.12"
+matplotlib==3.10.9
 networkx==3.6.1
-numpy==2.4.3
+numpy==2.4.5
 pip-audit==2.10.0
 physics-tenpy==1.1.0
-pyright==1.1.408
-pytest==9.0.2
-quimb==1.13.0
-ruff==0.15.8
-setuptools==81.0.0
+pyright==1.1.409
+pytest==9.0.3
+quimb==1.14.0
+ruff==0.15.13
+setuptools==82.0.1
 tensorkrowch==1.1.6
 tensornetwork==0.4.6
 twine==6.2.0
