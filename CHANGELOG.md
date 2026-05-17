@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **CI hardening:** Restricted the default `GITHUB_TOKEN` permissions to read-only contents and added the security verification route to CI.
+- **Development dependencies:** Updated the pinned Python tooling and CI dependency set recommended by Dependabot, including `pytest` `9.0.3`, `matplotlib` `3.10.9`, `numpy` `2.4.5`, `build` `1.5.0`, `pyright` `1.1.409`, `quimb` `1.14.0`, and `ruff` `0.15.13`; kept `setuptools` on `81.0.0` because PyTorch currently requires `setuptools<82`.
 - **Packaging smoke tests:** Updated wheel and sdist smoke installs to use the package artifact directory produced by `python scripts/verify.py package`.
 - **Runtime safety:** Replaced package runtime `assert` statements with explicit exceptions so validation is not removed when Python runs with optimizations enabled.
 

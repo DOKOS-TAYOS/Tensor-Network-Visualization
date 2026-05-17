@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import replace
 from functools import cache
 from itertools import tee
-from typing import Any
+from typing import Any, NoReturn
 
 from ._core.graph_utils import _is_unordered_collection
 from ._engine_specs import EngineName
@@ -108,7 +108,7 @@ def _is_grid_container(value: Any) -> bool:
     return isinstance(value, (list, tuple))
 
 
-def _raise_grid_error(message: str) -> None:
+def _raise_grid_error(message: str) -> NoReturn:
     raise VisualizationInputError(message)
 
 

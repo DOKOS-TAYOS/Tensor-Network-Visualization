@@ -111,6 +111,10 @@ def _load_workflow() -> dict[str, Any]:
     return _load_workflow_text(Path(".github/workflows/ci.yml").read_text(encoding="utf-8"))
 
 
+def _workflow_text() -> str:
+    return Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+
 def _job_step_names(workflow: dict[str, Any], job_name: str) -> list[str]:
     return [step["name"] for step in workflow["jobs"][job_name]["steps"]]
 
@@ -155,9 +159,12 @@ jobs:
 
 def test_ci_workflow_declares_expected_jobs_and_runner_matrices() -> None:
     workflow = _load_workflow()
+    workflow_text = _workflow_text()
 
     assert set(workflow["jobs"]) == {"smoke-minimal", "wheel-smoke", "lint-and-test"}
     assert workflow["permissions"]["contents"] == "read"
+    assert workflow_text.count("uses: actions/checkout@v6") == 3
+    assert workflow_text.count("uses: actions/setup-python@v6") == 3
     assert workflow["jobs"]["wheel-smoke"]["matrix"]["os"] == ["ubuntu-latest", "windows-latest"]
     assert workflow["jobs"]["wheel-smoke"]["matrix"]["python-version"] == ["3.12", "3.13"]
     assert workflow["jobs"]["lint-and-test"]["matrix"]["os"] == [
@@ -202,7 +209,13 @@ def test_ci_workflow_keeps_minimal_and_packaging_smoke_guards() -> None:
     ]
 
     assert "python -m pip install -e . --no-deps" in minimal_install
-    for requirement in ("matplotlib==3.10.8", "networkx==3.6.1", "numpy==2.4.3", "quimb==1.13.0"):
+    for requirement in (
+        "matplotlib==3.10.9",
+        "networkx==3.6.1",
+        "numpy==2.4.5",
+        "pytest==9.0.3",
+        "quimb==1.14.0",
+    ):
         assert requirement in minimal_install
 
     wheel_step_names = _job_step_names(workflow, "wheel-smoke")
