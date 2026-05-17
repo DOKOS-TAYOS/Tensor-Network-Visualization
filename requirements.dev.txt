@@ -9,7 +9,7 @@ numpy==2.4.3
 pip-audit==2.10.0
 physics-tenpy==1.1.0
 pyright==1.1.408
-pytest==9.0.2
+pytest==9.0.3
 quimb==1.13.0
 ruff==0.15.8
 setuptools==81.0.0
