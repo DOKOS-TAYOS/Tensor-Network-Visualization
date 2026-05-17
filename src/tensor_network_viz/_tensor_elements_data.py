@@ -186,7 +186,8 @@ def _balanced_axes_for_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
                 best_axes = candidate
                 best_score = score
                 best_rank_gap = rank_gap
-    assert best_axes is not None
+    if best_axes is None:
+        raise RuntimeError("Could not resolve a balanced tensor-axis split.")
     return best_axes
 
 
@@ -231,10 +232,12 @@ def _resolve_matrix_axes(
         return resolved_rows, resolved_cols
 
     if resolved_rows is None:
-        assert resolved_cols is not None
+        if resolved_cols is None:
+            raise RuntimeError("Column axes were not resolved.")
         resolved_rows = tuple(index for index in range(ndim) if index not in resolved_cols)
     if resolved_cols is None:
-        assert resolved_rows is not None
+        if resolved_rows is None:
+            raise RuntimeError("Row axes were not resolved.")
         resolved_cols = tuple(index for index in range(ndim) if index not in resolved_rows)
 
     if set(resolved_rows).intersection(resolved_cols):
@@ -405,7 +408,8 @@ def _resolve_tensor_analysis(
             fallback_index=0,
             fallback=fallback,
         )
-        assert slice_axis is not None
+        if slice_axis is None:
+            raise RuntimeError("Slice axis was not resolved for an active slice view.")
         slice_axis_name = original_axis_names[slice_axis]
         slice_axis_size = int(array.shape[slice_axis])
         requested_slice_index = (

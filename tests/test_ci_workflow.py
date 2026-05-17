@@ -22,7 +22,7 @@ def _parse_block_list_item(raw_value: str) -> str:
 
 
 def _load_workflow_text(text: str) -> dict[str, Any]:
-    workflow: dict[str, Any] = {"jobs": {}}
+    workflow: dict[str, Any] = {"jobs": {}, "permissions": {}}
     current_job_name: str | None = None
     current_step: dict[str, Any] | None = None
     current_matrix_key: str | None = None
@@ -48,6 +48,8 @@ def _load_workflow_text(text: str) -> dict[str, Any]:
             continue
 
         if current_job_name is None:
+            if indent == 2 and stripped.startswith("contents: "):
+                workflow["permissions"]["contents"] = stripped.split(": ", 1)[1].strip()
             continue
 
         if indent == 8 and stripped.startswith("os: "):
@@ -155,6 +157,7 @@ def test_ci_workflow_declares_expected_jobs_and_runner_matrices() -> None:
     workflow = _load_workflow()
 
     assert set(workflow["jobs"]) == {"smoke-minimal", "wheel-smoke", "lint-and-test"}
+    assert workflow["permissions"]["contents"] == "read"
     assert workflow["jobs"]["wheel-smoke"]["matrix"]["os"] == ["ubuntu-latest", "windows-latest"]
     assert workflow["jobs"]["wheel-smoke"]["matrix"]["python-version"] == ["3.12", "3.13"]
     assert workflow["jobs"]["lint-and-test"]["matrix"]["os"] == [
@@ -186,6 +189,9 @@ def test_ci_workflow_routes_core_checks_through_verify_script() -> None:
     )
     assert _job_step(workflow, "lint-and-test", "Pytest")["run"] == (
         "python scripts/verify.py tests"
+    )
+    assert _job_step(workflow, "lint-and-test", "Security")["run"] == (
+        "python scripts/verify.py security"
     )
 
 

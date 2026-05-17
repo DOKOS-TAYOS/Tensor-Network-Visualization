@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Security checks:** Added Dependabot version-update configuration for Python and GitHub Actions, plus `pip-audit`, `bandit`, and `twine check --strict` verification routes for dependency, static-analysis, and PyPI-package checks.
+
+### Changed
+
+- **CI hardening:** Restricted the default `GITHUB_TOKEN` permissions to read-only contents and added the security verification route to CI.
+- **Runtime safety:** Replaced package runtime `assert` statements with explicit exceptions so validation is not removed when Python runs with optimizations enabled.
+
 ## [2.0.2] — 2026-04-18
 
 ### Added

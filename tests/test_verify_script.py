@@ -23,7 +23,15 @@ def test_verify_script_exposes_perf_mode_in_parser() -> None:
     mode_action = next(action for action in parser._actions if action.dest == "mode")
 
     assert mode_action.default == "all"
-    assert set(mode_action.choices) == {"all", "quality", "tests", "perf", "smoke", "package"}
+    assert set(mode_action.choices) == {
+        "all",
+        "quality",
+        "tests",
+        "perf",
+        "smoke",
+        "package",
+        "security",
+    }
 
 
 def test_verify_script_perf_mode_runs_explicit_perf_pytest_command() -> None:
@@ -56,5 +64,23 @@ def test_verify_script_all_mode_keeps_perf_out_of_default_route() -> None:
         "pytest",
         "quimb-smoke",
         "build-dist",
+        "twine-check",
     ]
     assert "pytest-perf" not in labels
+
+
+def test_verify_script_security_mode_runs_dependency_and_static_audits() -> None:
+    module = _load_verify_module()
+
+    labels = [step.label for step in module._ordered_steps("security")]
+
+    assert labels == ["pip-check", "pip-audit", "bandit"]
+
+    pip_audit = module._ordered_steps("security")[1]
+    assert pip_audit.command[:4] == (sys.executable, "-m", "pip_audit", "--skip-editable")
+    assert "--local" in pip_audit.command
+
+    bandit = module._ordered_steps("security")[2]
+    assert bandit.command[:4] == (sys.executable, "-m", "bandit", "-r")
+    assert "--severity-level" in bandit.command
+    assert "medium" in bandit.command

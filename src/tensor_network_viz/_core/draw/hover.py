@@ -401,8 +401,8 @@ def _apply_saved_hover_state(
         )
         return
 
-    assert state.positions is not None
-    assert state.params is not None
+    if state.positions is None or state.params is None:
+        raise RuntimeError("3D hover registration requires resolved positions and parameters.")
     _register_3d_hover_labels(
         state.ax,
         state.figure,

@@ -787,7 +787,8 @@ class ContractionViewer2D(_ContractionViewerBase):
         if fig is None:
             fig, ax_new = plt.subplots()
             ax = cast(Axes, ax_new)
-        assert ax is not None
+        if ax is None:
+            raise ValueError("ContractionViewer2D requires a 2D Axes when fig is provided.")
         if getattr(ax, "name", None) == "3d":
             raise TypeError("ContractionViewer2D requires a 2D Axes")
         super().__init__(
@@ -816,7 +817,8 @@ class ContractionViewer2D(_ContractionViewerBase):
         if fig is None:
             fig, ax_new = plt.subplots()
             ax = cast(Axes, ax_new)
-        assert ax is not None
+        if ax is None:
+            raise ValueError("ContractionViewer2D.from_rectangles requires a 2D Axes.")
         artists: list[Rectangle] = []
         for x, y, w, h in rectangles:
             r = Rectangle(
@@ -850,7 +852,8 @@ class ContractionViewer3D(_ContractionViewerBase):
         if fig is None:
             fig = plt.figure()
             ax = cast(Axes3D, fig.add_subplot(111, projection="3d"))
-        assert ax is not None
+        if ax is None:
+            raise ValueError("ContractionViewer3D requires Axes3D when fig is provided.")
         if not hasattr(ax, "zaxis"):
             raise TypeError("ContractionViewer3D requires Axes3D")
         super().__init__(
@@ -879,7 +882,8 @@ class ContractionViewer3D(_ContractionViewerBase):
         if fig is None:
             fig = plt.figure()
             ax = cast(Axes3D, fig.add_subplot(111, projection="3d"))
-        assert ax is not None
+        if ax is None:
+            raise ValueError("ContractionViewer3D.from_boxes requires Axes3D.")
         artists: list[Poly3DCollection] = []
         for mn, mx in boxes:
             mn = np.asarray(mn, dtype=float).ravel()[:3]

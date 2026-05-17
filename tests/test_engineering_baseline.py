@@ -145,18 +145,22 @@ def test_dev_requirements_pin_verification_tools_and_use_editable_install() -> N
     assert "-e ." in lines
     assert {
         "build==1.4.2",
+        "bandit==1.9.4",
         "ipython==9.10.1",
         "ipython==9.12.0",
         "matplotlib==3.10.8",
         "networkx==3.6.1",
         "numpy==2.4.3",
+        "pip-audit==2.10.0",
         "physics-tenpy==1.1.0",
         "pyright==1.1.408",
         "pytest==9.0.2",
         "quimb==1.13.0",
         "ruff==0.15.8",
+        "setuptools==81.0.0",
         "tensorkrowch==1.1.6",
         "tensornetwork==0.4.6",
+        "twine==6.2.0",
     }.issubset(set(lines))
 
 

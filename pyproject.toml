@@ -39,10 +39,14 @@ Issues = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/issues"
 
 [project.optional-dependencies]
 dev = [
+    "bandit",
     "build",
     "pytest",
     "ruff",
+    "setuptools",
     "pyright",
+    "pip-audit",
+    "twine",
     "ipython",
     "tensorkrowch",
     "tensornetwork",

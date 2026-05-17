@@ -278,7 +278,8 @@ def _render_panel(
         panel.main_ax.set_title(_panel_title(record, payload))
         return
 
-    assert isinstance(payload, _HeatmapPayload)
+    if not isinstance(payload, _HeatmapPayload):
+        raise TypeError(f"Unsupported tensor-elements payload: {type(payload).__name__!r}.")
     matrix = np.asarray(payload.matrix)
     metadata = payload.metadata
     style_key = payload.style_key

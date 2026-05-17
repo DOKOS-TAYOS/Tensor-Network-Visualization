@@ -13,6 +13,7 @@ from typing import TypeAlias
 class VerificationStep:
     label: str
     command: tuple[str, ...]
+    expand_globs: bool = False
 
 
 VerificationGroup: TypeAlias = tuple[VerificationStep, ...]
@@ -39,6 +40,27 @@ def _command_groups() -> dict[str, VerificationGroup]:
                 (*pytest_base, "-p", "no:cacheprovider", "--override-ini=addopts=", "-m", "perf"),
             ),
         ),
+        "security": (
+            VerificationStep("pip-check", (python, "-m", "pip", "check")),
+            VerificationStep(
+                "pip-audit",
+                (python, "-m", "pip_audit", "--skip-editable", "--local"),
+            ),
+            VerificationStep(
+                "bandit",
+                (
+                    python,
+                    "-m",
+                    "bandit",
+                    "-r",
+                    "src",
+                    "scripts",
+                    "examples",
+                    "--severity-level",
+                    "medium",
+                ),
+            ),
+        ),
         "smoke": (
             VerificationStep(
                 "quimb-smoke",
@@ -53,7 +75,26 @@ def _command_groups() -> dict[str, VerificationGroup]:
                 ),
             ),
         ),
-        "package": (VerificationStep("build-dist", (python, "-m", "build", "--sdist", "--wheel")),),
+        "package": (
+            VerificationStep(
+                "build-dist",
+                (
+                    python,
+                    "-m",
+                    "build",
+                    "--sdist",
+                    "--wheel",
+                    "--outdir",
+                    ".tmp/package-dist",
+                    "--no-isolation",
+                ),
+            ),
+            VerificationStep(
+                "twine-check",
+                (python, "-m", "twine", "check", "--strict", ".tmp/package-dist/*"),
+                expand_globs=True,
+            ),
+        ),
     }
 
 
@@ -73,11 +114,26 @@ def _format_command(command: tuple[str, ...]) -> str:
     return subprocess.list2cmdline(list(command))
 
 
+def _expand_command_globs(command: tuple[str, ...], repo_root: Path) -> tuple[str, ...]:
+    expanded: list[str] = []
+    for part in command:
+        if "*" not in part and "?" not in part:
+            expanded.append(part)
+            continue
+        matches = sorted(repo_root.glob(part))
+        if matches:
+            expanded.extend(str(path) for path in matches)
+        else:
+            expanded.append(part)
+    return tuple(expanded)
+
+
 def _run_step(step: VerificationStep, repo_root: Path) -> None:
     LOGGER.debug("Running verification step '%s' in %s.", step.label, repo_root)
+    command = _expand_command_globs(step.command, repo_root) if step.expand_globs else step.command
     print(f"[verify] {step.label}")
-    print(f"[verify] $ {_format_command(step.command)}")
-    subprocess.run(step.command, cwd=repo_root, check=True)
+    print(f"[verify] $ {_format_command(command)}")
+    subprocess.run(command, cwd=repo_root, check=True)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -87,9 +143,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "mode",
         nargs="?",
-        choices=("all", "quality", "tests", "perf", "smoke", "package"),
+        choices=("all", "quality", "tests", "perf", "security", "smoke", "package"),
         default="all",
-        help="Verification slice to run. Defaults to the full pre-merge suite without perf checks.",
+        help=(
+            "Verification slice to run. Defaults to quality, tests, smoke, and package; "
+            "security and perf are explicit modes."
+        ),
     )
     return parser
 

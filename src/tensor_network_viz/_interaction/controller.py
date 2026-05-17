@@ -389,7 +389,8 @@ class _InteractiveTensorFigureController:
     @property
     def current_scene(self) -> _InteractiveSceneState:
         scene = self._view_manager.current_scene(self.current_view)
-        assert scene is not None
+        if scene is None:
+            raise RuntimeError("Interactive scene is not available for the current view.")
         return scene
 
     @property
@@ -531,7 +532,8 @@ class _InteractiveTensorFigureController:
         )
 
     def _build_controls(self, scene: _InteractiveSceneState) -> None:
-        assert self.figure is not None
+        if self.figure is None:
+            raise RuntimeError("Interactive controls require an initialized figure.")
         self._controls_panel = _InteractiveControlsPanel(
             fig=self.figure,
             layout=self._controls_layout(scene),
@@ -547,7 +549,8 @@ class _InteractiveTensorFigureController:
         )
 
     def _ensure_focus_status_text(self) -> Text:
-        assert self.figure is not None
+        if self.figure is None:
+            raise RuntimeError("Focus status text requires an initialized figure.")
         if self._focus_status_text is None:
             self._focus_status_text = self.figure.text(
                 0.5,

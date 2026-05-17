@@ -110,7 +110,8 @@ class _InteractiveViewManager:
 
     def rerender_cached_view(self, view: ViewName) -> _InteractiveSceneState:
         cache = self.view_caches[view]
-        assert cache.ax is not None
+        if cache.ax is None:
+            raise RuntimeError("Cached view cannot be re-rendered before its axes are built.")
         old_scene = cache.scene
         if old_scene is not None and old_scene.contraction_controls is not None:
             viewer = old_scene.contraction_controls._viewer
@@ -120,7 +121,8 @@ class _InteractiveViewManager:
                 viewer.hide_scheme_artists()
         fig, rendered_ax = self._render_view(view, cache.ax)
         scene = _scene_from_axes(rendered_ax)
-        assert scene is not None
+        if scene is None:
+            raise RuntimeError("Rendered axes did not expose an interactive scene.")
         cache.ax = rendered_ax
         cache.scene = scene
         scene.contraction_controls = get_contraction_controls(rendered_ax)

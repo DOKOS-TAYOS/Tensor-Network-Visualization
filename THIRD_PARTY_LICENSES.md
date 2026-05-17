@@ -44,11 +44,11 @@ These packages are declared directly by optional extras in `pyproject.toml`.
 
 ## Development-Only Tooling
 
-The `dev` extra in `pyproject.toml` also includes `build`, `pytest`, `ruff`,
-`pyright`, and `ipython`, along with some of the optional backend packages listed
-above. Those tools are used for repository development and CI, not for the base
-runtime distribution of the published library, so they are not repeated in the
-tables above.
+The `dev` extra in `pyproject.toml` also includes `bandit`, `build`,
+`pip-audit`, `pytest`, `ruff`, `setuptools`, `pyright`, `twine`, and `ipython`,
+along with some of the optional backend packages listed above. Those tools are
+used for repository development and CI, not for the base runtime distribution of
+the published library, so they are not repeated in the tables above.
 
 ## Compatibility Notes
 
