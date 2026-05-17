@@ -64,11 +64,11 @@ jobs:
 
       - name: Install wheel (Linux)
         if: runner.os != 'Windows'
-        run: .wheel-venv/bin/python -m pip install dist/*.whl
+        run: .wheel-venv/bin/python -m pip install .tmp/package-dist/*.whl
 
       - name: Install wheel (Windows)
         if: runner.os == 'Windows'
-        run: .wheel-venv\Scripts\python -m pip install (Get-ChildItem dist\*.whl | Select-Object -First 1).FullName
+        run: .wheel-venv\Scripts\python -m pip install (Get-ChildItem .tmp\package-dist\*.whl | Select-Object -First 1).FullName
 
       - name: Smoke import and render (Linux)
         if: runner.os != 'Windows'
@@ -81,11 +81,11 @@ jobs:
 
       - name: Install sdist (Linux)
         if: runner.os != 'Windows'
-        run: .sdist-venv/bin/python -m pip install dist/*.tar.gz
+        run: .sdist-venv/bin/python -m pip install .tmp/package-dist/*.tar.gz
 
       - name: Install sdist (Windows)
         if: runner.os == 'Windows'
-        run: .sdist-venv\Scripts\python -m pip install (Get-ChildItem dist\*.tar.gz | Select-Object -First 1).FullName
+        run: .sdist-venv\Scripts\python -m pip install (Get-ChildItem .tmp\package-dist\*.tar.gz | Select-Object -First 1).FullName
 
       - name: Smoke sdist import and render (Linux)
         if: runner.os != 'Windows'

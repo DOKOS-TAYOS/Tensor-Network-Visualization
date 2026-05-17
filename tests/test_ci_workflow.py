@@ -210,12 +210,20 @@ def test_ci_workflow_keeps_minimal_and_packaging_smoke_guards() -> None:
         "Install build tool",
         "Create wheel test venv",
         "Create sdist test venv",
+        "Install wheel (Linux)",
         "Install wheel (Windows)",
         "Smoke import and render (Windows)",
+        "Install sdist (Linux)",
         "Install sdist (Windows)",
         "Smoke sdist import and render (Windows)",
     ):
         assert step_name in wheel_step_names
+
+    wheel_linux_install = _job_step(workflow, "wheel-smoke", "Install wheel (Linux)")["run"]
+    assert ".tmp/package-dist/*.whl" in wheel_linux_install
+
+    wheel_windows_install = _job_step(workflow, "wheel-smoke", "Install wheel (Windows)")["run"]
+    assert "Get-ChildItem .tmp\\package-dist\\*.whl" in wheel_windows_install
 
     wheel_windows_smoke = _job_step(workflow, "wheel-smoke", "Smoke import and render (Windows)")[
         "run"
@@ -224,6 +232,12 @@ def test_ci_workflow_keeps_minimal_and_packaging_smoke_guards() -> None:
     assert "matplotlib.use('Agg')" in wheel_windows_smoke
     assert "show_tensor_network(" in wheel_windows_smoke
     assert "engine='einsum'" in wheel_windows_smoke
+
+    sdist_linux_install = _job_step(workflow, "wheel-smoke", "Install sdist (Linux)")["run"]
+    assert ".tmp/package-dist/*.tar.gz" in sdist_linux_install
+
+    sdist_windows_install = _job_step(workflow, "wheel-smoke", "Install sdist (Windows)")["run"]
+    assert "Get-ChildItem .tmp\\package-dist\\*.tar.gz" in sdist_windows_install
 
     sdist_windows_smoke = _job_step(
         workflow,
