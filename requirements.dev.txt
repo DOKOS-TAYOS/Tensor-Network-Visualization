@@ -12,7 +12,7 @@ pyright==1.1.409
 pytest==9.0.3
 quimb==1.14.0
 ruff==0.15.13
-setuptools==81.0.0
+setuptools==82.0.1
 tensorkrowch==1.1.6
 tensornetwork==0.4.6
 twine==6.2.0
