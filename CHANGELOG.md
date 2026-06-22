@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CI maintenance:** Updated `actions/checkout` from `v6` to `v7` in the GitHub Actions workflow.
+
 ## [2.0.3] — 2026-05-17
 
 ### Added

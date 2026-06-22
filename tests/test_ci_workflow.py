@@ -163,7 +163,7 @@ def test_ci_workflow_declares_expected_jobs_and_runner_matrices() -> None:
 
     assert set(workflow["jobs"]) == {"smoke-minimal", "wheel-smoke", "lint-and-test"}
     assert workflow["permissions"]["contents"] == "read"
-    assert workflow_text.count("uses: actions/checkout@v6") == 3
+    assert workflow_text.count("uses: actions/checkout@v7") == 3
     assert workflow_text.count("uses: actions/setup-python@v6") == 3
     assert workflow["jobs"]["wheel-smoke"]["matrix"]["os"] == ["ubuntu-latest", "windows-latest"]
     assert workflow["jobs"]["wheel-smoke"]["matrix"]["python-version"] == ["3.12", "3.13"]
