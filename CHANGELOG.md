@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **CI maintenance:** Updated `actions/checkout` from `v6` to `v7` in the GitHub Actions workflow.
+- **Dependabot policy:** Ignore `setuptools` updates to `>=82` for the `pip` ecosystem until the pinned PyTorch dependency no longer requires `setuptools<82`.
 
 ## [2.0.3] — 2026-05-17
 
