@@ -39,26 +39,26 @@ Issues = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/issues"
 
 [project.optional-dependencies]
 dev = [
-    "bandit",
-    "build",
-    "pytest",
-    "ruff",
-    "setuptools",
-    "pyright",
-    "pip-audit",
-    "twine",
-    "ipython",
-    "tensorkrowch",
-    "tensornetwork",
-    "quimb",
-    "physics-tenpy",
+    "bandit>=1.9.4",
+    "build>=1.5.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.13",
+    "setuptools>=81.0.0,<82",
+    "pyright>=1.1.409",
+    "pip-audit>=2.10",
+    "twine>=6.0.0",
+    "ipython>=8.10.0",
+    "tensorkrowch>=1.1",
+    "tensornetwork>=0.4",
+    "quimb>=1.7",
+    "physics-tenpy>=1.0.6",
 ]
 jupyter = ["ipympl>=0.9.0", "ipywidgets>=8.0", "jupyterlab>=4.0", "notebook>=7.0"]
-tensorkrowch = ["tensorkrowch"]
-tensornetwork = ["tensornetwork"]
-quimb = ["quimb"]
-tenpy = ["physics-tenpy"]
-einsum = ["torch"]
+tensorkrowch = ["tensorkrowch>=1.1"]
+tensornetwork = ["tensornetwork>=0.4"]
+quimb = ["quimb>=1.7"]
+tenpy = ["physics-tenpy>=1.0.6"]
+einsum = ["torch>=2.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
