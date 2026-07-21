@@ -85,6 +85,9 @@ VisualizerMode = Literal["cumulative", "highlight_current", "window"]
 _SchemeAvailability = Literal["not_computed", "computed", "unavailable"]
 _COST_PANEL_ELLIPSIS = "..."
 _COST_PANEL_TEXT_PADDING_PX = 6.0
+# Absorb sub-pixel / font-metric noise (e.g. mpl 3.11 linespacing='normal') so
+# borderline panels shrink instead of truncating + enabling hover.
+_COST_PANEL_FIT_SLACK_PX = 2.0
 _COST_PANEL_SMALL_FONT_SCALE = 0.8
 _COST_PANEL_FALLBACK_MAX_LINES = 5
 _COST_PANEL_FALLBACK_SMALL_MAX_LINES = 7
@@ -148,7 +151,10 @@ def _cost_panel_text_fits(
     panel_bbox = ax.get_window_extent(renderer=renderer)
     width_limit = max(0.0, float(panel_bbox.width) - _COST_PANEL_TEXT_PADDING_PX)
     height_limit = max(0.0, float(panel_bbox.height) - _COST_PANEL_TEXT_PADDING_PX)
-    return bool(text_bbox.width <= width_limit and text_bbox.height <= height_limit)
+    return bool(
+        text_bbox.width <= width_limit + _COST_PANEL_FIT_SLACK_PX
+        and text_bbox.height <= height_limit + _COST_PANEL_FIT_SLACK_PX
+    )
 
 
 def _fallback_resolve_cost_panel_text(

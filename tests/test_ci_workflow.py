@@ -210,10 +210,10 @@ def test_ci_workflow_keeps_minimal_and_packaging_smoke_guards() -> None:
 
     assert "python -m pip install -e . --no-deps" in minimal_install
     for requirement in (
-        "matplotlib==3.10.9",
+        "matplotlib==3.11.1",
         "networkx==3.6.1",
-        "numpy==2.4.5",
-        "pytest==9.0.3",
+        "numpy==2.4.6",
+        "pytest==9.1.1",
         "quimb==1.14.0",
     ):
         assert requirement in minimal_install
