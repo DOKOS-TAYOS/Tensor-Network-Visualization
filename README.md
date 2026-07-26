@@ -6,6 +6,8 @@
   >
 </p>
 
+<p align="center"><em>Logo:</em> original project artwork by Alejandro Mata Ali; covered by the same MIT license as this repository.</p>
+
 # Tensor-Network-Visualization
 
 [![CI](https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/actions/workflows/ci.yml/badge.svg)](https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/actions/workflows/ci.yml)
@@ -234,8 +236,11 @@ python examples/run_all_examples.py --group all --views 2d --output-dir .tmp/exa
 
 ## Project Links
 
+- [License](LICENSE) (MIT)
+- [Third-party licenses](THIRD_PARTY_LICENSES.md)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Citation](CITATION.cff)
 - [Issues](https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/issues)
 - [Repository](https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization)

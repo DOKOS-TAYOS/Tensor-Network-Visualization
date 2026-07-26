@@ -24,7 +24,7 @@ These are the packages declared directly in `[project] dependencies`.
 | --- | --- | --- | --- | --- |
 | matplotlib | `>=3.7` | Matplotlib license (PSF-style, based on the PSF license) | Matplotlib distributions also include bundled third-party components, fonts, and data with additional notices. | https://matplotlib.org/stable/project/license.html |
 | networkx | `>=3.0` | BSD-3-Clause | Permissive license. | https://github.com/networkx/networkx/blob/main/LICENSE.txt |
-| numpy | unpinned | BSD-3-Clause (NumPy core) | NumPy distributions also include bundled components under additional permissive licenses; see the official NumPy license page. | https://numpy.org/doc/stable/license.html |
+| numpy | `>=2.0` | BSD-3-Clause (NumPy core) | Declared in `pyproject.toml` as `numpy>=2.0`. NumPy distributions also include bundled components under additional permissive licenses; see the official NumPy license page. | https://numpy.org/doc/stable/license.html |
 
 ## Optional User-Facing Extras
 
