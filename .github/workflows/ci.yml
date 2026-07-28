@@ -3,14 +3,8 @@ name: CI
 on:
   push:
     branches: [main, master]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
   pull_request:
     branches: [main, master]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
 
 permissions:
   contents: read
@@ -141,3 +135,41 @@ jobs:
 
       - name: Security
         run: python scripts/verify.py security
+
+  required-pr-ci:
+    name: ${{ github.event_name == 'pull_request' && 'required-pr-ci' || 'push-ci-summary' }}
+    if: ${{ always() }}
+    needs:
+      - smoke-minimal
+      - wheel-smoke
+      - lint-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Validate required jobs
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SMOKE_MINIMAL_RESULT: ${{ needs['smoke-minimal'].result }}
+          WHEEL_SMOKE_RESULT: ${{ needs['wheel-smoke'].result }}
+          LINT_AND_TEST_RESULT: ${{ needs['lint-and-test'].result }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${SMOKE_MINIMAL_RESULT}" != "success" ]]; then
+            echo "Required job smoke-minimal finished with '${SMOKE_MINIMAL_RESULT}', expected success."
+            exit 1
+          fi
+
+          if [[ "${WHEEL_SMOKE_RESULT}" != "success" ]]; then
+            echo "Required job wheel-smoke finished with '${WHEEL_SMOKE_RESULT}', expected success."
+            exit 1
+          fi
+
+          if [[ "${LINT_AND_TEST_RESULT}" != "success" ]]; then
+            echo "Required job lint-and-test finished with '${LINT_AND_TEST_RESULT}', expected success."
+            exit 1
+          fi
+
+          echo "All required jobs passed."
