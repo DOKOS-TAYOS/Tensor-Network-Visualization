@@ -159,7 +159,7 @@ def test_dev_requirements_pin_verification_tools_and_use_editable_install() -> N
         "setuptools==83.0.0",
         "tensorkrowch==1.1.6",
         "tensornetwork==0.4.6",
-        "twine==6.2.0",
+        "twine==7.0.0",
     }.issubset(set(lines))
 
 

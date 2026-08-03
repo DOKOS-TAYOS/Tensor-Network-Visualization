@@ -15,4 +15,4 @@ ruff==0.15.22
 setuptools==83.0.0
 tensorkrowch==1.1.6
 tensornetwork==0.4.6
-twine==6.2.0
+twine==7.0.0
