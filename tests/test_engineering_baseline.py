@@ -156,7 +156,7 @@ def test_dev_requirements_pin_verification_tools_and_use_editable_install() -> N
         "pytest==9.1.1",
         "quimb==1.14.0",
         "ruff==0.15.22",
-        "setuptools==83.0.0",
+        "setuptools==84.0.0",
         "tensorkrowch==1.1.6",
         "tensornetwork==0.4.6",
         "twine==7.0.0",
