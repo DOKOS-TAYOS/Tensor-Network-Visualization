@@ -156,7 +156,7 @@ def test_dev_requirements_pin_verification_tools_and_use_editable_install() -> N
         "pytest==9.1.1",
         "quimb==1.14.0",
         "ruff==0.15.22",
-        "setuptools==83.0.0",
+        "setuptools==84.0.0",
         "tensorkrowch==1.1.6",
         "tensornetwork==0.4.6",
         "twine==7.0.0",
@@ -334,6 +334,14 @@ from matplotlib.widgets import Slider as SliderBefore
 import tensor_network_viz as tnv
 
 class Edge:
+    def __init__(self, name, axis_names):
+        self.name = name
+        self.axis_names = list(axis_names)
+        self.tensor = np.ones((2, 2), dtype=float)
+        self.shape = self.tensor.shape
+        self.edges = [None] * len(self.axis_names)
+
+class Edge:
     def __init__(self, name):
         self.name = name
         self.node1 = None
@@ -407,7 +415,7 @@ def test_compute_axis_directions_dense_dangling_chain_completes_quickly() -> Non
 def test_compute_axis_directions_dense_dangling_chain_3d_completes_quickly() -> None:
     graph = _build_dense_dangling_chain(160)
     positions = {
-        node_id: np.array([float(node_id) * 0.35, 0.0, 0.0], dtype=float) for node_id in range(160)
+        node_id: np.array([float(node_id) * 0.35, 0.0, 0.0]) for node_id in range(160)
     }
 
     started = time.perf_counter()
