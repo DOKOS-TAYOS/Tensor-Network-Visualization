@@ -4,8 +4,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "wednesday"
-      time: "08:00"
+      day: "tuesday"
+      time: "18:15"
       timezone: "Europe/Madrid"
     open-pull-requests-limit: 5
     groups:
@@ -22,8 +22,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "wednesday"
-      time: "08:30"
+      day: "tuesday"
+      time: "18:45"
       timezone: "Europe/Madrid"
     open-pull-requests-limit: 5
     groups:
