@@ -20,7 +20,7 @@ def test_base_dependencies_are_declared_explicitly() -> None:
 
     dependencies = pyproject["project"]["dependencies"]
 
-    assert dependencies == ["matplotlib>=3.7", "networkx>=3.0", "numpy>=2.0"]
+    assert dependencies == ["matplotlib>=3.11.2", "networkx>=3.7", "numpy>=2.5.5"]
 
 
 def test_project_uses_spdx_license_metadata() -> None:
