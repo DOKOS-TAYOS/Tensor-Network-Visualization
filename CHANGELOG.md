@@ -9,8 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Dependency refresh:** Raised runtime minimums for Matplotlib, NetworkX (3.6.1 on Python 3.11, 3.7 on Python 3.12+), and NumPy (2.4.5 on Python 3.11, 2.5.5 on Python 3.12+); refreshed development and CI pins while retaining the TensorKrowch, TensorNetwork, Quimb, and TeNPy version requirements.
+- **Package version:** Prepared `2.0.4` for the updated runtime dependency baseline.
+- **PyTorch compatibility:** Removed the obsolete `setuptools<82` maintenance assumption after verifying that the current PyTorch package permits newer setuptools versions.
+- **Grid layout stability:** Canonicalized grid reflections across NetworkX isomorphism versions to preserve boundary-vector orientation.
+- **Typing:** Kept top-k index values explicitly typed as integers under the newer NumPy and Pyright packages.
 - **CI maintenance:** Updated `actions/checkout` from `v6` to `v7` in the GitHub Actions workflow.
-- **Dependabot policy:** Ignore `setuptools` updates to `>=82` for the `pip` ecosystem until the pinned PyTorch dependency no longer requires `setuptools<82`.
 
 ## [2.0.3] — 2026-05-17
 

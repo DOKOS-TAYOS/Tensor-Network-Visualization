@@ -646,13 +646,12 @@ def _topk_flat_indices(magnitudes: NumericArray, *, count: int) -> NumericArray:
     partitioned = np.argpartition(normalized, partition_index)
     threshold = float(normalized[int(partitioned[partition_index])])
     higher = np.flatnonzero(normalized > threshold)
-    higher_ranked = np.asarray(
-        sorted(
-            (int(flat_index) for flat_index in higher),
-            key=lambda flat_index: _topk_sort_key(float(normalized[flat_index]), flat_index),
-        ),
-        dtype=np.intp,
+    higher_indices: list[int] = [int(flat_index) for flat_index in higher]
+    higher_sorted = sorted(
+        higher_indices,
+        key=lambda flat_index: _topk_sort_key(float(normalized[flat_index]), flat_index),
     )
+    higher_ranked = np.asarray(higher_sorted, dtype=np.intp)
     remaining = requested_count - int(higher_ranked.size)
     if remaining <= 0:
         return higher_ranked[:requested_count]

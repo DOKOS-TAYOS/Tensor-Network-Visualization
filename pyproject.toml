@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tensor-network-visualization"
-version = "2.0.3"
+version = "2.0.4"
 description = "Minimal Matplotlib visualizations for TensorKrowch, TensorNetwork, Quimb, TeNPy, and traced PyTorch/NumPy einsum tensor networks."
 authors = [{ name = "Alejandro Mata Ali" }]
 readme = "README.md"
@@ -13,9 +13,11 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 keywords = ["tensor-network", "visualization", "pytorch", "numpy", "tensorkrowch", "tensornetwork", "quimb", "tenpy", "einsum", "quantum-inspired", "matplotlib"]
 dependencies = [
-    "matplotlib>=3.7",
-    "networkx>=3.0",
-    "numpy>=2.0",
+    "matplotlib>=3.11.2",
+    "networkx>=3.6.1; python_version < '3.12'",
+    "networkx>=3.7; python_version >= '3.12'",
+    "numpy>=2.4.5; python_version < '3.12'",
+    "numpy>=2.5.5; python_version >= '3.12'",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -40,15 +42,15 @@ Issues = "https://github.com/DOKOS-TAYOS/Tensor-Network-Visualization/issues"
 [project.optional-dependencies]
 dev = [
     "bandit>=1.9.4",
-    "build>=1.5.0",
-    "pytest>=9.1.1",
-    "ruff>=0.15.22",
-    "setuptools>=83.0.0",
-    "pyright>=1.1.411",
+    "build>=1.6.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.5",
+    "setuptools>=84.2.1",
+    "pyright>=1.1.414",
     "pip-audit>=2.10.1",
 
-    "twine>=6.0.0",
-    "ipython>=8.10.0",
+    "twine>=7.0.0",
+    "ipython>=9.18.1",
     "tensorkrowch>=1.1",
     "tensornetwork>=0.4",
     "quimb>=1.7",

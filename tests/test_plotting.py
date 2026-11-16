@@ -3553,7 +3553,7 @@ def test_show_tensor_network_displays_selected_renderer(monkeypatch: pytest.Monk
     def fake_show() -> None:
         shown["value"] = True
 
-    monkeypatch.setattr(viewer_module.plt, "show", fake_show)
+    monkeypatch.setattr(plt, "show", fake_show)
     fig, ax = show_tensor_network(
         DummyNetwork(nodes=[node]),
         engine="tensorkrowch",
@@ -3625,8 +3625,8 @@ def test_show_figure_uses_pyplot_show_for_notebook_managed_jupyter_backends(
 
     monkeypatch.setattr("IPython.core.getipython.get_ipython", _fake_get_ipython)
     monkeypatch.setattr("IPython.display.display", _fake_display)
-    monkeypatch.setattr(viewer_module.plt, "show", _fake_show)
-    monkeypatch.setattr(viewer_module.plt, "get_backend", lambda: backend_name)
+    monkeypatch.setattr(plt, "show", _fake_show)
+    monkeypatch.setattr(plt, "get_backend", lambda: backend_name)
 
     viewer_module._show_figure(fig)
 

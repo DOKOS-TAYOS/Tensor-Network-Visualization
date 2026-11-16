@@ -673,7 +673,29 @@ def _detect_grid(nx_graph: nx.Graph) -> dict[int, tuple[int, int]] | None:
         mapping = nx.vf2pp_isomorphism(nx_graph, grid_graph)
         if mapping is None:
             continue
-        return {node_id: (grid_col, grid_row) for node_id, (grid_row, grid_col) in mapping.items()}
+        coordinates = {
+            node_id: (grid_col, grid_row) for node_id, (grid_row, grid_col) in mapping.items()
+        }
+        # Grid isomorphisms have reflection symmetries. NetworkX may choose a
+        # different representative across releases, so orient each axis using
+        # the node IDs instead of relying on the isomorphism iteration order.
+        for axis in (0, 1):
+            low = min(value[axis] for value in coordinates.values())
+            high = max(value[axis] for value in coordinates.values())
+            if low == high:
+                continue
+            low_id = min(node_id for node_id, value in coordinates.items() if value[axis] == low)
+            high_id = min(node_id for node_id, value in coordinates.items() if value[axis] == high)
+            if low_id > high_id:
+                coordinates = {
+                    node_id: (
+                        (low + high - value[0], value[1])
+                        if axis == 0
+                        else (value[0], low + high - value[1])
+                    )
+                    for node_id, value in coordinates.items()
+                }
+        return coordinates
     return None
 
 
