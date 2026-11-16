@@ -24,7 +24,8 @@ def test_base_dependencies_are_declared_explicitly() -> None:
         "matplotlib>=3.11.2",
         "networkx>=3.6.1; python_version < '3.12'",
         "networkx>=3.7; python_version >= '3.12'",
-        "numpy>=2.5.5",
+        "numpy>=2.4.5; python_version < '3.12'",
+        "numpy>=2.5.5; python_version >= '3.12'",
     ]
 
 

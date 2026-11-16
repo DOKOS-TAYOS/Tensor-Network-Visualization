@@ -150,6 +150,7 @@ def test_dev_requirements_pin_verification_tools_and_use_editable_install() -> N
         "matplotlib==3.11.2",
         "networkx==3.6.1",
         "networkx==3.7",
+        "numpy==2.4.5",
         "numpy==2.5.5",
         "pip-audit==2.10.1",
         "physics-tenpy==1.1.0",

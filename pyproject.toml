@@ -16,7 +16,8 @@ dependencies = [
     "matplotlib>=3.11.2",
     "networkx>=3.6.1; python_version < '3.12'",
     "networkx>=3.7; python_version >= '3.12'",
-    "numpy>=2.5.5",
+    "numpy>=2.4.5; python_version < '3.12'",
+    "numpy>=2.5.5; python_version >= '3.12'",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
