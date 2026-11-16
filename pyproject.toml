@@ -14,7 +14,8 @@ requires-python = ">=3.11"
 keywords = ["tensor-network", "visualization", "pytorch", "numpy", "tensorkrowch", "tensornetwork", "quimb", "tenpy", "einsum", "quantum-inspired", "matplotlib"]
 dependencies = [
     "matplotlib>=3.11.2",
-    "networkx>=3.7",
+    "networkx>=3.6.1; python_version < '3.12'",
+    "networkx>=3.7; python_version >= '3.12'",
     "numpy>=2.5.5",
 ]
 classifiers = [
